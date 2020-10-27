@@ -1,0 +1,156 @@
+# ===============================================================================
+#   Attempt to generate a live image and display it using Matplotlib
+#   and detect key events
+# ===============================================================================
+from pypylon import pylon
+from pypylon import genicam
+import matplotlib.pyplot as plt
+import numpy as np
+import sys
+import os
+import cannon_communication_protocol as canon
+import time
+import mahotas as mh
+
+
+def press(event):
+    global stop_acquisition
+    print('press', event.key)
+    sys.stdout.flush()
+    if event.key == 'x':
+        stop_acquisition = True
+        print('Hola')
+
+
+def init_camera():
+    # TODO: load a specific parameter set
+    try:
+        # Create an instant camera object with the camera device found first.
+        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+        camera.Open()
+        # Print the model name of the camera.
+        print("Using device ", camera.GetDeviceInfo().GetModelName())
+        # Loading settings
+        print("Reading file to camera's node map...")
+        #nodeFile = "CodeMap.pfs"
+        #pylon.FeaturePersistence.Load(nodeFile, camera.GetNodeMap(), True)
+
+        return camera
+    except genicam.GenericException as e:
+        # Error handling.
+        print("An exception occurred.")
+        print(e.GetDescription())
+        exit_code = 1
+    sys.exit(exit_code)
+
+
+#plt.close('all')
+#%% Go to folder to save data
+os.chdir("C:\Data\CElegans\Behaviour Microscope\AcquisitionFolder")
+
+camera = init_camera()  # camera initialization
+clock, signal, out = canon.initialize_DAQ()  # DAQ initialization
+print('Initialization DAQ completed')
+canon.align_communication(clock, signal, out)  # Objective initialization
+print('Canon bit alignment completed')
+canon.full_protocol(clock, signal, out, '6')
+time.sleep(0.4)
+
+# Taking an image to initialize display
+camera.StartGrabbingMax(1)
+# Wait for an image and then retrieve it. A timeout of 5000 ms is used.
+grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+img = grabResult.Array  # Access the image data.
+focus_steps = 25
+stack = np.zeros((img.shape[0], img.shape[1], focus_steps), dtype='uint8')
+stack[:, :, 0] = img
+
+#%% Take first image to read the image size. This could be replaced if we read it directly from the settings
+plt.ion()
+fig, axs = plt.subplots(figsize=(6, 6), nrows=1, ncols=1, tight_layout=True)
+fig.show()
+fig.canvas.set_window_title('Video')
+axs.axes.axis('off')
+hl_image = axs.imshow(img) #, cmap=plt.cm.gray)
+hl_window = plt.get_current_fig_manager()
+hl_window.window.setGeometry(50, 100, 640, 545)
+hl_window.window.activateWindow()
+hl_window.window.raise_()
+
+#fig.canvas.mpl_connect('key_press_event', press)
+#fig.canvas.flush_events()
+
+# Test of live view using matplotlib
+camera.StartGrabbingMax(200)
+for frame in np.arange(200):
+    # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
+    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+    # Access the image data.
+    img = grabResult.Array
+    hl_image.set_data(img)
+    plt.pause(0.0000001)
+    grabResult.Release()
+
+# TODO: Try here the eqauivalent with cv2
+
+
+step_command = '44 00 22'
+for frame in np.arange(1, focus_steps):
+    # move objective.
+    canon.full_protocol(clock, signal, out, step_command)
+    plt.pause(0.01)  # In other computer might require additionally plt.draw()
+    time.sleep(0.05)
+    camera.StartGrabbingMax(1)
+    # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
+    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+    # Access the image data.
+    img = grabResult.Array
+    stack[:, :, frame] = img
+    hl_image.set_data(img)
+    #image.AttachGrabResultBuffer(grabResult)
+    #image.Save(pylon.ImageFileFormat_Tiff, fname.format(grabResult.TimeStamp))
+    grabResult.Release()
+plt.pause(0.01) # display last figure before closing
+plt.close(fig)
+
+#%% Looking for the focal plane
+average_frame_intensity = np.mean(stack, axis=(0, 1))
+normalized_stack = stack.astype(float)/average_frame_intensity
+stack_variance = np.var(normalized_stack, axis=(0, 1))
+der_variance = np.abs(np.diff(stack_variance))
+focal_plane = np.argmax(stack_variance)
+fig2, axs2 = plt.subplots(figsize=(6, 6), nrows=1, ncols=3)
+axs2[0].plot(der_variance)
+axs2[1].axes.axis('off')
+axs2[1].imshow(stack[:, :, focal_plane]) #, cmap=plt.cm.gray)
+axs2[2].plot(stack_variance)
+#%%
+fig3, ax3 = plt.subplots(figsize=(15, 15), nrows=5, ncols=5, tight_layout=True)
+for index_row in range(5):
+    for index_column in range(5):
+        frame = index_row*5 + index_column
+        ax3[index_row,index_column].imshow(normalized_stack[:, :, frame])
+        ax3[index_row,index_column].annotate(str(frame), xy=(100, 200), color='black', fontsize=14)
+        ax3[index_row, index_column].axes.axis('off')
+plt.draw()
+plt.show()
+
+#%% EDOF
+#extended_focus = EDOF(stack)
+# h = normalized_stack.shape[0]
+# w = normalized_stack.shape[1]
+# local_stack = np.moveaxis(normalized_stack, 2, 0)
+# focus = np.abs(np.array([mh.sobel(t, just_filter=True) for t in local_stack]))
+# best = np.argmax(focus, axis=0)
+# r = np.zeros((h, w))
+# for y in range(h):
+#     for x in range(w):
+#         r[y, x] = local_stack[best[y, x], y, x]
+# fig4, ax4 = plt.subplots(figsize=(15, 15), nrows=1, ncols=1, tight_layout=True)
+# ax4.imshow(r)
+# ax4.axes.axis('off')
+#%%
+camera.Close()
+canon.close_DAQ(clock, signal, out)
+
+# TODO: trigger to avoid potential move artifacts and to increas speed

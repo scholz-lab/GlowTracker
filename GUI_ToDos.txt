@@ -1,0 +1,24 @@
+To Do's GUI
+
+- Stagecode
+	- size change for FOV (big FOV for center_once function, then switch to small about 2x the worm size). Load paramter sets, then allow for fine tuning in the program, then reduce FOV during acquistion and set it back after to full chip. 
+	
+	- clean exits for exceptions or errors (camera and stage connection have to be killed)
+
+- GUI
+	- transfer the values entered in the popups "axis limits" & "recording settings" to the other programs and eventually also to save the settings in a text file. These functions are in working progress. Some of the functions that are called upon events, such as pressing a button are not yet written, but the code helps to see how the layout works, and where these could be called.  
+	- try to connect image display to camera
+	- add info whether kernel is busy or a general status of the GUI.
+	- add stop button to cancel action
+
+
+Task Notes
+kivy-garden can be used for live image display. It is currently using the webcam, but it does not work with the BASLER. The current idea would be to grab the images using the FunctioningImageUpdate.py and then pass on the image to kivy-garden
+ 
+- added kivy-garden for img display
+	conda install -c conda-forge kivy-garden
+	garden install matplotlib
+
+- To change before using on new laptop:
+	- port used for zaber stage (in stage script & GUI script)
+	- paths in bat file for GUI start-up
