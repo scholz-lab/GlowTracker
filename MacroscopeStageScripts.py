@@ -46,9 +46,10 @@ def home_stage():
     necessary if device was disconnected from power source
     '''
     with Connection.open_serial_port('COM3') as connection:
+        # set address 1 to the device that is nearest to the computer. From there the others are consecutive integers
+        connection.renumber_devices(first_address=1)
         device_list = connection.detect_devices()
-        connection.renumber_devices(first_address = 1)
-        
+
         for device in device_list:
             device.all_axes.home()
         
@@ -60,7 +61,7 @@ def home_stage():
             device3 = device_list[2]
             axis_z = device3.get_axis(1)
         
-        print('Moving axix_x to starting position...')
+        print('Moving axis_x to starting position...')
         axis_x.move_absolute(20, Units.LENGTH_MILLIMETRES, wait_until_idle=False)
         print('Moving axis_y to starting position...')
         axis_y.move_absolute(75, Units.LENGTH_MILLIMETRES, wait_until_idle=True)
@@ -75,9 +76,8 @@ def set_rangelimits():
     necessary to avoid collision with other set-up elements
     '''
     with Connection.open_serial_port('COM3') as connection:
+        connection.renumber_devices(first_address=1)
         device_list = connection.detect_devices()
-        connection.renumber_devices(first_address = 1)
-
         # assign connected devices to IDs & axes variables    
         device1 = device_list[0]
         device2 = device_list[1]
@@ -120,7 +120,7 @@ def genCalibrationMatrix(shift):
 def getImgs(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
     # Hardware initialization
     connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address = 1)
+    connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
     
     device1 = device_list[0]
@@ -163,7 +163,7 @@ def getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMoti
     return calibrationMatrix
 
 
-def writeCalibration(calibrationMatrix, fname = 'calibrationMatrix.txt'):
+def writeCalibration(calibrationMatrix, fname='calibrationMatrix.txt'):
     np.savetxt(os.path.join(os.getcwd(), fname), calibrationMatrix)
 
 
@@ -179,7 +179,7 @@ def stageCalibration():
 def zFocus():
     # Hardware initialization
     connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address = 1)
+    connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
 
     device3 = device_list[2]
@@ -329,7 +329,7 @@ def getStageDistances(deltaCoords, calibrationMatrix):
 def center_once():
     # Hardware Initialization
     connection = Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address = 1)
+    connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
     
     device1 = device_list[0]
@@ -371,7 +371,7 @@ def center_once():
 #%% Tracking Worm
 def trackWorm():
     connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address = 1)
+    connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
     
     device1 = device_list[0]
