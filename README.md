@@ -1,5 +1,5 @@
-# RaspberryPi
-documentation and scripts for raspberry pi
+# Macroscope
+Documentation and scripts to control the behavior macroscope
 
 
 To get the BASLER package running on windows 64 do the following:
@@ -23,18 +23,11 @@ To get controls for zaber stage running:
        conda install -c conda-forge zaber-motion
        conda install -c conda-forge/label/cf202003 zaber-motion
        
-- start programming for your device:
-
-       from zaber_motion import Library           #retrieves information about zaber devices from internet
-       from zaber_motion.ascii import Connection
-
-       Library.toggle_device_db_store(True)       #stores information for offline use
-    
-       with Connection.open_serial_port("COM5") as connection:    #opens port, check for correct port in "ports (COM & LPT)" in your device manager and adjust in code
-        device_list = connection.detect_devices()
-        print("Found {} devices".format(len(device_list)))
-
-        # The rest of your program goes here (indented)
+- See SimpleStageExample.py for two alternative approaches to begin the communication with the satge.
+- The SDK to control the stage has two different levels of code. One is the ASCII lib, which is used to communicate to the stage on a lower level:
+https://www.zaber.com/support/docs/api/core-python/0.8.1/ascii.html#
+Then we have the API written for python, which uses the ASCII lib under the hood to execute the commands:
+https://www.zaber.com/software/docs/motion-library/ascii/references/python/#axis
         
-- It is advisable to include lines homing your device at the beginning of your code to find its reference position in order to perform accurate absolute position movements!      
-- For more information and how-to guides go to the Zaber Motion Library: https://www.zaber.com/software/docs/motion-library/ascii/
+- It is advisable to include lines homing your device at the beginning of your code to find its reference position to perform meaningful absolute position movements!      
+
