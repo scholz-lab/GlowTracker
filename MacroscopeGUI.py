@@ -2,29 +2,25 @@
 """
 Created on Mon Aug 10 12:11:51 2020
 
-@author: hofmann
+@authors: Hofmann, Scholz, Alvarez
 """
 import kivy
 kivy.require('1.11.1')
-
-#from kivy.garden.matplotlib import FigureCanvasKivyAgg  # have a look here for image display
-#from kivy.garden.matplotlib.backend_kivyagg import FigureCanvas
 from kivy.app import App
-from kivy.uix.button import Button
 from kivy.core.window import Window
 from kivy.uix.widget import Widget
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.popup import Popup
-from kivy.factory import Factory
-from kivy.uix.textinput import TextInput
-from kivy.config import Config
 from zaber_motion import Library, Units
 from zaber_motion.ascii import Connection
-import MacroscopeStageScripts as stg
-import FunctioningImageUpdate as imgupdate  # This works with the BASLER to grab the images, but we are using now the webcam. The idea would be to grab images with this and the use kivy-garden for the display.
+import Zaber_control as stg
+import Macroscope_macros as macro
 
 Library.toggle_device_db_store(True)  # This is part of the Zaber initialization. Unclear what it does.
+# TODO: separate stage from camera in the programs
+# TODO: Structure the GUI such that it shares variables across GUI components
+# TODO: Implement new layout
 
 Window.size = (1600, 600)
 # MenuBarWidget is the main GUI
@@ -56,16 +52,16 @@ class FunctionCallsWidget(Widget):
         super(FunctionCallsWidget, self).__init__(**kwargs)
     
     def calibrate_stage(self):
-        stg.stageCalibration()
+        macro.stageCalibration()
 
     def center(self):
         stg.center_once()
         
     def autofocus(self):
-        stg.zFocus()
+        macro.zFocus()
     
     def recording(self):
-        stg.trackworm()
+        macro.trackworm()
 
 
 class ControlsWidget(Widget):
@@ -218,7 +214,7 @@ class MacroscopeApp(App):
     # input and its name has to end with App. The actual "meat" of the widgets and what do they do and their layout is
     # in another file that must have the same name but low case, without the app at the end and .kv extension
     def build(self):
-        return MainBoxWidget()  # This is the actuall GUI
+        return MainBoxWidget()  # This is the actual GUI
 
 
 def reset():
@@ -235,4 +231,6 @@ def reset():
         
 if __name__ == '__main__':
     reset()
-    MacroscopeApp().run()
+    # TODO: connection to the decive and error handling is done here
+    MacroscopeApp().run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+    # TODO: disconnect here from the active devices on closure of the GUI
