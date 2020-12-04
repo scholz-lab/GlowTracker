@@ -16,7 +16,7 @@ from zaber_motion.ascii import connection
 from Basler_control import camera_init
 
 
-Library.toggle_device_db_store(True)
+#Library.toggle_device_db_store(True)
 
 
 #%% Stage Calibration

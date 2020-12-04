@@ -1,7 +1,7 @@
 from zaber_motion import library, units
 from zaber_motion.ascii import connection
 
-library.toggle_device_db_store(True)
+#library.toggle_device_db_store(True)
 
 
 def connect_stage(port='COM3'):
