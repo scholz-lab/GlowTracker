@@ -117,16 +117,37 @@ class RuntimeControls(BoxLayout):
 # display if hardware is connected
 class Connections(BoxLayout):
     pass
-    
+
+class ExitApp(BoxLayout):
+   stop = ObjectProperty(None)
+   cancel = ObjectProperty(None)
 # set window size at startup
 Window.size = (1280, 800)
 # load the layout
 class MacroscopeApp(App):
     def build(self):
         #return Button(text='works')
+        Window.bind(on_request_close=self.on_request_close)
         return Builder.load_file('layout.kv')
     
+    # ask for confirmation of closing
+    def on_request_close(self, *args):
+        content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
+        self._popup = Popup(title="Exit Macroscope GUI", content=content,
+                            size_hint=(0.5, 0.2))
+        self._popup.open()
+        return True
+        
+    def dismiss_popup(self):
+        self._popup.dismiss()
     
+    def graceful_exit(self):
+        #TODO add connection closing etc. here to make a nice exit
+        self.stop()
+            
+
+            
+       
 
 def reset():
     # Cleaner for the events in memory
