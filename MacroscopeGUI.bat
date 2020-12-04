@@ -1,1 +1,0 @@
-C:\Users\alvarez\.conda\envs\Basler\pythonw.exe C:\Users\alvarez\Desktop\NataschaHofmann\Macroscope-nhof92-patch-1\MacroscopeGUI.py
