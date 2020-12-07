@@ -26,8 +26,11 @@ MainWindow:
     MyLogo:
         size_hint: (0.1,0.15)
     LeftColumn:
+        id: leftcolumn
     MiddleColumn:
+        id: middlecolumn
     RightColumn:
+        id: rightcolumn
 
 # popup confirming closing
 <ExitApp>:
@@ -50,7 +53,6 @@ MainWindow:
     orientation: 'vertical'
     pos: root.pos
     spacing: 5
-    saveloc: saveloc
     MyLabel: 
         text: 'Stage Controls'
     XControls:
@@ -65,7 +67,7 @@ MainWindow:
     MyButton:
         text: 'Load camera settings'
         pos_hint: {'x': 0.25}
-        on_release: root.show_save()
+        on_release: root.show_load()
         
     MyLabel: 
         text: 'Experiment'
@@ -196,7 +198,9 @@ MainWindow:
         pos: root.pos
         orientation: "vertical"
         FileChooserListView:
-            id: filechooser
+            id: filechooser2
+            path: ''
+            filters: ['*.pfs']
 
         BoxLayout:
             size_hint_y: None
@@ -207,7 +211,7 @@ MainWindow:
 
             Button:
                 text: "Load"
-                on_release: root.load(filechooser.path, filechooser.selection)
+                on_release: root.load(filechooser2.path, filechooser2.selection)
                 
 #################################
 # save location experiment - Popup
@@ -222,6 +226,8 @@ MainWindow:
         orientation: "vertical"
         FileChooserListView:
             id: filechooser
+            dirselect: True
+            path: '/home'
             on_selection: text_input.text = self.selection and self.selection[0] or ''
         TextInput:
             id: text_input

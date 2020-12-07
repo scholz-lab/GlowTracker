@@ -17,28 +17,30 @@ from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
 from kivy.properties import ObjectProperty, StringProperty
-
+from kivy.clock import Clock
 import os
 import Zaber_control as stg
 import Macroscope_macros as macro
+import Basler_control as cam
 
 import globals
 # TODO: separate stage from camera in the programs
 # TODO: Structure the GUI such that it shares variables across GUI components
 
-# screen manager - deal with multiple windows
-class MainScreen(Screen):
-    pass
-   
-class AnotherScreen(Screen):
-    pass
-    
-class ScreenManagement(ScreenManager):
-    pass
     
 # main GUI
 class MainWindow(GridLayout):
-    pass
+    expPath = StringProperty()
+    def __init__(self,  **kwargs):
+        super(MainWindow, self).__init__(**kwargs)
+        # experimental path
+        self.expPath = globals.SAVEPATH
+        Clock.schedule_once(self._do_setup)
+    # Note: Work around: IDs are not available at init, 
+    # so we schedule an update for the path at one frame later (when app is already running)
+    def _do_setup(self, *l):
+        # display save location
+        self.ids.leftcolumn.ids.saveloc.text = self.expPath
 
 
 class LeftColumn(BoxLayout):
@@ -46,33 +48,44 @@ class LeftColumn(BoxLayout):
     loadfile = ObjectProperty(None)
     savefile = ObjectProperty(None)
     cameraprops = ObjectProperty(None)
-    # experimental path
-    expPath = globals.SAVEPATH
+
+    #
+    def __init__(self,  **kwargs):
+        super(LeftColumn, self).__init__(**kwargs)
+        Clock.schedule_once(self._do_setup)
+    
+    def _do_setup(self, *l):
+        #pass
+        self.savefile = str(self.ids.saveloc.text)
+        self.loadfile = str(self.ids.saveloc.text)
     
     def dismiss_popup(self):
         self._popup.dismiss()
 
     def show_load(self):
         content = LoadCameraProperties(load=self.load, cancel=self.dismiss_popup)
+        content.ids.filechooser2.path = self.loadfile
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
         self._popup.open()
 
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
+        content.ids.filechooser.path = self.savefile
         self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
         self._popup.open()
 
     def load(self, path, filename):
-        with open(os.path.join(path, filename[0])) as stream:
+        self.loadfile = os.path.join(path, filename[0])
+        #with open(os.path.join(path, filename[0])) as stream:
             ### TODO edit to load the psf file and alter camera settings
-            self.cameraprops.text = stream.read()
+            #self.cameraprops.text = stream.read()
         self.dismiss_popup()
     
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
-        self.saveloc.text = str(self.savefile)
+        self.ids.saveloc.text = (self.savefile)
         self.dismiss_popup()
     
 
@@ -142,7 +155,8 @@ class MacroscopeApp(App):
     def on_start(self):
         pass
     #    # TODO: load default paths
-        #LeftColumn.savefile.text = 'TEST'
+
+        #App.get_running_app().root.LeftColumn.saveloc.text = 'TEST'
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
