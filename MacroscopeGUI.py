@@ -16,12 +16,12 @@ from kivy.uix.popup import Popup
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty, StringProperty
+from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty
 from kivy.clock import Clock
 import os
 import Zaber_control as stg
 import Macroscope_macros as macro
-import Basler_control as cam
+import Basler_control as basler
 
 import globals
 # TODO: separate stage from camera in the programs
@@ -44,11 +44,10 @@ class MainWindow(GridLayout):
 
 
 class LeftColumn(BoxLayout):
-    # file saving
+    # file saving and loading
     loadfile = ObjectProperty(None)
     savefile = ObjectProperty(None)
     cameraprops = ObjectProperty(None)
-
     #
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
@@ -78,6 +77,7 @@ class LeftColumn(BoxLayout):
 
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
+        
         #with open(os.path.join(path, filename[0])) as stream:
             ### TODO edit to load the psf file and alter camera settings
             #self.cameraprops.text = stream.read()
@@ -88,6 +88,23 @@ class LeftColumn(BoxLayout):
         self.ids.saveloc.text = (self.savefile)
         self.dismiss_popup()
     
+    def on_loadfile(self, instance, value):
+        camera = App.get_running_app().camera
+        ### TODO this reference is quite ugly, check if more elegant solution is possible
+        if self.parent.ids.rightcolumn.ids.connections.ids.cam_connection.state == 'down':
+            print(camera.AcquisitionFrameRate())
+            basler.update_props(camera, propfile=value)
+            self.update_settings_display()
+
+    # when file is loaded - update slider values which updates the camera
+    def update_settings_display(self):
+        # update slider value using ids
+        camera = App.get_running_app().camera
+        self.ids.camprops.ids.exposure.value = camera.ExposureTime()
+        self.ids.camprops.ids.gain.value = camera.Gain()
+        self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
+
+
 
 class MiddleColumn(BoxLayout):
     pass
@@ -108,7 +125,6 @@ class ZControls(Widget):
 class LoadCameraProperties(BoxLayout):
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
-    
 
 # save location for images and meta data
 class SaveExperiment(GridLayout):
@@ -120,8 +136,38 @@ class SaveExperiment(GridLayout):
 
 # camera properties
 class CameraProperties(GridLayout):
-    pass
+       # camera properties
+    gain = ObjectProperty(None)
+    exposure = ObjectProperty(None)
+    framerate = ObjectProperty(None)
 
+     # update camera params when text or slider is changed
+    def change_gain(self):
+        camera = App.get_running_app().camera
+        if camera is not None:
+            camera.Gain= float(self.gain.value)
+            self.exposure.value = camera.Gain()
+        else:
+            self.gain.value = 0
+
+    def change_exposure(self):
+        camera = App.get_running_app().camera
+        if camera is not None:
+            camera.ExposureTime = float(self.exposure.value)
+            self.exposure.value = camera.ExposureTime()
+        else:
+            self.exposure.value = 0
+
+    def change_framerate(self):
+        """update framerate"""
+        camera = App.get_running_app().camera
+        if camera is not None:
+            camera.AcquisitionFrameRateEnable = True
+            camera.AcquisitionFrameRate = float(self.framerate.value)
+            self.framerate.value = camera.ResultingFrameRate()
+            print(camera.AcquisitionFrameRate())
+        else:
+            self.framerate.value = 0
 #record and live view buttons
 class RecordButtons(BoxLayout):
     pass
@@ -139,10 +185,9 @@ class RuntimeControls(BoxLayout):
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
     stage_connection = ObjectProperty(None)
+    
     def __init__(self,  **kwargs):
         super(Connections, self).__init__(**kwargs)
-        self.camera = None
-        self.stage = None
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
@@ -152,11 +197,12 @@ class Connections(BoxLayout):
     def connectCamera(self):
         print('connecting Camera')
         # connect camera
-        self.camera = cam.camera_init()
-        if self.camera is None:
+        App.get_running_app().camera = basler.camera_init()
+        if App.get_running_app().camera is None:
             self.cam_connection.state = 'normal'
         else:
             self.cam_connection.state = 'down'
+
     def disconnectCamera(self):
         #TODO implement disconnecting
         print('disconnecting')
@@ -177,7 +223,7 @@ class MacroscopeApp(App):
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
         self.camera = None
-
+        self.stage = None
     def build(self):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action

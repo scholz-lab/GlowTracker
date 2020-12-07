@@ -11,7 +11,7 @@ def camera_init():
         # Print the model name of the camera.
         print("Using device ", camera.GetDeviceInfo().GetModelName())
         # Loading settings
-        print("Possible place to read the file defining the camera's settings...")
+        #print("Possible place to read the file defining the camera's settings...")
         #node_file = "FluorescenceTestLawn.pfs"
         #pylon.FeaturePersistence.Load(node_file, camera.GetNodeMap(), True)
         return camera
@@ -20,3 +20,10 @@ def camera_init():
         print("An exception occurred.")
         #print(e.GetDescription())
     return None
+
+
+def update_props(camera, propfile):
+    """read psf file and alter camera properties.
+        camera: pylon.InstantCamera
+        propfile: path to .pfs file"""
+    pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
