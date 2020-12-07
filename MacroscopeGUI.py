@@ -137,7 +137,35 @@ class RuntimeControls(BoxLayout):
 
 # display if hardware is connected
 class Connections(BoxLayout):
-    pass
+    cam_connection = ObjectProperty(None)
+    stage_connection = ObjectProperty(None)
+    def __init__(self,  **kwargs):
+        super(Connections, self).__init__(**kwargs)
+        self.camera = None
+        self.stage = None
+        Clock.schedule_once(self._do_setup)
+
+    def _do_setup(self, *l):
+        self.connectCamera()
+        self.connectStage()
+    
+    def connectCamera(self):
+        print('connecting Camera')
+        # connect camera
+        self.camera = cam.camera_init()
+        if self.camera is None:
+            self.cam_connection.state = 'normal'
+        else:
+            self.cam_connection.state = 'down'
+    def disconnectCamera(self):
+        #TODO implement disconnecting
+        print('disconnecting')
+    def connectStage(self):
+        print('connecting Stage')
+        #TODO implement disconnecting
+    def disconnectStage(self):
+        print('disconnecting Stage')
+        #TODO implement disconnecting
 
 class ExitApp(BoxLayout):
    stop = ObjectProperty(None)
@@ -146,17 +174,21 @@ class ExitApp(BoxLayout):
 Window.size = (1280, 800)
 # load the layout
 class MacroscopeApp(App):
+    def __init__(self,  **kwargs):
+        super(MacroscopeApp, self).__init__(**kwargs)
+        self.camera = None
+
     def build(self):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
         return layout
-    # populate default
+    # attempt to load camera and stage
     def on_start(self):
+        # connect camera
         pass
-    #    # TODO: load default paths
 
-        #App.get_running_app().root.LeftColumn.saveloc.text = 'TEST'
+   
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)

@@ -1,5 +1,5 @@
 from pypylon import genicam, pylon
-import sys
+
 
 
 #%% Camera initialization
@@ -12,12 +12,11 @@ def camera_init():
         print("Using device ", camera.GetDeviceInfo().GetModelName())
         # Loading settings
         print("Possible place to read the file defining the camera's settings...")
-        node_file = "FluorescenceTestLawn.pfs"
-        pylon.FeaturePersistence.Load(node_file, camera.GetNodeMap(), True)
+        #node_file = "FluorescenceTestLawn.pfs"
+        #pylon.FeaturePersistence.Load(node_file, camera.GetNodeMap(), True)
         return camera
     except genicam.GenericException as e:
         # Error handling.
         print("An exception occurred.")
-        print(e.GetDescription())
-        exit_code = 1
-    sys.exit(exit_code)
+        #print(e.GetDescription())
+    return None

@@ -321,7 +321,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'Camera'
-    MyButton:
+    MyButton: 
         size_hint: (1, 0.1)
         text: 'Recording'
     MyButton:
@@ -334,6 +334,7 @@ MainWindow:
         text: 'Hardware'
         size_hint: (1, 0.1)
     Connections:
+        id: connections 
         size_hint: (1,0.2)
  
 
@@ -341,30 +342,34 @@ MainWindow:
 <Connections>:
     orientation: 'vertical'
     size_hint: (0.3, 1)
+    cam_connection: cam_connection
+    stage_connection: stage_connection
     Label:
         text: 'Camera'
         size_hint: (1,0.5)
     OnOffButton:
+        id: cam_connection
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
         height: self.width 
         pos_hint: {'center_x': .5, 'center_y': .5}
-        #pos_hint: {"x":0.5, "y":0.0}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
+        on_state: root.connectCamera() if self.state=='down' else root.disconnectCamera()
     Label:
         text: 'Stage'
         size_hint: (1,0.5)
     OnOffButton:
+        id: stage_connection 
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
         height: self.width 
         pos_hint: {'center_x': .5, 'center_y': .5}
-        #pos_hint: {"x":0.5, "y":0.0}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
+        on_state: root.connectStage() if self.state=='down' else root.disconnectStage()
     
         
       
