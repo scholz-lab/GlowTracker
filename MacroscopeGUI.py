@@ -16,15 +16,15 @@ from kivy.uix.popup import Popup
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty
+from kivy.properties import ObjectProperty, StringProperty
 
 import os
 import Zaber_control as stg
 import Macroscope_macros as macro
 
+import globals
 # TODO: separate stage from camera in the programs
 # TODO: Structure the GUI such that it shares variables across GUI components
-# TODO: Implement new layout
 
 # screen manager - deal with multiple windows
 class MainScreen(Screen):
@@ -45,8 +45,10 @@ class LeftColumn(BoxLayout):
     # file saving
     loadfile = ObjectProperty(None)
     savefile = ObjectProperty(None)
-    text_input = ObjectProperty(None)
-
+    cameraprops = ObjectProperty(None)
+    # experimental path
+    expPath = globals.SAVEPATH
+    
     def dismiss_popup(self):
         self._popup.dismiss()
 
@@ -58,17 +60,21 @@ class LeftColumn(BoxLayout):
 
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
-        self._popup = Popup(title="Save file", content=content,
+        self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
         self._popup.open()
 
     def load(self, path, filename):
         with open(os.path.join(path, filename[0])) as stream:
-            self.text_input.text = stream.read()
+            ### TODO edit to load the psf file and alter camera settings
+            self.cameraprops.text = stream.read()
         self.dismiss_popup()
     
     def save(self, path, filename):
-        pass
+        self.savefile = os.path.join(path, filename)
+        self.saveloc.text = str(self.savefile)
+        self.dismiss_popup()
+    
 
 class MiddleColumn(BoxLayout):
     pass
@@ -89,11 +95,13 @@ class ZControls(Widget):
 class LoadCameraProperties(BoxLayout):
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
+    
 
 # save location for images and meta data
 class SaveExperiment(GridLayout):
     save = ObjectProperty(None)
-    text_input = ObjectProperty(None)
+    #savepath = ObjectProperty(None)
+    #filename = StringProperty(None)
     cancel = ObjectProperty(None)
 
 
@@ -126,10 +134,15 @@ Window.size = (1280, 800)
 # load the layout
 class MacroscopeApp(App):
     def build(self):
-        #return Button(text='works')
+        layout = Builder.load_file('layout.kv')
+        # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
-        return Builder.load_file('layout.kv')
-    
+        return layout
+    # populate default
+    def on_start(self):
+        pass
+    #    # TODO: load default paths
+        #LeftColumn.savefile.text = 'TEST'
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
@@ -164,5 +177,6 @@ def reset():
 if __name__ == '__main__':
     reset()
     # TODO: connection to the decive and error handling is done here
-    MacroscopeApp().run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+    App = MacroscopeApp()
+    App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
     # TODO: disconnect here from the active devices on closure of the GUI

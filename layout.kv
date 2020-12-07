@@ -17,6 +17,7 @@ MainWindow:
     padding: [10,10,10,10]
     spacing: 10
     MyLabel:
+        id: title
         text: 'Macroscope GUI'
         font_size: 42
         size_hint: (0.4, 0.15)
@@ -49,6 +50,7 @@ MainWindow:
     orientation: 'vertical'
     pos: root.pos
     spacing: 5
+    saveloc: saveloc
     MyLabel: 
         text: 'Stage Controls'
     XControls:
@@ -67,10 +69,19 @@ MainWindow:
         
     MyLabel: 
         text: 'Experiment'
+    TextInput:
+        id: saveloc
+        size_hint_y: None
+        height: 30
+        multiline: False
+        text: "Startup"
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
         on_release: root.show_save()
+    
+        
+        
 
 ### Display camera properties
 
@@ -212,7 +223,6 @@ MainWindow:
         FileChooserListView:
             id: filechooser
             on_selection: text_input.text = self.selection and self.selection[0] or ''
-
         TextInput:
             id: text_input
             size_hint_y: None
@@ -229,7 +239,7 @@ MainWindow:
             Button:
                 text: "Save"
                 on_release: root.save(filechooser.path, text_input.text)        
-            
+
             
             
 #################################
