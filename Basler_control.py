@@ -6,17 +6,9 @@ from pypylon import genicam, pylon
 def camera_init():
     try:
         # Create an instant camera object with the camera device found first.
-        #camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
-        # Get the transport layer factory.
-        tlFactory = pylon.TlFactory.GetInstance()
-        # Get all attached devices and exit application if no device is found.
-        devices = tlFactory.EnumerateDevices()
-        if len(devices) == 0:
-            raise pylon.RuntimeException("No camera present.")
-
-        # Create and attach the first Pylon Devices.
-        camera = pylon.InstantCamera(tlFactory.CreateDevice(devices[0]))
-
+        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+        # Register an image event handler that accesses the chunk data.
+        camera.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
         camera.Open()
         # Print the model name of the camera.
         print("Using device ", camera.GetDeviceInfo().GetModelName())
@@ -38,3 +30,51 @@ def update_props(camera, propfile):
         camera: pylon.InstantCamera
         propfile: path to .pfs file"""
     pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
+
+
+def startGrabbing(camera, numberOfImagesToGrab = 100):
+    """start grabbing with the camera"""
+    camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
+
+def stopGrabbing(camera):
+    """start grabbing with the camera"""
+    camera.StopGrabbing()
+
+
+def retrieveResult(camera):
+    """start grabbing with the camera"""
+    #camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
+    # while camera.IsGrabbing():
+    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+
+    if grabResult.GrabSucceeded():
+        # Access the image data.
+        print("SizeX: ", grabResult.Width)
+        print("SizeY: ", grabResult.Height)
+        img = grabResult.Array
+        print("Gray value of first pixel: ", img[0, 0])
+
+        grabResult.Release()
+    
+        return True, img
+    else:
+        return False, None
+
+class ImageEventPrinter(pylon.ImageEventHandler):
+    def OnImagesSkipped(self, camera, countOfSkippedImages):
+        print("OnImagesSkipped event for device ", camera.GetDeviceInfo().GetModelName())
+        print(countOfSkippedImages, " images have been skipped.")
+        print()
+
+    def OnImageGrabbed(self, camera, grabResult):
+        print("OnImageGrabbed event for device ", camera.GetDeviceInfo().GetModelName())
+
+        # Image grabbed successfully?
+        if grabResult.GrabSucceeded():
+            print("SizeX: ", grabResult.GetWidth())
+            print("SizeY: ", grabResult.GetHeight())
+            img = grabResult.GetArray()
+            print("Gray values of first row: ", img[0])
+            print()
+        else:
+            print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())

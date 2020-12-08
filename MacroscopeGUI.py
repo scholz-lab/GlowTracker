@@ -8,6 +8,7 @@ from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
+from kivy.graphics.texture import Texture
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
@@ -135,7 +136,7 @@ class SaveExperiment(GridLayout):
 
 # camera properties
 class CameraProperties(GridLayout):
-       # camera properties
+    # camera properties
     gain = ObjectProperty(None)
     exposure = ObjectProperty(None)
     framerate = ObjectProperty(None)
@@ -168,12 +169,45 @@ class CameraProperties(GridLayout):
             self.framerate.value = 0
 #record and live view buttons
 class RecordButtons(BoxLayout):
-    pass
+    def __init__(self,  **kwargs):
+        super(RecordButtons, self).__init__(**kwargs)
+    
+    def startPreview(self):
+        
+        camera = App.get_running_app().camera
+        if camera is not None:
+            basler.startGrabbing(camera)
+           
+    def stopPreview(self):
+        camera = App.get_running_app().camera
+        if camera is not None:
+            basler.stopGrabbing(camera)
+    def startRecording(self):
+        pass
+    def stopRecording(self):
+        pass
     
     
 # image preview
 class PreviewImage(Image):
-    pass
+    image = ObjectProperty(None)
+    #get the current fps from the camera
+    fps = ObjectProperty(30)
+    def __init__(self,  **kwargs):
+        super(PreviewImage, self).__init__(**kwargs)
+        Clock.schedule_interval(self.update, 1.0 / self.fps)
+    
+    def update(self, dt):
+        camera = App.get_running_app().camera
+        if camera is not None and camera.IsGrabbing():
+            ret, img = basler.retrieveResult(camera)
+            if ret:
+                buf = img.tobytes()
+                image_texture = Texture.create(
+                    size=(img.shape[1], img.shape[0]), colorfmt="luminance"
+                )
+                image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+                self.texture = image_texture
     
 class RuntimeControls(BoxLayout):
     pass

@@ -300,6 +300,7 @@ MainWindow:
         
 ### live camera image
 <PreviewImage>:
+    id: image
     BoxLayout:
         size_hint: (0.6, 0.85)
 
@@ -326,7 +327,8 @@ MainWindow:
     orientation: 'horizontal'
     spacing: 30
     padding: [80,10]
-    Button:
+    ToggleButton:
+        id: liveview 
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
@@ -334,7 +336,11 @@ MainWindow:
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/play_off.png'
         background_down: 'icons/play_on.png'
-    Button: 
+        background_disabled_normal: 'icons/play_disabled.png'
+        on_state: root.startPreview() if self.state=='down' else root.stopPreview()
+        disabled: record.state =='down'
+    ToggleButton: 
+        id: record
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
@@ -342,7 +348,7 @@ MainWindow:
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/record_inactive.png'
         background_down: 'icons/record_active.png'
-
+        on_state: root.startRecording() if self.state=='down' else root.stopRecording()
 
 #################################
 # Right column
