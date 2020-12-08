@@ -54,9 +54,9 @@ class LeftColumn(BoxLayout):
         Clock.schedule_once(self._do_setup)
     
     def _do_setup(self, *l):
-        #pass
         self.savefile = str(self.ids.saveloc.text)
-        self.loadfile = str(self.ids.saveloc.text)
+        self.loadfile = globals.DEFAULT_BASLER
+        self.apply_cam_settings()
     
     def dismiss_popup(self):
         self._popup.dismiss()
@@ -77,7 +77,7 @@ class LeftColumn(BoxLayout):
 
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
-        
+        self.apply_cam_settings()
         #with open(os.path.join(path, filename[0])) as stream:
             ### TODO edit to load the psf file and alter camera settings
             #self.cameraprops.text = stream.read()
@@ -87,13 +87,13 @@ class LeftColumn(BoxLayout):
         self.savefile = os.path.join(path, filename)
         self.ids.saveloc.text = (self.savefile)
         self.dismiss_popup()
-    
-    def on_loadfile(self, instance, value):
+        
+    def apply_cam_settings(self):
         camera = App.get_running_app().camera
         ### TODO this reference is quite ugly, check if more elegant solution is possible
         if self.parent.ids.rightcolumn.ids.connections.ids.cam_connection.state == 'down':
-            print(camera.AcquisitionFrameRate())
-            basler.update_props(camera, propfile=value)
+            print('Updating camera settings')
+            basler.update_props(camera, propfile=self.loadfile)
             self.update_settings_display()
 
     # when file is loaded - update slider values which updates the camera
@@ -103,7 +103,6 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.ids.exposure.value = camera.ExposureTime()
         self.ids.camprops.ids.gain.value = camera.Gain()
         self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
-
 
 
 class MiddleColumn(BoxLayout):
@@ -146,7 +145,7 @@ class CameraProperties(GridLayout):
         camera = App.get_running_app().camera
         if camera is not None:
             camera.Gain= float(self.gain.value)
-            self.exposure.value = camera.Gain()
+            self.gain.value = camera.Gain()
         else:
             self.gain.value = 0
 
@@ -165,7 +164,6 @@ class CameraProperties(GridLayout):
             camera.AcquisitionFrameRateEnable = True
             camera.AcquisitionFrameRate = float(self.framerate.value)
             self.framerate.value = camera.ResultingFrameRate()
-            print(camera.AcquisitionFrameRate())
         else:
             self.framerate.value = 0
 #record and live view buttons
@@ -191,21 +189,30 @@ class Connections(BoxLayout):
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
-        self.connectCamera()
-        self.connectStage()
+        self.stage_connection.state ='down'
+        self.cam_connection.state ='down'
+        #self.connectCamera()
+        #self.connectStage()
     
     def connectCamera(self):
         print('connecting Camera')
         # connect camera
         App.get_running_app().camera = basler.camera_init()
+        #
         if App.get_running_app().camera is None:
             self.cam_connection.state = 'normal'
         else:
-            self.cam_connection.state = 'down'
+            # load default pfs
+            self.parent.parent.ids.leftcolumn.apply_cam_settings()
+            #tmpsettings = self.parent.parent.ids.leftcolumn.loadfile
+            #basler.update_props(App.get_running_app().camera, tmpsettings)
 
     def disconnectCamera(self):
-        #TODO implement disconnecting
-        print('disconnecting')
+        camera = App.get_running_app().camera
+        if App.get_running_app().camera is not None:
+            print('disconnecting')
+            camera.Close()
+        
     def connectStage(self):
         print('connecting Stage')
         #TODO implement disconnecting
@@ -234,7 +241,6 @@ class MacroscopeApp(App):
         # connect camera
         pass
 
-   
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
@@ -248,6 +254,7 @@ class MacroscopeApp(App):
     
     def graceful_exit(self):
         #TODO add connection closing etc. here to make a nice exit
+        self.camera.Close()
         self.stop()
             
 
