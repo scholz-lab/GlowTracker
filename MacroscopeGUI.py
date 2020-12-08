@@ -210,13 +210,9 @@ class RecordButtons(BoxLayout):
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
-    
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
         
-    
-   
-    
 class RuntimeControls(BoxLayout):
     pass
     
