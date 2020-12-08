@@ -167,36 +167,33 @@ class CameraProperties(GridLayout):
             self.framerate.value = camera.ResultingFrameRate()
         else:
             self.framerate.value = 0
+
 #record and live view buttons
 class RecordButtons(BoxLayout):
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
     
     def startPreview(self):
-        
         camera = App.get_running_app().camera
         if camera is not None:
             basler.startGrabbing(camera)
+            # update the image
+            fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
+            print("Display Framerate:", fps)
+            Clock.schedule_interval(self.update, 1.0 / fps)
+            
            
     def stopPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stopGrabbing(camera)
+        Clock.unschedule(self.update)
+
     def startRecording(self):
         pass
     def stopRecording(self):
         pass
-    
-    
-# image preview
-class PreviewImage(Image):
-    image = ObjectProperty(None)
-    #get the current fps from the camera
-    fps = ObjectProperty(30)
-    def __init__(self,  **kwargs):
-        super(PreviewImage, self).__init__(**kwargs)
-        Clock.schedule_interval(self.update, 1.0 / self.fps)
-    
+
     def update(self, dt):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
@@ -207,7 +204,18 @@ class PreviewImage(Image):
                     size=(img.shape[1], img.shape[0]), colorfmt="luminance"
                 )
                 image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-                self.texture = image_texture
+                App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
+    
+    
+# image preview
+class PreviewImage(Image):
+    previewimage = ObjectProperty(None)
+    
+    def __init__(self,  **kwargs):
+        super(PreviewImage, self).__init__(**kwargs)
+        
+    
+   
     
 class RuntimeControls(BoxLayout):
     pass
