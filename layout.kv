@@ -16,14 +16,14 @@ MainWindow:
     rows: 2
     padding: [10,10,10,10]
     spacing: 10
+    MyLogo:
+        size_hint: (0.3, 0.15)
     MyLabel:
         id: title
         text: 'Macroscope GUI'
         font_size: 42
-        size_hint: (0.4, 0.15)
+        size_hint: (0.6, 0.15)
     MyLabel:
-        size_hint: (0.5, 0.15)
-    MyLogo:
         size_hint: (0.1,0.15)
     LeftColumn:
         id: leftcolumn
@@ -303,16 +303,24 @@ MainWindow:
 ### live camera image
 <PreviewImage>:
     size_hint: (0.6, 0.85)
-    Image:
-        texture: None
+    
 
 ### toggle tracking or autofocus
 <RuntimeControls>:
+    #frames: frames
     size_hint: (0.6,0.15)
     RecordButtons:
+        id: recordbuttons
     GridLayout:
         cols: 2
-        rows: 2
+        rows: 3
+        MyLabel:
+            text: 'Frames'
+            color: '#ffffff'
+        MyLabel:
+            id: frames
+            color: '#ffffff'
+            text: str(recordbuttons.counter)
         MyLabel:
             text: 'Autofocus'
             color: '#ffffff'
@@ -439,6 +447,8 @@ MainWindow:
 <MyLogo@Image>:
     keep_ratio: True
     source: 'icons/logoSq.png'
+    spacing: -10
+    border: 0,0,0,0
     
 
 <OnOffButton@ToggleButton>  

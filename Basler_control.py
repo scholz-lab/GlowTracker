@@ -1,5 +1,7 @@
 from pypylon import genicam, pylon
-
+# for saving
+from PIL import Image
+import os
 
 
 #%% Camera initialization
@@ -32,28 +34,23 @@ def update_props(camera, propfile):
     pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
 
 
-def startGrabbing(camera, numberOfImagesToGrab = 100):
+def start_grabbing(camera, numberOfImagesToGrab = 100):
     """start grabbing with the camera"""
     camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
 
-def stopGrabbing(camera):
+def stop_grabbing(camera):
     """start grabbing with the camera"""
     camera.StopGrabbing()
 
 
-def retrieveResult(camera):
+def retrieve_result(camera):
     """start grabbing with the camera"""
     #camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
     # while camera.IsGrabbing():
     grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
 
     if grabResult.GrabSucceeded():
-        # Access the image data.
-        print("SizeX: ", grabResult.Width)
-        print("SizeY: ", grabResult.Height)
         img = grabResult.Array
-        print("Gray value of first pixel: ", img[0, 0])
-
         grabResult.Release()
     
         return True, img
@@ -73,8 +70,13 @@ class ImageEventPrinter(pylon.ImageEventHandler):
         if grabResult.GrabSucceeded():
             print("SizeX: ", grabResult.GetWidth())
             print("SizeY: ", grabResult.GetHeight())
-            img = grabResult.GetArray()
-            print("Gray values of first row: ", img[0])
-            print()
         else:
             print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())
+
+
+def save_image(im,path,fname):
+    """save image in path using fname and ext as extension."""
+    im = Image.fromarray(im)
+    im.save(os.path.join(path, fname))
+
+

@@ -170,34 +170,46 @@ class CameraProperties(GridLayout):
 
 #record and live view buttons
 class RecordButtons(BoxLayout):
+    counter = ObjectProperty(0)
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
     
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            basler.startGrabbing(camera)
+            basler.start_grabbing(camera)
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
             Clock.schedule_interval(self.update, 1.0 / fps)
             
-           
     def stopPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            basler.stopGrabbing(camera)
+            basler.stop_grabbing(camera)
         Clock.unschedule(self.update)
+        self.counter = 0
 
     def startRecording(self):
-        pass
-    def stopRecording(self):
-        pass
+        camera = App.get_running_app().camera
+        if camera is not None:
+            basler.start_grabbing(camera)
+            # update the image
+            fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
+            print("Display Framerate:", fps)
+            Clock.schedule_interval(self.record, 1.0 / fps)
 
-    def update(self, dt):
+    def stopRecording(self):
+        camera = App.get_running_app().camera
+        if camera is not None:
+            basler.stop_grabbing(camera)
+        Clock.unschedule(self.record)
+        self.counter = 0
+
+    def update(self, dt, save = False):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
-            ret, img = basler.retrieveResult(camera)
+            ret, img = basler.retrieve_result(camera)
             if ret:
                 buf = img.tobytes()
                 image_texture = Texture.create(
@@ -205,8 +217,27 @@ class RecordButtons(BoxLayout):
                 )
                 image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
                 App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
-    
-    
+                self.counter += 1
+
+    def record(self, dt):
+        camera = App.get_running_app().camera
+        if camera is not None and camera.IsGrabbing():
+            ret, img = basler.retrieve_result(camera)
+            if ret:
+                # show on GUI
+                buf = img.tobytes()
+                image_texture = Texture.create(
+                    size=(img.shape[1], img.shape[0]), colorfmt="luminance"
+                )
+                image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+                App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
+                # save image to file
+                path =  App.get_running_app().root.ids.leftcolumn.savefile
+                
+                fname = f"basler_{self.counter}{globals.IMG_FORMAT}"
+                basler.save_image(img,path,fname)
+                self.counter += 1
+
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)

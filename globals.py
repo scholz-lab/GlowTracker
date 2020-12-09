@@ -2,3 +2,4 @@
 
 SAVEPATH = "/home/mscholz/Desktop"
 DEFAULT_BASLER = 'settings/default.pfs'
+IMG_FORMAT = '.jpg'
