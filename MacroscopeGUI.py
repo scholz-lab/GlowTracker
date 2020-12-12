@@ -6,6 +6,7 @@ from kivy.lang import Builder
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.core.window import Window
 from kivy.uix.button import Button
+from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
@@ -17,7 +18,7 @@ from kivy.uix.popup import Popup
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty
+from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty
 from kivy.clock import Clock
 import os
 import Zaber_control as stg
@@ -79,9 +80,6 @@ class LeftColumn(BoxLayout):
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
         self.apply_cam_settings()
-        #with open(os.path.join(path, filename[0])) as stream:
-            ### TODO edit to load the psf file and alter camera settings
-            #self.cameraprops.text = stream.read()
         self.dismiss_popup()
     
     def save(self, path, filename):
@@ -107,10 +105,38 @@ class LeftColumn(BoxLayout):
 
 
 class MiddleColumn(BoxLayout):
-    pass
+    runtimecontrols = ObjectProperty(None)
+    previewimage = ObjectProperty(None)
 
 class RightColumn(BoxLayout):
-    pass
+    # store settings from popups
+    nframes = ObjectProperty(None)
+    fileformat = ObjectProperty(None)
+    #
+    def __init__(self,  **kwargs):
+        super(RightColumn, self).__init__(**kwargs)
+        Clock.schedule_once(self._do_setup)
+        self.nframes= str(globals.DEFAULT_FRAMES)
+
+    def _do_setup(self, *l):
+        self.nframes= str(globals.DEFAULT_FRAMES)
+        self.fileformat = globals.IMG_FORMAT
+    def dismiss_popup(self):
+        self._popup.dismiss()
+
+    def show_recording_settings(self):
+        fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
+        content = RecordingSettings(update=self.update, cancel=self.dismiss_popup, \
+                            frames = self.nframes, framerate = str(fps), fileformat = self.fileformat)
+        self._popup = Popup(title="Recording Settings", content=content,
+                            size_hint=(0.5, 0.25))
+        self._popup.open()
+    
+    def update(self, frames):
+        if frames is not None:
+            self.nframes = frames
+        self.dismiss_popup()
+
 # Stage controls
 class XControls(Widget):
     pass
@@ -129,10 +155,15 @@ class LoadCameraProperties(BoxLayout):
 # save location for images and meta data
 class SaveExperiment(GridLayout):
     save = ObjectProperty(None)
-    #savepath = ObjectProperty(None)
-    #filename = StringProperty(None)
     cancel = ObjectProperty(None)
 
+class RecordingSettings(BoxLayout):
+    cancel = ObjectProperty(None)
+    update = ObjectProperty(None)
+    frames = ObjectProperty(None)
+    fileformat = ObjectProperty(None)
+    framerate = ObjectProperty(None)
+    
 
 # camera properties
 class CameraProperties(GridLayout):
@@ -170,9 +201,11 @@ class CameraProperties(GridLayout):
 
 #record and live view buttons
 class RecordButtons(BoxLayout):
-    counter = ObjectProperty(0)
+    recordbutton = ObjectProperty(None)
+
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
+        
     
     def startPreview(self):
         camera = App.get_running_app().camera
@@ -181,30 +214,31 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
-            Clock.schedule_interval(self.update, 1.0 / fps)
+            Clock.schedule_interval(self.update, 1.0 / fps/2)
             
     def stopPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
         Clock.unschedule(self.update)
-        self.counter = 0
+        self.parent.framecounter.value = 0
 
     def startRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            basler.start_grabbing(camera)
+            nframes = int(App.get_running_app().root.ids.rightcolumn.nframes)
+            basler.start_grabbing(camera, numberOfImagesToGrab = nframes, record = True)
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
-            Clock.schedule_interval(self.record, 1.0 / fps)
+            Clock.schedule_interval(self.record, 1.0 / fps/2)
 
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
         Clock.unschedule(self.record)
-        self.counter = 0
+        self.parent.framecounter.value = 0
 
     def update(self, dt, save = False):
         camera = App.get_running_app().camera
@@ -216,8 +250,8 @@ class RecordButtons(BoxLayout):
                     size=(img.shape[1], img.shape[0]), colorfmt="luminance"
                 )
                 image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-                App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
-                self.counter += 1
+                App.get_running_app().root.ids.middlecolumn.previewimage.texture = image_texture
+                self.parent.framecounter.value += 1
 
     def record(self, dt):
         camera = App.get_running_app().camera
@@ -233,11 +267,16 @@ class RecordButtons(BoxLayout):
                 App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
                 # save image to file
                 path =  App.get_running_app().root.ids.leftcolumn.savefile
-                
-                fname = f"basler_{self.counter}{globals.IMG_FORMAT}"
+                ext = App.get_running_app().root.ids.rightcolumn.fileformat
+                fname = f"basler_{self.parent.framecounter.value}{ext}"
                 basler.save_image(img,path,fname)
-                self.counter += 1
+                self.parent.framecounter.value +=  1
+        elif not camera.IsGrabbing():
+            self.recordbutton.state = 'normal'
 
+    
+    def on_counter(self, instance, value):
+        pass
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
@@ -245,9 +284,8 @@ class PreviewImage(Image):
         super(PreviewImage, self).__init__(**kwargs)
         
 class RuntimeControls(BoxLayout):
-    pass
+    framecounter = ObjectProperty(0)
     
-
 # display if hardware is connected
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
@@ -260,8 +298,6 @@ class Connections(BoxLayout):
     def _do_setup(self, *l):
         self.stage_connection.state ='down'
         self.cam_connection.state ='down'
-        #self.connectCamera()
-        #self.connectStage()
     
     def connectCamera(self):
         print('connecting Camera')
@@ -271,10 +307,8 @@ class Connections(BoxLayout):
         if App.get_running_app().camera is None:
             self.cam_connection.state = 'normal'
         else:
-            # load default pfs
+            # load and apply default pfs
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
-            #tmpsettings = self.parent.parent.ids.leftcolumn.loadfile
-            #basler.update_props(App.get_running_app().camera, tmpsettings)
 
     def disconnectCamera(self):
         camera = App.get_running_app().camera
@@ -288,6 +322,10 @@ class Connections(BoxLayout):
     def disconnectStage(self):
         print('disconnecting Stage')
         #TODO implement disconnecting
+
+
+class MyCounter(Label):
+    value = NumericProperty(0)
 
 class ExitApp(BoxLayout):
    stop = ObjectProperty(None)

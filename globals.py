@@ -2,4 +2,5 @@
 
 SAVEPATH = "/home/mscholz/Desktop"
 DEFAULT_BASLER = 'settings/default.pfs'
-IMG_FORMAT = '.jpg'
+IMG_FORMAT = '.tif'
+DEFAULT_FRAMES = 100

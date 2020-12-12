@@ -1,5 +1,5 @@
 #:kivy 2.0
-
+#:import NumericProperty kivy.properties.NumericProperty
 
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -290,6 +290,8 @@ MainWindow:
 #################################
 <MiddleColumn>:
     id: middlecolumn
+    runtimecontrols:runtimecontrols
+    previewimage:previewimage
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
@@ -299,6 +301,7 @@ MainWindow:
         PreviewImage:
             id: previewimage
         RuntimeControls:
+            id:runtimecontrols
         
 ### live camera image
 <PreviewImage>:
@@ -307,7 +310,7 @@ MainWindow:
 
 ### toggle tracking or autofocus
 <RuntimeControls>:
-    #frames: frames
+    framecounter: framecounter
     size_hint: (0.6,0.15)
     RecordButtons:
         id: recordbuttons
@@ -317,10 +320,10 @@ MainWindow:
         MyLabel:
             text: 'Frames'
             color: '#ffffff'
-        MyLabel:
-            id: frames
+        MyCounter:
+            id: framecounter
             color: '#ffffff'
-            text: str(recordbuttons.counter)
+            text: str(self.value)
         MyLabel:
             text: 'Autofocus'
             color: '#ffffff'
@@ -337,8 +340,10 @@ MainWindow:
     orientation: 'horizontal'
     spacing: 30
     padding: [80,10]
+    recordbutton:recordbutton
+    iveviewbutton:liveviewbutton
     ToggleButton:
-        id: liveview 
+        id: liveviewbutton
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
@@ -348,9 +353,9 @@ MainWindow:
         background_down: 'icons/play_on.png'
         background_disabled_normal: 'icons/play_disabled.png'
         on_state: root.startPreview() if self.state=='down' else root.stopPreview()
-        disabled: record.state =='down'
+        disabled: recordbutton.state =='down'
     ToggleButton: 
-        id: record
+        id: recordbutton
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
@@ -375,8 +380,10 @@ MainWindow:
         size_hint: (1, 0.1)
         text: 'Camera'
     MyButton: 
+        id:recording
         size_hint: (1, 0.1)
         text: 'Recording'
+        on_release: root.show_recording_settings()
     MyButton:
         size_hint: (1, 0.1)
         text: 'Stage'
@@ -390,6 +397,42 @@ MainWindow:
         id: connections 
         size_hint: (1,0.2)
  
+### Popup recording Settings
+<RecordingSettings>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    
+    frames: frames
+    framerate : framerate
+    fileformat : fileformat
+    GridLayout:
+        cols : 2
+        Label: 
+            text: 'Frames'
+        TextInput:
+            id: frames
+            text: root.frames
+        Label: 
+            text: 'Framerate'
+        Label:
+            id: framerate
+            text: root.framerate
+        Label: 
+            text: 'Filetype'
+        Label:
+            id: fileformat
+            text: root.fileformat
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Button:
+            text: "Cancel"
+            on_release: root.cancel()
+
+        Button:
+            text: "Confirm"
+            on_release: root.update(frames.text)
 
 ### display if hardware is connected successfully     
 <Connections>:
@@ -455,5 +498,7 @@ MainWindow:
     background_normal: 'icons/connection_off.png'
     background_down: 'icons/connection_on.png'
     
-            
+<MyCounter@Label>:
+    value: 0
+
 

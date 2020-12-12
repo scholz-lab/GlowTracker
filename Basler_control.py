@@ -2,7 +2,8 @@ from pypylon import genicam, pylon
 # for saving
 from PIL import Image
 import os
-
+import time
+from skimage.io import imsave
 
 #%% Camera initialization
 def camera_init():
@@ -14,10 +15,6 @@ def camera_init():
         camera.Open()
         # Print the model name of the camera.
         print("Using device ", camera.GetDeviceInfo().GetModelName())
-        # Loading settings
-        #print("Possible place to read the file defining the camera's settings...")
-        #node_file = "FluorescenceTestLawn.pfs"
-        #pylon.FeaturePersistence.Load(node_file, camera.GetNodeMap(), True)
         return camera
     except genicam.GenericException as e:
         # Error handling.
@@ -34,9 +31,13 @@ def update_props(camera, propfile):
     pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
 
 
-def start_grabbing(camera, numberOfImagesToGrab = 100):
+def start_grabbing(camera, numberOfImagesToGrab = 100, record = False):
     """start grabbing with the camera"""
-    camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
+    
+    if record:
+        camera.StartGrabbingMax(numberOfImagesToGrab,pylon.GrabStrategy_OneByOne)#, pylon.GrabLoop_ProvidedByInstantCamera)
+    else:
+        camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
 def stop_grabbing(camera):
     """start grabbing with the camera"""
@@ -47,12 +48,11 @@ def retrieve_result(camera):
     """start grabbing with the camera"""
     #camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
     # while camera.IsGrabbing():
-    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-
+    grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
+    
     if grabResult.GrabSucceeded():
         img = grabResult.Array
         grabResult.Release()
-    
         return True, img
     else:
         return False, None
@@ -76,7 +76,11 @@ class ImageEventPrinter(pylon.ImageEventHandler):
 
 def save_image(im,path,fname):
     """save image in path using fname and ext as extension."""
-    im = Image.fromarray(im)
-    im.save(os.path.join(path, fname))
-
+    start = time.time()
+    #using PIL - slow
+    #im = Image.fromarray(im)
+    #im.save(os.path.join(path, fname), quality = 100)
+    #using skimage
+    imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
+    print('SAving time: ',time.time() - start)
 
