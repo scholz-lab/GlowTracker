@@ -20,6 +20,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty
 from kivy.clock import Clock
+from threading import Thread
 import os
 import Zaber_control as stg
 import Macroscope_macros as macro
@@ -198,7 +199,8 @@ class CameraProperties(GridLayout):
             self.framerate.value = camera.ResultingFrameRate()
         else:
             self.framerate.value = 0
-
+### TODO check if event unscheduling succesful
+import threading
 #record and live view buttons
 class RecordButtons(BoxLayout):
     recordbutton = ObjectProperty(None)
@@ -231,7 +233,7 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
-            Clock.schedule_interval(self.record, 1.0 / fps/2)
+            Clock.schedule_interval(self.record, 1.0 / fps)
 
     def stopRecording(self):
         camera = App.get_running_app().camera
@@ -255,28 +257,35 @@ class RecordButtons(BoxLayout):
 
     def record(self, dt):
         camera = App.get_running_app().camera
-        if camera is not None and camera.IsGrabbing():
-            ret, img = basler.retrieve_result(camera)
-            if ret:
-                # show on GUI
-                buf = img.tobytes()
-                image_texture = Texture.create(
-                    size=(img.shape[1], img.shape[0]), colorfmt="luminance"
-                )
-                image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-                App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
-                # save image to file
-                path =  App.get_running_app().root.ids.leftcolumn.savefile
-                ext = App.get_running_app().root.ids.rightcolumn.fileformat
-                fname = f"basler_{self.parent.framecounter.value}{ext}"
-                basler.save_image(img,path,fname)
-                self.parent.framecounter.value +=  1
-        elif not camera.IsGrabbing():
-            self.recordbutton.state = 'normal'
+        nframes = int(App.get_running_app().root.ids.rightcolumn.nframes)
+        if camera is not None:
+            if camera.IsGrabbing() and self.parent.framecounter.value < nframes:
+                ret, img = basler.retrieve_result(camera)
+                if ret:
+                    # show on GUI
+                    buf = img.tobytes()
+                    image_texture = Texture.create(
+                        size=(img.shape[1], img.shape[0]), colorfmt="luminance"
+                    )
+                    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+                    App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
+                    #thread1 = threading.Thread(target=self.save, args=(img, ))
+                    #thread1.start()
+                    self.save(img)
+                    self.parent.framecounter.value +=  1
+                    print(self.parent.framecounter.value)
+
+            else:
+                self.recordbutton.state = 'normal'
+
+    def save(self, img):
+        # save image to file
+        path =  App.get_running_app().root.ids.leftcolumn.savefile
+        ext = App.get_running_app().root.ids.rightcolumn.fileformat
+        fname = f"basler_{self.parent.framecounter.value}{ext}"
+        basler.save_image(img,path,fname)
 
     
-    def on_counter(self, instance, value):
-        pass
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
@@ -284,7 +293,9 @@ class PreviewImage(Image):
         super(PreviewImage, self).__init__(**kwargs)
         
 class RuntimeControls(BoxLayout):
-    framecounter = ObjectProperty(0)
+    framecounter = ObjectProperty(rebind = True)
+    def on_framecounter(self, instance, value):
+        self.text = str(value)
     
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -318,10 +329,22 @@ class Connections(BoxLayout):
         
     def connectStage(self):
         print('connecting Stage')
-        #TODO implement disconnecting
+        App.get_running_app().stage = stg.connect_stage(port='/dev/ttyUSB0')
+        if App.get_running_app().stage is None:
+            self.stage_connection.state = 'normal'
+        else:
+            # home stage - do this in a trhead it is slow
+            t = Thread(target=stg.home_stage, args = (App.get_running_app().stage, ))
+            # set daemon to true so the thread dies when app is closed
+            t.daemon = True
+            # start the thread
+            t.start()
+            #stg.home_stage(App.get_running_app().stage)
+        
     def disconnectStage(self):
         print('disconnecting Stage')
-        #TODO implement disconnecting
+        App.get_running_app().stage.close()
+        
 
 
 class MyCounter(Label):
@@ -338,6 +361,7 @@ class MacroscopeApp(App):
         super(MacroscopeApp, self).__init__(**kwargs)
         self.camera = None
         self.stage = None
+    
     def build(self):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
@@ -361,7 +385,8 @@ class MacroscopeApp(App):
     
     def graceful_exit(self):
         #TODO add connection closing etc. here to make a nice exit
-        self.camera.Close()
+        
+        
         self.stop()
             
 

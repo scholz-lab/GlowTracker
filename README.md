@@ -31,3 +31,4 @@ https://www.zaber.com/software/docs/motion-library/ascii/references/python/#axis
         
 - It is advisable to include lines homing your device at the beginning of your code to find its reference position to perform meaningful absolute position movements!      
 
+- on Linux systems, accessing serial ports needs to be allowed for the user running the GUI. In Ubuntu and similar systems the user has to be added to the group 'dialout'.

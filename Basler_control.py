@@ -82,5 +82,5 @@ def save_image(im,path,fname):
     #im.save(os.path.join(path, fname), quality = 100)
     #using skimage
     imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
-    print('SAving time: ',time.time() - start)
+    print('Saving time: ',time.time() - start)
 
