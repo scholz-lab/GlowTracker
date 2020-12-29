@@ -10,11 +10,12 @@ class Stage:
         Initialize a wrapper around the stage and set some limits and speeds.
         :param port: COM port to the stage
         """
-        self.connection = self.connect_stage(port)
+        
         self.units = {'cm': Units.LENGTH_CENTIMETRES, 'mm': Units.LENGTH_MILLIMETRES, \
             'um': Units.LENGTH_MICROMETRES, 'mms': Units.VELOCITY_MILLIMETRES_PER_SECOND, 'ums': Units.VELOCITY_MICROMETRES_PER_SECOND}
-        
-        if self.connection is not None:
+        connection = self.connect_stage(port)
+        if connection is not None:
+            self.connection = connection
             self.assign_axes()
             self.set_maxspeed(speed = 20)
             

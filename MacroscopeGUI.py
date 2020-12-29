@@ -15,6 +15,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.popup import Popup
+from kivy.uix.settings import SettingsWithSidebar
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
@@ -140,6 +141,7 @@ class RightColumn(BoxLayout):
         if frames is not None:
             self.nframes = frames
         self.dismiss_popup()
+
 
 # Stage controls
 class XControls(BoxLayout):
@@ -368,6 +370,8 @@ Window.size = (1280, 800)
 class MacroscopeApp(App):
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
+        # define settings menu style
+        self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion
         ### TODO implement key press fxns
         # Window.bind(on_key_up=self._keyup)
@@ -382,8 +386,19 @@ class MacroscopeApp(App):
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
         return layout
+    # 
+    def build_config(self, config):
+        """
+        Set the default values for the configs sections.
+        """
+        config.read('macroscope.ini')
+        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'ums', 'stage_limit_x':155})
 
-    
+    # use custom settings for our GUI
+    def build_settings(self, settings):
+        """build the settings window"""
+        settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
@@ -401,9 +416,6 @@ class MacroscopeApp(App):
         
         self.stop()
             
-
-            
-       
 
 def reset():
     # Cleaner for the events in memory
