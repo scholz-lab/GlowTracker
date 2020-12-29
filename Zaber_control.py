@@ -27,10 +27,9 @@ def connect_stage(port='COM3'):
             ax.settings.set("maxspeed", 20, Units.VELOCITY_MILLIMETRES_PER_SECOND)
             speed = my_connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
         print("Maximum speed [mm/s]:", speed)
-
+        # set range limits
         return my_connection
         
-
     except Exception:
         print(Exception)
         return None
@@ -42,14 +41,12 @@ def home_stage(connection):
     homes all connected devices & moves axes to starting positions
     necessary if device was disconnected from power source
     '''
-   
-    # set address 1 to the device that is nearest to the computer. From there the others are consecutive integers
+    
     device_list = connection.detect_devices()
 
     for device in device_list:
         device.all_axes.home()
     
-    move_to_start(connection, start = (20,75, 130))
 
 # %% Stage homing & moving to starting position
 def move_to_start(connection, start = (20,75, 130)):
@@ -59,6 +56,20 @@ def move_to_start(connection, start = (20,75, 130)):
     connection.axis_y.move_absolute(start[1], Units.LENGTH_MILLIMETRES, wait_until_idle=False)
     print('Moving axis_z to starting position...')
     connection.axis_z.move_absolute(start[2], Units.LENGTH_MILLIMETRES, wait_until_idle=False)
+
+
+# define generic movement function 
+def move(connection, direction, stepsize_mm):
+    """move the stage in the indicated direction. Stepsize can be positive or negative and is in units of mm."""
+    if direction == 'x':
+        connection.axis_x.move_relative(stepsize_mm, Units.LENGTH_MICROMETRES, wait_until_idle=False)
+    if direction == 'y':
+        connection.axis_y.move_relative(stepsize_mm, Units.LENGTH_MICROMETRES, wait_until_idle=False)
+    if direction =='z':
+        connection.axis_z.move_relative(stepsize_mm, Units.LENGTH_MICROMETRES, wait_until_idle=False)
+    else:
+        print('Direction invalid. Can be "x","y" or "z"')
+    
 
 
 # %% Range limits for axes
@@ -71,3 +82,11 @@ def set_rangelimits(connection, limits = (160,160,155)):
     connection.axis_x.settings.set('limit.max', limits[0], Units.LENGTH_MILLIMETRES)
     connection.axis_y.settings.set('limit.max', limits[1], Units.LENGTH_MILLIMETRES)
     connection.axis_z.settings.set('limit.max', limits[2], Units.LENGTH_MILLIMETRES)
+
+
+def on_connect(connection, home = True, start = (20,75, 130), limits =(160,160,155)):
+    """startup routine to home, set range and move to start if desired. """
+    if home:
+        home_stage(connection)
+    set_rangelimits(connection, limits)
+    move_to_start(connection, start = (20,75, 130))

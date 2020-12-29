@@ -103,6 +103,7 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.ids.exposure.value = camera.ExposureTime()
         self.ids.camprops.ids.gain.value = camera.Gain()
         self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
+    # stage motion functions
 
 
 class MiddleColumn(BoxLayout):
@@ -334,7 +335,7 @@ class Connections(BoxLayout):
             self.stage_connection.state = 'normal'
         else:
             # home stage - do this in a trhead it is slow
-            t = Thread(target=stg.home_stage, args = (App.get_running_app().stage, ))
+            t = Thread(target=stg.on_connect, args = (App.get_running_app().stage,False))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread
