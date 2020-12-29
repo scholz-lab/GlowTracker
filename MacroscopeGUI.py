@@ -339,11 +339,14 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-            #stg.home_stage(App.get_running_app().stage)
+            
         
     def disconnectStage(self):
         print('disconnecting Stage')
-        App.get_running_app().stage.close()
+        if App.get_running_app().stage is None:
+            self.stage_connection.state = 'normal'
+        else:
+            App.get_running_app().stage.close()
         
 
 

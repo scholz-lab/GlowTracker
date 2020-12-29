@@ -24,7 +24,6 @@ def connect_stage(port='COM3'):
             my_connection.axis_z = device3.get_axis(1)
             # set speed
         for ax in [my_connection.axis_x,my_connection.axis_y,my_connection.axis_z]:
-            
             ax.settings.set("maxspeed", 20, Units.VELOCITY_MILLIMETRES_PER_SECOND)
             speed = my_connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
         print("Maximum speed [mm/s]:", speed)
@@ -63,23 +62,12 @@ def move_to_start(connection, start = (20,75, 130)):
 
 
 # %% Range limits for axes
-def set_rangelimits(connection):
+def set_rangelimits(connection, limits = (160,160,155)):
     '''
     sets limit for every device axis separately
     necessary to avoid collision with other set-up elements
     '''
-    
-    device_list = connection.detect_devices()
-    # assign connected devices to IDs & axes variables
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    if len(device_list) > 2:
-        device3 = device_list[2]
-        axis_z = device3.get_axis(1)
-
     # set axes limits in millimetres (max. value is )
-    axis_x.settings.set('limit.max', 160, Units.LENGTH_MILLIMETRES)
-    axis_y.settings.set('limit.max', 160, Units.LENGTH_MILLIMETRES)
-    axis_z.settings.set('limit.max', 155, Units.LENGTH_MILLIMETRES)
+    connection.axis_x.settings.set('limit.max', limits[0], Units.LENGTH_MILLIMETRES)
+    connection.axis_y.settings.set('limit.max', limits[1], Units.LENGTH_MILLIMETRES)
+    connection.axis_z.settings.set('limit.max', limits[2], Units.LENGTH_MILLIMETRES)
