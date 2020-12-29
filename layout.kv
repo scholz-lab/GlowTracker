@@ -1,6 +1,6 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
-#: import partial functools
+#: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
 # middle is the image window
@@ -146,85 +146,84 @@ MainWindow:
 # Stage motion buttons
 #################################
 
-<StageButtonLeftFast@Button>:
+<StageButtonLeftFast@ToggleButton>:
     size_hint: .5, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/LeftButtonNormal_Double.jpg'
     background_down: 'icons/LeftButtonOnPress_Double.jpg'
     
-<StageButtonLeft@Button>:
+<StageButtonLeft@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/LeftButtonNormal.jpg'
     background_down: 'icons/LeftButtonOnPress.jpg'
     
-<StageButtonRightFast@Button>:
+<StageButtonRightFast@ToggleButton>:
     size_hint: .5, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/RightButtonNormal_Double.jpg'
     background_down: 'icons/RightButtonOnPress_Double.jpg'
     
-<StageButtonRight@Button>:
+<StageButtonRight@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/RightButtonNormal.jpg'
     background_down: 'icons/RightButtonOnPress.jpg'
 
 <XControls>:
-    BoxLayout:
-        orientation: 'horizontal'
-        size: root.size
-        pos: root.pos
-        StageButtonLeftFast:            
-            on_press: app.stage.move_rel((-50,0,0), unit = 'um')
-        StageButtonLeft:
-            on_press: app.stage.move_rel((-20,0,0), unit = 'um')
-        Label:
-            text: 'X'
-            font_size: 40
-            size_hint: (0.2,1)
-        StageButtonRight:
-            on_press: app.stage.move_rel((20,0,0), unit = 'um')
-        StageButtonRightFast:            
-            on_press: app.stage.move_rel((50,0,0), unit = 'um')
+    orientation: 'horizontal'
+    pos: root.pos
+    size: root.size
+    StageButtonLeftFast:       
+        on_state: app.stage.move_speed((-500,0,0), 'ums')  if self.state=='down' else app.stage.stop()    
+    StageButtonLeft:
+        on_state: app.stage.move_speed((-200,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
+    Label:
+        text: 'X'
+        font_size: 40
+        size_hint: (0.2,1)
+    StageButtonRight:
+        on_state: app.stage.move_speed((200,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
+    StageButtonRightFast:            
+        on_state: app.stage.move_speed((500,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
 
 <YControls>:
     BoxLayout:
-        orientation: 'horizontal'
-        size: root.size
         pos: root.pos
+        size: root.size
+        orientation: 'horizontal'
         StageButtonLeftFast:            
-            on_press: app.stage.move_rel((0,-500,0), unit = 'um')
+            on_state: app.stage.move_speed((0,-200,0), 'ums')  if self.state=='down' else app.stage.stop() 
         StageButtonLeft:
-            on_press: app.stage.move_rel((0,-200,0), unit = 'um')
+            on_state: app.stage.move_speed((0,-500,0), 'ums')  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Y'
             valign: 'bottom'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_press: app.stage.move_rel((0,200,0), unit = 'um')
+            on_state: app.stage.move_speed((0,200,0), 'ums')  if self.state=='down' else app.stage.stop() 
         StageButtonRightFast:            
-            on_press: app.stage.move_rel((0,500,0), unit = 'um')
+            on_state: app.stage.move_speed((0,500,0), 'ums')  if self.state=='down' else app.stage.stop() 
             
             
 <ZControls>:
     BoxLayout:
-        orientation: 'horizontal'
-        size: root.size
         pos: root.pos
+        size: root.size
+        orientation: 'horizontal'
         StageButtonLeftFast:            
-            on_press: app.stage.move_rel((0,0,-500), unit = 'um')
+            on_state: app.stage.move_speed((0,0,200), 'ums')  if self.state=='down' else app.stage.stop() 
         StageButtonLeft:
-            on_press: app.stage.move_rel((0,0,-200), unit = 'um')
+            on_state: app.stage.move_speed((0,0,500), 'ums')  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Z'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_press: app.stage.move_rel((0,200,0), unit = 'um')
+            on_state: app.stage.move_speed((0,0,200), 'ums')  if self.state=='down' else app.stage.stop() 
         StageButtonRightFast:            
-            on_press: app.stage.move_rel((0,500,0), unit = 'um')
+            on_state: app.stage.move_speed((0,0,500), 'ums')  if self.state=='down' else app.stage.stop() 
 
 #################################
 # Load camera properties - Popup
@@ -376,6 +375,10 @@ MainWindow:
     MyLabel:
         text: 'Settings'
         size_hint: (1, 0.1)
+    MyButton:
+        size_hint: (1, 0.1)
+        text: 'GUI'
+        on_release: app.open_settings()
     MyButton:
         size_hint: (1, 0.1)
         text: 'Camera'

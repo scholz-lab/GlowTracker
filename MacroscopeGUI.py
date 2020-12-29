@@ -21,6 +21,7 @@ from kivy.uix.slider import Slider
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty
 from kivy.clock import Clock
 from threading import Thread
+from functools import partial
 import os
 import Zaber_control as stg
 import Macroscope_macros as macro
@@ -123,6 +124,7 @@ class RightColumn(BoxLayout):
     def _do_setup(self, *l):
         self.nframes= str(globals.DEFAULT_FRAMES)
         self.fileformat = globals.IMG_FORMAT
+    
     def dismiss_popup(self):
         self._popup.dismiss()
 
@@ -140,8 +142,11 @@ class RightColumn(BoxLayout):
         self.dismiss_popup()
 
 # Stage controls
-class XControls(Widget):
-    pass
+class XControls(BoxLayout):
+    def __init__(self,  **kwargs):
+        super(XControls, self).__init__(**kwargs)
+    
+    
 
 class YControls(Widget):
     pass 
@@ -209,7 +214,6 @@ class RecordButtons(BoxLayout):
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
         
-    
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -217,13 +221,13 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
-            Clock.schedule_interval(self.update, 1.0 / fps/2)
+            self.event = Clock.schedule_interval(self.update, 1.0 / fps/2)
             
     def stopPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-        Clock.unschedule(self.update)
+        Clock.unschedule(self.event)
         self.parent.framecounter.value = 0
 
     def startRecording(self):
@@ -234,13 +238,13 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
-            Clock.schedule_interval(self.record, 1.0 / fps)
+            self.event = Clock.schedule_interval(self.record, 1.0 / fps)
 
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-        Clock.unschedule(self.record)
+        Clock.unschedule(self.event)
         self.parent.framecounter.value = 0
 
     def update(self, dt, save = False):
@@ -352,7 +356,6 @@ class Connections(BoxLayout):
             App.get_running_app().stage.disconnect()
         
 
-
 class MyCounter(Label):
     value = NumericProperty(0)
 
@@ -365,6 +368,12 @@ Window.size = (1280, 800)
 class MacroscopeApp(App):
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
+        # bind key presses to stage motion
+        ### TODO implement key press fxns
+        # Window.bind(on_key_up=self._keyup)
+        # Window.bind(on_key_down=self._keydown)
+        # Window.bind(on_key_left=self._keyleft)
+        # Window.bind(on_key_right=self._keyright)
         self.camera = None
         self.stage = None
     
@@ -373,11 +382,8 @@ class MacroscopeApp(App):
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
         return layout
-    # attempt to load camera and stage
-    def on_start(self):
-        # connect camera
-        pass
 
+    
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
