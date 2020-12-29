@@ -176,17 +176,17 @@ MainWindow:
         size: root.size
         pos: root.pos
         StageButtonLeftFast:            
-            on_press: root.moveX_bigStepLeft()
+            on_press: app.stage.move_rel((-50,0,0), unit = 'um')
         StageButtonLeft:
-            on_press: root.moveX_smallStepLeft()
+            on_press: app.stage.move_rel((-20,0,0), unit = 'um')
         Label:
             text: 'X'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_press: root.moveX_smallStepRight()
+            on_press: app.stage.move_rel((20,0,0), unit = 'um')
         StageButtonRightFast:            
-            on_press: root.moveX_bigStepRight()
+            on_press: app.stage.move_rel((50,0,0), unit = 'um')
 
 <YControls>:
     BoxLayout:
@@ -194,18 +194,18 @@ MainWindow:
         size: root.size
         pos: root.pos
         StageButtonLeftFast:            
-            on_press: root.moveY_bigStepLeft()
+            on_press: app.stage.move_rel((0,-500,0), unit = 'um')
         StageButtonLeft:
-            on_press: root.moveY_smallStepLeft()
+            on_press: app.stage.move_rel((0,-200,0), unit = 'um')
         Label:
             text: 'Y'
             valign: 'bottom'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_press: root.moveY_smallStepRight()
+            on_press: app.stage.move_rel((0,200,0), unit = 'um')
         StageButtonRightFast:            
-            on_press: root.moveY_bigStepRight()
+            on_press: app.stage.move_rel((0,500,0), unit = 'um')
             
             
 <ZControls>:
@@ -214,17 +214,17 @@ MainWindow:
         size: root.size
         pos: root.pos
         StageButtonLeftFast:            
-            on_press: root.moveZ_bigStepLeft()
+            on_press: app.stage.move_rel((0,0,-500), unit = 'um')
         StageButtonLeft:
-            on_press: root.moveZ_smallStepLeft()
+            on_press: app.stage.move_rel((0,0,-200), unit = 'um')
         Label:
             text: 'Z'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_press: root.moveZ_smallStepRight()
+            on_press: app.stage.move_rel((0,200,0), unit = 'um')
         StageButtonRightFast:            
-            on_press: root.moveZ_bigStepRight()
+            on_press: app.stage.move_rel((0,500,0), unit = 'um')
 
 #################################
 # Load camera properties - Popup

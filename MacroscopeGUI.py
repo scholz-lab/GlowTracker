@@ -330,12 +330,14 @@ class Connections(BoxLayout):
         
     def connectStage(self):
         print('connecting Stage')
-        App.get_running_app().stage = stg.connect_stage(port='/dev/ttyUSB0')
+        stage = stg.Stage(port='/dev/ttyUSB0')
+        if stage is not None:
+            App.get_running_app().stage = stage
         if App.get_running_app().stage is None:
             self.stage_connection.state = 'normal'
         else:
             # home stage - do this in a trhead it is slow
-            t = Thread(target=stg.on_connect, args = (App.get_running_app().stage,False))
+            t = Thread(target=App.get_running_app().stage.on_connect, args = (False, ))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread
@@ -347,7 +349,7 @@ class Connections(BoxLayout):
         if App.get_running_app().stage is None:
             self.stage_connection.state = 'normal'
         else:
-            App.get_running_app().stage.close()
+            App.get_running_app().stage.disconnect()
         
 
 
