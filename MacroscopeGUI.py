@@ -19,7 +19,7 @@ from kivy.uix.settings import SettingsWithSidebar
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty
+from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty
 from kivy.clock import Clock
 from threading import Thread
 from functools import partial
@@ -333,12 +333,16 @@ class Connections(BoxLayout):
     def connectStage(self):
         print('connecting Stage')
         stage = stg.Stage(port='/dev/ttyUSB0')
+        
         if stage.connection is None:
             self.stage_connection.state = 'normal'
         else:
             App.get_running_app().stage = stage
+            homing = App.get_running_app().config.getboolean('Stage', 'homing')
+            startloc = [float(x) for x in App.get_running_app().config.get('Stage', 'start_loc').split(',')]
+            limits = [float(x) for x in App.get_running_app().config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a trhead it is slow
-            t = Thread(target=App.get_running_app().stage.on_connect, args = (False, ))
+            t = Thread(target=App.get_running_app().stage.on_connect, args = (homing,  startloc, limits))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread
@@ -363,17 +367,24 @@ class ExitApp(BoxLayout):
 Window.size = (1280, 800)
 # load the layout
 class MacroscopeApp(App):
+    vhigh = ConfigParserProperty(20, 
+                    'Stage', 'vhigh', 'app', val_type = float)
+    vlow = ConfigParserProperty(20, 
+                    'Stage', 'vlow', 'app', val_type = float)
+    unit = ConfigParserProperty('mms', 
+                    'Stage', 'speed_unit', 'app', val_type = str)
+    
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
         # define settings menu style
         self.settings_cls = SettingsWithSidebar
-        # bind key presses to stage motion
-        ### TODO implement key press fxns
+        # bind key presses to stage motion - right now also happens in settings!
         Window.bind(on_key_up=self._keyup)
         Window.bind(on_key_down=self._keydown)
-        
+        # hardware
         self.camera = None
         self.stage = stg.Stage(None)
+        
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -392,42 +403,41 @@ class MacroscopeApp(App):
     def build_settings(self, settings):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
         # use arrow key codes here. This might be OS dependenot.
-        ## TODO: define velocities
-        vlow = float(self.config.get('Stage', 'vlow'))
-        vhigh = float(self.config.get('Stage', 'vhigh'))
-        unit = self.config.get('Stage', 'speed_unit')
+        #
+    
         # left arrow - x axis
         if key == 276:
             if 'shift' in modifier:
-                self.stage.move_speed((-vlow,0,0), unit)
-            else: self.stage.move_speed((-vhigh,0,0), unit)
+                self.stage.move_speed((-self.vlow,0,0), unit)
+            else: self.stage.move_speed((-self.vhigh,0,0), unit)
         #right arrow - x-axis
         if key == 275:
             if 'shift' in modifier:
-                self.stage.move_speed((vlow,0,0), unit)
-            else: self.stage.move_speed((vhigh,0,0), unit)
+                self.stage.move_speed((self.vlow,0,0), unit)
+            else: self.stage.move_speed((self.vhigh,0,0), unit)
         # up and down arrow are y stage
         if key == 273:
             if 'shift' in modifier:
-                self.stage.move_speed((0,-vlow,0), unit)
-            else: self.stage.move_speed((0,-vhigh,0), unit)
+                self.stage.move_speed((0,-self.vlow,0), unit)
+            else: self.stage.move_speed((0,-self.vhigh,0), unit)
         if key == 274:
             if 'shift' in modifier:
-                self.stage.move_speed((0,vlow,0), unit)
-            else: self.stage.move_speed((0,vhigh,0), unit)
+                self.stage.move_speed((0,self.vlow,0), unit)
+            else: self.stage.move_speed((0,self.vhigh,0), unit)
         #focus keys -pg up and down for z
         print(key, scancode, codepoint, modifier)
         if key == 280:
             if 'shift' in modifier:
-                self.stage.move_speed((0,0,-vlow), unit)
-            else: self.stage.move_speed((0,0,-vhigh), unit)
+                self.stage.move_speed((0,0,-self.vlow), unit)
+            else: self.stage.move_speed((0,0,-self.vhigh), unit)
         if key == 281:
             if 'shift' in modifier:
-                self.stage.move_speed((0,0,vlow), unit)
-            else: self.stage.move_speed((0,0,vhigh), unit)
+                self.stage.move_speed((0,0,self.vlow), unit)
+            else: self.stage.move_speed((0,0,self.vhigh), unit)
 
     def _keyup(self, *args):
         self.stage.stop()

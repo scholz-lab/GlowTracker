@@ -175,36 +175,37 @@ MainWindow:
     pos: root.pos
     size: root.size
     StageButtonLeftFast:       
-        on_state: app.stage.move_speed((-500,0,0), 'ums')  if self.state=='down' else app.stage.stop()    
+        on_state: app.stage.move_speed((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
     StageButtonLeft:
-        on_state: app.stage.move_speed((-200,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
     Label:
         text: 'X'
         font_size: 40
         size_hint: (0.2,1)
     StageButtonRight:
-        on_state: app.stage.move_speed((200,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
     StageButtonRightFast:            
-        on_state: app.stage.move_speed((500,0,0), 'ums')  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
 
 <YControls>:
     BoxLayout:
         pos: root.pos
         size: root.size
         orientation: 'horizontal'
+        
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,-200,0), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
         StageButtonLeft:
-            on_state: app.stage.move_speed((0,-500,0), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Y'
             valign: 'bottom'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_state: app.stage.move_speed((0,200,0), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
         StageButtonRightFast:            
-            on_state: app.stage.move_speed((0,500,0), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop() 
             
             
 <ZControls>:
@@ -213,17 +214,17 @@ MainWindow:
         size: root.size
         orientation: 'horizontal'
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,0,200), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
         StageButtonLeft:
-            on_state: app.stage.move_speed((0,0,500), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Z'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_state: app.stage.move_speed((0,0,200), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
         StageButtonRightFast:            
-            on_state: app.stage.move_speed((0,0,500), 'ums')  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
 
 #################################
 # Load camera properties - Popup
