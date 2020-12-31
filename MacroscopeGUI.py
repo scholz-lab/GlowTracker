@@ -145,11 +145,7 @@ class RightColumn(BoxLayout):
 
 # Stage controls
 class XControls(BoxLayout):
-    def __init__(self,  **kwargs):
-        super(XControls, self).__init__(**kwargs)
-    
-    
-
+    pass
 class YControls(Widget):
     pass 
     
@@ -330,18 +326,17 @@ class Connections(BoxLayout):
 
     def disconnectCamera(self):
         camera = App.get_running_app().camera
-        if App.get_running_app().camera is not None:
+        if camera is not None:
             print('disconnecting')
             camera.Close()
         
     def connectStage(self):
         print('connecting Stage')
         stage = stg.Stage(port='/dev/ttyUSB0')
-        if stage is not None:
-            App.get_running_app().stage = stage
-        if App.get_running_app().stage is None:
+        if stage.connection is None:
             self.stage_connection.state = 'normal'
         else:
+            App.get_running_app().stage = stage
             # home stage - do this in a trhead it is slow
             t = Thread(target=App.get_running_app().stage.on_connect, args = (False, ))
             # set daemon to true so the thread dies when app is closed
@@ -352,7 +347,7 @@ class Connections(BoxLayout):
         
     def disconnectStage(self):
         print('disconnecting Stage')
-        if App.get_running_app().stage is None:
+        if App.get_running_app().stage.connection is None:
             self.stage_connection.state = 'normal'
         else:
             App.get_running_app().stage.disconnect()
@@ -374,12 +369,11 @@ class MacroscopeApp(App):
         self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion
         ### TODO implement key press fxns
-        # Window.bind(on_key_up=self._keyup)
-        # Window.bind(on_key_down=self._keydown)
-        # Window.bind(on_key_left=self._keyleft)
-        # Window.bind(on_key_right=self._keyright)
+        Window.bind(on_key_up=self._keyup)
+        Window.bind(on_key_down=self._keydown)
+        
         self.camera = None
-        self.stage = None
+        self.stage = stg.Stage(None)
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -398,6 +392,45 @@ class MacroscopeApp(App):
     def build_settings(self, settings):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+    # manage keyboard input for stage and focus
+    def _keydown(self,  instance, key, scancode, codepoint, modifier):
+        # use arrow key codes here. This might be OS dependenot.
+        ## TODO: define velocities
+        vlow = float(self.config.get('Stage', 'vlow'))
+        vhigh = float(self.config.get('Stage', 'vhigh'))
+        unit = self.config.get('Stage', 'speed_unit')
+        # left arrow - x axis
+        if key == 276:
+            if 'shift' in modifier:
+                self.stage.move_speed((-vlow,0,0), unit)
+            else: self.stage.move_speed((-vhigh,0,0), unit)
+        #right arrow - x-axis
+        if key == 275:
+            if 'shift' in modifier:
+                self.stage.move_speed((vlow,0,0), unit)
+            else: self.stage.move_speed((vhigh,0,0), unit)
+        # up and down arrow are y stage
+        if key == 273:
+            if 'shift' in modifier:
+                self.stage.move_speed((0,-vlow,0), unit)
+            else: self.stage.move_speed((0,-vhigh,0), unit)
+        if key == 274:
+            if 'shift' in modifier:
+                self.stage.move_speed((0,vlow,0), unit)
+            else: self.stage.move_speed((0,vhigh,0), unit)
+        #focus keys -pg up and down for z
+        print(key, scancode, codepoint, modifier)
+        if key == 280:
+            if 'shift' in modifier:
+                self.stage.move_speed((0,0,-vlow), unit)
+            else: self.stage.move_speed((0,0,-vhigh), unit)
+        if key == 281:
+            if 'shift' in modifier:
+                self.stage.move_speed((0,0,vlow), unit)
+            else: self.stage.move_speed((0,0,vhigh), unit)
+
+    def _keyup(self, *args):
+        self.stage.stop()
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
@@ -411,9 +444,14 @@ class MacroscopeApp(App):
         self._popup.dismiss()
     
     def graceful_exit(self):
-        #TODO add connection closing etc. here to make a nice exit
-        
-        
+        # disconnect hardware
+        # stop remaining stage motion
+        self.stage.stop()
+        self.stage.disconnect()
+        if self.camera is not None:
+            print('disconnecting')
+            self.camera.Close()
+        # stop the app
         self.stop()
             
 

@@ -10,7 +10,7 @@ class Stage:
         Initialize a wrapper around the stage and set some limits and speeds.
         :param port: COM port to the stage
         """
-        
+        self.connection = None
         self.units = {'cm': Units.LENGTH_CENTIMETRES, 'mm': Units.LENGTH_MILLIMETRES, \
             'um': Units.LENGTH_MICROMETRES, 'mms': Units.VELOCITY_MILLIMETRES_PER_SECOND, 'ums': Units.VELOCITY_MICROMETRES_PER_SECOND}
         connection = self.connect_stage(port)
@@ -46,10 +46,11 @@ class Stage:
 
 
     def set_maxspeed(self, speed = 20):
-        for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
-            ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
-            speed = self.connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
-        print("Maximum speed [mm/s]:", speed)
+        if self.connection is not None:
+            for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
+                ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+                speed = self.connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
+            print("Maximum speed [mm/s]:", speed)
             
 
     #  Stage homing
@@ -58,10 +59,11 @@ class Stage:
         homes all connected devices & moves axes to starting positions
         necessary if device was disconnected from power source
         '''
-        device_list = self.connection.detect_devices()
-        for device in device_list:
-            device.all_axes.home()#wait_until_idle =False)
-    
+        if self.connection is not None:
+            device_list = self.connection.detect_devices()
+            for device in device_list:
+                device.all_axes.home()#wait_until_idle =False)
+        
 
     # Stage moving to a given absolute position 
     def move_abs(self, pos = (20,75, 130), unit = 'mm'):
@@ -70,12 +72,13 @@ class Stage:
                     stepsize (float): can be positive or negative
                     units(str): has to be 'mm' or 'um'
         """
-        self.connection.axis_x.move_absolute(pos[0], self.units[unit], wait_until_idle=False)
-        if len(pos) > 1:
-            self.connection.axis_y.move_absolute(pos[1], self.units[unit], wait_until_idle=False)
-        if len(pos) > 2:
-            self.connection.axis_z.move_absolute(pos[2], self.units[unit], wait_until_idle=False)
-        
+        if self.connection is not None:
+            self.connection.axis_x.move_absolute(pos[0], self.units[unit], wait_until_idle=False)
+            if len(pos) > 1:
+                self.connection.axis_y.move_absolute(pos[1], self.units[unit], wait_until_idle=False)
+            if len(pos) > 2:
+                self.connection.axis_z.move_absolute(pos[2], self.units[unit], wait_until_idle=False)
+            
 
     # define generic movement function 
     def move_rel(self, step, unit = 'um'):
@@ -84,10 +87,11 @@ class Stage:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         """
-        self.connection.axis_x.move_relative(step[0], self.units[unit], wait_until_idle=False)
-        self.connection.axis_y.move_relative(step[1], self.units[unit], wait_until_idle=False)
-        self.connection.axis_z.move_relative(step[2], self.units[unit], wait_until_idle=False)
-    
+        if self.connection is not None:
+            self.connection.axis_x.move_relative(step[0], self.units[unit], wait_until_idle=False)
+            self.connection.axis_y.move_relative(step[1], self.units[unit], wait_until_idle=False)
+            self.connection.axis_z.move_relative(step[2], self.units[unit], wait_until_idle=False)
+        
 
     def move_speed(self, velocity, unit = 'ums'):
         """Move to a given relative location
@@ -95,17 +99,20 @@ class Stage:
                     velocity (tuple, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
-        self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
-        if len(velocity) > 1:
-            self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
-        if len(velocity) > 2:
-            self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
+        if self.connection is not None:
+            print(velocity)
+            self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
+            if len(velocity) > 1:
+                self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
+            if len(velocity) > 2:
+                self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
    
 
     def stop(self):
-        self.connection.axis_x.stop(wait_until_idle = False)
-        self.connection.axis_y.stop(wait_until_idle = False)
-        self.connection.axis_z.stop(wait_until_idle = False)
+        if self.connection is not None:
+            self.connection.axis_x.stop(wait_until_idle = False)
+            self.connection.axis_y.stop(wait_until_idle = False)
+            self.connection.axis_z.stop(wait_until_idle = False)
 
     def set_rangelimits(self, limits = (160,160,155), unit = 'mm'):
         '''
@@ -113,9 +120,10 @@ class Stage:
         Parameters: limits (tuple) 
         '''
         # set axes limits in millimetres (max. value is ?)
-        self.connection.axis_x.settings.set('limit.max', limits[0], self.units[unit])
-        self.connection.axis_y.settings.set('limit.max', limits[1], self.units[unit])
-        self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
+        if self.connection is not None:
+            self.connection.axis_x.settings.set('limit.max', limits[0], self.units[unit])
+            self.connection.axis_y.settings.set('limit.max', limits[1], self.units[unit])
+            self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
     def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155)):
@@ -127,4 +135,5 @@ class Stage:
     
     def disconnect(self):
         """close com port connection."""
-        self.connection.close()
+        if self.connection is not None:
+            self.connection.close()
