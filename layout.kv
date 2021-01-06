@@ -61,6 +61,7 @@ MainWindow:
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
+        on_release: root.run_autofocus_once()
     MyLabel: 
         text: 'Camera Settings'
     CameraProperties:
@@ -194,9 +195,9 @@ MainWindow:
         orientation: 'horizontal'
         
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
-        StageButtonLeft:
             on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        StageButtonLeft:
+            on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Y'
             valign: 'bottom'
@@ -214,9 +215,9 @@ MainWindow:
         size: root.size
         orientation: 'horizontal'
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
         StageButtonLeft:
-            on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
         Label:
             text: 'Z'
             font_size: 40
@@ -300,6 +301,7 @@ MainWindow:
         rows: 2
         PreviewImage:
             id: previewimage
+            texture: app.texture
         RuntimeControls:
             id:runtimecontrols
         

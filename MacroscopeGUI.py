@@ -31,6 +31,8 @@ import Basler_control as basler
 import globals
 # TODO: separate stage from camera in the programs
 # TODO: Structure the GUI such that it shares variables across GUI components
+# helper function
+
 
     
 # main GUI
@@ -105,8 +107,11 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.ids.exposure.value = camera.ExposureTime()
         self.ids.camprops.ids.gain.value = camera.Gain()
         self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
-    # stage motion functions
-
+    # run autofocussing once on current location
+    def run_autofocus_once(self):
+        camera = App.get_running_app().camera
+        stage = App.get_running_app().stage
+        # switch on 
 
 class MiddleColumn(BoxLayout):
     runtimecontrols = ObjectProperty(None)
@@ -249,13 +254,10 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
             ret, img = basler.retrieve_result(camera)
+            
             if ret:
-                buf = img.tobytes()
-                image_texture = Texture.create(
-                    size=(img.shape[1], img.shape[0]), colorfmt="luminance"
-                )
-                image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-                App.get_running_app().root.ids.middlecolumn.previewimage.texture = image_texture
+                # store image as class variable - this will also trigger a canvas update
+                App.get_running_app().image = img
                 self.parent.framecounter.value += 1
 
     def record(self, dt):
@@ -266,18 +268,16 @@ class RecordButtons(BoxLayout):
                 ret, img = basler.retrieve_result(camera)
                 if ret:
                     # show on GUI
-                    buf = img.tobytes()
-                    image_texture = Texture.create(
-                        size=(img.shape[1], img.shape[0]), colorfmt="luminance"
-                    )
-                    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-                    App.get_running_app().root.ids.middlecolumn.ids.previewimage.texture = image_texture
-                    #thread1 = threading.Thread(target=self.save, args=(img, ))
-                    #thread1.start()
-                    self.save(img)
+                    # store image as class variable - this will also trigger a canvas update
+                    App.get_running_app().image = img
+                    # save image in thread
+                    t = Thread(target=self.save, args = (img,))
+                    # set daemon to true so the thread dies when app is closed
+                    t.daemon = True
+                    # start the thread
+                    t.start()
+                    
                     self.parent.framecounter.value +=  1
-                    print(self.parent.framecounter.value)
-
             else:
                 self.recordbutton.state = 'normal'
 
@@ -367,12 +367,17 @@ class ExitApp(BoxLayout):
 Window.size = (1280, 800)
 # load the layout
 class MacroscopeApp(App):
+    # stage configuration properties - these will update when changed in config menu
     vhigh = ConfigParserProperty(20, 
                     'Stage', 'vhigh', 'app', val_type = float)
     vlow = ConfigParserProperty(20, 
                     'Stage', 'vlow', 'app', val_type = float)
     unit = ConfigParserProperty('mms', 
                     'Stage', 'speed_unit', 'app', val_type = str)
+    # stage coordinates and current image
+    texture = ObjectProperty(None, force_dispatch = True, rebind = True)
+    image = ObjectProperty(None, force_dispatch = True, rebind = True)
+    coords = ObjectProperty(None)
     
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
@@ -384,7 +389,7 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
-        
+    
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -407,41 +412,42 @@ class MacroscopeApp(App):
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
         # use arrow key codes here. This might be OS dependenot.
-        #
-    
         # left arrow - x axis
         if key == 276:
             if 'shift' in modifier:
-                self.stage.move_speed((-self.vlow,0,0), unit)
-            else: self.stage.move_speed((-self.vhigh,0,0), unit)
+                self.stage.move_speed((-self.vlow,0,0), self.unit)
+            else: self.stage.move_speed((-self.vhigh,0,0), self.unit)
         #right arrow - x-axis
         if key == 275:
             if 'shift' in modifier:
-                self.stage.move_speed((self.vlow,0,0), unit)
-            else: self.stage.move_speed((self.vhigh,0,0), unit)
+                self.stage.move_speed((self.vlow,0,0), self.unit)
+            else: self.stage.move_speed((self.vhigh,0,0), self.unit)
         # up and down arrow are y stage
         if key == 273:
             if 'shift' in modifier:
-                self.stage.move_speed((0,-self.vlow,0), unit)
-            else: self.stage.move_speed((0,-self.vhigh,0), unit)
+                self.stage.move_speed((0,-self.vlow,0), self.unit)
+            else: self.stage.move_speed((0,-self.vhigh,0), self.unit)
         if key == 274:
             if 'shift' in modifier:
-                self.stage.move_speed((0,self.vlow,0), unit)
-            else: self.stage.move_speed((0,self.vhigh,0), unit)
+                self.stage.move_speed((0,self.vlow,0), self.unit)
+            else: self.stage.move_speed((0,self.vhigh,0), self.unit)
         #focus keys -pg up and down for z
         print(key, scancode, codepoint, modifier)
         if key == 280:
             if 'shift' in modifier:
-                self.stage.move_speed((0,0,-self.vlow), unit)
-            else: self.stage.move_speed((0,0,-self.vhigh), unit)
+                self.stage.move_speed((0,0,-self.vlow), self.unit)
+            else: self.stage.move_speed((0,0,-self.vhigh), self.unit)
         if key == 281:
             if 'shift' in modifier:
-                self.stage.move_speed((0,0,self.vlow), unit)
-            else: self.stage.move_speed((0,0,self.vhigh), unit)
+                self.stage.move_speed((0,0,self.vlow), self.unit)
+            else: self.stage.move_speed((0,0,self.vhigh), self.unit)
 
     def _keyup(self, *args):
         self.stage.stop()
 
+    def on_image(self, instance, value):
+        """update GUI texture when image changes."""
+        self.im_to_texture()
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
@@ -463,7 +469,16 @@ class MacroscopeApp(App):
             self.camera.Close()
         # stop the app
         self.stop()
-            
+    
+    def im_to_texture(self):
+        """helper function to create kivy textures from image arrays."""
+        buf = self.image.tobytes()
+        w,h = self.image.shape
+        image_texture = Texture.create(
+            size=(h,w), colorfmt="luminance"
+        )
+        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+        self.texture = image_texture
 
 def reset():
     # Cleaner for the events in memory
