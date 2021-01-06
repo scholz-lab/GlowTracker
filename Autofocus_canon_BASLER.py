@@ -33,6 +33,7 @@ def init_camera():
         exit_code = 1
     sys.exit(exit_code)
 
+
 def main():
     #%% Hardware initialization
     camera = init_camera()  # camera initialization

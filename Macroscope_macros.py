@@ -1,97 +1,24 @@
 # Macroscope Stage Module
 import math
-import sys
 import numpy as np
 import os
 import csv
 import matplotlib as plt
-from pypylon import genicam, pylon
-from skimage.filters import gaussian, threshold_otsu, threshold_li
+from pypylon import pylon
+from skimage.filters import threshold_otsu
 from skimage.measure import regionprops, label
 from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
 from skimage import io
 from tifffile import imsave, TiffWriter
 from zaber_motion import Library, Units
-from zaber_motion.ascii import Connection
-
-Library.toggle_device_db_store(True)
-
-#%% Camera initialization
-def camera_init():
-    try:
-        # Create an instant camera object with the camera device found first.
-        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
-        camera.Open()
-        # Print the model name of the camera.
-        print("Using device ", camera.GetDeviceInfo().GetModelName())
-        # Loading settings
-        print("Possible place to read the file defining the camera's settings...")
-        nodeFile = "FluorescenceTestLawn.pfs"
-        pylon.FeaturePersistence.Load(nodeFile, camera.GetNodeMap(), True)
-        return camera
-    except genicam.GenericException as e:
-        # Error handling.
-        print("An exception occurred.")
-        print(e.GetDescription())
-        exit_code = 1
-    sys.exit(exit_code)
+from zaber_motion.ascii import connection
+from Basler_control import camera_init
 
 
+#Library.toggle_device_db_store(True)
 
-#%% Stage homing & moving to starting position
-def home_stage():
-    '''
-    homes all connected devices & moves axes to starting positions
-    necessary if device was disconnected from power source
-    '''
-    with Connection.open_serial_port('COM3') as connection:
-        # set address 1 to the device that is nearest to the computer. From there the others are consecutive integers
-        connection.renumber_devices(first_address=1)
-        device_list = connection.detect_devices()
 
-        for device in device_list:
-            device.all_axes.home()
-        
-        device1 = device_list[0]
-        device2 = device_list[1]
-        axis_x = device1.get_axis(1)
-        axis_y = device2.get_axis(1)
-        if len(device_list) > 2:
-            device3 = device_list[2]
-            axis_z = device3.get_axis(1)
-        
-        print('Moving axis_x to starting position...')
-        axis_x.move_absolute(20, Units.LENGTH_MILLIMETRES, wait_until_idle=False)
-        print('Moving axis_y to starting position...')
-        axis_y.move_absolute(75, Units.LENGTH_MILLIMETRES, wait_until_idle=True)
-        print('Moving axis_z to starting position...')
-        axis_z.move_absolute(130, Units.LENGTH_MILLIMETRES, wait_until_idle=True)
-        
-
-#%% Range limits for axes
-def set_rangelimits():
-    '''
-    sets limit for every device axis separately
-    necessary to avoid collision with other set-up elements
-    '''
-    with Connection.open_serial_port('COM3') as connection:
-        connection.renumber_devices(first_address=1)
-        device_list = connection.detect_devices()
-        # assign connected devices to IDs & axes variables    
-        device1 = device_list[0]
-        device2 = device_list[1]
-        axis_x = device1.get_axis(1)
-        axis_y = device2.get_axis(1)
-        if len(device_list) > 2:
-            device3 = device_list[2]
-            axis_z = device3.get_axis(1)
-        
-        # set axes limits in millimetres (max. value is )
-        axis_x.settings.set('limit.max', 160, Units.LENGTH_MILLIMETRES)
-        axis_y.settings.set('limit.max', 160, Units.LENGTH_MILLIMETRES)
-        axis_z.settings.set('limit.max', 155, Units.LENGTH_MILLIMETRES)
-        
 #%% Stage Calibration
 def genCalibrationMatrix(shift):
     '''Calculating calibration matrix from extracted coordinates
@@ -127,7 +54,6 @@ def getImgs(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
     device2 = device_list[1]
     axis_x = device1.get_axis(1)
     axis_y = device2.get_axis(1)
-
     camera = camera_init()
     
     # grabbing images before & after stage movement
@@ -151,7 +77,7 @@ def getImgs(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
     connection.close()
     
 
-def getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
+def getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name='X_Y_AxisMotion.tiff'):
     #getImgs()
     im0 = io.imread(os.path.join(os.getcwd(), im0name))
     im1 = io.imread(os.path.join(os.getcwd(), im1name))
@@ -169,16 +95,17 @@ def writeCalibration(calibrationMatrix, fname='calibrationMatrix.txt'):
 
 def readCalibration(fname):
     return np.loadtxt(os.path.join(os.getcwd(), fname))
-    
+
+
 def stageCalibration():
-    calibmatrix = getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff')
-    writeCalibration(calibmatrix, fname = 'calibrationMatrix.txt')
+    calibmatrix = getCalibrationMatrix(im0name='StartPosition.tiff', im1name='X_Y_AxisMotion.tiff')
+    writeCalibration(calibmatrix, fname='calibrationMatrix.txt')
         
 
 #%% Autofocus using z axis
 def zFocus():
     # Hardware initialization
-    connection =  Connection.open_serial_port('COM3')
+    connection = Connection.open_serial_port('COM3')
     connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
 
@@ -279,20 +206,20 @@ def zFocus():
 
 
 #%% Functions used for centering stage
-def extractWorms(img, area = 0, binfactor = 4, li_init = 10):
+def extractWorms(img, area=0, bin_factor=4, li_init=10):
     '''
     use otsu threshold to obtain mask of pharynx & label them
     input: image of shape (N,M) 
     output: array of worm coordinates.
     '''
-    img = img[::binfactor, ::binfactor]
-    mask = img>threshold_otsu(img)
+    img = img[::bin_factor, ::bin_factor]
+    mask = img > threshold_otsu(img)
     labeled = label(mask)
     coords = []
     for region in regionprops(labeled):
         if area <= region.area:
             y, x = region.centroid
-            coords.append([y*binfactor,x*binfactor])
+            coords.append([y*bin_factor,x*bin_factor])
     return np.array(coords)
 
 
@@ -325,20 +252,18 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     return stageDistances
 
 
-#%% Center stage once
+#%% Center stage onto the labelled worm
 def center_once():
+    # Takes a picture of a worm. Moves the stage to bring it to the center
     # Hardware Initialization
     connection = Connection.open_serial_port('COM3')
     connection.renumber_devices(first_address=1)
     device_list = connection.detect_devices()
-    
     device1 = device_list[0]
     device2 = device_list[1]
     axis_x = device1.get_axis(1)
     axis_y = device2.get_axis(1)
-        
     camera = camera_init()
-    
     # image retrieval & stage motion
     print('Grabbing image...')
     camera.StartGrabbingMax(1)      # taking image
@@ -347,22 +272,21 @@ def center_once():
     print('Starting image analysis...')
     imshape = img.shape
     print('Getting coordinates...')
-    coords = extractWorms(img)      # extracting lawn coordinates from image
+    coords = extractWorms(img)      # extracting worm coordinates from image
     print('Number of coordinates: ', len(coords))
     print('Completing plots...')
     plt.figure()
     plt.imshow(img)
-    [plt.plot(x,y, 'rx') for (y,x) in coords]
+    [plt.plot(x, y, 'rx') for (y, x) in coords]
     print('Image analysis finished.')
-    print('Calculating smallest distance(px) to center...')
-    deltaCoords = getDistanceToCenter(coords, imshape)      # calculating distance of worm coordinates from center of image
+    print('Calculating distance(px) to center...')
+    deltaCoords = getDistanceToCenter(coords, imshape)   # calculating distance of worm coordinates from center of image
     print('Translating distances on image to stage motion...')
     calibrationMatrix = readCalibration(fname = 'calibrationMatrix.txt')   # read in calibration matrix
     stageDistances = getStageDistances(deltaCoords, calibrationMatrix) # get distances for stage axes
     print('Centering...')
     axis_x.move_relative(stageDistances[1], Units.LENGTH_MICROMETRES, wait_until_idle=False)
     axis_y.move_relative(stageDistances[0], Units.LENGTH_MICROMETRES, wait_until_idle=True)
-
     camera.Close()        
     connection.close()      
     print('Image centered.')
