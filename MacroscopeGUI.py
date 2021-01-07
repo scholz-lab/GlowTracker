@@ -33,6 +33,15 @@ import globals
 # TODO: Structure the GUI such that it shares variables across GUI components
 # helper function
 
+def im_to_texture(image):
+    """helper function to create kivy textures from image arrays."""
+    buf = image.tobytes()
+    w,h = image.shape
+    image_texture = Texture.create(
+        size=(h,w), colorfmt="luminance"
+    )
+    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+    return image_texture
 
     
 # main GUI
@@ -67,14 +76,14 @@ class LeftColumn(BoxLayout):
     
     def dismiss_popup(self):
         self._popup.dismiss()
-
+    # popup camera file selector
     def show_load(self):
         content = LoadCameraProperties(load=self.load, cancel=self.dismiss_popup)
         content.ids.filechooser2.path = self.loadfile
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
         self._popup.open()
-
+    # popup experiment dialog selector
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
         content.ids.filechooser.path = self.savefile
@@ -107,11 +116,34 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.ids.exposure.value = camera.ExposureTime()
         self.ids.camprops.ids.gain.value = camera.Gain()
         self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
+    
+    #autofocus popup
+    def show_autofocus(self):
+        content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
+        self._popup = Popup(title="Focus the camera", content=content,
+                            size_hint=(0.9, 0.9))
+        self._popup.open()
+    
     # run autofocussing once on current location
-    def run_autofocus_once(self):
-        camera = App.get_running_app().camera
-        stage = App.get_running_app().stage
-        # switch on 
+    def run_autofocus(self):
+        app = App.get_running_app()
+        #TODO complete this function
+        camera = app.camera
+        stage = app.stage
+        #print(self._popup.content)
+        #print(self._popup.content.add_images(imstack, n))
+        if camera is not None and stage.connection is not None:
+            # get config values
+            stepsize = app.config.getfloat('Autofocus', 'step_size')
+            stepunits = app.config.get('Autofocus', 'step_units')
+            nsteps = app.config.getint('Autofocus', 'nsteps')
+            # run the autofocus
+            stack_variance, imstack, focus_pos = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
+            # update the images shown
+            self._popup.content.delete_images()
+            self._popup.content.add_images(imstack, nsteps)
+
+            
 
 class MiddleColumn(BoxLayout):
     runtimecontrols = ObjectProperty(None)
@@ -166,6 +198,39 @@ class LoadCameraProperties(BoxLayout):
 class SaveExperiment(GridLayout):
     save = ObjectProperty(None)
     cancel = ObjectProperty(None)
+
+# save location for images and meta data
+class AutoFocus(BoxLayout):
+    run_autofocus = ObjectProperty(None)
+    cancel = ObjectProperty(None)
+    def __init__(self,  **kwargs):
+        super(AutoFocus, self).__init__(**kwargs)
+        self.imagewidgets = []
+    
+    def add_images(self, imstack, n):
+         # build as many labelled images as we will need
+        for i in range(n):
+            tmp = Factory.LabelImage()
+            tmp.label.text = f'test {i}'
+            tmp.image.texture = im_to_texture(imstack[i])
+            self.imagewidgets.append(tmp)
+            self.ids.multipleimages.add_widget(tmp)
+    
+    def delete_images(self):
+        for wg in self.imagewidgets:
+            self.ids.multipleimages.remove_widget(wg)
+
+
+
+class LabelImage(BoxLayout):
+    def __init__(self,  **kwargs):
+        super(LabelImage, self).__init__(**kwargs)
+        self.text = ''
+        self.texture = ''
+
+class MultipleImages(GridLayout):
+    pass
+       
 
 class RecordingSettings(BoxLayout):
     cancel = ObjectProperty(None)
@@ -276,7 +341,6 @@ class RecordButtons(BoxLayout):
                     t.daemon = True
                     # start the thread
                     t.start()
-                    
                     self.parent.framecounter.value +=  1
             else:
                 self.recordbutton.state = 'normal'
@@ -341,7 +405,7 @@ class Connections(BoxLayout):
             homing = App.get_running_app().config.getboolean('Stage', 'homing')
             startloc = [float(x) for x in App.get_running_app().config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in App.get_running_app().config.get('Stage', 'stage_limits').split(',')]
-            # home stage - do this in a trhead it is slow
+            # home stage - do this in a thread, it is slow
             t = Thread(target=App.get_running_app().stage.on_connect, args = (homing,  startloc, limits))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True

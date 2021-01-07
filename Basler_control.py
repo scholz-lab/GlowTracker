@@ -31,6 +31,12 @@ def update_props(camera, propfile):
     pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
 
 
+def single_take(camera):
+    """take and return a single image."""
+    camera.StartGrabbingMax(1)
+    ret, img = retrieve_result(camera)
+    return ret, img
+
 def start_grabbing(camera, numberOfImagesToGrab = 100, record = False):
     """start grabbing with the camera"""
     

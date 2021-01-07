@@ -1,5 +1,6 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
+#:import Image kivy.uix.image.Image
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -61,7 +62,7 @@ MainWindow:
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
-        on_release: root.run_autofocus_once()
+        on_release: root.show_autofocus()
     MyLabel: 
         text: 'Camera Settings'
     CameraProperties:
@@ -283,9 +284,34 @@ MainWindow:
             Button:
                 text: "Save"
                 on_release: root.save(filechooser.path, text_input.text)        
+         
+#################################
+# autofocus - Popup
+#################################
+<AutoFocus>:
+    id: autofocus
+    orientation: 'vertical'
+    GridLayout:
+        id: multipleimages
+        cols: app.config.getint('Autofocus', 'nsteps')//2
+        spacing: 30,30
+        
+    Label: 
+        height: 30
+        size_hint_y: None
+        text: 'N = {} Focus steps with {} {} each.'.format(app.config.getint('Autofocus', 'nsteps'),app.config.getfloat('Autofocus', 'step_size'),app.config.get('Autofocus', 'step_units'))
+        
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Button:
+            text: "Cancel"
+            on_release: root.cancel()
 
-            
-            
+        Button:
+            text: "Run Autofocus"
+            on_release: root.run_autofocus()   
+
 #################################
 # Middle column
 #################################
@@ -507,4 +533,16 @@ MainWindow:
 <MyCounter@Label>:
     value: 0
 
-
+<LabelImage@BoxLayout>:
+    orientation: 'vertical'
+    image: image
+    label: label
+    Label:
+        id: label
+        size_hint: (1, 0.1)
+        text: ""
+    Image:
+        id: image
+        keep_ratio: True
+        size_hint: (1,0.9)
+        

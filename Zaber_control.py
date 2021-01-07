@@ -41,8 +41,10 @@ class Stage:
         print("Found {} devices".format(len(device_list)))
         self.connection.axis_x = device_list[0].get_axis(1)
         self.connection.axis_y = device_list[1].get_axis(1)
+        self.no_axes = 2
         if len(device_list) > 2:
             self.connection.axis_z = device_list[2].get_axis(1)
+            self.no_axes = 3
 
 
     def set_maxspeed(self, speed = 20):
@@ -66,33 +68,37 @@ class Stage:
         
 
     # Stage moving to a given absolute position 
-    def move_abs(self, pos = (20,75, 130), unit = 'mm'):
+    def move_abs(self, pos = (20,75, 130), unit = 'mm', wait_until_idle = False):
         """"Move to a given absolute location
         Parameters: pos (tuple): location. Length indicates which axis to move eg. (1) would only move one axis.
                     stepsize (float): can be positive or negative
                     units(str): has to be 'mm' or 'um'
         """
         if self.connection is not None:
-            self.connection.axis_x.move_absolute(pos[0], self.units[unit], wait_until_idle=False)
-            if len(pos) > 1:
-                self.connection.axis_y.move_absolute(pos[1], self.units[unit], wait_until_idle=False)
-            if len(pos) > 2:
-                self.connection.axis_z.move_absolute(pos[2], self.units[unit], wait_until_idle=False)
+            if pos[0] is not None:
+                self.connection.axis_x.move_absolute(pos[0], self.units[unit], wait_until_idle)
+            if len(pos) > 1 and pos[1] is not None :
+                self.connection.axis_y.move_absolute(pos[1], self.units[unit], wait_until_idle)
+            if len(pos) > 2 and self.no_axes > 2:
+                if pos[2] is not None:
+                    self.connection.axis_z.move_absolute(pos[2], self.units[unit], wait_until_idle)
             
 
     # define generic movement function 
-    def move_rel(self, step, unit = 'um'):
+    def move_rel(self, step, unit = 'um', wait_until_idle = False):
         """Move to a given relative location
         Parameters: 
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         """
         if self.connection is not None:
-            self.connection.axis_x.move_relative(step[0], self.units[unit], wait_until_idle=False)
-            self.connection.axis_y.move_relative(step[1], self.units[unit], wait_until_idle=False)
-            self.connection.axis_z.move_relative(step[2], self.units[unit], wait_until_idle=False)
+            self.connection.axis_x.move_relative(step[0], self.units[unit], wait_until_idle)
+            if len(step) > 1:
+                self.connection.axis_y.move_relative(step[1], self.units[unit], wait_until_idle)
+            if len(step) > 2 and self.no_axes >2:
+                self.connection.axis_z.move_relative(step[2], self.units[unit], wait_until_idle)
         
-
+    ###TODO check if we can do , wait_until_idle = False here too
     def move_speed(self, velocity, unit = 'ums'):
         """Move to a given relative location
         Parameters: 
@@ -100,13 +106,23 @@ class Stage:
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
         if self.connection is not None:
-            print(velocity)
+            
             self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
             if len(velocity) > 1:
                 self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
-            if len(velocity) > 2:
+            if len(velocity) > 2 and self.no_axes >2:
                 self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
    
+
+    def get_position(self, unit = 'mm'):
+        """return the current position of the stage for all axes."""
+        pos = []
+        if self.connection is not None:
+            pos.append(self.connection.axis_x.get_position(self.units[unit]))
+            pos.append(self.connection.axis_y.get_position(self.units[unit]))
+            if self.no_axes >2:
+                pos.append(self.connection.axis_z.get_position(self.units[unit]))
+        return pos
 
     def stop(self):
         if self.connection is not None:
