@@ -418,7 +418,8 @@ MainWindow:
         on_release: root.show_recording_settings()
     MyButton:
         size_hint: (1, 0.1)
-        text: 'Stage'
+        text: 'Calibrate'
+        on_release: root.show_calibration()
     MyButton:
         size_hint: (1, 0.1)
         text: 'LEDs'
@@ -466,6 +467,32 @@ MainWindow:
             text: "Confirm"
             on_release: root.update(frames.text)
 
+<AutoCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    GridLayout:
+        cols: 2
+        spacing: 30
+        Image:
+            id: image_one
+        Image:
+            id: image_two
+    
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Label:
+            text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.get('Camera', 'pixelsize')}"
+        Label:
+            text: f"Rotation (rad)  {app.config.get('Camera', 'rotation')}"
+        Button:
+            text: "Cancel"
+            on_release: root.cancel()
+
+        Button:
+            text: "Calibrate"
+            on_release: root.calibrate()
 ### display if hardware is connected successfully     
 <Connections>:
     orientation: 'vertical'

@@ -127,21 +127,20 @@ class LeftColumn(BoxLayout):
     # run autofocussing once on current location
     def run_autofocus(self):
         app = App.get_running_app()
-        #TODO complete this function
+        
         camera = app.camera
         stage = app.stage
-        #print(self._popup.content)
-        #print(self._popup.content.add_images(imstack, n))
+        
         if camera is not None and stage.connection is not None:
             # get config values
             stepsize = app.config.getfloat('Autofocus', 'step_size')
             stepunits = app.config.get('Autofocus', 'step_units')
             nsteps = app.config.getint('Autofocus', 'nsteps')
             # run the autofocus
-            stack_variance, imstack, focus_pos = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
-            # update the images shown
+            _, imstack, _, focal_plane = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
+            # update the images shown - delete old ones if rerunning
             self._popup.content.delete_images()
-            self._popup.content.add_images(imstack, nsteps)
+            self._popup.content.add_images(imstack, nsteps, focal_plane)
 
             
 
@@ -167,6 +166,7 @@ class RightColumn(BoxLayout):
         self._popup.dismiss()
 
     def show_recording_settings(self):
+        """change recording settings."""
         fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
         content = RecordingSettings(update=self.update, cancel=self.dismiss_popup, \
                             frames = self.nframes, framerate = str(fps), fileformat = self.fileformat)
@@ -178,7 +178,34 @@ class RightColumn(BoxLayout):
         if frames is not None:
             self.nframes = frames
         self.dismiss_popup()
+    
+    def show_calibration(self):
+        content = AutoCalibration(calibrate=self.calibrate, cancel=self.dismiss_popup, \
+                            )
+        self._popup = Popup(title="Autocalibration", content=content,
+                            size_hint=(0.9, 0.75))
+        self._popup.open()
+    
+    def calibrate(self):
+        app = App.get_running_app()
+        camera = app.camera
+        stage = app.stage
+        if camera is not None and stage.connection is not None:
+            # get config values
+            stepsize = app.config.getfloat('Calibration', 'step_size')
+            stepunits = app.config.get('Calibration', 'step_units')
+            # run the calibration
+            img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
+            self._popup.content.ids.image_one.texture = im_to_texture(img1)
+            self._popup.content.ids.image_two.texture = im_to_texture(img2)
+            # calculate calibration from shift
+            pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
+            app.config.set('Camera', 'pixelsize', pxsize)
+            app.config.set('Camera', 'rotation', rotation)
 
+class AutoCalibration(BoxLayout):
+    calibrate = ObjectProperty(None)
+    cancel = ObjectProperty(None)
 
 # Stage controls
 class XControls(BoxLayout):
@@ -207,11 +234,14 @@ class AutoFocus(BoxLayout):
         super(AutoFocus, self).__init__(**kwargs)
         self.imagewidgets = []
     
-    def add_images(self, imstack, n):
+    def add_images(self, imstack, n, focal_plane):
          # build as many labelled images as we will need
         for i in range(n):
             tmp = Factory.LabelImage()
-            tmp.label.text = f'test {i}'
+            tmp.label.text = f'Image {i}'
+            if i == focal_plane:
+                tmp.label.color = 'red'
+                tmp.label.text = f'Focus: Image {i}'
             tmp.image.texture = im_to_texture(imstack[i])
             self.imagewidgets.append(tmp)
             self.ids.multipleimages.add_widget(tmp)

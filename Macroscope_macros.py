@@ -20,91 +20,55 @@ import Basler_control as basler
 
 
 #%% Stage Calibration
-def genCalibrationMatrix(shift):
+def genCalibrationMatrix(pixelsize, rotation):
     '''Calculating calibration matrix from extracted coordinates
     input: list of coordinates from images taken between stage movements
     output: calibration matrix, translating image distances to stage & correcting rotation
     '''
+    # Create calibration matrix (Rotation matrix reordered y, x)
+    calibrationMatrix = np.zeros((2,2))
+    calibrationMatrix[0][0] = -math.sin(rotation)/pixelsize
+    calibrationMatrix[0][1] = math.cos(rotation)/pixelsize
+    calibrationMatrix[1][0] = math.cos(rotation)/pixelsize
+    calibrationMatrix[1][1] = math.sin(rotation)/pixelsize
+
+    return calibrationMatrix
+
+
+def take_calibration_images(stage, camera, stepsize, stepunits):
+    """take two image between a defined move of the camera."""
+    # take one image
+    ret, img1 = basler.single_take(camera)
+    # move stage
+    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
+    # take another one
+    ret, img2 = basler.single_take(camera)
+    # undo stage motion
+    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
+    return img1, img2
+
+
+
+def getCalibrationMatrix(im1, im2, stage_step):
+    """generate calibration from correlation between two images separated by known stage distance."""
+    # calculate the shift using FFT correlation
+    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.1)    
+    # Generate calibration matrix
     xTranslation = shift[1]
     yTranslation = shift[0]
     print(shift)
     # Length translation
-    xPixelSize = 500/xTranslation # units of um/px
-    yPixelSize = 500/yTranslation # units of um/px
+    xPixelSize = xTranslation/stage_step # units of um/px
+    yPixelSize = yTranslation/stage_step # units of um/px
     # Rotation angle
     rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
     print(math.degrees(rotation))
-    # Create calibration matrix (Rotation matrix reordered y, x)
-    calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][0] = -yPixelSize*math.sin(rotation)
-    calibrationMatrix[0][1] = yPixelSize*math.cos(rotation)
-    calibrationMatrix[1][0] = xPixelSize*math.cos(rotation)
-    calibrationMatrix[1][1] = xPixelSize*math.sin(rotation)
-
-    return calibrationMatrix
-
-
-def getImgs(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
-    # Hardware initialization
-    connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    camera = camera_init()
-    
-    # grabbing images before & after stage movement
-    counter = 0
-    while counter < 2:
-        print('Grabbing image...')
-        camera.StartGrabbingMax(1)      # taking image
-        grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        img = grabResult.Array          # accessing image data  
-        if counter == 0:
-            imsave(im0name, img)
-            axis_x.move_relative(500, Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            axis_y.move_relative(500, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-        elif counter == 1:
-            imsave(im1name, img)
-        counter += 1
-    # return to origin
-    axis_x.move_relative(-500, Units.LENGTH_MICROMETRES, wait_until_idle=False)
-    axis_y.move_relative(-500, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    camera.Close()
-    connection.close()
-    
-
-def getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name='X_Y_AxisMotion.tiff'):
-    #getImgs()
-    im0 = io.imread(os.path.join(os.getcwd(), im0name))
-    im1 = io.imread(os.path.join(os.getcwd(), im1name))
-    # calculate the shift using FFT correlation
-    shift = phase_cross_correlation(im0, im1, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.1)    
-    # Generate calibration matrix
-    calibrationMatrix = genCalibrationMatrix(shift)         
-    print('Calibration completed.')
-    return calibrationMatrix
-
-
-def writeCalibration(calibrationMatrix, fname='calibrationMatrix.txt'):
-    np.savetxt(os.path.join(os.getcwd(), fname), calibrationMatrix)
-
-
-def readCalibration(fname):
-    return np.loadtxt(os.path.join(os.getcwd(), fname))
-
-
-def stageCalibration():
-    calibmatrix = getCalibrationMatrix(im0name='StartPosition.tiff', im1name='X_Y_AxisMotion.tiff')
-    writeCalibration(calibmatrix, fname='calibrationMatrix.txt')
+    return 0.5*(xPixelSize+yPixelSize), rotation
         
 
 #%% Autofocus using z axis
 def zFocus(stage, camera, stepsize, stepunits, nsteps):
-    """take an image an move the camera."""
+    """take a series of images and move the camera, then calculate focus."""
     stack = []
     zpos = []
     for i in np.arange(0, nsteps):
@@ -126,7 +90,7 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     # Moving to best position
     stage.move_abs((None,None,zpos[focal_plane]))
     # return focus values, images and best location
-    return stack_variance, stack, zpos[focal_plane]
+    return stack_variance, stack, zpos, focal_plane
     
     
 
