@@ -339,6 +339,8 @@ MainWindow:
 ### toggle tracking or autofocus
 <RuntimeControls>:
     framecounter: framecounter
+    autofocuscheckbox: autofocuscheckbox
+    trackingcheckbox: trackingcheckbox
     size_hint: (0.6,0.15)
     RecordButtons:
         id: recordbuttons
@@ -356,10 +358,16 @@ MainWindow:
             text: 'Autofocus'
             color: '#ffffff'
         CheckBox:
+            id: autofocuscheckbox
+            on_state: root.startFocus() if self.state=='down' else root.stopFocus()
+            
         MyLabel:
             text: 'Tracking'
             color: '#ffffff'
         CheckBox:
+            id: trackingcheckbox
+            on_state: root.startTracking() if self.state=='down' else root.stopTracking()
+            
 
 
 
@@ -369,7 +377,7 @@ MainWindow:
     spacing: 30
     padding: [80,10]
     recordbutton:recordbutton
-    iveviewbutton:liveviewbutton
+    liveviewbutton:liveviewbutton
     ToggleButton:
         id: liveviewbutton
         border: 0,0,0,0

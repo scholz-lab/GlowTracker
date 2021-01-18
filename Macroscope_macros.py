@@ -38,11 +38,11 @@ def genCalibrationMatrix(pixelsize, rotation):
 def take_calibration_images(stage, camera, stepsize, stepunits):
     """take two image between a defined move of the camera."""
     # take one image
-    ret, img1 = basler.single_take(camera)
+    _, img1 = basler.single_take(camera)
     # move stage
     stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
     # take another one
-    ret, img2 = basler.single_take(camera)
+    _, img2 = basler.single_take(camera)
     # undo stage motion
     stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
     return img1, img2
@@ -93,7 +93,15 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     return stack_variance, stack, zpos, focal_plane
     
     
+def calculate_focus(im, nbin = 4):
+    """given an image array, calculate a proxy for sharpness."""
+    return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
 
+def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
+    """given past values calculate the next focussing move."""
+    error = (focus_history[-1]-focus_history[-2])/focus_history[-2]#  current - previous. negative means it got worse
+    return error*np.sign(past_motion)*focus_step_factor*min_step
+    
 
 #%% Functions used for centering stage
 def extractWorms(img, area=0, bin_factor=4, li_init=10):

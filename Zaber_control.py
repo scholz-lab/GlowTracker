@@ -19,6 +19,7 @@ class Stage:
             self.assign_axes()
             self.set_maxspeed(speed = 20)
             
+            
     def connect_stage(self, port='COM3'):
         """
         Connects to the zaber stage and pass the connection including the axes
@@ -83,7 +84,37 @@ class Stage:
                 if pos[2] is not None:
                     self.connection.axis_z.move_absolute(pos[2], self.units[unit], wait_until_idle)
             
+    # move single axis
+    def move_x(self, step, unit = 'um', wait_until_idle = False):
+        """Move to a given relative location
+        Parameters: 
+                    step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
+                    units(str): string units, commonly used
+        """
+        if self.connection is not None:
+            self.connection.axis_x.move_relative(step, self.units[unit], wait_until_idle)
+    
+    # move single axis
+    def move_y(self, step, unit = 'um', wait_until_idle = False):
+        """Move to a given relative location
+        Parameters: 
+                    step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
+                    units(str): string units, commonly used
+        """
+        if self.connection is not None:
+            self.connection.axis_y.move_relative(step, self.units[unit], wait_until_idle)
+    
+    # move single axis
+    def move_z(self, step, unit = 'um', wait_until_idle = False):
+        """Move to a given relative location
+        Parameters: 
+                    step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
+                    units(str): string units, commonly used
+        """
+        if self.connection is not None:
+            self.connection.axis_z.move_relative(step, self.units[unit], wait_until_idle)
 
+    
     # define generic movement function 
     def move_rel(self, step, unit = 'um', wait_until_idle = False):
         """Move to a given relative location
@@ -92,11 +123,13 @@ class Stage:
                     units(str): string units, commonly used
         """
         if self.connection is not None:
-            self.connection.axis_x.move_relative(step[0], self.units[unit], wait_until_idle)
-            if len(step) > 1:
-                self.connection.axis_y.move_relative(step[1], self.units[unit], wait_until_idle)
-            if len(step) > 2 and self.no_axes >2:
-                self.connection.axis_z.move_relative(step[2], self.units[unit], wait_until_idle)
+            if step[0] != 0:
+                self.move_x(step[0], unit = self.units[unit], wait_until_idle=wait_until_idle)
+           
+            if len(step) > 1 and step[1] != 0:
+                self.move_y(step[1], unit = self.units[unit], wait_until_idle=wait_until_idle)
+            if len(step) > 2 and self.no_axes >2 and step[2] !=0:
+                self.move_z(step[1], unit = self.units[unit], wait_until_idle=wait_until_idle)
         
     ###TODO check if we can do , wait_until_idle = False here too
     def move_speed(self, velocity, unit = 'ums'):

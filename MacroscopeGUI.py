@@ -24,6 +24,7 @@ from kivy.clock import Clock
 from threading import Thread
 from functools import partial
 import os
+import time
 import Zaber_control as stg
 import Macroscope_macros as macro
 import Basler_control as basler
@@ -308,6 +309,7 @@ import threading
 #record and live view buttons
 class RecordButtons(BoxLayout):
     recordbutton = ObjectProperty(None)
+    liveviewbutton = ObjectProperty(None)
 
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
@@ -320,12 +322,14 @@ class RecordButtons(BoxLayout):
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
             self.event = Clock.schedule_interval(self.update, 1.0 / fps/2)
+        else:
+            self.liveviewbutton.state = 'normal'
             
     def stopPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-        Clock.unschedule(self.event)
+            Clock.unschedule(self.event)
         self.parent.framecounter.value = 0
 
     def startRecording(self):
@@ -337,12 +341,14 @@ class RecordButtons(BoxLayout):
             fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
             self.event = Clock.schedule_interval(self.record, 1.0 / fps)
+        else:
+            self.recordbutton.state = 'normal'
 
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-        Clock.unschedule(self.event)
+            Clock.unschedule(self.event)
         self.parent.framecounter.value = 0
 
     def update(self, dt, save = False):
@@ -391,8 +397,67 @@ class PreviewImage(Image):
         
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind = True)
+    autofocuscheckbox = ObjectProperty(rebind = True)
+    trackingcheckbox = ObjectProperty(rebind = True)
+    def __init__(self,  **kwargs):
+        super(RuntimeControls, self).__init__(**kwargs)
+        self.focus_history = []
+        self.focusevent = None
+        self.focus_motion = 0
+        
+
     def on_framecounter(self, instance, value):
         self.text = str(value)
+    
+    def startFocus(self):
+        # schedule a focus routine
+        camera = App.get_running_app().camera
+        stage = App.get_running_app().stage
+        if camera is not None and stage.connection is not None and camera.IsGrabbing():
+             # get config values
+            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
+            print("Focus Framerate:", focus_fps)
+            z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
+            unit = App.get_running_app().config.get('Livefocus', 'step_units')
+            factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
+            self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+        else:
+            self.autofocuscheckbox.state = 'normal'
+    
+    def stopFocus(self):
+        # unschedule a focus routine
+        if self.focusevent:
+            Clock.unschedule(self.focusevent)
+    
+    def focus(self, z_step, unit, focus_step_factor, *args):
+        # run the actual focus routine - calculate the focus values and correct accordinly.
+        start = time.time()
+        app = App.get_running_app()
+        if not app.camera.IsGrabbing():
+            self.autofocuscheckbox.state = 'normal'
+            return 
+        # calculate current value of focus 
+        self.focus_history.append(macro.calculate_focus(app.image))
+        
+        # calculate control variables if we have enough history
+        if len(self.focus_history)>1 and self.focus_motion !=0 :
+            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step)
+        else:
+            self.focus_motion = z_step
+        app.stage.move_z(self.focus_motion, unit)
+        print(self.focus_motion, self.focus_history)
+        # throw away stuff
+        self.focus_history = self.focus_history[-1:]
+        
+        print('Saving time: ',time.time() - start)
+        return 
+
+    def startTracking(self):
+        ### move stage and write coordinates
+        pass
+
+    def stopTracking(self):
+        pass
     
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -441,7 +506,6 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-            
         
     def disconnectStage(self):
         print('disconnecting Stage')

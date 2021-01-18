@@ -1,0 +1,153 @@
+[   {
+        "type": "title",
+        "title": "Stage"
+    },
+    {
+        "type": "numeric",
+        "title": "Stage speed",
+        "desc": "Set the fast stage speed",
+        "section": "Stage",
+        "key": "vhigh"
+    },
+    {
+        "type": "numeric",
+        "title": "Stage speed",
+        "desc": "Set the slower stage speed",
+        "section": "Stage",
+        "key": "vlow"
+    },
+    {
+        "type": "options",
+        "title": "Stage speed units",
+        "desc": "micrometer/sec or millimeter/sec",
+        "section": "Stage",
+        "key": "speed_unit",
+        "options": ["mms", "ums"]
+    },
+    {
+        "type": "bool",
+        "title": "Home stage on startup",
+        "desc": "Homes the stage every time the GUI is started.",
+        "section": "Stage",
+        "key": "homing"
+    },
+    {
+        "type": "numeric",
+        "title": "Stage limit",
+        "desc": "limit to the stage to avoid obstacles (mm)",
+        "section": "Stage",
+        "key": "stage_limits"
+    },
+    {
+        "type": "numeric",
+        "title": "Start location",
+        "desc": "Move stage to these coordinates (mm)",
+        "section": "Stage",
+        "key": "start_loc"
+    },
+    {
+        "type": "title",
+        "title": "Camera"
+    },
+    {
+        "type": "numeric",
+        "title": "Display framerate",
+        "desc": "how fast to show live images (fps)",
+        "section": "Camera",
+        "key": "display_fps"
+    },
+    {
+        "type": "numeric",
+        "title": "Pixelsize",
+        "desc": "Use calibration to calculate (um/px)",
+        "section": "Camera",
+        "key": "pixelsize"
+    },
+    {
+        "type": "numeric",
+        "title": "Rotation",
+        "desc": "Rotation of camera relative to stage",
+        "section": "Camera",
+        "key": "rotation"
+    },
+    {
+        "type": "title",
+        "title": "Autofocus"
+    },
+    {
+        "type": "numeric",
+        "title": "Steps",
+        "desc": "how many images to take for autofocusing",
+        "section": "Autofocus",
+        "key": "nsteps"
+    },
+    {
+        "type": "numeric",
+        "title": "Stepsize",
+        "desc": "how large are the steps",
+        "section": "Autofocus",
+        "key": "step_size"
+    },
+     {
+        "type": "options",
+        "title": "Focus step units",
+        "desc": "micrometer/sec or millimeter/sec",
+        "section": "Autofocus",
+        "key": "step_units",
+        "options": ["mms", "ums"]
+    },
+    {
+        "type": "title",
+        "title": "Calibration"
+    },
+    {
+        "type": "numeric",
+        "title": "Stepsize",
+        "desc": "how large are the (x,y) steps for autocalibration",
+        "section": "Calibration",
+        "key": "step_size"
+    },
+     {
+        "type": "options",
+        "title": "Calibration step units",
+        "desc": "micrometer/sec or millimeter/sec",
+        "section": "Calibration",
+        "key": "step_units",
+        "options": ["mms", "ums"]
+    },
+    {
+        "type": "title",
+        "title": "Live Focus"
+    },
+    {
+        "type": "numeric",
+        "title": "Minimal focussing step",
+        "desc": "what is the smallest step during live focus?",
+        "section": "Livefocus",
+        "key": "min_step"
+    },
+     {
+        "type": "options",
+        "title": "step units",
+        "desc": "micrometer/sec",
+        "section": "Livefocus",
+        "key": "step_units",
+        "options": ["um"]
+    },
+    {
+        "type": "numeric",
+        "title": "Update rate",
+        "desc": "how often is focused?",
+        "section": "Livefocus",
+        "key": "focus_fps"
+    },
+    {
+        "type": "numeric",
+        "title": "Conversion factor",
+        "desc": "control factor - convert focus units to step units",
+        "section": "Livefocus",
+        "key": "factor"
+    }
+]
+
+
