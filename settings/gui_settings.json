@@ -144,9 +144,27 @@
     {
         "type": "numeric",
         "title": "Conversion factor",
-        "desc": "control factor - convert focus units to step units",
+        "desc": "how many times larger than the min step is the maximum step?",
         "section": "Livefocus",
         "key": "factor"
+    },
+    {
+        "type": "title",
+        "title": "Tracking"
+    },
+    {
+        "type": "numeric",
+        "title": "ROI (Width)",
+        "desc": "Width of the tracking image",
+        "section": "Tracking",
+        "key": "roi_x"
+    },
+    {
+        "type": "numeric",
+        "title": "ROI (Height)",
+        "desc": "Height of the tracking image",
+        "section": "Tracking",
+        "key": "roi_y"
     }
 ]
 

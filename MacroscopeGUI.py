@@ -420,6 +420,7 @@ class RuntimeControls(BoxLayout):
             z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
             unit = App.get_running_app().config.get('Livefocus', 'step_units')
             factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
+            print(factor)
             self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
         else:
             self.autofocuscheckbox.state = 'normal'
@@ -441,11 +442,12 @@ class RuntimeControls(BoxLayout):
         
         # calculate control variables if we have enough history
         if len(self.focus_history)>1 and self.focus_motion !=0 :
-            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step)
+            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step, focus_step_factor)
         else:
             self.focus_motion = z_step
+        print('Move',self.focus_motion,unit)
         app.stage.move_z(self.focus_motion, unit)
-        print(self.focus_motion, self.focus_history)
+        print('Move',self.focus_motion,unit)
         # throw away stuff
         self.focus_history = self.focus_history[-1:]
         

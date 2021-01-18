@@ -21,8 +21,7 @@ import Basler_control as basler
 
 #%% Stage Calibration
 def genCalibrationMatrix(pixelsize, rotation):
-    '''Calculating calibration matrix from extracted coordinates
-    input: list of coordinates from images taken between stage movements
+    '''Calculating calibration matrix from pixelsize and known rotation.
     output: calibration matrix, translating image distances to stage & correcting rotation
     '''
     # Create calibration matrix (Rotation matrix reordered y, x)
@@ -31,7 +30,6 @@ def genCalibrationMatrix(pixelsize, rotation):
     calibrationMatrix[0][1] = math.cos(rotation)/pixelsize
     calibrationMatrix[1][0] = math.cos(rotation)/pixelsize
     calibrationMatrix[1][1] = math.sin(rotation)/pixelsize
-
     return calibrationMatrix
 
 
@@ -46,7 +44,6 @@ def take_calibration_images(stage, camera, stepsize, stepunits):
     # undo stage motion
     stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
     return img1, img2
-
 
 
 def getCalibrationMatrix(im1, im2, stage_step):
@@ -80,29 +77,30 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
                 stage.move_rel((0,0,stepsize), stepunits, wait_until_idle = True)
     stack = np.array(stack)
     zpos = np.array(zpos)
-    print(zpos)
     # Looking for the focal plane using the frame of maximal variance
     average_frame_intensity = np.mean(stack, axis=(2, 1))
     normalized_stack = stack.astype(float)/average_frame_intensity[:, np.newaxis, np.newaxis] 
     stack_variance = np.var(normalized_stack, axis=(2, 1))
     focal_plane = np.argmax(stack_variance)
-    print(focal_plane)
     # Moving to best position
     stage.move_abs((None,None,zpos[focal_plane]))
     # return focus values, images and best location
     return stack_variance, stack, zpos, focal_plane
     
-    
-def calculate_focus(im, nbin = 4):
+# functions for live focusing
+def calculate_focus(im, nbin = 2):
     """given an image array, calculate a proxy for sharpness."""
     return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
 
 def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
     """given past values calculate the next focussing move."""
     error = (focus_history[-1]-focus_history[-2])/focus_history[-2]#  current - previous. negative means it got worse
-    return error*np.sign(past_motion)*focus_step_factor*min_step
+    print(error)
+    if ~np.isfinite(error):
+        return 0
+    return np.sign(past_motion)*np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
     
-
+# functions for tracking
 #%% Functions used for centering stage
 def extractWorms(img, area=0, bin_factor=4, li_init=10):
     '''
