@@ -411,7 +411,6 @@ class RecordButtons(BoxLayout):
         fname = f"basler_{self.parent.framecounter.value}{ext}"
         basler.save_image(img,path,fname)
 
-from kivy.graphics import Ellipse
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
@@ -423,10 +422,19 @@ class PreviewImage(Image):
         if self.collide_point(*touch.pos):
             # by default the touch coordinates are relative to GUI window
             wx, wy = self.to_widget(touch.x, touch.y, relative = True)
-        
-            with self.canvas:
+            image = App.get_running_app().image
+            # get the image we last took
+            if image is not None:
+                texture_w, texture_h = self.norm_image_size
+                #offset if the image  is not fitting inside the widget
+                ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
+
+                h,w = image.shape
+                imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
+                val = image[imy,imx ]
+                print(imx, imy, val)
+                self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
                 
-                print(wx, wy)
 
         
 class RuntimeControls(BoxLayout):

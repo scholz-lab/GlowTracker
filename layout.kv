@@ -322,18 +322,30 @@ MainWindow:
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
-    GridLayout:
-        cols: 1
-        rows: 2
+    BoxLayout:
+        orientation: 'vertical'
+        #cols: 1
+        #rows: 3
+        size: root.size
+        pos: root.pos
         PreviewImage:
             id: previewimage
             texture: app.texture
+            size_hint: (1, 0.75)
+        Label:
+            #size_hint: (None, None)
+            size_hint: (0.1, 0.05)
+            pos_hint: {'right': 1}
+            id: pixelvalue
+            text: '(0,0,0)'
+            color: '#ffffff'
         RuntimeControls:
             id:runtimecontrols
+            size_hint: (1, 0.2)
         
 ### live camera image
 <PreviewImage>:
-    size_hint: (0.6, 0.85)
+    
     
 
 ### toggle tracking or autofocus
@@ -341,7 +353,6 @@ MainWindow:
     framecounter: framecounter
     autofocuscheckbox: autofocuscheckbox
     trackingcheckbox: trackingcheckbox
-    size_hint: (0.6,0.15)
     RecordButtons:
         id: recordbuttons
     GridLayout:
