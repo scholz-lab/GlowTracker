@@ -14,6 +14,7 @@ class Stage:
         self.units = {'cm': Units.LENGTH_CENTIMETRES, 'mm': Units.LENGTH_MILLIMETRES, \
             'um': Units.LENGTH_MICROMETRES, 'mms': Units.VELOCITY_MILLIMETRES_PER_SECOND, 'ums': Units.VELOCITY_MICROMETRES_PER_SECOND}
         connection = self.connect_stage(port)
+        print(connection)
         if connection is not None:
             self.connection = connection
             self.assign_axes()
@@ -27,7 +28,13 @@ class Stage:
         :return: connection to the stage including the axes. Close it before closing using the close method
         """
         try:
-            return Connection.open_serial_port(port)
+            connection = Connection.open_serial_port(port)
+            device_list = connection.detect_devices()
+            print("Found {} devices".format(len(device_list)))
+            if len(device_list) >0:
+                return connection
+            else:
+                return None
         except Exception:
             print(Exception)
             return None

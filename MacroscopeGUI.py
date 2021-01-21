@@ -76,6 +76,9 @@ class LeftColumn(BoxLayout):
         self.apply_cam_settings()
     
     def dismiss_popup(self):
+        app = App.get_running_app()
+        Window.bind(on_key_up=app._keyup)
+        Window.bind(on_key_down=app._keydown)
         self._popup.dismiss()
     # popup camera file selector
     def show_load(self):
@@ -83,6 +86,10 @@ class LeftColumn(BoxLayout):
         content.ids.filechooser2.path = self.loadfile
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
+        #unbind keyboard events
+        app = App.get_running_app()
+        Window.unbind(on_key_up=app._keyup)
+        Window.unbind(on_key_down=app._keydown)
         self._popup.open()
     # popup experiment dialog selector
     def show_save(self):
@@ -90,6 +97,10 @@ class LeftColumn(BoxLayout):
         content.ids.filechooser.path = self.savefile
         self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
+        #unbind keyboard events
+        app = App.get_running_app()
+        Window.unbind(on_key_up=app._keyup)
+        Window.unbind(on_key_down=app._keydown)
         self._popup.open()
 
     def load(self, path, filename):
@@ -123,6 +134,10 @@ class LeftColumn(BoxLayout):
         content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
         self._popup = Popup(title="Focus the camera", content=content,
                             size_hint=(0.9, 0.9))
+        #unbind keyboard events
+        app = App.get_running_app()
+        Window.unbind(on_key_up=app._keyup)
+        Window.unbind(on_key_down=app._keydown)
         self._popup.open()
     
     # run autofocussing once on current location
@@ -164,6 +179,10 @@ class RightColumn(BoxLayout):
         self.fileformat = globals.IMG_FORMAT
     
     def dismiss_popup(self):
+        #rebind keyboard events
+        app = App.get_running_app()
+        Window.bind(on_key_up=app._keyup)
+        Window.bind(on_key_down=app._keydown)
         self._popup.dismiss()
 
     def show_recording_settings(self):
@@ -173,6 +192,10 @@ class RightColumn(BoxLayout):
                             frames = self.nframes, framerate = str(fps), fileformat = self.fileformat)
         self._popup = Popup(title="Recording Settings", content=content,
                             size_hint=(0.5, 0.25))
+        #unbind keyboard events
+        app = App.get_running_app()
+        Window.unbind(on_key_up=app._keyup)
+        Window.unbind(on_key_down=app._keydown)
         self._popup.open()
     
     def update(self, frames):
@@ -388,12 +411,23 @@ class RecordButtons(BoxLayout):
         fname = f"basler_{self.parent.framecounter.value}{ext}"
         basler.save_image(img,path,fname)
 
-    
+from kivy.graphics import Ellipse
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
+    
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
+    # for reading mouse clicks
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            # by default the touch coordinates are relative to GUI window
+            wx, wy = self.to_widget(touch.x, touch.y, relative = True)
+        
+            with self.canvas:
+                
+                print(wx, wy)
+
         
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind = True)
