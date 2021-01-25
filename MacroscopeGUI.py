@@ -44,6 +44,20 @@ def im_to_texture(image):
     image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
     return image_texture
 
+class WarningPopup(Popup):
+    ok_text = StringProperty('OK')
+    text = StringProperty('Label')
+    
+    def __init__(self, text = 'warning', **kwargs):
+        super(WarningPopup, self).__init__(**kwargs)
+        self.text = text
+    
+    def ok(self):
+        self.dismiss()
+    
+    
+
+
     
 # main GUI
 class MainWindow(GridLayout):
@@ -446,8 +460,8 @@ class RuntimeControls(BoxLayout):
         self.focus_history = []
         self.focusevent = None
         self.focus_motion = 0
+        self.trackingevent = None
         
-
     def on_framecounter(self, instance, value):
         self.text = str(value)
     
@@ -462,9 +476,12 @@ class RuntimeControls(BoxLayout):
             z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
             unit = App.get_running_app().config.get('Livefocus', 'step_units')
             factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
-            print(factor)
+            
             self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
         else:
+            self._popup = WarningPopup(title="Autofocus", text = 'Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
             self.autofocuscheckbox.state = 'normal'
     
     def stopFocus(self):
@@ -497,11 +514,33 @@ class RuntimeControls(BoxLayout):
         return 
 
     def startTracking(self):
-        ### move stage and write coordinates
-        pass
+        # schedule a tracking routine
+        camera = App.get_running_app().camera
+        stage = App.get_running_app().stage
+        if camera is not None and stage.connection is not None and camera.IsGrabbing():
+             # get config values
+            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
+            # find an animal and center it once by moving the stage
+
+
+            # reset camera field of view to smaller size around center
+
+            # print("Focus Framerate:", focus_fps)
+            # z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
+            # unit = App.get_running_app().config.get('Livefocus', 'step_units')
+            # factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
+            
+            self.trackingevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+        else:
+            self._popup = WarningPopup(title="Tracking", text = 'Tracking requires a stage, a camera and the camera needs to be grabbing.',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
+            self.trackingcheckbox.state = 'normal'
 
     def stopTracking(self):
-        pass
+        # unschedule a focus routine
+        if self.trackingevent:
+            Clock.unschedule(self.trackingevent)
     
 # display if hardware is connected
 class Connections(BoxLayout):
