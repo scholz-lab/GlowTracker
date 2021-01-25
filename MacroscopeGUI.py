@@ -392,7 +392,6 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
             ret, img = basler.retrieve_result(camera)
-            
             if ret:
                 # store image as class variable - this will also trigger a canvas update
                 App.get_running_app().image = img
@@ -431,25 +430,41 @@ class PreviewImage(Image):
     
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
-    # for reading mouse clicks
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
+        Window.bind(mouse_pos=self.mouse_pos)
+
+    def mouse_pos(self, window, pos):
+        # read mouse hover events and get image value
+        if self.collide_point(*pos):
             # by default the touch coordinates are relative to GUI window
-            wx, wy = self.to_widget(touch.x, touch.y, relative = True)
+            wx, wy = self.to_widget(pos[0], pos[1], relative = True)
             image = App.get_running_app().image
             # get the image we last took
             if image is not None:
                 texture_w, texture_h = self.norm_image_size
-                #offset if the image  is not fitting inside the widget
+                #offset if the image is not fitting inside the widget
                 ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
-
                 h,w = image.shape
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                val = image[imy,imx ]
-                print(imx, imy, val)
+                val = image[imy,imx]
                 self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
-                
 
+    # # for reading mouse clicks
+    # def on_touch_down(self, touch):
+    #     if self.collide_point(*touch.pos):
+    #         # by default the touch coordinates are relative to GUI window
+    #         wx, wy = self.to_widget(touch.x, touch.y, relative = True)
+    #         image = App.get_running_app().image
+    #         # get the image we last took
+    #         print(wx, wy)
+    #         if image is not None:
+    #             texture_w, texture_h = self.norm_image_size
+    #             #offset if the image is not fitting inside the widget
+    #             ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
+    #             h,w = image.shape
+    #             imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
+    #             val = image[imy,imx]
+    #             self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+                
         
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind = True)
@@ -514,15 +529,19 @@ class RuntimeControls(BoxLayout):
         return 
 
     def startTracking(self):
+        app = App.get_running_app()
         # schedule a tracking routine
-        camera = App.get_running_app().camera
-        stage = App.get_running_app().stage
+        camera = app.camera
+        stage = app.stage
         if camera is not None and stage.connection is not None and camera.IsGrabbing():
              # get config values
-            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
+            focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+            roiX, roiY  = app.config.getfloat('Tracking', 'roi_x'), app.config.getfloat('Tracking', 'roi_y')
             # find an animal and center it once by moving the stage
-
-
+            self._popup = WarningPopup(title="Center animal", text = 'Click on an animal in the field of view to center the stage.',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
+            
             # reset camera field of view to smaller size around center
 
             # print("Focus Framerate:", focus_fps)
@@ -530,7 +549,7 @@ class RuntimeControls(BoxLayout):
             # unit = App.get_running_app().config.get('Livefocus', 'step_units')
             # factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
             
-            self.trackingevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+            self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
         else:
             self._popup = WarningPopup(title="Tracking", text = 'Tracking requires a stage, a camera and the camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
@@ -541,6 +560,10 @@ class RuntimeControls(BoxLayout):
         # unschedule a focus routine
         if self.trackingevent:
             Clock.unschedule(self.trackingevent)
+    
+    def tracking(self, dt):
+        # execute actual tracking code
+        pass
     
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -627,6 +650,7 @@ class MacroscopeApp(App):
         # bind key presses to stage motion - right now also happens in settings!
         Window.bind(on_key_up=self._keyup)
         Window.bind(on_key_down=self._keydown)
+        
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
@@ -685,6 +709,8 @@ class MacroscopeApp(App):
 
     def _keyup(self, *args):
         self.stage.stop()
+    
+
 
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
