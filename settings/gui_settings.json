@@ -155,16 +155,23 @@
     {
         "type": "numeric",
         "title": "ROI (Width)",
-        "desc": "Width of the tracking image",
+        "desc": "Width of the tracking image in px",
         "section": "Tracking",
         "key": "roi_x"
     },
     {
         "type": "numeric",
         "title": "ROI (Height)",
-        "desc": "Height of the tracking image",
+        "desc": "Height of the tracking image in px",
         "section": "Tracking",
         "key": "roi_y"
+    },
+    {
+        "type": "numeric",
+        "title": "Capture radius (px)",
+        "desc": "Radius around center that captures a worm",
+        "section": "Tracking",
+        "key": "capture_radius"
     }
 ]
 

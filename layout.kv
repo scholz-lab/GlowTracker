@@ -324,8 +324,6 @@ MainWindow:
     size_hint: (0.6,1)
     BoxLayout:
         orientation: 'vertical'
-        #cols: 1
-        #rows: 3
         size: root.size
         pos: root.pos
         PreviewImage:
@@ -345,8 +343,13 @@ MainWindow:
         
 ### live camera image
 <PreviewImage>:
-    
-    
+    canvas:
+        Color:
+            rgba: 1,0,0,1
+        Line:
+            circle: self.circle
+            id: circle
+            
 
 ### toggle tracking or autofocus
 <RuntimeControls>:

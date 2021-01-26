@@ -10,6 +10,7 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
+from kivy.graphics import Color, Ellipse, Line
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
@@ -19,7 +20,7 @@ from kivy.uix.settings import SettingsWithSidebar
 from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty
+from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock
 from threading import Thread
 from functools import partial
@@ -51,6 +52,8 @@ class WarningPopup(Popup):
     def __init__(self, text = 'warning', **kwargs):
         super(WarningPopup, self).__init__(**kwargs)
         self.text = text
+         # call dismiss_popup in 2 seconds
+        Clock.schedule_once(self.dismiss, 2)
     
     def ok(self):
         self.dismiss()
@@ -427,11 +430,13 @@ class RecordButtons(BoxLayout):
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
-    
+    circle= ListProperty([0, 0, 0])
+    offset = ListProperty([0, 0])
+
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
         Window.bind(mouse_pos=self.mouse_pos)
-
+        
     def mouse_pos(self, window, pos):
         # read mouse hover events and get image value
         if self.collide_point(*pos):
@@ -442,28 +447,64 @@ class PreviewImage(Image):
             if image is not None:
                 texture_w, texture_h = self.norm_image_size
                 #offset if the image is not fitting inside the widget
-                ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
+                ox, oy = self.center_x - texture_w / 2., self.center_y - texture_h/ 2
                 h,w = image.shape
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                val = image[imy,imx]
-                self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+                if 0<=imy<=h and 0<=imx<=w:
+                    val = image[imy,imx]
+                    self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+    
+    def captureCircle(self, pos):
+        """define the capture circle and draw it."""
+        wx, wy = self.to_widget(pos[0], pos[1], relative = True)
+        image = App.get_running_app().image
+        h,w = image.shape
+        # paint a circle and make the coordinates available
+        radius = App.get_running_app().config.getfloat('Tracking', 'capture_radius')
+        # make the circle into pixel units
+        r = radius/w*self.norm_image_size[0]#, radius/h*self.norm_image_size[1]
+        self.circle = (*pos, r)
+        # calculate in image units where the click was relative to image center and return that
+        #offset if the image is not fitting inside the widget
+        texture_w, texture_h = self.norm_image_size
+        #offset if the image is not fitting inside the widget
+        ox, oy = self.to_widget(self.center_x - texture_w / 2., self.center_y - texture_h/ 2., relative = True)
+        imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
+        # offset of click from center of image
+        self.offset = (imy-h//2, imx-w//2)
+        print(self.offset)
+
+    def clearcircle(self):
+        self.circle=(0,0,0)
 
     # # for reading mouse clicks
-    # def on_touch_down(self, touch):
-    #     if self.collide_point(*touch.pos):
-    #         # by default the touch coordinates are relative to GUI window
-    #         wx, wy = self.to_widget(touch.x, touch.y, relative = True)
-    #         image = App.get_running_app().image
-    #         # get the image we last took
-    #         print(wx, wy)
-    #         if image is not None:
-    #             texture_w, texture_h = self.norm_image_size
-    #             #offset if the image is not fitting inside the widget
-    #             ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
-    #             h,w = image.shape
-    #             imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-    #             val = image[imy,imx]
-    #             self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+    def on_touch_down(self, touch):
+        # if a click happens in this widget
+        if self.collide_point(*touch.pos):
+            #if tracking is active and not yet scheduled:
+            if self.parent.parent.ids.runtimecontrols.trackingcheckbox.state =='down' and self.parent.parent.ids.runtimecontrols.trackingevent is None:
+                #
+                self.captureCircle(touch.pos)
+                Clock.schedule_once(lambda dt: self.parent.parent.ids.runtimecontrols.center_image(), 0.5)
+
+                # remove the circle 
+                Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
+                #self.circle = (0,0, 0)
+
+
+#         # by default the touch coordinates are relative to GUI window
+#         wx, wy = self.to_widget(touch.x, touch.y, relative = True)
+#         image = App.get_running_app().image
+#         # get the image we last took
+#         print(wx, wy)
+#         if image is not None:
+#             texture_w, texture_h = self.norm_image_size
+#             #offset if the image is not fitting inside the widget
+#             ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
+#             h,w = image.shape
+#             imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
+#             val = image[imy,imx]
+#             self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
                 
         
 class RuntimeControls(BoxLayout):
@@ -533,23 +574,16 @@ class RuntimeControls(BoxLayout):
         # schedule a tracking routine
         camera = app.camera
         stage = app.stage
-        if camera is not None and stage.connection is not None and camera.IsGrabbing():
+
+        if camera is not None:# and stage.connection is not None and camera.IsGrabbing():
              # get config values
-            focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
-            roiX, roiY  = app.config.getfloat('Tracking', 'roi_x'), app.config.getfloat('Tracking', 'roi_y')
+            
             # find an animal and center it once by moving the stage
-            self._popup = WarningPopup(title="Center animal", text = 'Click on an animal in the field of view to center the stage.',
+            self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-            
-            # reset camera field of view to smaller size around center
-
-            # print("Focus Framerate:", focus_fps)
-            # z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
-            # unit = App.get_running_app().config.get('Livefocus', 'step_units')
-            # factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
-            
-            self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
+            # make a capture circle - all of this happens in Image Widget, and record offset from center, then dispatch the centering routine
+            #schedule a tracking loop
         else:
             self._popup = WarningPopup(title="Tracking", text = 'Tracking requires a stage, a camera and the camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
@@ -557,12 +591,35 @@ class RuntimeControls(BoxLayout):
             self.trackingcheckbox.state = 'normal'
 
     def stopTracking(self):
-        # unschedule a focus routine
+        # unschedule a tracking routine
         if self.trackingevent:
             Clock.unschedule(self.trackingevent)
+            self.trackingevent = None
+            # reset camera params
+            camera = App.get_running_app().camera
+            basler.cam_resetROI(camera)
     
+    def center_image(self):
+        app = App.get_running_app()
+        # schedule a tracking routine
+        camera = app.camera
+        stage = app.stage
+        # smaller FOV for the worm
+        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+        # move stage based on user input - happens here.
+        print(self.parent.parent.ids.previewimage.offset)
+        xstep, ystep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
+        stage.move_x(xstep, unit = 'um', wait_until_idle = False)
+        stage.move_y(ystep, unit = 'um', wait_until_idle = False)
+        # reset camera field of view to smaller size around center
+        basler.cam_setROI(camera, roiX,roiY, center = True)
+        # schedule the tracker
+        focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+        self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
+
     def tracking(self, dt):
         # execute actual tracking code
+        "we are tracking."
         pass
     
 # display if hardware is connected
@@ -642,6 +699,8 @@ class MacroscopeApp(App):
     texture = ObjectProperty(None, force_dispatch = True, rebind = True)
     image = ObjectProperty(None, force_dispatch = True, rebind = True)
     coords = ObjectProperty(None)
+    #
+    
     
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
@@ -654,12 +713,18 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
+        
     
     
     def build(self):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
+        # load some stuff
+        # other useful features
+        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        rotation= self.config.getfloat('Camera', 'rotation')
+        self.calibration_matrix = macro.genCalibrationMatrix(pixelsize, rotation)
         return layout
     # 
     def build_config(self, config):
@@ -710,6 +775,11 @@ class MacroscopeApp(App):
     def _keyup(self, *args):
         self.stage.stop()
     
+    def on_config(self, instance, value):
+        """if config changes, update certain things."""
+        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        rotation= self.config.getfloat('Camera', 'rotation')
+        self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
 
 
     def on_image(self, instance, value):

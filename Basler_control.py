@@ -78,6 +78,7 @@ class ImageEventPrinter(pylon.ImageEventHandler):
             print("SizeY: ", grabResult.GetHeight())
         else:
             print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())
+        return True
 
 
 def save_image(im,path,fname):
@@ -90,3 +91,38 @@ def save_image(im,path,fname):
     imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
     print('Saving time: ',time.time() - start)
 
+
+def cam_setROI(camera, w,h,center = True):
+    """set the ROI for a camera. ox, oy are offsets, w,h are the width and height in pixel, respectively."""
+    if w <= camera.Width.Max and h <= camera.Height.Max:
+        # cam stop
+        camera.AcquisitionStop.Execute()
+        # grab unlock
+        camera.TLParamsLocked = False
+        camera.Width = max(w, camera.Width.Min)
+        camera.Height = max(h, camera.Height.Min)
+        if center:
+            print(camera.Width.Max , camera.Width())
+            camera.OffsetX = max(int(camera.Width.Max - camera.Width())//2, 4)
+            camera.OffsetY = max(int(camera.Height.Max - camera.Height())//2, 4)
+        
+        # grab lock
+        camera.TLParamsLocked = True
+        # cam start
+        camera.AcquisitionStart.Execute()
+
+def cam_resetROI(camera):
+    """set the ROI for a camera to full sensor size."""
+    # cam stop
+    camera.AcquisitionStop.Execute()
+    # grab unlock
+    camera.TLParamsLocked = False
+    camera.OffsetX = 0
+    camera.OffsetY = 0
+    camera.Width = camera.Width.Max
+    camera.Height = camera.Height.Max
+    
+    # grab lock
+    camera.TLParamsLocked = True
+    # cam start
+    camera.AcquisitionStart.Execute()
