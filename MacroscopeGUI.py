@@ -479,6 +479,7 @@ class PreviewImage(Image):
         #offset if the image is not fitting inside the widget
         ox, oy = self.to_widget(self.center_x - texture_w / 2., self.center_y - texture_h/ 2., relative = True)
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
+        print(imy, imx)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
         print(self.offset)
@@ -617,7 +618,8 @@ class RuntimeControls(BoxLayout):
         roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
         # move stage based on user input - happens here.
         print(self.parent.parent.ids.previewimage.offset)
-        xstep, ystep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
+        ystep, xstep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
+        print(xstep, ystep)
         stage.move_x(xstep, unit = 'um', wait_until_idle = False)
         stage.move_y(ystep, unit = 'um', wait_until_idle = False)
         # reset camera field of view to smaller size around center

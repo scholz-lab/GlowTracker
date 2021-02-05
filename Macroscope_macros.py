@@ -26,10 +26,10 @@ def genCalibrationMatrix(pixelsize, rotation):
     '''
     # Create calibration matrix (Rotation matrix reordered y, x)
     calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][0] = -math.sin(rotation)/pixelsize
-    calibrationMatrix[0][1] = math.cos(rotation)/pixelsize
-    calibrationMatrix[1][0] = math.cos(rotation)/pixelsize
-    calibrationMatrix[1][1] = math.sin(rotation)/pixelsize
+    calibrationMatrix[0][0] = -math.sin(rotation)*pixelsize
+    calibrationMatrix[0][1] = math.cos(rotation)*pixelsize
+    calibrationMatrix[1][0] = math.cos(rotation)*pixelsize
+    calibrationMatrix[1][1] = math.sin(rotation)*pixelsize
     return calibrationMatrix
 
 

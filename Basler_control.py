@@ -70,14 +70,14 @@ class ImageEventPrinter(pylon.ImageEventHandler):
         print()
 
     def OnImageGrabbed(self, camera, grabResult):
-        print("OnImageGrabbed event for device ", camera.GetDeviceInfo().GetModelName())
+        # print("OnImageGrabbed event for device ", camera.GetDeviceInfo().GetModelName())
 
-        # Image grabbed successfully?
-        if grabResult.GrabSucceeded():
-            print("SizeX: ", grabResult.GetWidth())
-            print("SizeY: ", grabResult.GetHeight())
-        else:
-            print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())
+        # # Image grabbed successfully?
+        # if grabResult.GrabSucceeded():
+        #     print("SizeX: ", grabResult.GetWidth())
+        #     print("SizeY: ", grabResult.GetHeight())
+        # else:
+        #     print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())
         return True
 
 
