@@ -129,14 +129,13 @@ class Stage:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         """
-        if self.connection is not None:
-            if step[0] != 0:
-                self.move_x(step[0], unit = self.units[unit], wait_until_idle=wait_until_idle)
-           
-            if len(step) > 1 and step[1] != 0:
-                self.move_y(step[1], unit = self.units[unit], wait_until_idle=wait_until_idle)
-            if len(step) > 2 and self.no_axes >2 and step[2] !=0:
-                self.move_z(step[1], unit = self.units[unit], wait_until_idle=wait_until_idle)
+       
+        if step[0] != 0:
+            self.move_x(step[0], unit = unit, wait_until_idle=wait_until_idle)
+        if len(step) > 1 and step[1] != 0:
+            self.move_y(step[1], unit = unit, wait_until_idle=wait_until_idle)
+        if len(step) > 2 and self.no_axes >2 and step[2] !=0:
+            self.move_z(step[1], unit = unit, wait_until_idle=wait_until_idle)
         
     ###TODO check if we can do , wait_until_idle = False here too
     def move_speed(self, velocity, unit = 'ums'):

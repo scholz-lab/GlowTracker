@@ -505,9 +505,11 @@ MainWindow:
         size_hint_y: None
         height: 30
         Label:
-            text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.get('Camera', 'pixelsize')}"
+            id: pxsize
+            text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
         Label:
-            text: f"Rotation (rad)  {app.config.get('Camera', 'rotation')}"
+            id: rotation
+            text: f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
         Button:
             text: "Cancel"
             on_release: root.cancel()

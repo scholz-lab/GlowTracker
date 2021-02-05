@@ -49,17 +49,16 @@ def take_calibration_images(stage, camera, stepsize, stepunits):
 def getCalibrationMatrix(im1, im2, stage_step):
     """generate calibration from correlation between two images separated by known stage distance."""
     # calculate the shift using FFT correlation
-    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.1)    
+    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
     # Generate calibration matrix
     xTranslation = shift[1]
     yTranslation = shift[0]
-    print(shift)
+    print(shift, stage_step)
     # Length translation
-    xPixelSize = xTranslation/stage_step # units of um/px
-    yPixelSize = yTranslation/stage_step # units of um/px
+    xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
+    yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
     # Rotation angle
-    rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
-    print(math.degrees(rotation))
+    rotation = math.atan2(xTranslation, yTranslation) 
     return 0.5*(xPixelSize+yPixelSize), rotation
         
 
@@ -68,13 +67,16 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     """take a series of images and move the camera, then calculate focus."""
     stack = []
     zpos = []
+    stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
     for i in np.arange(0, nsteps):
             ret, img = basler.single_take(camera)
             pos = stage.get_position()
+            print(pos)
             if ret and len(pos)>2:
                 stack.append(img)
                 zpos.append(pos[2])
-                stage.move_rel((0,0,stepsize), stepunits, wait_until_idle = True)
+                print(stepunits)
+                stage.move_z(stepsize, stepunits, wait_until_idle = True)
     stack = np.array(stack)
     zpos = np.array(zpos)
     # Looking for the focal plane using the frame of maximal variance
@@ -84,6 +86,7 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     focal_plane = np.argmax(stack_variance)
     # Moving to best position
     stage.move_abs((None,None,zpos[focal_plane]))
+    print(zpos, stack_variance)
     # return focus values, images and best location
     return stack_variance, stack, zpos, focal_plane
     

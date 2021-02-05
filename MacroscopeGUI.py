@@ -165,6 +165,8 @@ class LeftColumn(BoxLayout):
         stage = app.stage
         
         if camera is not None and stage.connection is not None:
+            # stop grabbing
+            app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # get config values
             stepsize = app.config.getfloat('Autofocus', 'step_size')
             stepunits = app.config.get('Autofocus', 'step_units')
@@ -232,6 +234,8 @@ class RightColumn(BoxLayout):
         camera = app.camera
         stage = app.stage
         if camera is not None and stage.connection is not None:
+            # stop camera if already running
+            app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # get config values
             stepsize = app.config.getfloat('Calibration', 'step_size')
             stepunits = app.config.get('Calibration', 'step_units')
@@ -243,6 +247,11 @@ class RightColumn(BoxLayout):
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
+            app.calibration_matrix =  macro.genCalibrationMatrix(pxsize, rotation)
+            #update labels shown
+            self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
+            self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
+
 
 class AutoCalibration(BoxLayout):
     calibrate = ObjectProperty(None)
@@ -775,11 +784,15 @@ class MacroscopeApp(App):
     def _keyup(self, *args):
         self.stage.stop()
     
-    def on_config(self, instance, value):
+    def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
-        pixelsize = self.config.getfloat('Camera', 'pixelsize')
-        rotation= self.config.getfloat('Camera', 'rotation')
-        self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
+        if config is self.config:
+            token = (section, key)
+            if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
+                print('updated matrix')
+                pixelsize = self.config.getfloat('Camera', 'pixelsize')
+                rotation= self.config.getfloat('Camera', 'rotation')
+                self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
 
 
     def on_image(self, instance, value):
