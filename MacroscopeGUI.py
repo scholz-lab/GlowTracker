@@ -383,14 +383,19 @@ class RecordButtons(BoxLayout):
         self.parent.framecounter.value = 0
 
     def startRecording(self):
-        camera = App.get_running_app().camera
+        app = App.get_running_app()
+        camera = app.camera
+
         if camera is not None:
-            nframes = int(App.get_running_app().root.ids.rightcolumn.nframes)
-            basler.start_grabbing(camera, numberOfImagesToGrab = nframes, record = True)
+            # stop camera if already running
+            app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+
             # update the image
-            fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
+            fps = app.root.ids.leftcolumn.ids.camprops.framerate.value
             print("Display Framerate:", fps)
             self.event = Clock.schedule_interval(self.record, 1.0 / fps)
+            nframes = int(app.root.ids.rightcolumn.nframes)
+            basler.start_grabbing(camera, numberOfImagesToGrab = nframes, record = True)
         else:
             self.recordbutton.state = 'normal'
 
@@ -461,7 +466,7 @@ class PreviewImage(Image):
                 ox, oy = cx - texture_w / 2., cy - texture_h/ 2
                 h,w = image.shape
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                if 0<=imy<=h and 0<=imx<=w:
+                if 0<=imy<h and 0<=imx<w:
                     val = image[imy,imx]
                     self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
 
@@ -603,6 +608,7 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
 
+
     def stopTracking(self):
         # unschedule a tracking routine
         if self.trackingevent:
@@ -612,6 +618,7 @@ class RuntimeControls(BoxLayout):
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
     
+
     def center_image(self):
         app = App.get_running_app()
         # schedule a tracking routine
@@ -620,9 +627,9 @@ class RuntimeControls(BoxLayout):
         # smaller FOV for the worm
         roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
         # move stage based on user input - happens here.
-        print(self.parent.parent.ids.previewimage.offset)
+        #print(self.parent.parent.ids.previewimage.offset)
         ystep, xstep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
-        print("Move stage (x,y)", xstep, ystep)
+        #print("Move stage (x,y)", xstep, ystep)
         stage.move_x(xstep, unit = 'um', wait_until_idle = False)
         stage.move_y(ystep, unit = 'um', wait_until_idle = False)
         # reset camera field of view to smaller size around center
@@ -631,10 +638,23 @@ class RuntimeControls(BoxLayout):
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
         self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
 
-    def tracking(self, dt):
+    def tracking(self,*args):
         # execute actual tracking code
         "we are tracking."
-        pass
+        app = App.get_running_app()
+        stage = app.stage
+        img = app.image
+        # threshold and find objects
+        coords = macro.extractWorms(img, area=50, bin_factor=1, li_init=10)
+        # if we find stuff move
+        if len(coords) > 0:
+            print(len(coords))
+            offset = macro.getDistanceToCenter(coords, img.shape)
+            ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+            stage.move_x(xstep, unit = 'um', wait_until_idle = False)
+            stage.move_y(ystep, unit = 'um', wait_until_idle = False)
+            print("Move stage (x,y)", xstep, ystep)
+        
     
 # display if hardware is connected
 class Connections(BoxLayout):

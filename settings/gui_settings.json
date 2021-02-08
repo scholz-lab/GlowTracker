@@ -32,14 +32,14 @@
         "key": "homing"
     },
     {
-        "type": "numeric",
+        "type": "string",
         "title": "Stage limit",
         "desc": "limit to the stage to avoid obstacles (mm)",
         "section": "Stage",
         "key": "stage_limits"
     },
     {
-        "type": "numeric",
+        "type": "string",
         "title": "Start location",
         "desc": "Move stage to these coordinates (mm)",
         "section": "Stage",

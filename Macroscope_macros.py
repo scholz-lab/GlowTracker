@@ -5,7 +5,7 @@ import os
 import csv
 import matplotlib.pylab as plt
 from pypylon import pylon
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_otsu, threshold_li
 from skimage.measure import regionprops, label
 from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
@@ -117,7 +117,7 @@ def extractWorms(img, area=0, bin_factor=4, li_init=10):
     labeled = label(mask)
     coords = []
     for region in regionprops(labeled):
-        if area <= region.area:
+        if region.area >=area:
             y, x = region.centroid
             coords.append([y*bin_factor,x*bin_factor])
     return np.array(coords)
@@ -129,17 +129,19 @@ def getDistanceToCenter(coords, imshape):
     input: list of all worm coordinates & tuple of image shape
     output: list of distances(px) of closest worm to center
     '''
-    centerCoords = [px/2 for px in imshape]
+    #centerCoords = [px/2 for px in imshape]
     # calculate maximal distance from center in field of view
-    smallestDistanceToCenter = math.sqrt((imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2)
-    for worm in coords:
-        distanceToCenter = math.sqrt((centerCoords[0] - worm[0])**2 + (centerCoords[1] - worm[1])**2)
-        if distanceToCenter < smallestDistanceToCenter:
-            smallestDistanceToCenter = distanceToCenter    
-            deltaY = worm[0] - centerCoords[0] # y coordinates are inverted relative to axis
-            deltaX = centerCoords[1] - worm[1]
-            deltaCoords = [deltaY, deltaX]
-    return deltaCoords
+    #smallestDistanceToCenter = (imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2
+    h,w = imshape
+    current_distance = h**2+w**2
+    yc, xc = 0,0
+    for (y,x) in coords:
+        distanceToCenter = (h//2 - y)**2 + (w//2-x)**2
+        if distanceToCenter < current_distance:
+            current_distance  = distanceToCenter    
+            yc, xc = y,x
+    # return offset from center for closest object
+    return yc-h//2, xc-w//2
 
 
 def getStageDistances(deltaCoords, calibrationMatrix):
