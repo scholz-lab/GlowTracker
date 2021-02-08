@@ -26,10 +26,10 @@ def genCalibrationMatrix(pixelsize, rotation):
     '''
     # Create calibration matrix (Rotation matrix reordered y, x)
     calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][0] = -math.sin(rotation)*pixelsize
     calibrationMatrix[0][1] = math.cos(rotation)*pixelsize
-    calibrationMatrix[1][0] = math.cos(rotation)*pixelsize
+    calibrationMatrix[0][0] = -math.sin(rotation)*pixelsize
     calibrationMatrix[1][1] = math.sin(rotation)*pixelsize
+    calibrationMatrix[1][0] = math.cos(rotation)*pixelsize
     return calibrationMatrix
 
 
@@ -57,8 +57,9 @@ def getCalibrationMatrix(im1, im2, stage_step):
     # Length translation
     xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
     yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
-    # Rotation angle
-    rotation = math.atan2(xTranslation, yTranslation) 
+    # Rotation angle - image angle versus stage motion 
+    # (45 degrees - both axes move the same amount)
+    rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
     return 0.5*(xPixelSize+yPixelSize), rotation
         
 

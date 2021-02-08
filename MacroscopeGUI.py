@@ -247,6 +247,7 @@ class RightColumn(BoxLayout):
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
+            app.config.write()
             app.calibration_matrix =  macro.genCalibrationMatrix(pxsize, rotation)
             #update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
@@ -456,12 +457,14 @@ class PreviewImage(Image):
             if image is not None:
                 texture_w, texture_h = self.norm_image_size
                 #offset if the image is not fitting inside the widget
-                ox, oy = self.center_x - texture_w / 2., self.center_y - texture_h/ 2
+                cx, cy = self.to_widget(self.center_x, self.center_y, relative = True)
+                ox, oy = cx - texture_w / 2., cy - texture_h/ 2
                 h,w = image.shape
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
                 if 0<=imy<=h and 0<=imx<=w:
                     val = image[imy,imx]
                     self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+
     
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
@@ -477,12 +480,12 @@ class PreviewImage(Image):
         #offset if the image is not fitting inside the widget
         texture_w, texture_h = self.norm_image_size
         #offset if the image is not fitting inside the widget
-        ox, oy = self.to_widget(self.center_x - texture_w / 2., self.center_y - texture_h/ 2., relative = True)
+        cx, cy = self.to_widget(self.center_x, self.center_y, relative = True)
+        ox, oy = cx - texture_w / 2., cy - texture_h/ 2
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-        print(imy, imx)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
-        print(self.offset)
+        
 
     def clearcircle(self):
         self.circle=(0,0,0)
@@ -619,7 +622,7 @@ class RuntimeControls(BoxLayout):
         # move stage based on user input - happens here.
         print(self.parent.parent.ids.previewimage.offset)
         ystep, xstep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
-        print(xstep, ystep)
+        print("Move stage (x,y)", xstep, ystep)
         stage.move_x(xstep, unit = 'um', wait_until_idle = False)
         stage.move_y(ystep, unit = 'um', wait_until_idle = False)
         # reset camera field of view to smaller size around center
