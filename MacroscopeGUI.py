@@ -23,6 +23,7 @@ from kivy.uix.slider import Slider
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock
 from threading import Thread
+import threading
 from functools import partial
 import os
 import time
@@ -31,8 +32,6 @@ import Macroscope_macros as macro
 import Basler_control as basler
 
 import globals
-# TODO: separate stage from camera in the programs
-# TODO: Structure the GUI such that it shares variables across GUI components
 # helper function
 
 def im_to_texture(image):
@@ -58,45 +57,38 @@ class WarningPopup(Popup):
     def ok(self):
         self.dismiss()
     
-    
 
-
-    
 # main GUI
 class MainWindow(GridLayout):
-    expPath = StringProperty()
-    def __init__(self,  **kwargs):
-        super(MainWindow, self).__init__(**kwargs)
-        # experimental path
-        self.expPath = globals.SAVEPATH
-        Clock.schedule_once(self._do_setup)
-    # Note: Work around: IDs are not available at init, 
-    # so we schedule an update for the path at one frame later (when app is already running)
-    def _do_setup(self, *l):
-        # display save location
-        self.ids.leftcolumn.ids.saveloc.text = self.expPath
-
+    pass
 
 class LeftColumn(BoxLayout):
     # file saving and loading
     loadfile = ObjectProperty(None)
     savefile = ObjectProperty(None)
     cameraprops = ObjectProperty(None)
+    saveloc = ObjectProperty(None) 
     #
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
         Clock.schedule_once(self._do_setup)
     
+
     def _do_setup(self, *l):
-        self.savefile = str(self.ids.saveloc.text)
-        self.loadfile = globals.DEFAULT_BASLER
+        self.savefile =  App.get_running_app().config.get("Experiment", "exppath")
+        self.loadfile = App.get_running_app().config.get('Camera', 'default_settings')
         self.apply_cam_settings()
+
+    def path_validate(self):
+        print('changed')
     
+
     def dismiss_popup(self):
         app = App.get_running_app()
         Window.bind(on_key_up=app._keyup)
         Window.bind(on_key_down=app._keydown)
         self._popup.dismiss()
+
     # popup camera file selector
     def show_load(self):
         content = LoadCameraProperties(load=self.load, cancel=self.dismiss_popup)
@@ -108,6 +100,7 @@ class LeftColumn(BoxLayout):
         Window.unbind(on_key_up=app._keyup)
         Window.unbind(on_key_down=app._keydown)
         self._popup.open()
+
     # popup experiment dialog selector
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
@@ -120,16 +113,19 @@ class LeftColumn(BoxLayout):
         Window.unbind(on_key_down=app._keydown)
         self._popup.open()
 
+
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
         self.apply_cam_settings()
         self.dismiss_popup()
     
+
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
-        self.ids.saveloc.text = (self.savefile)
+        self.saveloc.text = (self.savefile)
         self.dismiss_popup()
         
+
     def apply_cam_settings(self):
         camera = App.get_running_app().camera
         ### TODO this reference is quite ugly, check if more elegant solution is possible
@@ -137,6 +133,7 @@ class LeftColumn(BoxLayout):
             print('Updating camera settings')
             basler.update_props(camera, propfile=self.loadfile)
             self.update_settings_display()
+
 
     # when file is loaded - update slider values which updates the camera
     def update_settings_display(self):
@@ -146,6 +143,7 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.ids.gain.value = camera.Gain()
         self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
     
+
     #autofocus popup
     def show_autofocus(self):
         content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
@@ -157,13 +155,12 @@ class LeftColumn(BoxLayout):
         Window.unbind(on_key_down=app._keydown)
         self._popup.open()
     
+
     # run autofocussing once on current location
     def run_autofocus(self):
         app = App.get_running_app()
-        
         camera = app.camera
         stage = app.stage
-        
         if camera is not None and stage.connection is not None:
             # stop grabbing
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
@@ -178,7 +175,6 @@ class LeftColumn(BoxLayout):
             self._popup.content.add_images(imstack, nsteps, focal_plane)
 
             
-
 class MiddleColumn(BoxLayout):
     runtimecontrols = ObjectProperty(None)
     previewimage = ObjectProperty(None)
@@ -217,11 +213,13 @@ class RightColumn(BoxLayout):
         Window.unbind(on_key_down=app._keydown)
         self._popup.open()
     
+
     def update(self, frames):
         if frames is not None:
             self.nframes = frames
         self.dismiss_popup()
     
+
     def show_calibration(self):
         content = AutoCalibration(calibrate=self.calibrate, cancel=self.dismiss_popup, \
                             )
@@ -229,6 +227,7 @@ class RightColumn(BoxLayout):
                             size_hint=(0.9, 0.75))
         self._popup.open()
     
+
     def calibrate(self):
         app = App.get_running_app()
         camera = app.camera
@@ -302,7 +301,6 @@ class AutoFocus(BoxLayout):
             self.ids.multipleimages.remove_widget(wg)
 
 
-
 class LabelImage(BoxLayout):
     def __init__(self,  **kwargs):
         super(LabelImage, self).__init__(**kwargs)
@@ -354,8 +352,8 @@ class CameraProperties(GridLayout):
             self.framerate.value = camera.ResultingFrameRate()
         else:
             self.framerate.value = 0
-### TODO check if event unscheduling succesful
-import threading
+
+
 #record and live view buttons
 class RecordButtons(BoxLayout):
     recordbutton = ObjectProperty(None)
@@ -442,6 +440,7 @@ class RecordButtons(BoxLayout):
         fname = f"basler_{self.parent.framecounter.value}{ext}"
         basler.save_image(img,path,fname)
 
+
 # image preview
 class PreviewImage(Image):
     previewimage = ObjectProperty(None)
@@ -452,6 +451,7 @@ class PreviewImage(Image):
         super(PreviewImage, self).__init__(**kwargs)
         Window.bind(mouse_pos=self.mouse_pos)
         
+
     def mouse_pos(self, window, pos):
         # read mouse hover events and get image value
         if self.collide_point(*pos):
@@ -495,6 +495,7 @@ class PreviewImage(Image):
     def clearcircle(self):
         self.circle=(0,0,0)
 
+
     # # for reading mouse clicks
     def on_touch_down(self, touch):
         # if a click happens in this widget
@@ -504,25 +505,8 @@ class PreviewImage(Image):
                 #
                 self.captureCircle(touch.pos)
                 Clock.schedule_once(lambda dt: self.parent.parent.ids.runtimecontrols.center_image(), 0.5)
-
                 # remove the circle 
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
-                #self.circle = (0,0, 0)
-
-
-#         # by default the touch coordinates are relative to GUI window
-#         wx, wy = self.to_widget(touch.x, touch.y, relative = True)
-#         image = App.get_running_app().image
-#         # get the image we last took
-#         print(wx, wy)
-#         if image is not None:
-#             texture_w, texture_h = self.norm_image_size
-#             #offset if the image is not fitting inside the widget
-#             ox, oy = self.to_widget(self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2., relative = True)
-#             h,w = image.shape
-#             imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-#             val = image[imy,imx]
-#             self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
                 
         
 class RuntimeControls(BoxLayout):
@@ -536,9 +520,11 @@ class RuntimeControls(BoxLayout):
         self.focus_motion = 0
         self.trackingevent = None
         
+
     def on_framecounter(self, instance, value):
         self.text = str(value)
     
+
     def startFocus(self):
         # schedule a focus routine
         camera = App.get_running_app().camera
@@ -558,11 +544,13 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.autofocuscheckbox.state = 'normal'
     
+
     def stopFocus(self):
         # unschedule a focus routine
         if self.focusevent:
             Clock.unschedule(self.focusevent)
     
+
     def focus(self, z_step, unit, focus_step_factor, *args):
         # run the actual focus routine - calculate the focus values and correct accordinly.
         start = time.time()
@@ -636,12 +624,17 @@ class RuntimeControls(BoxLayout):
         basler.cam_setROI(camera, roiX,roiY, center = True)
         # schedule the tracker
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+        app.coords = app.coords = app.stage.get_position()
         self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
+
 
     def tracking(self,*args):
         # execute actual tracking code
         "we are tracking."
         app = App.get_running_app()
+        if not app.camera.IsGrabbing():
+            self.trackingcheckbox.state = 'normal'
+
         stage = app.stage
         img = app.image
         # threshold and find objects
@@ -654,8 +647,9 @@ class RuntimeControls(BoxLayout):
             stage.move_x(xstep, unit = 'um', wait_until_idle = False)
             stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
-        
-    
+            # getting stage coord is slow so we will interpolate from movements
+            app.coords = app.coords + [ystep, xstep, 0]
+            
 # display if hardware is connected
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
@@ -665,10 +659,12 @@ class Connections(BoxLayout):
         super(Connections, self).__init__(**kwargs)
         Clock.schedule_once(self._do_setup)
 
+
     def _do_setup(self, *l):
         self.stage_connection.state ='down'
         self.cam_connection.state ='down'
     
+
     def connectCamera(self):
         print('connecting Camera')
         # connect camera
@@ -680,12 +676,14 @@ class Connections(BoxLayout):
             # load and apply default pfs
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
 
+
     def disconnectCamera(self):
         camera = App.get_running_app().camera
         if camera is not None:
             print('disconnecting')
             camera.Close()
         
+
     def connectStage(self):
         print('connecting Stage')
         stage = stg.Stage(port='/dev/ttyUSB0')
@@ -704,6 +702,7 @@ class Connections(BoxLayout):
             # start the thread
             t.start()
         
+
     def disconnectStage(self):
         print('disconnecting Stage')
         if App.get_running_app().stage.connection is None:
@@ -714,6 +713,7 @@ class Connections(BoxLayout):
 
 class MyCounter(Label):
     value = NumericProperty(0)
+
 
 class ExitApp(BoxLayout):
    stop = ObjectProperty(None)
@@ -732,7 +732,7 @@ class MacroscopeApp(App):
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch = True, rebind = True)
     image = ObjectProperty(None, force_dispatch = True, rebind = True)
-    coords = ObjectProperty(None)
+    coords = ListProperty([0,0,0])
     #
     
     
@@ -767,11 +767,13 @@ class MacroscopeApp(App):
         """
         config.read('macroscope.ini')
         #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'ums', 'stage_limit_x':155})
+        #config.setdefaults('Experiment', {'exppath':155})
 
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+        settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
@@ -823,6 +825,8 @@ class MacroscopeApp(App):
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
         self.im_to_texture()
+
+
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)

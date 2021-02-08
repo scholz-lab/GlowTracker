@@ -50,6 +50,7 @@ MainWindow:
 # Left column
 #################################
 <LeftColumn>:
+    saveloc:saveloc
     size_hint: (0.3,1)
     orientation: 'vertical'
     pos: root.pos
@@ -80,17 +81,15 @@ MainWindow:
         size_hint_y: None
         height: 30
         multiline: False
-        text: "Startup"
+        text: app.config.get("Experiment", "exppath")
+        on_text_validate: root.path_validate()
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
         on_release: root.show_save()
     
         
-        
-
 ### Display camera properties
-
 <CameraProperties>:
     gain: gain
     exposure: exposure
@@ -141,8 +140,6 @@ MainWindow:
         text: str(gain.value)
     
         
-        
-
     
 #################################
 # Stage motion buttons
@@ -319,6 +316,7 @@ MainWindow:
     id: middlecolumn
     runtimecontrols:runtimecontrols
     previewimage:previewimage
+    stagepos: stagepos
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
@@ -330,13 +328,24 @@ MainWindow:
             id: previewimage
             texture: app.texture
             size_hint: (1, 0.75)
-        Label:
-            #size_hint: (None, None)
-            size_hint: (0.1, 0.05)
-            pos_hint: {'right': 1}
-            id: pixelvalue
-            text: '(0,0,0)'
-            color: '#ffffff'
+        GridLayout:
+            cols: 2
+            size_hint: (1, 0.1)
+            Label:
+                #size_hint: (None, None)
+                size_hint: (0.1, 0.05)
+                pos_hint: {'left': 0.6}
+                id: stagepos
+                text: 'Stage (mm): ({:.2f},{:.2f},{:.2f})'.format(*app.coords)# ({app.coords[0]:.2f},{app.coords[1]:.2f},{app.coords[2]:.2f})'
+                color: '#ffffff'
+            Label:
+                #size_hint: (None, None)
+                size_hint: (0.1, 0.05)
+                pos_hint: {'right': 1}
+                id: pixelvalue
+                text: '(0,0,0)'
+                color: '#ffffff'
+           
         RuntimeControls:
             id:runtimecontrols
             size_hint: (1, 0.2)

@@ -50,6 +50,13 @@
         "title": "Camera"
     },
     {
+        "type": "path",
+        "title": "Default camera settings",
+        "desc": "Select a valid pfs file",
+        "section": "Camera",
+        "key": "default_settings"
+    },
+    {
         "type": "numeric",
         "title": "Display framerate",
         "desc": "how fast to show live images (fps)",
