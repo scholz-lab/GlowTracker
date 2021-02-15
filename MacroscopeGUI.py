@@ -36,7 +36,6 @@ import Basler_control as basler
 
 # get the free clock (more accurate timing)
 Config.set('graphics', 'KIVY_CLOCK', 'free')
-import globals
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
         # This creates a timestamped filename so we don't overwrite our good work
@@ -196,18 +195,11 @@ class MiddleColumn(BoxLayout):
     previewimage = ObjectProperty(None)
 
 class RightColumn(BoxLayout):
-    # store settings from popups
-    nframes = ObjectProperty(None)
-    fileformat = ObjectProperty(None)
+    #
     #
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
-        Clock.schedule_once(self._do_setup)
-        self.nframes= str(globals.DEFAULT_FRAMES)
 
-    def _do_setup(self, *l):
-        self.nframes= str(globals.DEFAULT_FRAMES)
-        self.fileformat = globals.IMG_FORMAT
     
     def dismiss_popup(self):
         #rebind keyboard events
@@ -216,20 +208,12 @@ class RightColumn(BoxLayout):
 
     def show_recording_settings(self):
         """change recording settings."""
-        fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
-        content = RecordingSettings(update=self.update, cancel=self.dismiss_popup, \
-                            frames = self.nframes, framerate = str(fps), fileformat = self.fileformat)
+        content = RecordingSettings(ok=self.dismiss_popup)
         self._popup = Popup(title="Recording Settings", content=content,
                             size_hint=(0.5, 0.25))
         #unbind keyboard events
         App.get_running_app().unbind_keys()
         self._popup.open()
-    
-
-    def update(self, frames):
-        if frames is not None:
-            self.nframes = frames
-        self.dismiss_popup()
     
 
     def show_calibration(self):
@@ -330,12 +314,17 @@ class MultipleImages(GridLayout):
        
 
 class RecordingSettings(BoxLayout):
-    cancel = ObjectProperty(None)
-    update = ObjectProperty(None)
-    frames = ObjectProperty(None)
-    fileformat = ObjectProperty(None)
-    framerate = ObjectProperty(None)
-    
+    ok = ObjectProperty(None)
+    # store recording settings from popups
+    nframes = ConfigParserProperty(5, 'Experiment', 'nframes', 'app', val_type = int )
+    fileformat = ConfigParserProperty('jpg', 'Experiment', 'extension', 'app', val_type = str)
+    framerate = ConfigParserProperty(25, 'Experiment', 'framerate', 'app', val_type = float)
+    print(nframes)
+    duration = ConfigParserProperty(5, 'Experiment', 'duration', 'app', val_type = float)
+    def __init__(self,  **kwargs):
+        super(RecordingSettings, self).__init__(**kwargs)
+        self.duration = self.nframes/self.framerate
+        
 
 # camera properties
 class CameraProperties(GridLayout):
