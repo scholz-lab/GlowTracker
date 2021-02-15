@@ -289,29 +289,33 @@ MainWindow:
 <AutoFocus>:
     id: autofocus
     orientation: 'vertical'
+    
     GridLayout:
         id: multipleimages
-        cols: app.config.getint('Autofocus', 'nsteps')//2
+        cols: root.nsteps//2#app.config.getint('Autofocus', 'nsteps')//2
         spacing: 30,30
         
     BoxLayout:
         size_hint_y: 0.05
         Label:
             text: 'Number of steps'
+        Label:
+            text: str(root.nsteps)
         TextInput:
-            id: nsteps
             text: str(root.nsteps)
             multiline: False
+            on_text_validate: root.nsteps = self.text
         Label:
-            text: 'step Size'
+            text: 'step size'
+        Label:
+            text: str(root.stepsize)
         TextInput:
-            id: stepsize
             text: str(root.stepsize)
             multiline: False
+            on_text_validate: root.stepsize = self.text
         Label:
-            text: 'Units (valid: um)'
-        TextInput:
-            id: stepunits
+            text: 'Units'
+        Label:
             text: str(root.stepunits)
             multiline: False
         

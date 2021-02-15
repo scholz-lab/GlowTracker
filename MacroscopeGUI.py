@@ -106,11 +106,8 @@ class LeftColumn(BoxLayout):
         print('saving path changed')
     
     
-
     def dismiss_popup(self):
-        app = App.get_running_app()
-        Window.bind(on_key_up=app._keyup)
-        Window.bind(on_key_down=app._keydown)
+        App.get_running_app().bind_keys()
         self._popup.dismiss()
 
     # popup camera file selector
@@ -179,13 +176,14 @@ class LeftColumn(BoxLayout):
         app = App.get_running_app()
         camera = app.camera
         stage = app.stage
+        
         if camera is not None and stage.connection is not None:
             # stop grabbing
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # get config values
-            stepsize = app.config.getfloat('Autofocus', 'step_size')
-            stepunits = app.config.get('Autofocus', 'step_units')
-            nsteps = app.config.getint('Autofocus', 'nsteps')
+            stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
+            stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
+            nsteps = self._popup.content.nsteps#app.config.getint('Autofocus', 'nsteps')
             # run the autofocus
             _, imstack, _, focal_plane = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
             # update the images shown - delete old ones if rerunning
@@ -295,14 +293,15 @@ class AutoFocus(BoxLayout):
     run_autofocus = ObjectProperty(None)
     cancel = ObjectProperty(None)
     # make config editable
-    nsteps = ConfigParserProperty(5, 'Autofocus', 'nsteps', 'app', val_type = int)
+    nsteps = ConfigParserProperty(5, 'Autofocus', 'nsteps', 'app', val_type = int, )
     stepsize = ConfigParserProperty(50, 'Autofocus', 'step_size', 'app', val_type = float)
     stepunits = ConfigParserProperty('um','Autofocus', 'step_units', 'app', val_type = str)
 
+    
     def __init__(self,  **kwargs):
         super(AutoFocus, self).__init__(**kwargs)
         self.imagewidgets = []
-    
+
     def add_images(self, imstack, n, focal_plane):
          # build as many labelled images as we will need
         for i in range(n):
@@ -795,7 +794,6 @@ class MacroscopeApp(App):
     coords = ListProperty([0,0,0])
     #
     
-    
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
         # define settings menu style
@@ -805,12 +803,7 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
-   #     Clock.schedule_once(self._do_setup)
-    
-
-   # def _do_setup(self, *l):
-   #      config = ConfigParser(name='app')
-        
+   
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -836,6 +829,46 @@ class MacroscopeApp(App):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
+
+
+    def create_settings(self):
+        '''Create the settings panel. This method will normally
+        be called only one time per
+        application life-time and the result is cached internally,
+        but it may be called again if the cached panel is removed
+        by :meth:`destroy_settings`.
+
+        By default, it will build a settings panel according to
+        :attr:`settings_cls`, call :meth:`build_settings`, add a Kivy panel if
+        :attr:`use_kivy_settings` is True, and bind to
+        on_close/on_config_change.
+
+        If you want to plug your own way of doing settings, without the Kivy
+        panel or close/config change events, this is the method you want to
+        overload.
+
+        .. versionadded:: 1.8.0
+        '''
+        
+        self.config.read('macroscope.ini')
+        s = self.settings_cls()
+        self.build_settings(s)
+        #if self.use_kivy_settings:
+        #    s.add_kivy_panel()
+        s.bind(on_close=self.close__destroy_settings,
+               on_config_change=self._on_config_change)
+        return s
+
+
+    def close__destroy_settings(self, *largs):
+        '''Close the previously opened settings panel.
+
+        :return:
+            True if the settings has been closed.
+        '''
+        self.close_settings()
+        self.destroy_settings()
+        
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
@@ -876,7 +909,6 @@ class MacroscopeApp(App):
     def _keyup(self, *args):
         if self.stage is not None:
             self.stage.stop()
-            print(self.stage.get_position())
             self.coords = self.stage.get_position()
     
     def unbind_keys(self):
@@ -891,7 +923,7 @@ class MacroscopeApp(App):
     def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
         if config is self.config:
-            print('changed config!')
+            print('changed config!', section, key)
             token = (section, key)
             if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
                 print('updated calibration matrix')
@@ -899,7 +931,8 @@ class MacroscopeApp(App):
                 rotation= self.config.getfloat('Camera', 'rotation')
                 self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
             if token == ('Experiment', 'exppath'):
-                app.ids.leftcolumn.ids.saveloc.text = value
+                self.ids.leftcolumn.ids.saveloc.text = value
+
 
 
     def on_image(self, instance, value):
