@@ -3,6 +3,7 @@ kivy.require('2.0.0')
 
 from kivy.app import App
 from kivy.lang import Builder
+from kivy.config import Config
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.core.window import Window
 from kivy.uix.button import Button
@@ -25,14 +26,21 @@ from kivy.clock import Clock
 from threading import Thread
 import threading
 from functools import partial
+from pathlib import Path
+import datetime
 import os
 import time
 import Zaber_control as stg
 import Macroscope_macros as macro
 import Basler_control as basler
 
+# get the free clock (more accurate timing)
+Config.set('graphics', 'KIVY_CLOCK', 'free')
 import globals
-# helper function
+# helper functions
+def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
+        # This creates a timestamped filename so we don't overwrite our good work
+        return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
 def im_to_texture(image):
     """helper function to create kivy textures from image arrays."""
@@ -65,7 +73,7 @@ class MainWindow(GridLayout):
 class LeftColumn(BoxLayout):
     # file saving and loading
     loadfile = ObjectProperty(None)
-    savefile = ObjectProperty(None)
+    savefile = StringProperty("")
     cameraprops = ObjectProperty(None)
     saveloc = ObjectProperty(None) 
     #
@@ -80,7 +88,23 @@ class LeftColumn(BoxLayout):
         self.apply_cam_settings()
 
     def path_validate(self):
-        print('changed')
+        p = Path(self.saveloc.text)
+        app = App.get_running_app()
+        if p.exists() and p.is_dir():
+            app.config.set("Experiment", "exppath", self.saveloc.text)
+            app.config.write()
+        # check if the parent dir exists, then create the folder
+        elif p.parent.exists():
+            p.mkdir(mode=0o777, parents=False, exist_ok=True)
+        else:
+            self.saveloc.text = self.savefile
+        app.config.set("Experiment", "exppath", self.saveloc.text)
+        app.config.write()
+        self.savefile = App.get_running_app().config.get("Experiment", "exppath")
+        # reset the stage keys
+        app.bind_keys()
+        print('saving path changed')
+    
     
 
     def dismiss_popup(self):
@@ -95,10 +119,8 @@ class LeftColumn(BoxLayout):
         content.ids.filechooser2.path = self.loadfile
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
-        #unbind keyboard events
-        app = App.get_running_app()
-        Window.unbind(on_key_up=app._keyup)
-        Window.unbind(on_key_down=app._keydown)
+         #unbind keyboard events
+        App.get_running_app().unbind_keys()
         self._popup.open()
 
     # popup experiment dialog selector
@@ -108,9 +130,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
         #unbind keyboard events
-        app = App.get_running_app()
-        Window.unbind(on_key_up=app._keyup)
-        Window.unbind(on_key_down=app._keydown)
+        App.get_running_app().unbind_keys()
         self._popup.open()
 
 
@@ -150,9 +170,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Focus the camera", content=content,
                             size_hint=(0.9, 0.9))
         #unbind keyboard events
-        app = App.get_running_app()
-        Window.unbind(on_key_up=app._keyup)
-        Window.unbind(on_key_down=app._keydown)
+        App.get_running_app().unbind_keys()
         self._popup.open()
     
 
@@ -195,9 +213,7 @@ class RightColumn(BoxLayout):
     
     def dismiss_popup(self):
         #rebind keyboard events
-        app = App.get_running_app()
-        Window.bind(on_key_up=app._keyup)
-        Window.bind(on_key_down=app._keydown)
+        App.get_running_app().bind_keys()
         self._popup.dismiss()
 
     def show_recording_settings(self):
@@ -208,9 +224,7 @@ class RightColumn(BoxLayout):
         self._popup = Popup(title="Recording Settings", content=content,
                             size_hint=(0.5, 0.25))
         #unbind keyboard events
-        app = App.get_running_app()
-        Window.unbind(on_key_up=app._keyup)
-        Window.unbind(on_key_down=app._keydown)
+        App.get_running_app().unbind_keys()
         self._popup.open()
     
 
@@ -280,6 +294,11 @@ class SaveExperiment(GridLayout):
 class AutoFocus(BoxLayout):
     run_autofocus = ObjectProperty(None)
     cancel = ObjectProperty(None)
+    # make config editable
+    nsteps = ConfigParserProperty(5, 'Autofocus', 'nsteps', 'app', val_type = int)
+    stepsize = ConfigParserProperty(50, 'Autofocus', 'step_size', 'app', val_type = float)
+    stepunits = ConfigParserProperty('um','Autofocus', 'step_units', 'app', val_type = str)
+
     def __init__(self,  **kwargs):
         super(AutoFocus, self).__init__(**kwargs)
         self.imagewidgets = []
@@ -383,26 +402,32 @@ class RecordButtons(BoxLayout):
     def startRecording(self):
         app = App.get_running_app()
         camera = app.camera
-
+        self.parent.framecounter.value = 0
+        self.path = App.get_running_app().root.ids.leftcolumn.savefile
         if camera is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
-
-            # update the image
-            fps = app.root.ids.leftcolumn.ids.camprops.framerate.value
-            print("Display Framerate:", fps)
-            self.event = Clock.schedule_interval(self.record, 1.0 / fps)
-            nframes = int(app.root.ids.rightcolumn.nframes)
-            basler.start_grabbing(camera, numberOfImagesToGrab = nframes, record = True)
+            # schedule immediately
+            Clock.schedule_once(self.open_file, 0)
+            # schedule  a bit later
+            Clock.schedule_once(self.init_recording, 0.1)
+            # schedule acquisition
+            Clock.schedule_once(self.schedule_saving, 0.2)
         else:
             self.recordbutton.state = 'normal'
+
 
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
+        # close file a bit later
+        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.1)
         self.parent.framecounter.value = 0
+        print("Finished recording")
+        self.liveviewbutton.state = 'down'
+
 
     def update(self, dt, save = False):
         camera = App.get_running_app().camera
@@ -413,32 +438,63 @@ class RecordButtons(BoxLayout):
                 App.get_running_app().image = img
                 self.parent.framecounter.value += 1
 
-    def record(self, dt):
-        camera = App.get_running_app().camera
-        nframes = int(App.get_running_app().root.ids.rightcolumn.nframes)
-        if camera is not None:
-            if camera.IsGrabbing() and self.parent.framecounter.value < nframes:
-                ret, img = basler.retrieve_result(camera)
-                if ret:
-                    # show on GUI
-                    # store image as class variable - this will also trigger a canvas update
-                    App.get_running_app().image = img
-                    # save image in thread
-                    t = Thread(target=self.save, args = (img,))
-                    # set daemon to true so the thread dies when app is closed
-                    t.daemon = True
-                    # start the thread
-                    t.start()
-                    self.parent.framecounter.value +=  1
-            else:
-                self.recordbutton.state = 'normal'
 
-    def save(self, img):
+    def record(self, app, camera, nframes, dt):
+        if self.parent.framecounter.value < nframes:
+            ret, img = basler.retrieve_result(camera)
+            if ret:
+                # show on GUI
+                # store image as class variable - this will also trigger a canvas update
+                app.image = img
+                if app.stage is not None:
+                    app.coords = app.coords
+                else:
+                    app.coords = (0,0,0)
+                self.save(img, app.coords, self.parent.framecounter.value)
+                # # save image in thread
+                # t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
+                # # # set daemon to true so the thread dies when app is closed
+                # t.daemon = True
+                # # # start the thread
+                # t.start()
+                self.parent.framecounter.value +=  1
+        else:
+            self.recordbutton.state = 'normal'
+        return True
+
+
+    def save(self, img, coords, frameno):
         # save image to file
-        path =  App.get_running_app().root.ids.leftcolumn.savefile
-        ext = App.get_running_app().root.ids.rightcolumn.fileformat
-        fname = f"basler_{self.parent.framecounter.value}{ext}"
-        basler.save_image(img,path,fname)
+        basler.save_image(img,self.path, self.image_filename.format(frameno))
+        # save stage coordinates
+        self.coordinate_file.write(f"{datetime.datetime.now().time().strftime('%H-%M-%S-%f')}  {coords[0]} {coords[1]} {coords[2]} \n")
+
+
+    def init_recording(self, *args):
+        """set up some recording filenames"""
+        app = App.get_running_app()
+        # precalculate the filename
+        ext = app.root.ids.rightcolumn.fileformat
+        self.image_filename = "basler_{}"+f"{ext}"
+
+
+    def open_file(self, *args):
+        """open coordinate file."""
+        # open a file for the coordinates
+        self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
+        self.coordinate_file.write(f"Time X Y Z \n")
+
+
+    def schedule_saving(self, *args):
+        """this delays the recording start a bit."""
+        app = App.get_running_app()
+        fps = app.root.ids.leftcolumn.ids.camprops.framerate.value
+        nframes = int(app.root.ids.rightcolumn.nframes)
+        print("Recording Framerate:", fps)
+        # schedule execution of the recording
+        self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps/1.0)
+        # start the grabbing
+        basler.start_grabbing(app.camera)
 
 
 # image preview
@@ -632,8 +688,8 @@ class RuntimeControls(BoxLayout):
         # execute actual tracking code
         "we are tracking."
         app = App.get_running_app()
-        if not app.camera.IsGrabbing():
-            self.trackingcheckbox.state = 'normal'
+        #if not app.camera.IsGrabbing():
+        #    self.trackingcheckbox.state = 'normal'
 
         stage = app.stage
         img = app.image
@@ -686,29 +742,33 @@ class Connections(BoxLayout):
 
     def connectStage(self):
         print('connecting Stage')
-        stage = stg.Stage(port='/dev/ttyUSB0')
-        
+        app = App.get_running_app()
+        port = app.config.get('Stage', 'port')
+        stage = stg.Stage(port)
         if stage.connection is None:
             self.stage_connection.state = 'normal'
+            App.get_running_app().stage = None
         else:
-            App.get_running_app().stage = stage
-            homing = App.get_running_app().config.getboolean('Stage', 'homing')
-            startloc = [float(x) for x in App.get_running_app().config.get('Stage', 'start_loc').split(',')]
-            limits = [float(x) for x in App.get_running_app().config.get('Stage', 'stage_limits').split(',')]
+            app.stage = stage
+            homing = app.config.getboolean('Stage', 'homing')
+            startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
+            limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a thread, it is slow
-            t = Thread(target=App.get_running_app().stage.on_connect, args = (homing,  startloc, limits))
+            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread
             t.start()
+            app.coords = app.stage.get_position()
         
 
     def disconnectStage(self):
         print('disconnecting Stage')
-        if App.get_running_app().stage.connection is None:
+        if App.get_running_app().stage is None:
             self.stage_connection.state = 'normal'
         else:
             App.get_running_app().stage.disconnect()
+            App.get_running_app().stage = None
         
 
 class MyCounter(Label):
@@ -741,14 +801,16 @@ class MacroscopeApp(App):
         # define settings menu style
         self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion - right now also happens in settings!
-        Window.bind(on_key_up=self._keyup)
-        Window.bind(on_key_down=self._keydown)
-        
+        self.bind_keys()
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
-        
+   #     Clock.schedule_once(self._do_setup)
     
+
+   # def _do_setup(self, *l):
+   #      config = ConfigParser(name='app')
+        
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -777,49 +839,67 @@ class MacroscopeApp(App):
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
-        # use arrow key codes here. This might be OS dependenot.
-        # left arrow - x axis
-        if key == 276:
-            if 'shift' in modifier:
-                self.stage.move_speed((-self.vlow,0,0), self.unit)
-            else: self.stage.move_speed((-self.vhigh,0,0), self.unit)
-        #right arrow - x-axis
-        if key == 275:
-            if 'shift' in modifier:
-                self.stage.move_speed((self.vlow,0,0), self.unit)
-            else: self.stage.move_speed((self.vhigh,0,0), self.unit)
-        # up and down arrow are y stage
-        if key == 273:
-            if 'shift' in modifier:
-                self.stage.move_speed((0,-self.vlow,0), self.unit)
-            else: self.stage.move_speed((0,-self.vhigh,0), self.unit)
-        if key == 274:
-            if 'shift' in modifier:
-                self.stage.move_speed((0,self.vlow,0), self.unit)
-            else: self.stage.move_speed((0,self.vhigh,0), self.unit)
-        #focus keys -pg up and down for z
+        # use arrow key codes here. This might be OS dependent.
         print(key, scancode, codepoint, modifier)
-        if key == 280:
-            if 'shift' in modifier:
-                self.stage.move_speed((0,0,-self.vlow), self.unit)
-            else: self.stage.move_speed((0,0,-self.vhigh), self.unit)
-        if key == 281:
-            if 'shift' in modifier:
-                self.stage.move_speed((0,0,self.vlow), self.unit)
-            else: self.stage.move_speed((0,0,self.vhigh), self.unit)
+        if self.stage is not None:
+            
+            # left arrow - x axis
+            if key == 276:
+                if 'shift' in modifier:
+                    self.stage.move_speed((-self.vlow,0,0), self.unit)
+                else: self.stage.move_speed((-self.vhigh,0,0), self.unit)
+            #right arrow - x-axis
+            if key == 275:
+                if 'shift' in modifier:
+                    self.stage.move_speed((self.vlow,0,0), self.unit)
+                else: self.stage.move_speed((self.vhigh,0,0), self.unit)
+            # up and down arrow are y stage
+            if key == 273:
+                if 'shift' in modifier:
+                    self.stage.move_speed((0,-self.vlow,0), self.unit)
+                else: self.stage.move_speed((0,-self.vhigh,0), self.unit)
+            if key == 274:
+                if 'shift' in modifier:
+                    self.stage.move_speed((0,self.vlow,0), self.unit)
+                else: self.stage.move_speed((0,self.vhigh,0), self.unit)
+            #focus keys -pg up and down for z
+            
+            if key == 280:
+                if 'shift' in modifier:
+                    self.stage.move_speed((0,0,-self.vlow), self.unit)
+                else: self.stage.move_speed((0,0,-self.vhigh), self.unit)
+            if key == 281:
+                if 'shift' in modifier:
+                    self.stage.move_speed((0,0,self.vlow), self.unit)
+                else: self.stage.move_speed((0,0,self.vhigh), self.unit)
 
     def _keyup(self, *args):
-        self.stage.stop()
+        if self.stage is not None:
+            self.stage.stop()
+            print(self.stage.get_position())
+            self.coords = self.stage.get_position()
     
+    def unbind_keys(self):
+        #unbind keyboard events
+        Window.unbind(on_key_up=self._keyup)
+        Window.unbind(on_key_down=self._keydown)
+
+    def bind_keys(self):
+        Window.bind(on_key_up=self._keyup)
+        Window.bind(on_key_down=self._keydown)
+
     def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
         if config is self.config:
+            print('changed config!')
             token = (section, key)
             if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
-                print('updated matrix')
+                print('updated calibration matrix')
                 pixelsize = self.config.getfloat('Camera', 'pixelsize')
                 rotation= self.config.getfloat('Camera', 'rotation')
                 self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
+            if token == ('Experiment', 'exppath'):
+                app.ids.leftcolumn.ids.saveloc.text = value
 
 
     def on_image(self, instance, value):
@@ -841,8 +921,9 @@ class MacroscopeApp(App):
     def graceful_exit(self):
         # disconnect hardware
         # stop remaining stage motion
-        self.stage.stop()
-        self.stage.disconnect()
+        if self.stage is not None:
+            self.stage.stop()
+            self.stage.disconnect()
         if self.camera is not None:
             print('disconnecting')
             self.camera.Close()

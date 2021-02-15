@@ -81,8 +81,9 @@ MainWindow:
         size_hint_y: None
         height: 30
         multiline: False
-        text: app.config.get("Experiment", "exppath")
+        text: root.savefile
         on_text_validate: root.path_validate()
+        on_focus:  app.unbind_keys()
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
@@ -293,10 +294,26 @@ MainWindow:
         cols: app.config.getint('Autofocus', 'nsteps')//2
         spacing: 30,30
         
-    Label: 
-        height: 30
-        size_hint_y: None
-        text: 'N = {} Focus steps with {} {} each.'.format(app.config.getint('Autofocus', 'nsteps'),app.config.getfloat('Autofocus', 'step_size'),app.config.get('Autofocus', 'step_units'))
+    BoxLayout:
+        size_hint_y: 0.05
+        Label:
+            text: 'Number of steps'
+        TextInput:
+            id: nsteps
+            text: str(root.nsteps)
+            multiline: False
+        Label:
+            text: 'step Size'
+        TextInput:
+            id: stepsize
+            text: str(root.stepsize)
+            multiline: False
+        Label:
+            text: 'Units (valid: um)'
+        TextInput:
+            id: stepunits
+            text: str(root.stepunits)
+            multiline: False
         
     BoxLayout:
         size_hint_y: None

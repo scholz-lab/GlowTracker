@@ -1,0 +1,12 @@
+[   {
+        "type": "title",
+        "title": "Experiment"
+    },
+    {
+        "type": "path",
+        "title": "Save path",
+        "desc": "Where to save the data",
+        "section": "Experiment",
+        "key": "exppath"
+    }
+]

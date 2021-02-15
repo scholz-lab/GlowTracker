@@ -4,6 +4,13 @@
     },
     {
         "type": "numeric",
+        "title": "Stage serial port",
+        "desc": "Find the port (path) for the stage.",
+        "section": "Stage",
+        "key": "port"
+    },
+    {
+        "type": "numeric",
         "title": "Stage speed",
         "desc": "Set the fast stage speed",
         "section": "Stage",

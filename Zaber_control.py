@@ -1,3 +1,4 @@
+import asyncio
 from zaber_motion import Library, Units, Measurement
 from zaber_motion.ascii import Connection
 
@@ -138,14 +139,13 @@ class Stage:
             self.move_z(step[1], unit = unit, wait_until_idle=wait_until_idle)
         
     ###TODO check if we can do , wait_until_idle = False here too
-    def move_speed(self, velocity, unit = 'ums'):
+    def move_speed(self, velocity, unit = 'ums', wait_until_idle = False):
         """Move to a given relative location
         Parameters: 
                     velocity (tuple, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
         if self.connection is not None:
-            
             self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
             if len(velocity) > 1:
                 self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
@@ -156,11 +156,22 @@ class Stage:
     def get_position(self, unit = 'mm'):
         """return the current position of the stage for all axes."""
         pos = []
+        loop = []
         if self.connection is not None:
-            pos.append(self.connection.axis_x.get_position(self.units[unit]))
-            pos.append(self.connection.axis_y.get_position(self.units[unit]))
+            loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
+            loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
             if self.no_axes >2:
-                pos.append(self.connection.axis_z.get_position(self.units[unit]))
+                loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
+
+        move_coroutine = asyncio.gather(*loop)
+
+        loop = asyncio.get_event_loop()
+        pos = loop.run_until_complete(move_coroutine)
+        # if self.connection is not None:
+        #     pos.append(self.connection.axis_x.get_position(self.units[unit]))
+        #     pos.append(self.connection.axis_y.get_position(self.units[unit]))
+        #     if self.no_axes >2:
+        #         pos.append(self.connection.axis_z.get_position(self.units[unit]))
         return pos
 
     def stop(self):
