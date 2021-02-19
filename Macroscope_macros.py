@@ -92,17 +92,17 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     return stack_variance, stack, zpos, focal_plane
     
 # functions for live focusing
-def calculate_focus(im, nbin = 2):
+def calculate_focus(im, nbin = 1):
     """given an image array, calculate a proxy for sharpness."""
     return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
 
 def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
     """given past values calculate the next focussing move."""
-    error = (focus_history[-1]-focus_history[-2])/focus_history[-2]#  current - previous. negative means it got worse
+    error = (focus_history[-1]-focus_history[-2])/np.abs(focus_history[-2])#  current - previous. negative means it got worse
     print(error)
     if ~np.isfinite(error):
         return 0
-    return np.sign(past_motion)*np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
+    return error*np.sign(past_motion)*focus_step_factor*min_step#np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
     
 # functions for tracking
 #%% Functions used for centering stage
@@ -153,86 +153,4 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     stageDistances = np.dot(calibrationMatrix, deltaCoords)
     return stageDistances
 
-
-#%% Center stage onto the labelled worm
-def center_once():
-    # Takes a picture of a worm. Moves the stage to bring it to the center
-    # Hardware Initialization
-    connection = Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    camera = camera_init()
-    # image retrieval & stage motion
-    print('Grabbing image...')
-    camera.StartGrabbingMax(1)      # taking image
-    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-    img = grabResult.Array          # accessing image data
-    print('Starting image analysis...')
-    imshape = img.shape
-    print('Getting coordinates...')
-    coords = extractWorms(img)      # extracting worm coordinates from image
-    print('Number of coordinates: ', len(coords))
-    print('Completing plots...')
-    plt.figure()
-    plt.imshow(img)
-    [plt.plot(x, y, 'rx') for (y, x) in coords]
-    print('Image analysis finished.')
-    print('Calculating distance(px) to center...')
-    deltaCoords = getDistanceToCenter(coords, imshape)   # calculating distance of worm coordinates from center of image
-    print('Translating distances on image to stage motion...')
-    calibrationMatrix = readCalibration(fname = 'calibrationMatrix.txt')   # read in calibration matrix
-    stageDistances = getStageDistances(deltaCoords, calibrationMatrix) # get distances for stage axes
-    print('Centering...')
-    axis_x.move_relative(stageDistances[1], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-    axis_y.move_relative(stageDistances[0], Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    camera.Close()        
-    connection.close()      
-    print('Image centered.')
-
-
-#%% Tracking Worm
-def trackWorm():
-    connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    
-    # get calibration matrix from text file
-    calibrationMatrix = readCalibration(fname = 'calibrationMatrix.txt')
-                
-    my_tiff = TiffWriter('TestTracking', bigtiff=True, append=True)
-
-    camera = camera_init()
-    count = 0
-    with open('TrackingLog.csv', 'w') as logfile:
-        writer = csv.writer(logfile, lineterminator='\n')
-        writer.writerow(['Iteration #', 'x Coord', 'y Coord'])
-        while count < 100:
-            print('Grabbing image...')
-            camera.StartGrabbingMax(1)      # taking image
-            grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-            img = grabResult.Array          # accessing image data
-            my_tiff.save(img)               # appending image to tiff file
-            imshape = img.shape
-            coords = extractWorms(img)      # extracting worm coordinates from image
-            deltaCoords = getDistanceToCenter(coords, imshape)      # calculating distance of worm coordinates from center of image
-            stageDistances = getStageDistances(deltaCoords, calibrationMatrix)  # get distances for stage axes
-            # write a string into the open file
-            writer.writerow([count, stageDistances[1], stageDistances[0]])
-            print('Centering worm...')
-            axis_x.move_relative(stageDistances[1], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            axis_y.move_relative(stageDistances[0], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            count += 1
-        camera.Close()
-        my_tiff.close()
-        connection.close()
-        print('Tracking finished.')
 

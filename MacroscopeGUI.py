@@ -40,10 +40,12 @@ Config.set('graphics', 'KIVY_CLOCK', 'free')
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
         # This creates a timestamped filename so we don't overwrite our good work
         return datetime.datetime.now().strftime(fmt).format(fname=fname)
-
-def im_to_texture(image):
+#Todo zoom here!
+def im_to_texture(image, zoom = 1):
     """helper function to create kivy textures from image arrays."""
-    buf = image.tobytes()
+    if zoom >1:
+        image = np.repeat(image, zoom)
+        buf = image.tobytes()
     w,h = image.shape
     image_texture = Texture.create(
         size=(h,w), colorfmt="luminance"
@@ -162,12 +164,21 @@ class LeftColumn(BoxLayout):
 
     #autofocus popup
     def show_autofocus(self):
-        content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
-        self._popup = Popup(title="Focus the camera", content=content,
-                            size_hint=(0.9, 0.9))
-        #unbind keyboard events
-        App.get_running_app().unbind_keys()
-        self._popup.open()
+        app = App.get_running_app()
+        camera = app.camera
+        stage = app.stage
+        if camera is not None and stage is not None:
+            content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
+            self._popup = Popup(title="Focus the camera", content=content,
+                                size_hint=(0.9, 0.9))
+            #unbind keyboard events
+            App.get_running_app().unbind_keys()
+            self._popup.open()
+        else:
+            self._popup = WarningPopup(title="Autofocus", text = 'Autofocus requires a stage and a camera!',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
+
     
 
     # run autofocussing once on current location
@@ -176,7 +187,7 @@ class LeftColumn(BoxLayout):
         camera = app.camera
         stage = app.stage
         
-        if camera is not None and stage.connection is not None:
+        if camera is not None and stage is not None:
             # stop grabbing
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # get config values
@@ -188,6 +199,7 @@ class LeftColumn(BoxLayout):
             # update the images shown - delete old ones if rerunning
             self._popup.content.delete_images()
             self._popup.content.add_images(imstack, nsteps, focal_plane)
+        
 
             
 class MiddleColumn(BoxLayout):
@@ -217,18 +229,26 @@ class RightColumn(BoxLayout):
     
 
     def show_calibration(self):
-        content = AutoCalibration(calibrate=self.calibrate, cancel=self.dismiss_popup, \
-                            )
-        self._popup = Popup(title="Autocalibration", content=content,
-                            size_hint=(0.9, 0.75))
-        self._popup.open()
+        app = App.get_running_app()
+        camera = app.camera
+        stage = app.stage
+        if camera is not None and stage is not None:
+            content = AutoCalibration(calibrate=self.calibrate, cancel=self.dismiss_popup, \
+                                )
+            self._popup = Popup(title="Autocalibration", content=content,
+                                size_hint=(0.9, 0.75))
+            self._popup.open()
+        else:
+            self._popup = WarningPopup(title="Calibration", text = 'Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
     
 
     def calibrate(self):
         app = App.get_running_app()
         camera = app.camera
         stage = app.stage
-        if camera is not None and stage.connection is not None:
+        if camera is not None and stage is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # get config values
@@ -247,7 +267,8 @@ class RightColumn(BoxLayout):
             #update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
             self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
-
+       
+            
 
 class AutoCalibration(BoxLayout):
     calibrate = ObjectProperty(None)
@@ -319,7 +340,6 @@ class RecordingSettings(BoxLayout):
     nframes = ConfigParserProperty(5, 'Experiment', 'nframes', 'app', val_type = int )
     fileformat = ConfigParserProperty('jpg', 'Experiment', 'extension', 'app', val_type = str)
     framerate = ConfigParserProperty(25, 'Experiment', 'framerate', 'app', val_type = float)
-    print(nframes)
     duration = ConfigParserProperty(5, 'Experiment', 'duration', 'app', val_type = float)
     def __init__(self,  **kwargs):
         super(RecordingSettings, self).__init__(**kwargs)
@@ -411,7 +431,7 @@ class RecordButtons(BoxLayout):
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
         # close file a bit later
-        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.1)
+        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
         print("Finished recording")
         self.liveviewbutton.state = 'down'
@@ -423,7 +443,8 @@ class RecordButtons(BoxLayout):
             ret, img = basler.retrieve_result(camera)
             if ret:
                 # store image as class variable - this will also trigger a canvas update
-                App.get_running_app().image = img
+                cropY, cropX = self.parent.cropY, self.parent.cropX
+                App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
                 self.parent.framecounter.value += 1
 
 
@@ -433,7 +454,8 @@ class RecordButtons(BoxLayout):
             if ret:
                 # show on GUI
                 # store image as class variable - this will also trigger a canvas update
-                app.image = img
+                cropY, cropX = self.parent.cropY, self.parent.cropX
+                app.image = img[cropY:-cropY, cropX:-cropX]
                 if app.stage is not None:
                     app.coords = app.coords
                 else:
@@ -462,8 +484,8 @@ class RecordButtons(BoxLayout):
         """set up some recording filenames"""
         app = App.get_running_app()
         # precalculate the filename
-        ext = app.root.ids.rightcolumn.fileformat
-        self.image_filename = "basler_{}"+f"{ext}"
+        ext = app.config.get('Experiment', 'extension')
+        self.image_filename = "basler_{}."+f"{ext}"
 
 
     def open_file(self, *args):
@@ -476,11 +498,15 @@ class RecordButtons(BoxLayout):
     def schedule_saving(self, *args):
         """this delays the recording start a bit."""
         app = App.get_running_app()
-        fps = app.root.ids.leftcolumn.ids.camprops.framerate.value
-        nframes = int(app.root.ids.rightcolumn.nframes)
+        fps = app.config.getfloat('Experiment', 'framerate')
+        nframes = app.config.getint('Experiment', 'nframes')
         print("Recording Framerate:", fps)
+        # set recording framerate - returns
+        fps = basler.set_framerate(app.camera, fps)
+        app.root.ids.leftcolumn.update_settings_display()
+        
         # schedule execution of the recording
-        self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps/1.0)
+        self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps/1.2)
         # start the grabbing
         basler.start_grabbing(app.camera)
 
@@ -557,6 +583,9 @@ class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind = True)
     autofocuscheckbox = ObjectProperty(rebind = True)
     trackingcheckbox = ObjectProperty(rebind = True)
+    cropX = NumericProperty(1,rebind = True)
+    cropY = NumericProperty(1, rebind = True)
+
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
@@ -610,13 +639,13 @@ class RuntimeControls(BoxLayout):
             self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step, focus_step_factor)
         else:
             self.focus_motion = z_step
-        print('Move',self.focus_motion,unit)
+        print('Move (z)',self.focus_motion,unit)
         app.stage.move_z(self.focus_motion, unit)
-        print('Move',self.focus_motion,unit)
+        app.coords[2] += self.focus_motion/1000
         # throw away stuff
         self.focus_history = self.focus_history[-1:]
         
-        print('Saving time: ',time.time() - start)
+        #print('Saving time: ',time.time() - start)
         return 
 
     def startTracking(self):
@@ -649,7 +678,8 @@ class RuntimeControls(BoxLayout):
             # reset camera params
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
-    
+            self.cropX = 1
+            self.cropY = 1
 
     def center_image(self):
         app = App.get_running_app()
@@ -665,20 +695,23 @@ class RuntimeControls(BoxLayout):
         stage.move_x(xstep, unit = 'um', wait_until_idle = False)
         stage.move_y(ystep, unit = 'um', wait_until_idle = False)
         # reset camera field of view to smaller size around center
-        basler.cam_setROI(camera, roiX,roiY, center = True)
+        hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+        # if desired FOV is smaller than allowed by camera, crop in GUI
+        if wc > roiX:
+            self.cropX = int((wc-roiX)//2)
+        if hc > roiY:
+            self.cropY = int((hc-roiY)//2) 
         # schedule the tracker
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
-        app.coords = app.coords = app.stage.get_position()
+        app.coords =  app.stage.get_position()
         self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
 
 
     def tracking(self,*args):
         # execute actual tracking code
-        "we are tracking."
         app = App.get_running_app()
         #if not app.camera.IsGrabbing():
         #    self.trackingcheckbox.state = 'normal'
-
         stage = app.stage
         img = app.image
         # threshold and find objects
@@ -692,7 +725,9 @@ class RuntimeControls(BoxLayout):
             stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
-            app.coords = app.coords + [ystep, xstep, 0]
+            app.coords[0] += ystep
+            app.coords[1] += xstep
+            print(app.coords)
             
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -842,6 +877,7 @@ class MacroscopeApp(App):
         self.config.read('macroscope.ini')
         s = self.settings_cls()
         self.build_settings(s)
+        self.unbind_keys()
         #if self.use_kivy_settings:
         #    s.add_kivy_panel()
         s.bind(on_close=self.close__destroy_settings,
@@ -856,6 +892,7 @@ class MacroscopeApp(App):
             True if the settings has been closed.
         '''
         self.close_settings()
+        self.bind_keys()
         self.destroy_settings()
         
 
@@ -976,7 +1013,6 @@ def reset():
         
 if __name__ == '__main__':
     reset()
-    # TODO: connection to the decive and error handling is done here
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
-    # TODO: disconnect here from the active devices on closure of the GUI
+   

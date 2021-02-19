@@ -102,14 +102,13 @@ def cam_setROI(camera, w,h,center = True):
         camera.Width = max(w, camera.Width.Min)
         camera.Height = max(h, camera.Height.Min)
         if center:
-            print(camera.Width.Max , camera.Width())
             camera.OffsetX = max(int(camera.Width.Max - camera.Width())//2, 4)
             camera.OffsetY = max(int(camera.Height.Max - camera.Height())//2, 4)
-        
         # grab lock
         camera.TLParamsLocked = True
         # cam start
         camera.AcquisitionStart.Execute()
+    return camera.Height(), camera.Width()
 
 def cam_resetROI(camera):
     """set the ROI for a camera to full sensor size."""
@@ -121,8 +120,15 @@ def cam_resetROI(camera):
     camera.OffsetY = 0
     camera.Width = camera.Width.Max
     camera.Height = camera.Height.Max
-    
     # grab lock
     camera.TLParamsLocked = True
     # cam start
     camera.AcquisitionStart.Execute()
+    return camera.Height(), camera.Width()
+
+
+def set_framerate(camera, fps):
+    """change acquisition framerate.Returns real framerate achievable with settings."""
+    camera.AcquisitionFrameRateEnable = True
+    camera.AcquisitionFrameRate = float(fps)
+    return camera.ResultingFrameRate()
