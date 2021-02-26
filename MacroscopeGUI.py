@@ -27,6 +27,7 @@ from threading import Thread
 import threading
 from functools import partial
 from pathlib import Path
+import numpy as np
 import datetime
 import os
 import time
@@ -40,18 +41,6 @@ Config.set('graphics', 'KIVY_CLOCK', 'free')
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
         # This creates a timestamped filename so we don't overwrite our good work
         return datetime.datetime.now().strftime(fmt).format(fname=fname)
-#Todo zoom here!
-def im_to_texture(image, zoom = 1):
-    """helper function to create kivy textures from image arrays."""
-    if zoom >1:
-        image = np.repeat(image, zoom)
-        buf = image.tobytes()
-    w,h = image.shape
-    image_texture = Texture.create(
-        size=(h,w), colorfmt="luminance"
-    )
-    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-    return image_texture
 
 class WarningPopup(Popup):
     ok_text = StringProperty('OK')
@@ -256,8 +245,8 @@ class RightColumn(BoxLayout):
             stepunits = app.config.get('Calibration', 'step_units')
             # run the calibration
             img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
-            self._popup.content.ids.image_one.texture = im_to_texture(img1)
-            self._popup.content.ids.image_two.texture = im_to_texture(img2)
+            self._popup.content.ids.image_one.texture = app.im_to_texture(img1)
+            self._popup.content.ids.image_two.texture = app.im_to_texture(img2)
             # calculate calibration from shift
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
@@ -315,7 +304,7 @@ class AutoFocus(BoxLayout):
             if i == focal_plane:
                 tmp.label.color = 'red'
                 tmp.label.text = f'Focus: Image {i}'
-            tmp.image.texture = im_to_texture(imstack[i])
+            tmp.image.texture = App.get_running_app().im_to_texture(imstack[i])
             self.imagewidgets.append(tmp)
             self.ids.multipleimages.add_widget(tmp)
     
@@ -460,13 +449,13 @@ class RecordButtons(BoxLayout):
                     app.coords = app.coords
                 else:
                     app.coords = (0,0,0)
-                self.save(img, app.coords, self.parent.framecounter.value)
+                #self.save(img, app.coords, self.parent.framecounter.value)
                 # # save image in thread
-                # t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
-                # # # set daemon to true so the thread dies when app is closed
-                # t.daemon = True
-                # # # start the thread
-                # t.start()
+                t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
+                # # set daemon to true so the thread dies when app is closed
+                t.daemon = True
+                # # start the thread
+                t.start()
                 self.parent.framecounter.value +=  1
         else:
             self.recordbutton.state = 'normal'
@@ -725,8 +714,8 @@ class RuntimeControls(BoxLayout):
             stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
-            app.coords[0] += ystep
-            app.coords[1] += xstep
+            app.coords[0] += ystep/1000.
+            app.coords[1] += xstep/1000.
             print(app.coords)
             
 # display if hardware is connected
@@ -989,15 +978,23 @@ class MacroscopeApp(App):
         # stop the app
         self.stop()
     
-    def im_to_texture(self):
+    def im_to_texture(self, *args):
         """helper function to create kivy textures from image arrays."""
-        buf = self.image.tobytes()
-        w,h = self.image.shape
+        if len(args)==0:
+            image = self.image
+        else:
+            image = args[0]
+        buf = image.tobytes()
+        w,h = image.shape
         image_texture = Texture.create(
             size=(h,w), colorfmt="luminance"
         )
         image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-        self.texture = image_texture
+        if len(args)==0:
+            self.texture = image_texture
+        return image_texture
+        
+
 
 def reset():
     # Cleaner for the events in memory
