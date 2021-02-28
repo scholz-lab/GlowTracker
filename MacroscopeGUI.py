@@ -130,6 +130,7 @@ class LeftColumn(BoxLayout):
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
         self.saveloc.text = (self.savefile)
+        self.path_validate()
         self.dismiss_popup()
         
 
@@ -419,8 +420,8 @@ class RecordButtons(BoxLayout):
         if camera is not None:
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
-        # close file a bit later
-        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
+            # close file a bit later
+            Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
         print("Finished recording")
         self.liveviewbutton.state = 'down'
@@ -474,8 +475,8 @@ class RecordButtons(BoxLayout):
         app = App.get_running_app()
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
-        self.image_filename = "basler_{}."+f"{ext}"
-
+        self.image_filename = timeStamped("basler_{}."+f"{ext}")
+        
 
     def open_file(self, *args):
         """open coordinate file."""
@@ -493,7 +494,6 @@ class RecordButtons(BoxLayout):
         # set recording framerate - returns
         fps = basler.set_framerate(app.camera, fps)
         app.root.ids.leftcolumn.update_settings_display()
-        
         # schedule execution of the recording
         self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps/1.2)
         # start the grabbing

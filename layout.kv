@@ -83,7 +83,7 @@ MainWindow:
         multiline: False
         text: root.savefile
         on_text_validate: root.path_validate()
-        on_focus:  app.unbind_keys()
+        on_focus:  app.unbind_keys() if self.focus else root.path_validate()
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
