@@ -87,7 +87,6 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     focal_plane = np.argmax(stack_variance)
     # Moving to best position
     stage.move_abs((None,None,zpos[focal_plane]))
-    print(zpos, stack_variance)
     # return focus values, images and best location
     return stack_variance, stack, zpos, focal_plane
     

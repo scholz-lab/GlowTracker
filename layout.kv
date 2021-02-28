@@ -355,40 +355,54 @@ MainWindow:
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
-    BoxLayout:
-        orientation: 'vertical'
-        size: root.size
-        pos: root.pos
-        PreviewImage:
-            id: previewimage
-            texture: app.texture
-            size_hint: (1, 0.75)
-        GridLayout:
-            cols: 2
-            size_hint: (1, 0.05)
-            Label:
-                #size_hint_y: 30
-                #size_hint_: (0.5, 0.05)
-                pos_hint: {'left': 0.0}
-                halign: 'left'
-                valign: 'top'
-                text_size: self.size
-                id: stagepos
-                text: 'Stage (mm): ({:.2f},{:.2f},{:.2f})'.format(*app.coords)
-            Label:
-                
-                #size_hint: (0.5, 0.05)
-                valign: 'top'
-                pos_hint: {'right': 1}
-                text_size: self.size
-                id: pixelvalue
-                text: '(0,0,0)'
-                halign: 'right'
-           
-        RuntimeControls:
-            id:runtimecontrols
-            size_hint: (1, 0.2)
+    #BoxLayout:
+    orientation: 'vertical'
+    #size: root.size
+    CutBoxLayout:
+        size_hint: (1, 0.75)
+        ScalableImage:
+            size_hint: (1, 1)
+            #size: previewimage.size
+            auto_bring_to_front: False
+            do_translation: True
+            do_rotation: False
+            do_scale: False
+            scale_max: 2
+            PreviewImage:
+                id: previewimage
+                texture: app.texture
+            
+        #source: "icons/logoSq.png"
+                #
+    GridLayout:
+        cols: 2
+        size_hint: (1, 0.05)
+        Label:
+            #size_hint_y: 30
+            #size_hint_: (0.5, 0.05)
+            pos_hint: {'left': 0.0}
+            halign: 'left'
+            valign: 'top'
+            text_size: self.size
+            id: stagepos
+            text: 'Stage (mm): ({:.2f},{:.2f},{:.2f})'.format(*app.coords)
+        Label:
+            #size_hint: (0.5, 0.05)
+            valign: 'top'
+            pos_hint: {'right': 1}
+            text_size: self.size
+            id: pixelvalue
+            text: '(0,0,0)'
+            halign: 'right'
         
+    RuntimeControls:
+        id:runtimecontrols
+        size_hint: (1, 0.2)
+
+
+
+<CutBoxLayout@BoxLayout+StencilView>:
+    orientation: 'horizontal'
 ### live camera image
 <PreviewImage>:
     canvas:
@@ -697,3 +711,5 @@ MainWindow:
 			height: sp(48)
             text: root.ok_text
             on_press: root.ok()
+
+

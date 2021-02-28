@@ -1,37 +1,39 @@
-#:kivy 1.10.0
+#:kivy 2.0.0
 #:import FadeTransition kivy.uix.screenmanager.FadeTransition
 
-ScreenManagement:
-    transition: FadeTransition()
-    ChooseProgScreen:
-    SwitchScreen:
 
-<ChooseProgScreen>:
-    name: "chooseprog"
-    FloatLayout:
-        Button:
-            text: "test1"
-            on_release:
-                root.manager.MY_GLOBAL = self.text
-                root.manager.current = "switch"
-            color: 1,1,1,1
-            font_size: 25
-            size_hint: 0.15,0.15
-            pos_hint: {"center_x":.1, "center_y":.9}
-        Button:
-            text: "test2"
-            on_release:
-                root.manager.MY_GLOBAL = self.text
-                root.manager.current = "switch"
-            color: 1,1,1,1
-            font_size: 25
-            size_hint: 0.15,0.15
-            pos_hint: {"center_x":.3, "center_y":.9}
 
-<SwitchScreen>:
-    name: "switch"
-    FloatLayout:
-        Label:
-            text: root.manager.MY_GLOBAL
-            pos_hint: {"center_x":.1, "center_y":.1}
-            font_size: 25
+# ScreenManagement:
+#     transition: FadeTransition()
+#     ChooseProgScreen:
+#     SwitchScreen:
+
+# <ChooseProgScreen>:
+#     name: "chooseprog"
+#     FloatLayout:
+#         Button:
+#             text: "test1"
+#             on_release:
+#                 root.manager.MY_GLOBAL = self.text
+#                 root.manager.current = "switch"
+#             color: 1,1,1,1
+#             font_size: 25
+#             size_hint: 0.15,0.15
+#             pos_hint: {"center_x":.1, "center_y":.9}
+#         Button:
+#             text: "test2"
+#             on_release:
+#                 root.manager.MY_GLOBAL = self.text
+#                 root.manager.current = "switch"
+#             color: 1,1,1,1
+#             font_size: 25
+#             size_hint: 0.15,0.15
+#             pos_hint: {"center_x":.3, "center_y":.9}
+
+# <SwitchScreen>:
+#     name: "switch"
+#     FloatLayout:
+#         Label:
+#             text: root.manager.MY_GLOBAL
+#             pos_hint: {"center_x":.1, "center_y":.1}
+#             font_size: 25

@@ -14,10 +14,13 @@ from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
 from kivy.graphics import Color, Ellipse, Line
+from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.stencilview import StencilView
+from kivy.graphics.transformation import Matrix
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar
 from kivy.factory import Factory
@@ -195,7 +198,7 @@ class LeftColumn(BoxLayout):
         
 
             
-class MiddleColumn(BoxLayout):
+class MiddleColumn(BoxLayout, StencilView):
     runtimecontrols = ObjectProperty(None)
     previewimage = ObjectProperty(None)
 
@@ -518,20 +521,32 @@ class RecordButtons(BoxLayout):
         basler.start_grabbing(app.camera)
 
 
+class ScalableImage(ScatterLayout):
+    def on_touch_up(self, touch):
+        if self.collide_point(*touch.pos):
+            if touch.is_mouse_scrolling:
+                if touch.button == 'scrolldown':
+                    mat = Matrix().scale(.9, .9, .9)
+                    self.apply_transform(mat, anchor=touch.pos)
+                elif touch.button == 'scrollup':
+                    mat = Matrix().scale(1.1, 1.1, 1.1)
+                    self.apply_transform(mat, anchor=touch.pos)
+        return super().on_touch_up(touch)
+   
 # image preview
 class PreviewImage(Image):
-    previewimage = ObjectProperty(None)
+    #previewimage = ObjectProperty(None)
     circle= ListProperty([0, 0, 0])
     offset = ListProperty([0, 0])
 
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
         Window.bind(mouse_pos=self.mouse_pos)
-        
-
+    
     def mouse_pos(self, window, pos):
         # read mouse hover events and get image value
         if self.collide_point(*pos):
+            print(*pos, self.center_x, self.center_y, self.norm_image_size)
             # by default the touch coordinates are relative to GUI window
             wx, wy = self.to_widget(pos[0], pos[1], relative = True)
             image = App.get_running_app().image
@@ -545,7 +560,8 @@ class PreviewImage(Image):
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
                 if 0<=imy<h and 0<=imx<w:
                     val = image[imy,imx]
-                    self.parent.parent.ids.pixelvalue.text = f'({imx},{imy},{val})'
+                    App.get_running_app().root.ids.middlecolumn.ids.pixelvalue.text = f'({imx},{imy},{val})'
+                    #self.parent.parent.parent.ids.
 
     
     def captureCircle(self, pos):
@@ -578,7 +594,7 @@ class PreviewImage(Image):
         # if a click happens in this widget
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
-            if self.parent.parent.ids.runtimecontrols.trackingcheckbox.state =='down' and self.parent.parent.ids.runtimecontrols.trackingevent is None:
+            if App.get_running_app().root.ids.middlecolumn.runtimecontrols.trackingcheckbox.state =='down' and self.parent.parent.ids.runtimecontrols.trackingevent is None:
                 #
                 self.captureCircle(touch.pos)
                 Clock.schedule_once(lambda dt: self.parent.parent.ids.runtimecontrols.center_image(), 0.5)
