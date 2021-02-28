@@ -199,6 +199,7 @@ class Stage:
         self.set_rangelimits(limits)
         self.move_abs(start)
         
+        
     
     def disconnect(self):
         """close com port connection."""

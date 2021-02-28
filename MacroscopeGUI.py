@@ -4,7 +4,9 @@ kivy.require('2.0.0')
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.config import Config
+from kivy.cache import Cache
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.base import EventLoop
 from kivy.core.window import Window
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -74,6 +76,7 @@ class LeftColumn(BoxLayout):
 
     def _do_setup(self, *l):
         self.savefile =  App.get_running_app().config.get("Experiment", "exppath")
+        self.path_validate()
         self.loadfile = App.get_running_app().config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
@@ -137,7 +140,7 @@ class LeftColumn(BoxLayout):
     def apply_cam_settings(self):
         camera = App.get_running_app().camera
         ### TODO this reference is quite ugly, check if more elegant solution is possible
-        if self.parent.ids.rightcolumn.ids.connections.ids.cam_connection.state == 'down':
+        if camera is not None:
             print('Updating camera settings')
             basler.update_props(camera, propfile=self.loadfile)
             self.update_settings_display()
@@ -147,9 +150,9 @@ class LeftColumn(BoxLayout):
     def update_settings_display(self):
         # update slider value using ids
         camera = App.get_running_app().camera
-        self.ids.camprops.ids.exposure.value = camera.ExposureTime()
-        self.ids.camprops.ids.gain.value = camera.Gain()
-        self.ids.camprops.ids.framerate.value = camera.ResultingFrameRate()
+        self.ids.camprops.exposure = camera.ExposureTime()
+        self.ids.camprops.gain = camera.Gain()
+        self.ids.camprops.framerate = camera.ResultingFrameRate()
     
 
     #autofocus popup
@@ -339,36 +342,36 @@ class RecordingSettings(BoxLayout):
 # camera properties
 class CameraProperties(GridLayout):
     # camera properties
-    gain = ObjectProperty(None)
-    exposure = ObjectProperty(None)
-    framerate = ObjectProperty(None)
+    gain = NumericProperty(0)
+    exposure = NumericProperty(0)
+    framerate = NumericProperty(0)
 
      # update camera params when text or slider is changed
     def change_gain(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.Gain= float(self.gain.value)
-            self.gain.value = camera.Gain()
+            camera.Gain= float(self.gain)
+            self.gain = camera.Gain()
         else:
-            self.gain.value = 0
+            self.gain = 0
 
     def change_exposure(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.ExposureTime = float(self.exposure.value)
-            self.exposure.value = camera.ExposureTime()
+            camera.ExposureTime = float(self.exposure)
+            self.exposure = camera.ExposureTime()
         else:
-            self.exposure.value = 0
+            self.exposure = 0
 
     def change_framerate(self):
         """update framerate"""
         camera = App.get_running_app().camera
         if camera is not None:
             camera.AcquisitionFrameRateEnable = True
-            camera.AcquisitionFrameRate = float(self.framerate.value)
-            self.framerate.value = camera.ResultingFrameRate()
+            camera.AcquisitionFrameRate = float(self.framerate)
+            self.framerate = camera.ResultingFrameRate()
         else:
-            self.framerate.value = 0
+            self.framerate = 0
 
 
 #record and live view buttons
@@ -384,9 +387,9 @@ class RecordButtons(BoxLayout):
         if camera is not None:
             basler.start_grabbing(camera)
             # update the image
-            fps = App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate.value
+            fps = camera.ResultingFrameRate()
             print("Display Framerate:", fps)
-            self.event = Clock.schedule_interval(self.update, 1.0 / fps/2)
+            self.event = Clock.schedule_interval(self.update, 1.0 / fps/1.1)
         else:
             self.liveviewbutton.state = 'normal'
             
@@ -402,6 +405,7 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         self.parent.framecounter.value = 0
         self.path = App.get_running_app().root.ids.leftcolumn.savefile
+        
         if camera is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
@@ -771,7 +775,6 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-            app.coords = app.stage.get_position()
         
 
     def disconnectStage(self):
@@ -998,10 +1001,8 @@ class MacroscopeApp(App):
 
 def reset():
     # Cleaner for the events in memory
-    import kivy.core.window as window
-    from kivy.base import EventLoop
+    
     if not EventLoop.event_listeners:
-        from kivy.cache import Cache
         window.Window = window.core_select_lib('window', window.window_impl, True)
         Cache.print_usage()
         for cat in Cache._categories:
