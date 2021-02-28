@@ -128,7 +128,7 @@ def cam_resetROI(camera):
 
 
 def set_framerate(camera, fps):
-    """change acquisition framerate.Returns real framerate achievable with settings."""
+    """change acquisition framerate. Returns real framerate achievable with settings."""
     camera.AcquisitionFrameRateEnable = True
     camera.AcquisitionFrameRate = float(fps)
     return camera.ResultingFrameRate()

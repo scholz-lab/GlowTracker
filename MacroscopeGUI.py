@@ -378,10 +378,23 @@ class CameraProperties(GridLayout):
 class RecordButtons(BoxLayout):
     recordbutton = ObjectProperty(None)
     liveviewbutton = ObjectProperty(None)
+    snapbutton = ObjectProperty(None)
 
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
-        
+    
+    def snap(self):
+        """single image saved to experiment location."""
+        app = App.get_running_app()
+        ext = app.config.get('Experiment', 'extension')
+        path = app.root.ids.leftcolumn.savefile
+        snap_filename= timeStamped("snap."+f"{ext}")
+        # get image
+        ret, im = basler.single_take(app.camera)
+        if ret:
+            basler.save_image(im,path,snap_filename)
+
+
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -392,6 +405,7 @@ class RecordButtons(BoxLayout):
             self.event = Clock.schedule_interval(self.update, 1.0 / fps/1.1)
         else:
             self.liveviewbutton.state = 'normal'
+
             
     def stopPreview(self):
         camera = App.get_running_app().camera
@@ -595,7 +609,7 @@ class RuntimeControls(BoxLayout):
         # schedule a focus routine
         camera = App.get_running_app().camera
         stage = App.get_running_app().stage
-        if camera is not None and stage.connection is not None and camera.IsGrabbing():
+        if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
             print("Focus Framerate:", focus_fps)
@@ -647,9 +661,8 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None:# and stage.connection is not None and camera.IsGrabbing():
+        if camera is not None and stage is not None:
              # get config values
-            
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
                             size_hint=(0.5, 0.25))
@@ -949,7 +962,7 @@ class MacroscopeApp(App):
                 rotation= self.config.getfloat('Camera', 'rotation')
                 self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
             if token == ('Experiment', 'exppath'):
-                self.ids.leftcolumn.ids.saveloc.text = value
+                self.root.ids.leftcolumn.ids.saveloc.text = value
 
 
 

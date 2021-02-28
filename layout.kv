@@ -437,9 +437,11 @@ MainWindow:
 <RecordButtons>:
     orientation: 'horizontal'
     spacing: 30
-    padding: [80,10]
+    padding: [30,10]
     recordbutton:recordbutton
     liveviewbutton:liveviewbutton
+    snapbutton:snapbutton
+    
     ToggleButton:
         id: liveviewbutton
         border: 0,0,0,0
@@ -462,6 +464,18 @@ MainWindow:
         background_normal: 'icons/record_inactive.png'
         background_down: 'icons/record_active.png'
         on_state: root.startRecording() if self.state=='down' else root.stopRecording()
+    
+    Button: 
+        id: snapbutton
+        border: 0,0,0,0
+        size_hint_x: 0.1
+        size_hint_y: None
+        height: self.width 
+        pos_hint: {'center_x': .5, 'center_y': .5}
+        background_normal: 'icons/snap_inactive.png'
+        background_down: 'icons/snap_active.png'
+        on_release: root.snap()
+
 
 #################################
 # Right column
@@ -480,7 +494,7 @@ MainWindow:
         on_release: app.open_settings()
     MyButton:
         size_hint: (1, 0.1)
-        text: 'Camera'
+        text: 'Macro'
     MyButton: 
         id:recording
         size_hint: (1, 0.1)
