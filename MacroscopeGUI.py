@@ -471,13 +471,13 @@ class RecordButtons(BoxLayout):
                     app.coords = app.coords
                 else:
                     app.coords = (0,0,0)
-                #self.save(img, app.coords, self.parent.framecounter.value)
-                # # save image in thread
-                t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
-                # # set daemon to true so the thread dies when app is closed
-                t.daemon = True
-                # # start the thread
-                t.start()
+                self.save(img, app.coords, self.parent.framecounter.value)
+                # # # save image in thread
+                # t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
+                # # # set daemon to true so the thread dies when app is closed
+                # t.daemon = True
+                # # # start the thread
+                # t.start()
                 self.parent.framecounter.value +=  1
         else:
             self.recordbutton.state = 'normal'
@@ -591,13 +591,15 @@ class PreviewImage(Image):
 
     # # for reading mouse clicks
     def on_touch_down(self, touch):
+        rtc = App.get_running_app().root.ids.middlecolumn.runtimecontrols
         # if a click happens in this widget
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
-            if App.get_running_app().root.ids.middlecolumn.runtimecontrols.trackingcheckbox.state =='down' and self.parent.parent.ids.runtimecontrols.trackingevent is None:
+            if rtc.trackingcheckbox.state =='down' \
+                and rtc.trackingevent is None:
                 #
                 self.captureCircle(touch.pos)
-                Clock.schedule_once(lambda dt: self.parent.parent.ids.runtimecontrols.center_image(), 0.5)
+                Clock.schedule_once(lambda dt: rtc.center_image(), 0.5)
                 # remove the circle 
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
                 
@@ -677,7 +679,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None:
+        if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
@@ -712,7 +714,7 @@ class RuntimeControls(BoxLayout):
         roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
         # move stage based on user input - happens here.
         #print(self.parent.parent.ids.previewimage.offset)
-        ystep, xstep = macro.getStageDistances(self.parent.parent.ids.previewimage.offset, app.calibration_matrix)
+        ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         #print("Move stage (x,y)", xstep, ystep)
         stage.move_x(xstep, unit = 'um', wait_until_idle = False)
         stage.move_y(ystep, unit = 'um', wait_until_idle = False)
@@ -732,24 +734,25 @@ class RuntimeControls(BoxLayout):
     def tracking(self,*args):
         # execute actual tracking code
         app = App.get_running_app()
-        #if not app.camera.IsGrabbing():
-        #    self.trackingcheckbox.state = 'normal'
+        if not app.camera.IsGrabbing():
+            self.trackingcheckbox.state = 'normal'
+            return
         stage = app.stage
         img = app.image
         # threshold and find objects
-        coords = macro.extractWorms(img, area=50, bin_factor=1, li_init=10)
+        coords = macro.extractWorms(img, area=50, bin_factor=2, li_init=10)
         # if we find stuff move
         if len(coords) > 0:
             print(len(coords))
             offset = macro.getDistanceToCenter(coords, img.shape)
             ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
-            stage.move_x(xstep, unit = 'um', wait_until_idle = False)
-            stage.move_y(ystep, unit = 'um', wait_until_idle = False)
+            #stage.move_x(xstep, unit = 'um', wait_until_idle = False)
+            #stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
             app.coords[0] += ystep/1000.
             app.coords[1] += xstep/1000.
-            print(app.coords)
+            #print(app.coords)
             
 # display if hardware is connected
 class Connections(BoxLayout):

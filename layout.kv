@@ -348,7 +348,6 @@ MainWindow:
 # Middle column
 #################################
 <MiddleColumn>:
-    id: middlecolumn
     runtimecontrols:runtimecontrols
     previewimage:previewimage
     stagepos: stagepos
@@ -361,8 +360,9 @@ MainWindow:
     CutBoxLayout:
         size_hint: (1, 0.75)
         ScalableImage:
-            size_hint: (1, 1)
-            #size: previewimage.size
+            #size_hint: (1, 1)
+            
+            size: previewimage.size
             auto_bring_to_front: False
             do_translation: True
             do_rotation: False
@@ -371,9 +371,6 @@ MainWindow:
             PreviewImage:
                 id: previewimage
                 texture: app.texture
-            
-        #source: "icons/logoSq.png"
-                #
     GridLayout:
         cols: 2
         size_hint: (1, 0.05)

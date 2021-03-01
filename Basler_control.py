@@ -65,9 +65,9 @@ def retrieve_result(camera):
 
 class ImageEventPrinter(pylon.ImageEventHandler):
     def OnImagesSkipped(self, camera, countOfSkippedImages):
-        print("OnImagesSkipped event for device ", camera.GetDeviceInfo().GetModelName())
+        #print("OnImagesSkipped event for device ", camera.GetDeviceInfo().GetModelName())
         print(countOfSkippedImages, " images have been skipped.")
-        print()
+        #print()
 
     def OnImageGrabbed(self, camera, grabResult):
         # print("OnImageGrabbed event for device ", camera.GetDeviceInfo().GetModelName())
