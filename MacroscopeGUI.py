@@ -569,9 +569,6 @@ class PreviewImage(Image):
             wx, wy = pos[0], pos[1]
             image = App.get_running_app().image
             # get the image we last took
-            
-            print(self.height, self.width, self.norm_image_size)
-            #image = self.data
             if image is not None:
                 texture_w, texture_h = self.norm_image_size
                 #offset if the image is not fitting inside the widget
@@ -588,7 +585,7 @@ class PreviewImage(Image):
     
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
-        wx, wy = self.to_widget(pos[0], pos[1])#, relative = True)
+        wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
         image = App.get_running_app().image
         h,w = image.shape
         # paint a circle and make the coordinates available
@@ -600,7 +597,7 @@ class PreviewImage(Image):
         #offset if the image is not fitting inside the widget
         texture_w, texture_h = self.norm_image_size
         #offset if the image is not fitting inside the widget
-        cx, cy = self.to_widget(self.center_x, self.center_y)#, relative = True)
+        cx, cy = self.center_x, self.center_y
         ox, oy = cx - texture_w / 2., cy - texture_h/ 2
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
@@ -614,8 +611,10 @@ class PreviewImage(Image):
     # # for reading mouse clicks
     def on_touch_down(self, touch):
         rtc = App.get_running_app().root.ids.middlecolumn.runtimecontrols
+        # transform to local because of scatter
+        pos = self.to_widget(touch.pos[0], touch.pos[1])
         # if a click happens in this widget
-        if self.collide_point(*touch.pos):
+        if self.collide_point(*pos):
             #if tracking is active and not yet scheduled:
             if rtc.trackingcheckbox.state =='down' and rtc.trackingevent is None:
                 #
@@ -700,7 +699,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None and camera.IsGrabbing():
+        if camera is not None :#and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
