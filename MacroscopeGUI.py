@@ -15,6 +15,7 @@ from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
 from kivy.graphics import Color, Ellipse, Line
 from kivy.uix.scatterlayout import ScatterLayout
+from kivy.uix.scatter import Scatter
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
@@ -391,11 +392,14 @@ class RecordButtons(BoxLayout):
         app = App.get_running_app()
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
-        snap_filename= timeStamped("snap."+f"{ext}")
-        # get image
-        ret, im = basler.single_take(app.camera)
-        if ret:
-            basler.save_image(im,path,snap_filename)
+        snap_filename = timeStamped("snap."+f"{ext}")
+        # if 
+        if app.camera is not None:
+            basler.stop_grabbing(app.camera)
+            # get image
+            ret, im = basler.single_take(app.camera)
+            if ret:
+                basler.save_image(im,path,snap_filename)
 
 
     def startPreview(self):
@@ -411,11 +415,15 @@ class RecordButtons(BoxLayout):
 
             
     def stopPreview(self):
-        camera = App.get_running_app().camera
+        app = App.get_running_app()
+        camera = app.camera
         if camera is not None:
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
+        # reset displayed framecounter
         self.parent.framecounter.value = 0
+        # reset scale of image
+        app.root.ids.middlecolumn.ids.scalableimage.reset()
 
     def startRecording(self):
         app = App.get_running_app()
@@ -446,6 +454,8 @@ class RecordButtons(BoxLayout):
         self.parent.framecounter.value = 0
         print("Finished recording")
         self.liveviewbutton.state = 'down'
+        # reset scale of image
+        app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
     def update(self, dt, save = False):
@@ -525,14 +535,20 @@ class ScalableImage(ScatterLayout):
     def on_touch_up(self, touch):
         if self.collide_point(*touch.pos):
             if touch.is_mouse_scrolling:
-                if touch.button == 'scrolldown':
+                if touch.button == 'scrollup':
                     mat = Matrix().scale(.9, .9, .9)
                     self.apply_transform(mat, anchor=touch.pos)
-                elif touch.button == 'scrollup':
+                elif touch.button == 'scrolldown':
                     mat = Matrix().scale(1.1, 1.1, 1.1)
                     self.apply_transform(mat, anchor=touch.pos)
         return super().on_touch_up(touch)
-   
+
+    # reset tranformation
+    def reset(self):
+        self.scale = 1
+        self.center_x = self.parent.center_x
+        self.center_y =  self.parent.center_y
+
 # image preview
 class PreviewImage(Image):
     #previewimage = ObjectProperty(None)
@@ -544,19 +560,25 @@ class PreviewImage(Image):
         Window.bind(mouse_pos=self.mouse_pos)
     
     def mouse_pos(self, window, pos):
+        pos = self.to_widget(pos[0], pos[1])
         # read mouse hover events and get image value
         if self.collide_point(*pos):
-            print(*pos, self.center_x, self.center_y, self.norm_image_size)
+            #print(*pos, self.center_x, self.center_y, self.norm_image_size)
             # by default the touch coordinates are relative to GUI window
-            wx, wy = self.to_widget(pos[0], pos[1], relative = True)
+            #wx, wy = self.to_widget(pos[0], pos[1], relative = True)
+            wx, wy = pos[0], pos[1]
             image = App.get_running_app().image
             # get the image we last took
+            
+            print(self.height, self.width, self.norm_image_size)
+            #image = self.data
             if image is not None:
                 texture_w, texture_h = self.norm_image_size
                 #offset if the image is not fitting inside the widget
-                cx, cy = self.to_widget(self.center_x, self.center_y, relative = True)
+                cx, cy = self.center_x, self.center_y#, relative = True)
                 ox, oy = cx - texture_w / 2., cy - texture_h/ 2
                 h,w = image.shape
+                
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
                 if 0<=imy<h and 0<=imx<w:
                     val = image[imy,imx]
@@ -566,7 +588,7 @@ class PreviewImage(Image):
     
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
-        wx, wy = self.to_widget(pos[0], pos[1], relative = True)
+        wx, wy = self.to_widget(pos[0], pos[1])#, relative = True)
         image = App.get_running_app().image
         h,w = image.shape
         # paint a circle and make the coordinates available
@@ -578,7 +600,7 @@ class PreviewImage(Image):
         #offset if the image is not fitting inside the widget
         texture_w, texture_h = self.norm_image_size
         #offset if the image is not fitting inside the widget
-        cx, cy = self.to_widget(self.center_x, self.center_y, relative = True)
+        cx, cy = self.to_widget(self.center_x, self.center_y)#, relative = True)
         ox, oy = cx - texture_w / 2., cy - texture_h/ 2
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
@@ -595,8 +617,7 @@ class PreviewImage(Image):
         # if a click happens in this widget
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
-            if rtc.trackingcheckbox.state =='down' \
-                and rtc.trackingevent is None:
+            if rtc.trackingcheckbox.state =='down' and rtc.trackingevent is None:
                 #
                 self.captureCircle(touch.pos)
                 Clock.schedule_once(lambda dt: rtc.center_image(), 0.5)
@@ -750,8 +771,8 @@ class RuntimeControls(BoxLayout):
             #stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
-            app.coords[0] += ystep/1000.
-            app.coords[1] += xstep/1000.
+            app.coords[0] += xstep/1000.
+            app.coords[1] += ystep/1000.
             #print(app.coords)
             
 # display if hardware is connected

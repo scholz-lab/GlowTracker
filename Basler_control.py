@@ -28,8 +28,11 @@ def update_props(camera, propfile):
     """read psf file and alter camera properties.
         camera: pylon.InstantCamera
         propfile: path to .pfs file"""
-    pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
-
+    try:
+        pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
+    except genicam.RuntimeException:
+        print("Camera features could not be loaded.")
+       
 
 def single_take(camera):
     """take and return a single image."""

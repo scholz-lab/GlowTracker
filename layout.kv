@@ -358,19 +358,26 @@ MainWindow:
     orientation: 'vertical'
     #size: root.size
     CutBoxLayout:
+        id: stencil
         size_hint: (1, 0.75)
         ScalableImage:
-            #size_hint: (1, 1)
-            
+            id: scalableimage
+            size_hint: (None, None)
+            pos: stencil.pos
             size: previewimage.size
             auto_bring_to_front: False
-            do_translation: True
+            do_translation: False
             do_rotation: False
             do_scale: False
             scale_max: 2
             PreviewImage:
+                #pos: 0,0
+                size_hint: (None, None)
+                size: stencil.width, stencil.height
                 id: previewimage
                 texture: app.texture
+                
+                source: "icons/logoSq.png"
     GridLayout:
         cols: 2
         size_hint: (1, 0.05)
