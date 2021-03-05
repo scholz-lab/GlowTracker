@@ -48,6 +48,17 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
         # This creates a timestamped filename so we don't overwrite our good work
         return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
+def im_to_texture(image):
+        """helper function to create kivy textures from image arrays."""
+        buf = image.tobytes()
+        w,h = image.shape
+        image_texture = Texture.create(
+            size=(h,w), colorfmt="luminance"
+        )
+        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+        return image_texture
+        
+
 class WarningPopup(Popup):
     ok_text = StringProperty('OK')
     text = StringProperty('Label')
@@ -253,8 +264,8 @@ class RightColumn(BoxLayout):
             stepunits = app.config.get('Calibration', 'step_units')
             # run the calibration
             img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
-            self._popup.content.ids.image_one.texture = app.im_to_texture(img1)
-            self._popup.content.ids.image_two.texture = app.im_to_texture(img2)
+            self._popup.content.ids.image_one.texture = im_to_texture(img1)
+            self._popup.content.ids.image_two.texture = im_to_texture(img2)
             # calculate calibration from shift
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
@@ -312,7 +323,7 @@ class AutoFocus(BoxLayout):
             if i == focal_plane:
                 tmp.label.color = 'red'
                 tmp.label.text = f'Focus: Image {i}'
-            tmp.image.texture = App.get_running_app().im_to_texture(imstack[i])
+            tmp.image.texture = im_to_texture(imstack[i])
             self.imagewidgets.append(tmp)
             self.ids.multipleimages.add_widget(tmp)
     
@@ -455,7 +466,7 @@ class RecordButtons(BoxLayout):
         print("Finished recording")
         self.liveviewbutton.state = 'down'
         # reset scale of image
-        app.root.ids.middlecolumn.ids.scalableimage.reset()
+        App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
 
 
     def update(self, dt, save = False):
@@ -481,13 +492,13 @@ class RecordButtons(BoxLayout):
                     app.coords = app.coords
                 else:
                     app.coords = (0,0,0)
-                self.save(img, app.coords, self.parent.framecounter.value)
+                #self.save(img, app.coords, self.parent.framecounter.value)
                 # # # save image in thread
-                # t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
-                # # # set daemon to true so the thread dies when app is closed
-                # t.daemon = True
-                # # # start the thread
-                # t.start()
+                t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
+                # # set daemon to true so the thread dies when app is closed
+                t.daemon = True
+                # # start the thread
+                t.start()
                 self.parent.framecounter.value +=  1
         else:
             self.recordbutton.state = 'normal'
@@ -612,9 +623,9 @@ class PreviewImage(Image):
     def on_touch_down(self, touch):
         rtc = App.get_running_app().root.ids.middlecolumn.runtimecontrols
         # transform to local because of scatter
-        pos = self.to_widget(touch.pos[0], touch.pos[1])
+        #pos = self.to_widget(touch.pos[0], touch.pos[1])
         # if a click happens in this widget
-        if self.collide_point(*pos):
+        if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
             if rtc.trackingcheckbox.state =='down' and rtc.trackingevent is None:
                 #
@@ -754,9 +765,6 @@ class RuntimeControls(BoxLayout):
     def tracking(self,*args):
         # execute actual tracking code
         app = App.get_running_app()
-        if not app.camera.IsGrabbing():
-            self.trackingcheckbox.state = 'normal'
-            return
         stage = app.stage
         img = app.image
         # threshold and find objects
@@ -766,8 +774,8 @@ class RuntimeControls(BoxLayout):
             print(len(coords))
             offset = macro.getDistanceToCenter(coords, img.shape)
             ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
-            #stage.move_x(xstep, unit = 'um', wait_until_idle = False)
-            #stage.move_y(ystep, unit = 'um', wait_until_idle = False)
+            stage.move_x(xstep, unit = 'um', wait_until_idle = False)
+            stage.move_y(ystep, unit = 'um', wait_until_idle = False)
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
             app.coords[0] += xstep/1000.
@@ -1033,21 +1041,15 @@ class MacroscopeApp(App):
         # stop the app
         self.stop()
     
-    def im_to_texture(self, *args):
+    def im_to_texture(self):
         """helper function to create kivy textures from image arrays."""
-        if len(args)==0:
-            image = self.image
-        else:
-            image = args[0]
-        buf = image.tobytes()
-        w,h = image.shape
+        buf = self.image.tobytes()
+        w,h = self.image.shape
         image_texture = Texture.create(
             size=(h,w), colorfmt="luminance"
         )
         image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-        if len(args)==0:
-            self.texture = image_texture
-        return image_texture
+        self.texture = image_texture
         
 
 
