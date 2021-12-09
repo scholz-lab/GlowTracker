@@ -9,6 +9,7 @@ import sys
 from pypylon import pylon
 from pypylon import genicam
 
+
 def camera_init():
     try:
         # Create an instant camera object with the camera device found first.
@@ -29,7 +30,7 @@ def camera_init():
     sys.exit(exit_code)
 
 
-def live_update_demo(blit = False):
+def live_update_demo(blit=False):
     
     # set up a figure
     fig = pyplot.figure(figsize=(5,5))

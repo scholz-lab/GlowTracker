@@ -45,15 +45,16 @@ import Basler_control as basler
 Config.set('graphics', 'KIVY_CLOCK', 'free')
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
-        # This creates a timestamped filename so we don't overwrite our good work
-        return datetime.datetime.now().strftime(fmt).format(fname=fname)
+    # This creates a timestamped filename so we don't overwrite our good work
+    return datetime.datetime.now().strftime(fmt).format(fname=fname)
+
 
 def im_to_texture(image):
         """helper function to create kivy textures from image arrays."""
         buf = image.tobytes()
-        w,h = image.shape
+        w, h = image.shape
         image_texture = Texture.create(
-            size=(h,w), colorfmt="luminance"
+            size=(h, w), colorfmt="luminance"
         )
         image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
         return image_texture
@@ -77,6 +78,7 @@ class WarningPopup(Popup):
 class MainWindow(GridLayout):
     pass
 
+
 class LeftColumn(BoxLayout):
     # file saving and loading
     loadfile = ObjectProperty(None)
@@ -84,10 +86,10 @@ class LeftColumn(BoxLayout):
     cameraprops = ObjectProperty(None)
     saveloc = ObjectProperty(None) 
     #
+
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
         Clock.schedule_once(self._do_setup)
-    
 
     def _do_setup(self, *l):
         self.savefile =  App.get_running_app().config.get("Experiment", "exppath")
@@ -112,8 +114,7 @@ class LeftColumn(BoxLayout):
         # reset the stage keys
         app.bind_keys()
         print('saving path changed')
-    
-    
+
     def dismiss_popup(self):
         App.get_running_app().bind_keys()
         self._popup.dismiss()
@@ -138,19 +139,16 @@ class LeftColumn(BoxLayout):
         App.get_running_app().unbind_keys()
         self._popup.open()
 
-
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
         self.apply_cam_settings()
         self.dismiss_popup()
-    
 
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
         self.saveloc.text = (self.savefile)
         self.path_validate()
         self.dismiss_popup()
-        
 
     def apply_cam_settings(self):
         camera = App.get_running_app().camera
@@ -160,7 +158,6 @@ class LeftColumn(BoxLayout):
             basler.update_props(camera, propfile=self.loadfile)
             self.update_settings_display()
 
-
     # when file is loaded - update slider values which updates the camera
     def update_settings_display(self):
         # update slider value using ids
@@ -168,7 +165,6 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
         self.ids.camprops.framerate = camera.ResultingFrameRate()
-    
 
     #autofocus popup
     def show_autofocus(self):
@@ -186,8 +182,6 @@ class LeftColumn(BoxLayout):
             self._popup = WarningPopup(title="Autofocus", text = 'Autofocus requires a stage and a camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-
-    
 
     # run autofocussing once on current location
     def run_autofocus(self):
@@ -209,10 +203,10 @@ class LeftColumn(BoxLayout):
             self._popup.content.add_images(imstack, nsteps, focal_plane)
         
 
-            
 class MiddleColumn(BoxLayout, StencilView):
     runtimecontrols = ObjectProperty(None)
     previewimage = ObjectProperty(None)
+
 
 class RightColumn(BoxLayout):
     #
@@ -220,7 +214,6 @@ class RightColumn(BoxLayout):
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
 
-    
     def dismiss_popup(self):
         #rebind keyboard events
         App.get_running_app().bind_keys()
@@ -234,7 +227,6 @@ class RightColumn(BoxLayout):
         #unbind keyboard events
         App.get_running_app().unbind_keys()
         self._popup.open()
-    
 
     def show_calibration(self):
         app = App.get_running_app()
@@ -250,7 +242,6 @@ class RightColumn(BoxLayout):
             self._popup = WarningPopup(title="Calibration", text = 'Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-    
 
     def calibrate(self):
         app = App.get_running_app()
@@ -276,40 +267,45 @@ class RightColumn(BoxLayout):
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
             self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
        
-            
 
 class AutoCalibration(BoxLayout):
     calibrate = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
+
 # Stage controls
 class XControls(BoxLayout):
     pass
+
+
 class YControls(Widget):
     pass 
-    
+
+
 class ZControls(Widget):
     pass
+
 
 # load camera settings
 class LoadCameraProperties(BoxLayout):
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
+
 # save location for images and meta data
 class SaveExperiment(GridLayout):
     save = ObjectProperty(None)
     cancel = ObjectProperty(None)
+
 
 # save location for images and meta data
 class AutoFocus(BoxLayout):
     run_autofocus = ObjectProperty(None)
     cancel = ObjectProperty(None)
     # make config editable
-    nsteps = ConfigParserProperty(5, 'Autofocus', 'nsteps', 'app', val_type = int, )
-    stepsize = ConfigParserProperty(50, 'Autofocus', 'step_size', 'app', val_type = float)
-    stepunits = ConfigParserProperty('um','Autofocus', 'step_units', 'app', val_type = str)
-
+    nsteps = ConfigParserProperty(5, 'Autofocus', 'nsteps', 'app', val_type=int, )
+    stepsize = ConfigParserProperty(50, 'Autofocus', 'step_size', 'app', val_type=float)
+    stepunits = ConfigParserProperty('um', 'Autofocus', 'step_units', 'app', val_type=str)
     
     def __init__(self,  **kwargs):
         super(AutoFocus, self).__init__(**kwargs)
@@ -412,7 +408,6 @@ class RecordButtons(BoxLayout):
             if ret:
                 basler.save_image(im,path,snap_filename)
 
-
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -424,7 +419,6 @@ class RecordButtons(BoxLayout):
         else:
             self.liveviewbutton.state = 'normal'
 
-            
     def stopPreview(self):
         app = App.get_running_app()
         camera = app.camera
@@ -454,7 +448,6 @@ class RecordButtons(BoxLayout):
         else:
             self.recordbutton.state = 'normal'
 
-
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -468,21 +461,19 @@ class RecordButtons(BoxLayout):
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
 
-
-    def update(self, dt, save = False):
+    def update(self, dt, save=False):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
-            ret, img = basler.retrieve_result(camera)
+            ret, img, TimeStamp = basler.retrieve_result(camera)
             if ret:
                 # store image as class variable - this will also trigger a canvas update
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
                 self.parent.framecounter.value += 1
 
-
     def record(self, app, camera, nframes, dt):
         if self.parent.framecounter.value < nframes:
-            ret, img = basler.retrieve_result(camera)
+            ret, img, TimeStamp = basler.retrieve_result(camera)
             if ret:
                 # show on GUI
                 # store image as class variable - this will also trigger a canvas update
@@ -491,10 +482,10 @@ class RecordButtons(BoxLayout):
                 if app.stage is not None:
                     app.coords = app.coords
                 else:
-                    app.coords = (0,0,0)
+                    app.coords = (0, 0, 0)
                 #self.save(img, app.coords, self.parent.framecounter.value)
                 # # # save image in thread
-                t = Thread(target=self.save, args = (img,app.coords, self.parent.framecounter.value))
+                t = Thread(target=self.save, args=(img, app.coords, self.parent.framecounter.value, TimeStamp))
                 # # set daemon to true so the thread dies when app is closed
                 t.daemon = True
                 # # start the thread
@@ -504,13 +495,11 @@ class RecordButtons(BoxLayout):
             self.recordbutton.state = 'normal'
         return True
 
-
-    def save(self, img, coords, frameno):
+    def save(self, img, coords, frameno, TimeStamp):
         # save image to file
-        basler.save_image(img,self.path, self.image_filename.format(frameno))
+        basler.save_image(img, self.path, self.image_filename.format(frameno), TimeStamp)
         # save stage coordinates
         self.coordinate_file.write(f"{datetime.datetime.now().time().strftime('%H-%M-%S-%f')}  {coords[0]} {coords[1]} {coords[2]} \n")
-
 
     def init_recording(self, *args):
         """set up some recording filenames"""
@@ -518,14 +507,12 @@ class RecordButtons(BoxLayout):
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
         self.image_filename = timeStamped("basler_{}."+f"{ext}")
-        
 
     def open_file(self, *args):
         """open coordinate file."""
         # open a file for the coordinates
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
         self.coordinate_file.write(f"Time X Y Z \n")
-
 
     def schedule_saving(self, *args):
         """this delays the recording start a bit."""
@@ -560,6 +547,7 @@ class ScalableImage(ScatterLayout):
         self.center_x = self.parent.center_x
         self.center_y =  self.parent.center_y
 
+
 # image preview
 class PreviewImage(Image):
     #previewimage = ObjectProperty(None)
@@ -588,12 +576,11 @@ class PreviewImage(Image):
                 h,w = image.shape
                 
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                if 0<=imy<h and 0<=imx<w:
+                if 0 <= imy < h and 0 <= imx <w:
                     val = image[imy,imx]
                     App.get_running_app().root.ids.middlecolumn.ids.pixelvalue.text = f'({imx},{imy},{val})'
                     #self.parent.parent.parent.ids.
 
-    
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
         wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
@@ -613,11 +600,9 @@ class PreviewImage(Image):
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
-        
 
     def clearcircle(self):
         self.circle=(0,0,0)
-
 
     # # for reading mouse clicks
     def on_touch_down(self, touch):
@@ -648,11 +633,9 @@ class RuntimeControls(BoxLayout):
         self.focusevent = None
         self.focus_motion = 0
         self.trackingevent = None
-        
 
     def on_framecounter(self, instance, value):
         self.text = str(value)
-    
 
     def startFocus(self):
         # schedule a focus routine
@@ -672,13 +655,11 @@ class RuntimeControls(BoxLayout):
                             size_hint=(0.5, 0.25))
             self._popup.open()
             self.autofocuscheckbox.state = 'normal'
-    
 
     def stopFocus(self):
         # unschedule a focus routine
         if self.focusevent:
             Clock.unschedule(self.focusevent)
-    
 
     def focus(self, z_step, unit, focus_step_factor, *args):
         # run the actual focus routine - calculate the focus values and correct accordinly.
@@ -724,7 +705,6 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
 
-
     def stopTracking(self):
         # unschedule a tracking routine
         if self.trackingevent:
@@ -747,8 +727,8 @@ class RuntimeControls(BoxLayout):
         #print(self.parent.parent.ids.previewimage.offset)
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         #print("Move stage (x,y)", xstep, ystep)
-        stage.move_x(xstep, unit = 'um', wait_until_idle = False)
-        stage.move_y(ystep, unit = 'um', wait_until_idle = False)
+        stage.move_x(xstep, unit='um', wait_until_idle=False)
+        stage.move_y(ystep, unit='um', wait_until_idle=False)
         # reset camera field of view to smaller size around center
         hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
         # if desired FOV is smaller than allowed by camera, crop in GUI
@@ -760,7 +740,6 @@ class RuntimeControls(BoxLayout):
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
         app.coords =  app.stage.get_position()
         self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
-
 
     def tracking(self,*args):
         # execute actual tracking code
@@ -781,7 +760,8 @@ class RuntimeControls(BoxLayout):
             app.coords[0] += xstep/1000.
             app.coords[1] += ystep/1000.
             #print(app.coords)
-            
+
+
 # display if hardware is connected
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
@@ -791,11 +771,9 @@ class Connections(BoxLayout):
         super(Connections, self).__init__(**kwargs)
         Clock.schedule_once(self._do_setup)
 
-
     def _do_setup(self, *l):
         self.stage_connection.state ='down'
         self.cam_connection.state ='down'
-    
 
     def connectCamera(self):
         print('connecting Camera')
@@ -808,13 +786,11 @@ class Connections(BoxLayout):
             # load and apply default pfs
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
 
-
     def disconnectCamera(self):
         camera = App.get_running_app().camera
         if camera is not None:
             print('disconnecting')
             camera.Close()
-        
 
     def connectStage(self):
         print('connecting Stage')
@@ -854,20 +830,24 @@ class ExitApp(BoxLayout):
    stop = ObjectProperty(None)
    cancel = ObjectProperty(None)
 # set window size at startup
+
+
 Window.size = (1280, 800)
+
+
 # load the layout
 class MacroscopeApp(App):
     # stage configuration properties - these will update when changed in config menu
     vhigh = ConfigParserProperty(20, 
-                    'Stage', 'vhigh', 'app', val_type = float)
+                    'Stage', 'vhigh', 'app', val_type=float)
     vlow = ConfigParserProperty(20, 
-                    'Stage', 'vlow', 'app', val_type = float)
+                    'Stage', 'vlow', 'app', val_type=float)
     unit = ConfigParserProperty('mms', 
-                    'Stage', 'speed_unit', 'app', val_type = str)
+                    'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
-    texture = ObjectProperty(None, force_dispatch = True, rebind = True)
-    image = ObjectProperty(None, force_dispatch = True, rebind = True)
-    coords = ListProperty([0,0,0])
+    texture = ObjectProperty(None, force_dispatch=True, rebind=True)
+    image = ObjectProperty(None, force_dispatch=True, rebind=True)
+    coords = ListProperty([0, 0, 0])
     #
     
     def __init__(self,  **kwargs):
@@ -879,7 +859,6 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
-   
     
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -891,7 +870,8 @@ class MacroscopeApp(App):
         rotation= self.config.getfloat('Camera', 'rotation')
         self.calibration_matrix = macro.genCalibrationMatrix(pixelsize, rotation)
         return layout
-    # 
+
+    #
     def build_config(self, config):
         """
         Set the default values for the configs sections.
@@ -905,7 +885,6 @@ class MacroscopeApp(App):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
-
 
     def create_settings(self):
         '''Create the settings panel. This method will normally
@@ -936,7 +915,6 @@ class MacroscopeApp(App):
                on_config_change=self._on_config_change)
         return s
 
-
     def close__destroy_settings(self, *largs):
         '''Close the previously opened settings panel.
 
@@ -946,7 +924,6 @@ class MacroscopeApp(App):
         self.close_settings()
         self.bind_keys()
         self.destroy_settings()
-        
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
@@ -957,32 +934,32 @@ class MacroscopeApp(App):
             # left arrow - x axis
             if key == 276:
                 if 'shift' in modifier:
-                    self.stage.move_speed((-self.vlow,0,0), self.unit)
-                else: self.stage.move_speed((-self.vhigh,0,0), self.unit)
+                    self.stage.move_speed((-self.vlow, 0, 0), self.unit)
+                else: self.stage.move_speed((-self.vhigh, 0, 0), self.unit)
             #right arrow - x-axis
             if key == 275:
                 if 'shift' in modifier:
-                    self.stage.move_speed((self.vlow,0,0), self.unit)
-                else: self.stage.move_speed((self.vhigh,0,0), self.unit)
+                    self.stage.move_speed((self.vlow, 0, 0), self.unit)
+                else: self.stage.move_speed((self.vhigh, 0, 0), self.unit)
             # up and down arrow are y stage
             if key == 273:
                 if 'shift' in modifier:
-                    self.stage.move_speed((0,-self.vlow,0), self.unit)
-                else: self.stage.move_speed((0,-self.vhigh,0), self.unit)
+                    self.stage.move_speed((0, -self.vlow, 0), self.unit)
+                else: self.stage.move_speed((0, -self.vhigh, 0), self.unit)
             if key == 274:
                 if 'shift' in modifier:
-                    self.stage.move_speed((0,self.vlow,0), self.unit)
-                else: self.stage.move_speed((0,self.vhigh,0), self.unit)
+                    self.stage.move_speed((0, self.vlow, 0), self.unit)
+                else: self.stage.move_speed((0, self.vhigh, 0), self.unit)
             #focus keys -pg up and down for z
             
             if key == 280:
                 if 'shift' in modifier:
-                    self.stage.move_speed((0,0,-self.vlow), self.unit)
-                else: self.stage.move_speed((0,0,-self.vhigh), self.unit)
+                    self.stage.move_speed((0, 0, -self.vlow), self.unit)
+                else: self.stage.move_speed((0, 0, -self.vhigh), self.unit)
             if key == 281:
                 if 'shift' in modifier:
-                    self.stage.move_speed((0,0,self.vlow), self.unit)
-                else: self.stage.move_speed((0,0,self.vhigh), self.unit)
+                    self.stage.move_speed((0, 0, self.vlow), self.unit)
+                else: self.stage.move_speed((0, 0, self.vhigh), self.unit)
 
     def _keyup(self, *args):
         if self.stage is not None:
@@ -1007,16 +984,13 @@ class MacroscopeApp(App):
                 print('updated calibration matrix')
                 pixelsize = self.config.getfloat('Camera', 'pixelsize')
                 rotation= self.config.getfloat('Camera', 'rotation')
-                self.calibration_matrix =  macro.genCalibrationMatrix(pixelsize, rotation)
+                self.calibration_matrix = macro.genCalibrationMatrix(pixelsize, rotation)
             if token == ('Experiment', 'exppath'):
                 self.root.ids.leftcolumn.ids.saveloc.text = value
-
-
 
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
         self.im_to_texture()
-
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
@@ -1052,10 +1026,8 @@ class MacroscopeApp(App):
         self.texture = image_texture
         
 
-
 def reset():
     # Cleaner for the events in memory
-    
     if not EventLoop.event_listeners:
         window.Window = window.core_select_lib('window', window.window_impl, True)
         Cache.print_usage()

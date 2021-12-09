@@ -5,6 +5,7 @@ import os
 import time
 from skimage.io import imsave
 
+
 #%% Camera initialization
 def camera_init():
     try:
@@ -40,13 +41,15 @@ def single_take(camera):
     ret, img = retrieve_result(camera)
     return ret, img
 
-def start_grabbing(camera, numberOfImagesToGrab = 100, record = False):
+
+def start_grabbing(camera, numberOfImagesToGrab=100, record=False):
     """start grabbing with the camera"""
     
     if record:
-        camera.StartGrabbingMax(numberOfImagesToGrab,pylon.GrabStrategy_OneByOne)#, pylon.GrabLoop_ProvidedByInstantCamera)
+        camera.StartGrabbingMax(numberOfImagesToGrab, pylon.GrabStrategy_OneByOne)#, pylon.GrabLoop_ProvidedByInstantCamera)
     else:
         camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+
 
 def stop_grabbing(camera):
     """start grabbing with the camera"""
@@ -60,11 +63,14 @@ def retrieve_result(camera):
     grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
     
     if grabResult.GrabSucceeded():
+        conversion_factor = 1e6  # for conversion in ms
         img = grabResult.Array
+        Time = round(grabResult.TimeStamp/conversion_factor, 2)
         grabResult.Release()
-        return True, img
+        return True, img, Time
     else:
         return False, None
+
 
 class ImageEventPrinter(pylon.ImageEventHandler):
     def OnImagesSkipped(self, camera, countOfSkippedImages):
@@ -84,7 +90,7 @@ class ImageEventPrinter(pylon.ImageEventHandler):
         return True
 
 
-def save_image(im,path,fname):
+def save_image(im, path, fname, TimeStamp):
     """save image in path using fname and ext as extension."""
     start = time.time()
     #using PIL - slow
@@ -93,9 +99,13 @@ def save_image(im,path,fname):
     #using skimage
     imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
     print('Saving time: ',time.time() - start)
+    log = open(os.path.join(path, fname[0:-5] + 'TimeStamp.txt'), 'w')
+    log.write(str(TimeStamp) + '\r')
+    log.close()
+    print('Saving time_fromTimeStamp: ', TimeStamp)
 
 
-def cam_setROI(camera, w,h,center = True):
+def cam_setROI(camera, w, h, center=True):
     """set the ROI for a camera. ox, oy are offsets, w,h are the width and height in pixel, respectively."""
     if w <= camera.Width.Max and h <= camera.Height.Max:
         # cam stop
@@ -112,6 +122,7 @@ def cam_setROI(camera, w,h,center = True):
         # cam start
         camera.AcquisitionStart.Execute()
     return camera.Height(), camera.Width()
+
 
 def cam_resetROI(camera):
     """set the ROI for a camera to full sensor size."""

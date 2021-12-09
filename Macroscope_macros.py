@@ -89,11 +89,13 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     stage.move_abs((None,None,zpos[focal_plane]))
     # return focus values, images and best location
     return stack_variance, stack, zpos, focal_plane
-    
+
+
 # functions for live focusing
 def calculate_focus(im, nbin = 1):
     """given an image array, calculate a proxy for sharpness."""
     return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
+
 
 def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
     """given past values calculate the next focussing move."""
@@ -102,7 +104,8 @@ def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor
     if ~np.isfinite(error):
         return 0
     return error*np.sign(past_motion)*focus_step_factor*min_step#np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
-    
+
+
 # functions for tracking
 #%% Functions used for centering stage
 def extractWorms(img, area=0, bin_factor=4, li_init=10):
