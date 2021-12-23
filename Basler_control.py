@@ -3,8 +3,9 @@ from pypylon import genicam, pylon
 from PIL import Image
 import os
 import time
-from skimage.io import imsave
-
+#from skimage.io import imsave
+#import cv2
+from libtiff import TIFF
 
 #%% Camera initialization
 def camera_init():
@@ -42,11 +43,11 @@ def single_take(camera):
     return ret, img
 
 
-def start_grabbing(camera, numberOfImagesToGrab=100, record=False):
+def start_grabbing(camera, numberOfImagesToGrab=100, record=False, buffersize=16):
     """start grabbing with the camera"""
-    
+    camera.MaxNumBuffer = buffersize
     if record:
-        camera.StartGrabbingMax(numberOfImagesToGrab, pylon.GrabStrategy_OneByOne)#, pylon.GrabLoop_ProvidedByInstantCamera)
+        camera.StartGrabbingMax(numberOfImagesToGrab, pylon.GrabStrategy_OneByOne)
     else:
         camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
@@ -57,15 +58,11 @@ def stop_grabbing(camera):
 
 
 def retrieve_result(camera):
-    """start grabbing with the camera"""
-    #camera.StartGrabbing(numberOfImagesToGrab, pylon.GrabStrategy_LatestImageOnly)
-    # while camera.IsGrabbing():
-    grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
-    
+    grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
     if grabResult.GrabSucceeded():
         conversion_factor = 1e6  # for conversion in ms
-        img = grabResult.Array
-        Time = round(grabResult.TimeStamp/conversion_factor, 2)
+        img = grabResult.Array.copy()
+        Time = round(grabResult.TimeStamp/conversion_factor, 1)
         grabResult.Release()
         return True, img, Time
     else:
@@ -90,20 +87,17 @@ class ImageEventPrinter(pylon.ImageEventHandler):
         return True
 
 
-def save_image(im, path, fname, TimeStamp):
+def save_image(im, path, fname):
     """save image in path using fname and ext as extension."""
-    start = time.time()
     #using PIL - slow
     #im = Image.fromarray(im)
     #im.save(os.path.join(path, fname), quality = 100)
     #using skimage
-    imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
-    print('Saving time: ',time.time() - start)
-    log = open(os.path.join(path, fname[0:-5] + 'TimeStamp.txt'), 'w')
-    log.write(str(TimeStamp) + '\r')
-    log.close()
-    print('Saving time_fromTimeStamp: ', TimeStamp)
-
+    #imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
+    #cv2.imwrite(os.path.join(path, fname), im)
+    tiff = TIFF.open(os.path.join(path, fname), mode='w')
+    tiff.write_image(im)
+    tiff.close()
 
 def cam_setROI(camera, w, h, center=True):
     """set the ROI for a camera. ox, oy are offsets, w,h are the width and height in pixel, respectively."""
