@@ -37,5 +37,12 @@
         "desc": "How long is the video (min)",
         "section": "Experiment",
         "key": "framerate"
+    },
+    {
+        "type": "numeric",
+        "title": "Buffer size",
+        "desc": "Operating buffer size to handle the data input and output (frames)",
+        "section": "Experiment",
+        "key": "buffersize"
     }
 ]

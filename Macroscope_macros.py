@@ -73,7 +73,7 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
             ret, img = basler.single_take(camera)
             pos = stage.get_position()
             print(pos)
-            if ret and len(pos)>2:
+            if ret and len(pos) > 2:
                 stack.append(img)
                 zpos.append(pos[2])
                 print(stepunits)
