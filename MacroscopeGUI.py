@@ -41,9 +41,9 @@ import Zaber_control as stg
 import Macroscope_macros as macro
 import Basler_control as basler
 from skimage.io import imsave
-import cv2
-from pypylon import pylon
-from pypylon import genicam
+#import cv2
+#from pypylon import pylon
+#from pypylon import genicam
 
 # get the free clock (more accurate timing)
 Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -101,6 +101,7 @@ class LeftColumn(BoxLayout):
         self.loadfile = App.get_running_app().config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
+
     def path_validate(self):
         p = Path(self.saveloc.text)
         app = App.get_running_app()
@@ -119,9 +120,11 @@ class LeftColumn(BoxLayout):
         app.bind_keys()
         print('saving path changed')
 
+
     def dismiss_popup(self):
         App.get_running_app().bind_keys()
         self._popup.dismiss()
+
 
     # popup camera file selector
     def show_load(self):
@@ -133,6 +136,7 @@ class LeftColumn(BoxLayout):
         App.get_running_app().unbind_keys()
         self._popup.open()
 
+
     # popup experiment dialog selector
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
@@ -143,10 +147,12 @@ class LeftColumn(BoxLayout):
         App.get_running_app().unbind_keys()
         self._popup.open()
 
+
     def load(self, path, filename):
         self.loadfile = os.path.join(path, filename[0])
         self.apply_cam_settings()
         self.dismiss_popup()
+
 
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
@@ -154,13 +160,14 @@ class LeftColumn(BoxLayout):
         self.path_validate()
         self.dismiss_popup()
 
+
     def apply_cam_settings(self):
         camera = App.get_running_app().camera
-        ### TODO this reference is quite ugly, check if more elegant solution is possible
         if camera is not None:
             print('Updating camera settings')
             basler.update_props(camera, propfile=self.loadfile)
             self.update_settings_display()
+
 
     # when file is loaded - update slider values which updates the camera
     def update_settings_display(self):
@@ -169,6 +176,7 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
         self.ids.camprops.framerate = camera.ResultingFrameRate()
+
 
     #autofocus popup
     def show_autofocus(self):
@@ -186,6 +194,7 @@ class LeftColumn(BoxLayout):
             self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+
 
     # run autofocussing once on current location
     def run_autofocus(self):
@@ -218,10 +227,12 @@ class RightColumn(BoxLayout):
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
 
+
     def dismiss_popup(self):
         #rebind keyboard events
         App.get_running_app().bind_keys()
         self._popup.dismiss()
+
 
     def show_recording_settings(self):
         """change recording settings."""
@@ -231,6 +242,7 @@ class RightColumn(BoxLayout):
         #unbind keyboard events
         App.get_running_app().unbind_keys()
         self._popup.open()
+
 
     def show_calibration(self):
         app = App.get_running_app()
@@ -246,6 +258,7 @@ class RightColumn(BoxLayout):
             self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+
 
     def calibrate(self):
         app = App.get_running_app()
@@ -315,6 +328,7 @@ class AutoFocus(BoxLayout):
         super(AutoFocus, self).__init__(**kwargs)
         self.imagewidgets = []
 
+
     def add_images(self, imstack, n, focal_plane):
          # build as many labelled images as we will need
         for i in range(n):
@@ -327,9 +341,11 @@ class AutoFocus(BoxLayout):
             self.imagewidgets.append(tmp)
             self.ids.multipleimages.add_widget(tmp)
 
+
     def delete_images(self):
         for wg in self.imagewidgets:
             self.ids.multipleimages.remove_widget(wg)
+
 
 
 class LabelImage(BoxLayout):
@@ -373,6 +389,7 @@ class CameraProperties(GridLayout):
         else:
             self.gain = 0
 
+
     def change_exposure(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -380,6 +397,7 @@ class CameraProperties(GridLayout):
             self.exposure = camera.ExposureTime()
         else:
             self.exposure = 0
+
 
     def change_framerate(self):
         """update framerate"""
@@ -415,6 +433,7 @@ class RecordButtons(BoxLayout):
             if ret:
                 basler.save_image(im,path,snap_filename)
 
+
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -426,6 +445,7 @@ class RecordButtons(BoxLayout):
         else:
             self.liveviewbutton.state = 'normal'
 
+
     def stopPreview(self):
         app = App.get_running_app()
         camera = app.camera
@@ -436,6 +456,7 @@ class RecordButtons(BoxLayout):
         self.parent.framecounter.value = 0
         # reset scale of image
         app.root.ids.middlecolumn.ids.scalableimage.reset()
+
 
     def startRecording(self):
         app = App.get_running_app()
@@ -455,6 +476,7 @@ class RecordButtons(BoxLayout):
         else:
             self.recordbutton.state = 'normal'
 
+
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
@@ -469,35 +491,25 @@ class RecordButtons(BoxLayout):
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
 
-        # Close cv2 window
-        cv2.destroyAllWindows()
 
     def update(self, dt, save=False):
         camera = App.get_running_app().camera
         if camera is not None and camera.IsGrabbing():
-            ret, img, TimeStamp = basler.retrieve_result(camera)
+            ret, img, timeStamp = basler.retrieve_result(camera)
             if ret:
                 # store image as class variable - this will also trigger a canvas update
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
                 self.parent.framecounter.value += 1
 
-    def record(self, app, camera, nframes, dim, cv2, dt):
-        global last_frame
-        global last_time
+
+    def record(self, app, camera, nframes, dim, dt):
         if camera.GetGrabResultWaitObject().Wait(0):
-            ret, img, TimeStamp = basler.retrieve_result(camera)
+            ret, img, timeStamp = basler.retrieve_result(camera)
             if ret:
-                try:
-                    self.display_images(cv2, dim)
-                except:
-                    # Do nothing
-                    print('Error occurred')
-                if TimeStamp > last_time + 100:  # show on GUI
-                    # store image as class variable
-                    cropY, cropX = self.parent.cropY, self.parent.cropX
-                    last_frame = img[cropY:-cropY:8, cropX:-cropX:8]
-                    last_time = TimeStamp
+                # store image as class variable
+                cropY, cropX = self.parent.cropY, self.parent.cropX
+                
                 if app.stage is not None:
                     app.coords = app.coords
                 else:
@@ -507,25 +519,22 @@ class RecordButtons(BoxLayout):
                 # self.save(img, app.coords, self.parent.framecounter.value, TimeStamp)
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {TimeStamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
                 #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
-                thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-                #t = thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
+                #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
+                t = thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
                 # # set daemon to true so the thread dies when app is closed
-                #t.daemon = True
+                t.daemon = True
                 # # start the thread
                 self.parent.framecounter.value += 1
         if self.parent.framecounter.value == nframes:
             self.recordbutton.state = 'normal'
         return True
 
-    def update_canvas(self, app, *args):
-        # This will keep updating the canvas
-        global last_frame
-        app.image = last_frame
 
     def save(self, img, path, file_name):
         # save image to file
         basler.save_image(img, path, file_name)
-        # save stage coordinates
+        
+
 
     def init_recording(self, *args):
         """set up some recording filenames"""
@@ -533,6 +542,7 @@ class RecordButtons(BoxLayout):
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
         self.image_filename = timeStamped("basler_{}."+f"{ext}")
+        
 
     def open_file(self, *args):
         """open coordinate file."""
@@ -540,11 +550,9 @@ class RecordButtons(BoxLayout):
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
         self.coordinate_file.write(f"Frame Time X Y Z \n")
 
+
     def schedule_saving(self, *args):
         """this delays the recording start a bit."""
-        global last_frame
-        global last_time
-        last_time = 0
         app = App.get_running_app()
         width = app.camera.Width.Value
         height = app.camera.Height.Value
@@ -563,44 +571,12 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         path_root = self.path
 
-        # innitializin display
-        cv2.namedWindow('Live Image', cv2.WINDOW_NORMAL)  # used to bring to frontmost cv2
-        scale = 0.5
-        dim = (round(width * scale), round(height * scale))
-
         # Start the grabbing of c_countOfImagesToGrab images.
         # The camera device is parameterized with a default configuration which
         # sets up free-running continuous acquisition.
         basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
         self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
         #self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes, dim, cv2), 1.0 / fps)
-
-    def record_new(self, camera, path_root, dim, cv2, app, nframes, dt):
-
-        # if self.parent.framecounter.value == nframes:
-        #     self.recordbutton.state = 'normal'
-        if camera.GetGrabResultWaitObject().Wait(0):
-            thread.start_new_thread(take_frame, (camera, path_root))
-            if app.stage is not None:
-                app.coords = app.coords
-            else:
-                app.coords = (0, 0, 0)
-            try:
-               self.display_images(cv2, dim)
-            except:
-               # Do nothing
-               print('Error occurred')
-            # self.parent.framecounter.value += 1
-
-    def display_images(self, cv2, dim, *args):
-        # simply display the newest image
-        global last_frame
-        global last_time
-        if last_time > 0:
-            resized_image = cv2.resize(last_frame, dim, interpolation=cv2.INTER_AREA)
-            cv2.imshow('Live Image', cv2.equalizeHist(resized_image))
-            cv2.waitKey(1)
-
 
 
 class ScalableImage(ScatterLayout):
@@ -655,6 +631,7 @@ class PreviewImage(Image):
                     App.get_running_app().root.ids.middlecolumn.ids.pixelvalue.text = f'({imx},{imy},{val})'
                     #self.parent.parent.parent.ids.
 
+
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
         wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
@@ -675,8 +652,10 @@ class PreviewImage(Image):
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
 
+
     def clearcircle(self):
         self.circle = (0, 0, 0)
+
 
     # # for reading mouse clicks
     def on_touch_down(self, touch):
@@ -708,8 +687,10 @@ class RuntimeControls(BoxLayout):
         self.focus_motion = 0
         self.trackingevent = None
 
+
     def on_framecounter(self, instance, value):
         self.text = str(value)
+
 
     def startFocus(self):
         # schedule a focus routine
@@ -730,10 +711,12 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.autofocuscheckbox.state = 'normal'
 
+
     def stopFocus(self):
         # unschedule a focus routine
         if self.focusevent:
             Clock.unschedule(self.focusevent)
+
 
     def focus(self, z_step, unit, focus_step_factor, *args):
         # run the actual focus routine - calculate the focus values and correct accordinly.
@@ -759,6 +742,7 @@ class RuntimeControls(BoxLayout):
         #print('Saving time: ',time.time() - start)
         return
 
+
     def startTracking(self):
         app = App.get_running_app()
         # schedule a tracking routine
@@ -779,6 +763,7 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
 
+
     def stopTracking(self):
         # unschedule a tracking routine
         if self.trackingevent:
@@ -789,6 +774,7 @@ class RuntimeControls(BoxLayout):
             basler.cam_resetROI(camera)
             self.cropX = 1
             self.cropY = 1
+
 
     def center_image(self):
         app = App.get_running_app()
@@ -814,6 +800,7 @@ class RuntimeControls(BoxLayout):
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
         app.coords =  app.stage.get_position()
         self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
+
 
     def tracking(self,*args):
         # execute actual tracking code
@@ -845,9 +832,11 @@ class Connections(BoxLayout):
         super(Connections, self).__init__(**kwargs)
         Clock.schedule_once(self._do_setup)
 
+
     def _do_setup(self, *l):
         self.stage_connection.state = 'down'
         self.cam_connection.state = 'down'
+
 
     def connectCamera(self):
         print('connecting Camera')
@@ -860,11 +849,13 @@ class Connections(BoxLayout):
             # load and apply default pfs
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
 
+
     def disconnectCamera(self):
         camera = App.get_running_app().camera
         if camera is not None:
             print('disconnecting')
             camera.Close()
+
 
     def connectStage(self):
         print('connecting Stage')
@@ -885,6 +876,7 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
+
 
     def disconnectStage(self):
         print('disconnecting Stage')
@@ -953,11 +945,13 @@ class MacroscopeApp(App):
         #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'ums', 'stage_limit_x':155})
         #config.setdefaults('Experiment', {'exppath':155})
 
+
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
         settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
+
 
     def create_settings(self):
         '''Create the settings panel. This method will normally
@@ -988,6 +982,7 @@ class MacroscopeApp(App):
                on_config_change=self._on_config_change)
         return s
 
+
     def close__destroy_settings(self, *largs):
         '''Close the previously opened settings panel.
 
@@ -997,6 +992,7 @@ class MacroscopeApp(App):
         self.close_settings()
         self.bind_keys()
         self.destroy_settings()
+
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
@@ -1034,19 +1030,23 @@ class MacroscopeApp(App):
                     self.stage.move_speed((0, 0, self.vlow), self.unit)
                 else: self.stage.move_speed((0, 0, self.vhigh), self.unit)
 
+
     def _keyup(self, *args):
         if self.stage is not None:
             self.stage.stop()
             self.coords = self.stage.get_position()
+
 
     def unbind_keys(self):
         #unbind keyboard events
         Window.unbind(on_key_up=self._keyup)
         Window.unbind(on_key_down=self._keydown)
 
+
     def bind_keys(self):
         Window.bind(on_key_up=self._keyup)
         Window.bind(on_key_down=self._keydown)
+
 
     def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
@@ -1061,9 +1061,11 @@ class MacroscopeApp(App):
             if token == ('Experiment', 'exppath'):
                 self.root.ids.leftcolumn.ids.saveloc.text = value
 
+
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
         self.im_to_texture()
+
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
@@ -1073,8 +1075,10 @@ class MacroscopeApp(App):
         self._popup.open()
         return True
 
+
     def dismiss_popup(self):
         self._popup.dismiss()
+
 
     def graceful_exit(self):
         # disconnect hardware
@@ -1089,6 +1093,7 @@ class MacroscopeApp(App):
         self.stop()
         # close the window
         self.root_window.close()
+
 
     def im_to_texture(self):
         """helper function to create kivy textures from image arrays."""
@@ -1108,24 +1113,6 @@ def reset():
         Cache.print_usage()
         for cat in Cache._categories:
             Cache._objects[cat] = {}
-
-
-def take_frame(camera, path_root):
-    # frames are saved with a name stating the timestamp of their recording
-    global last_time
-    global last_frame
-    img2 = pylon.PylonImage()  # holder for the image
-    grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
-    frame_time = grabResult.TimeStamp
-    img2.AttachGrabResultBuffer(grabResult)  # This is to avoid overwriting of the frame
-    frame_data = img2.GetArray().copy()
-    img2.Release()
-    tiff_name = os.path.join(path_root, str(frame_time) + ".tif")
-    imsave(tiff_name, frame_data, check_contrast=False)
-    if frame_time > last_time:
-        last_time = frame_time
-        last_frame = frame_data
-    return
 
 
 if __name__ == '__main__':

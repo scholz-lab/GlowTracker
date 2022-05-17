@@ -5,7 +5,7 @@ import os
 import time
 #from skimage.io import imsave
 #import cv2
-from libtiff import TIFF
+#from libtiff import TIFF
 
 #%% Camera initialization
 def camera_init():
@@ -93,11 +93,11 @@ def save_image(im, path, fname):
     #im = Image.fromarray(im)
     #im.save(os.path.join(path, fname), quality = 100)
     #using skimage
-    #imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
+    imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
     #cv2.imwrite(os.path.join(path, fname), im)
-    tiff = TIFF.open(os.path.join(path, fname), mode='w')
-    tiff.write_image(im)
-    tiff.close()
+    #tiff = TIFF.open(os.path.join(path, fname), mode='w')
+    #tiff.write_image(im)
+    #tiff.close()
 
 def cam_setROI(camera, w, h, center=True):
     """set the ROI for a camera. ox, oy are offsets, w,h are the width and height in pixel, respectively."""
