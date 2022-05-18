@@ -7,7 +7,7 @@ import matplotlib.pylab as plt
 from pypylon import pylon
 from skimage.filters import threshold_otsu, threshold_li
 from skimage.measure import regionprops, label
-from skimage.feature import register_translation as phase_cross_correlation
+#from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
 from skimage import io
 from tifffile import imsave, TiffWriter

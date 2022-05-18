@@ -39,7 +39,7 @@ def update_props(camera, propfile):
 def single_take(camera):
     """take and return a single image."""
     camera.StartGrabbingMax(1)
-    ret, img = retrieve_result(camera)
+    ret, img,_ = retrieve_result(camera)
     return ret, img
 
 
@@ -66,7 +66,7 @@ def retrieve_result(camera):
         grabResult.Release()
         return True, img, Time
     else:
-        return False, None
+        return False, None, None
 
 
 class ImageEventPrinter(pylon.ImageEventHandler):

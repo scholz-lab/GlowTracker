@@ -32,7 +32,7 @@ class Stage:
             connection = Connection.open_serial_port(port)
             device_list = connection.detect_devices()
             print("Found {} devices".format(len(device_list)))
-            if len(device_list) >0:
+            if len(device_list) > 0:
                 return connection
             else:
                 return None
