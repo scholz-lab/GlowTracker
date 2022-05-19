@@ -1,7 +1,12 @@
 # Macroscope
-Documentation and scripts to control the behavior macroscope
+Documentation and scripts to control the behavior macroscope. The behavior macroscope is a single magnification microscope with capabilities for epi-fluorescence and brightfield imaging. Addition of a pinhole allows for holographic imaging too.
 
-## Install the correct environment
+The macroscope GUI is intened to provide a tracking interface for manual and automated tracking. Limited access to camera parameters is provided, but we assume users will use the pylon software from Basler to adjust and save complex configurations as we do not wish to duplicate this work.
+
+
+
+## Getting started
+### Install the correct environment
 - conda env create --file .\StageEnvironment.yml
 - activate the environment
  conda activate macroscope
@@ -15,6 +20,19 @@ To get the BASLER package running on windows 64 do the following:
  - pip install pypylon-1.5.4-cp37-cp37m-win_amd64.whl
 
 
+
+
+
+## GUI overview
+
+
+## Code overview
+
+The GUI is build as a kivy App which connects to the macroscope hardware (currently two USB devices).
+GUI functionality is implemented mostly in the kivy file, whereas device functionality is relayed to specific modules. 
+
+## Known issues
+-  While the exposed camera parameters can be changed during live preview, the framerate is fixed to a display framerate. This might be undesired behavior.
 
 To get controls for zaber stage running:
 
