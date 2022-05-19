@@ -1,4 +1,5 @@
 # Macroscope
+<img alt="photo macroscope" src="images/20220516_083750.jpg" width="150" align=LEFT>
 Documentation and scripts to control the behavior macroscope. The behavior macroscope is a single magnification microscope with capabilities for epi-fluorescence and brightfield imaging. Addition of a pinhole allows for holographic imaging too.
 
 The macroscope GUI is intened to provide a tracking interface for manual and automated tracking. Limited access to camera parameters is provided, but we assume users will use the pylon software from Basler to adjust and save complex configurations as we do not wish to duplicate this work.
@@ -24,7 +25,7 @@ To get the BASLER package running on windows 64 do the following:
 
 
 ## GUI overview
-
+<img alt="annotated GUI" src="images/gui_annotation.png" width="1250">
 
 ## Code overview
 
