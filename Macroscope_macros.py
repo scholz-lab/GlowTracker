@@ -3,208 +3,110 @@ import math
 import numpy as np
 import os
 import csv
-import matplotlib as plt
+import matplotlib.pylab as plt
 from pypylon import pylon
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_otsu, threshold_li
 from skimage.measure import regionprops, label
-from skimage.feature import register_translation as phase_cross_correlation
+#from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
 from skimage import io
 from tifffile import imsave, TiffWriter
 from zaber_motion import Library, Units
 from zaber_motion.ascii import connection
-from Basler_control import camera_init
+import Basler_control as basler
 
 
 #Library.toggle_device_db_store(True)
 
 
 #%% Stage Calibration
-def genCalibrationMatrix(shift):
-    '''Calculating calibration matrix from extracted coordinates
-    input: list of coordinates from images taken between stage movements
+def genCalibrationMatrix(pixelsize, rotation):
+    '''Calculating calibration matrix from pixelsize and known rotation.
     output: calibration matrix, translating image distances to stage & correcting rotation
     '''
-    xTranslation = shift[1]
-    yTranslation = shift[0]
-    print(shift)
-    # Length translation
-    xPixelSize = 500/xTranslation # units of um/px
-    yPixelSize = 500/yTranslation # units of um/px
-    # Rotation angle
-    rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
-    print(math.degrees(rotation))
     # Create calibration matrix (Rotation matrix reordered y, x)
     calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][0] = -yPixelSize*math.sin(rotation)
-    calibrationMatrix[0][1] = yPixelSize*math.cos(rotation)
-    calibrationMatrix[1][0] = xPixelSize*math.cos(rotation)
-    calibrationMatrix[1][1] = xPixelSize*math.sin(rotation)
-
+    calibrationMatrix[0][1] = math.cos(rotation)*pixelsize
+    calibrationMatrix[0][0] = -math.sin(rotation)*pixelsize
+    calibrationMatrix[1][1] = math.sin(rotation)*pixelsize
+    calibrationMatrix[1][0] = math.cos(rotation)*pixelsize
     return calibrationMatrix
 
 
-def getImgs(im0name = 'StartPosition.tiff', im1name = 'X_Y_AxisMotion.tiff'):
-    # Hardware initialization
-    connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    camera = camera_init()
-    
-    # grabbing images before & after stage movement
-    counter = 0
-    while counter < 2:
-        print('Grabbing image...')
-        camera.StartGrabbingMax(1)      # taking image
-        grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        img = grabResult.Array          # accessing image data  
-        if counter == 0:
-            imsave(im0name, img)
-            axis_x.move_relative(500, Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            axis_y.move_relative(500, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-        elif counter == 1:
-            imsave(im1name, img)
-        counter += 1
-    # return to origin
-    axis_x.move_relative(-500, Units.LENGTH_MICROMETRES, wait_until_idle=False)
-    axis_y.move_relative(-500, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    camera.Close()
-    connection.close()
-    
+def take_calibration_images(stage, camera, stepsize, stepunits):
+    """take two image between a defined move of the camera."""
+    # take one image
+    _, img1 = basler.single_take(camera)
+    # move stage
+    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
+    # take another one
+    _, img2 = basler.single_take(camera)
+    # undo stage motion
+    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
+    return img1, img2
 
-def getCalibrationMatrix(im0name = 'StartPosition.tiff', im1name='X_Y_AxisMotion.tiff'):
-    #getImgs()
-    im0 = io.imread(os.path.join(os.getcwd(), im0name))
-    im1 = io.imread(os.path.join(os.getcwd(), im1name))
+
+def getCalibrationMatrix(im1, im2, stage_step):
+    """generate calibration from correlation between two images separated by known stage distance."""
     # calculate the shift using FFT correlation
-    shift = phase_cross_correlation(im0, im1, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.1)    
+    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
     # Generate calibration matrix
-    calibrationMatrix = genCalibrationMatrix(shift)         
-    print('Calibration completed.')
-    return calibrationMatrix
-
-
-def writeCalibration(calibrationMatrix, fname='calibrationMatrix.txt'):
-    np.savetxt(os.path.join(os.getcwd(), fname), calibrationMatrix)
-
-
-def readCalibration(fname):
-    return np.loadtxt(os.path.join(os.getcwd(), fname))
-
-
-def stageCalibration():
-    calibmatrix = getCalibrationMatrix(im0name='StartPosition.tiff', im1name='X_Y_AxisMotion.tiff')
-    writeCalibration(calibmatrix, fname='calibrationMatrix.txt')
+    xTranslation = shift[1]
+    yTranslation = shift[0]
+    print(shift, stage_step)
+    # Length translation
+    xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
+    yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
+    # Rotation angle - image angle versus stage motion 
+    # (45 degrees - both axes move the same amount)
+    rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
+    return 0.5*(xPixelSize+yPixelSize), rotation
         
 
 #%% Autofocus using z axis
-def zFocus():
-    # Hardware initialization
-    connection = Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-
-    device3 = device_list[2]
-    axis_z = device3.get_axis(1)
-    
-    camera = camera_init()
-    
-    # Taking an image to initialize display
-    camera.StartGrabbingMax(1)
-    # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
-    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-    img = grabResult.Array  # Access the image data.
-    focus_steps = 25
-    stack = np.zeros((img.shape[0], img.shape[1], focus_steps), dtype='uint16')
-    stack[:, :, 0] = img
-    
-    zPosition = []
-    for frame in np.arange(1, focus_steps):
-        camera.StartGrabbingMax(1)
-        # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
-        grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        # Access the image data.
-        img = grabResult.Array
-        stack[:, :, frame] = img
-        grabResult.Release()
-        #List of z axis positions
-        CurrentPos = axis_z.get_position(Units.LENGTH_MILLIMETRES)
-        zPosition.append(CurrentPos)
-        # Move z axis
-        axis_z.move_relative(280, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    
+def zFocus(stage, camera, stepsize, stepunits, nsteps):
+    """take a series of images and move the camera, then calculate focus."""
+    stack = []
+    zpos = []
+    stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
+    for i in np.arange(0, nsteps):
+            ret, img = basler.single_take(camera)
+            pos = stage.get_position()
+            print(pos)
+            if ret and len(pos) > 2:
+                stack.append(img)
+                zpos.append(pos[2])
+                print(stepunits)
+                stage.move_z(stepsize, stepunits, wait_until_idle = True)
+    stack = np.array(stack)
+    zpos = np.array(zpos)
     # Looking for the focal plane using the frame of maximal variance
-    average_frame_intensity = np.mean(stack, axis=(0, 1))
-    normalized_stack = stack.astype(float)/average_frame_intensity
-    stack_variance = np.var(normalized_stack, axis=(0, 1))
+    average_frame_intensity = np.mean(stack, axis=(2, 1))
+    normalized_stack = stack.astype(float)/average_frame_intensity[:, np.newaxis, np.newaxis] 
+    stack_variance = np.var(normalized_stack, axis=(2, 1))
     focal_plane = np.argmax(stack_variance)
-    #  Graphical display of the variance and the selected focal plane
-    fig2, axs2 = plt.subplots(figsize=(6, 6), nrows=2, ncols=1)
-    axs2[0].imshow(stack[:, :, focal_plane])  # displaying the selected focal plane
-    axs2[0].axes.axis('off')
-    axs2[1].plot(stack_variance)  # displaying the variance curve
-    axs2[1].set_ylabel('Variance of pixel intensity')
-    axs2[1].set_xlabel('Frame #')
-    plt.draw()
-    plt.show()
-    
-    # Second sweep in smaller range
-    axis_z.move_absolute(zPosition[focal_plane-2], Units.LENGTH_MILLIMETRES, wait_until_idle=True)
-    newstack = np.zeros((img.shape[0], img.shape[1], focus_steps), dtype='uint16')
-    newstack[:, :, 0] = img
-    zPosition = []
-    for frame in np.arange(1, focus_steps):
-        camera.StartGrabbingMax(1)
-        # Wait for an image and then retrieve it. A timeout of 5000 ms is used.
-        grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-        # Access the image data.
-        img = grabResult.Array
-        newstack[:, :, frame] = img
-        grabResult.Release()
-        #List of z axis positions
-        CurrentPos = axis_z.get_position(Units.LENGTH_MILLIMETRES)
-        zPosition.append(CurrentPos)
-        # Move z axis
-        axis_z.move_relative(56, Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    
-    # Looking for the focal plane using the frame of maximal variance
-    average_frame_intensity = np.mean(newstack, axis=(0, 1))
-    normalized_stack = newstack.astype(float)/average_frame_intensity
-    stack_variance = np.var(normalized_stack, axis=(0, 1))
-    focal_plane = np.argmax(stack_variance)
-    #  Graphical display of the variance and the selected focal plane
-    fig2, axs2 = plt.subplots(figsize=(6, 6), nrows=2, ncols=1)
-    axs2[0].imshow(newstack[:, :, focal_plane])  # displaying the selected focal plane
-    axs2[0].axes.axis('off')
-    axs2[1].plot(stack_variance)  # displaying the variance curve
-    axs2[1].set_ylabel('Variance of pixel intensity')
-    axs2[1].set_xlabel('Frame #')
-    plt.draw()
-    plt.show()
-    
     # Moving to best position
-    axis_z.move_absolute(zPosition[focal_plane], Units.LENGTH_MILLIMETRES, wait_until_idle=False)
-
-    # Displaying a mosaic of all frames
-    fig3, ax3 = plt.subplots(figsize=(15, 15), nrows=5, ncols=5, tight_layout=True)
-    for index_row in range(5):
-        for index_column in range(5):
-            frame = index_row*5 + index_column
-            ax3[index_row,index_column].imshow(normalized_stack[:, :, frame])
-            ax3[index_row,index_column].annotate(str(frame), xy=(100, 200), color='black', fontsize=14)
-            ax3[index_row, index_column].axes.axis('off')
-    plt.draw()
-    plt.show()
-    
-    camera.Close()
-    connection.close()
+    stage.move_abs((None,None,zpos[focal_plane]))
+    # return focus values, images and best location
+    return stack_variance, stack, zpos, focal_plane
 
 
+# functions for live focusing
+def calculate_focus(im, nbin = 1):
+    """given an image array, calculate a proxy for sharpness."""
+    return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
+
+
+def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
+    """given past values calculate the next focussing move."""
+    error = (focus_history[-1]-focus_history[-2])/np.abs(focus_history[-2])#  current - previous. negative means it got worse
+    print(error)
+    if ~np.isfinite(error):
+        return 0
+    return error*np.sign(past_motion)*focus_step_factor*min_step#np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
+
+
+# functions for tracking
 #%% Functions used for centering stage
 def extractWorms(img, area=0, bin_factor=4, li_init=10):
     '''
@@ -217,7 +119,7 @@ def extractWorms(img, area=0, bin_factor=4, li_init=10):
     labeled = label(mask)
     coords = []
     for region in regionprops(labeled):
-        if area <= region.area:
+        if region.area >=area:
             y, x = region.centroid
             coords.append([y*bin_factor,x*bin_factor])
     return np.array(coords)
@@ -229,17 +131,19 @@ def getDistanceToCenter(coords, imshape):
     input: list of all worm coordinates & tuple of image shape
     output: list of distances(px) of closest worm to center
     '''
-    centerCoords = [px/2 for px in imshape]
+    #centerCoords = [px/2 for px in imshape]
     # calculate maximal distance from center in field of view
-    smallestDistanceToCenter = math.sqrt((imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2)
-    for worm in coords:
-        distanceToCenter = math.sqrt((centerCoords[0] - worm[0])**2 + (centerCoords[1] - worm[1])**2)
-        if distanceToCenter < smallestDistanceToCenter:
-            smallestDistanceToCenter = distanceToCenter    
-            deltaY = worm[0] - centerCoords[0] # y coordinates are inverted relative to axis
-            deltaX = centerCoords[1] - worm[1]
-            deltaCoords = [deltaY, deltaX]
-    return deltaCoords
+    #smallestDistanceToCenter = (imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2
+    h,w = imshape
+    current_distance = h**2+w**2
+    yc, xc = 0,0
+    for (y,x) in coords:
+        distanceToCenter = (h//2 - y)**2 + (w//2-x)**2
+        if distanceToCenter < current_distance:
+            current_distance  = distanceToCenter    
+            yc, xc = y,x
+    # return offset from center for closest object
+    return yc-h//2, xc-w//2
 
 
 def getStageDistances(deltaCoords, calibrationMatrix):
@@ -251,86 +155,4 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     stageDistances = np.dot(calibrationMatrix, deltaCoords)
     return stageDistances
 
-
-#%% Center stage onto the labelled worm
-def center_once():
-    # Takes a picture of a worm. Moves the stage to bring it to the center
-    # Hardware Initialization
-    connection = Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    camera = camera_init()
-    # image retrieval & stage motion
-    print('Grabbing image...')
-    camera.StartGrabbingMax(1)      # taking image
-    grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-    img = grabResult.Array          # accessing image data
-    print('Starting image analysis...')
-    imshape = img.shape
-    print('Getting coordinates...')
-    coords = extractWorms(img)      # extracting worm coordinates from image
-    print('Number of coordinates: ', len(coords))
-    print('Completing plots...')
-    plt.figure()
-    plt.imshow(img)
-    [plt.plot(x, y, 'rx') for (y, x) in coords]
-    print('Image analysis finished.')
-    print('Calculating distance(px) to center...')
-    deltaCoords = getDistanceToCenter(coords, imshape)   # calculating distance of worm coordinates from center of image
-    print('Translating distances on image to stage motion...')
-    calibrationMatrix = readCalibration(fname = 'calibrationMatrix.txt')   # read in calibration matrix
-    stageDistances = getStageDistances(deltaCoords, calibrationMatrix) # get distances for stage axes
-    print('Centering...')
-    axis_x.move_relative(stageDistances[1], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-    axis_y.move_relative(stageDistances[0], Units.LENGTH_MICROMETRES, wait_until_idle=True)
-    camera.Close()        
-    connection.close()      
-    print('Image centered.')
-
-
-#%% Tracking Worm
-def trackWorm():
-    connection =  Connection.open_serial_port('COM3')
-    connection.renumber_devices(first_address=1)
-    device_list = connection.detect_devices()
-    
-    device1 = device_list[0]
-    device2 = device_list[1]
-    axis_x = device1.get_axis(1)
-    axis_y = device2.get_axis(1)
-    
-    # get calibration matrix from text file
-    calibrationMatrix = readCalibration(fname = 'calibrationMatrix.txt')
-                
-    my_tiff = TiffWriter('TestTracking', bigtiff=True, append=True)
-
-    camera = camera_init()
-    count = 0
-    with open('TrackingLog.csv', 'w') as logfile:
-        writer = csv.writer(logfile, lineterminator='\n')
-        writer.writerow(['Iteration #', 'x Coord', 'y Coord'])
-        while count < 100:
-            print('Grabbing image...')
-            camera.StartGrabbingMax(1)      # taking image
-            grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-            img = grabResult.Array          # accessing image data
-            my_tiff.save(img)               # appending image to tiff file
-            imshape = img.shape
-            coords = extractWorms(img)      # extracting worm coordinates from image
-            deltaCoords = getDistanceToCenter(coords, imshape)      # calculating distance of worm coordinates from center of image
-            stageDistances = getStageDistances(deltaCoords, calibrationMatrix)  # get distances for stage axes
-            # write a string into the open file
-            writer.writerow([count, stageDistances[1], stageDistances[0]])
-            print('Centering worm...')
-            axis_x.move_relative(stageDistances[1], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            axis_y.move_relative(stageDistances[0], Units.LENGTH_MICROMETRES, wait_until_idle=False)
-            count += 1
-        camera.Close()
-        my_tiff.close()
-        connection.close()
-        print('Tracking finished.')
 

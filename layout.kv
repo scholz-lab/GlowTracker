@@ -1,5 +1,6 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
+#:import Image kivy.uix.image.Image
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -49,6 +50,7 @@ MainWindow:
 # Left column
 #################################
 <LeftColumn>:
+    saveloc:saveloc
     size_hint: (0.3,1)
     orientation: 'vertical'
     pos: root.pos
@@ -61,6 +63,7 @@ MainWindow:
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
+        on_release: root.show_autofocus()
     MyLabel: 
         text: 'Camera Settings'
     CameraProperties:
@@ -78,69 +81,80 @@ MainWindow:
         size_hint_y: None
         height: 30
         multiline: False
-        text: "Startup"
+        text: root.savefile
+        on_text_validate: root.path_validate()
+        on_focus:  app.unbind_keys() if self.focus else root.path_validate()
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
         on_release: root.show_save()
     
         
-        
-
 ### Display camera properties
-
 <CameraProperties>:
-    gain: gain
-    exposure: exposure
-    framerate: framerate
     cols: 3
     rows: 3
     Label:
         text: 'Exposure (us)'
         size_hint: (.25, 1)
     Slider:
-        id: exposure
         size_hint: (.5, 1)
         min: 100
         max: 100000
         step: 100
+        on_value: root.exposure = self.value
         on_value: root.change_exposure()
+        value: root.exposure
     TextInput:
-        id: exposuretext
         size_hint: (.25, 1)
-        text: str(exposure.value)
+        text: str(root.exposure)
+        input_filter: 'float'
+        multiline: False
+        on_text_validate: root.exposure = float(self.text)
+        on_text_validate: root.change_exposure()
+        on_focus:  app.unbind_keys() if self.focus else root.change_exposure()
     Label: 
         text: 'Framerate (fps)'
         size_hint: (.25, 1)
     Slider:
-        id: framerate
         size_hint: (.5, 1)
         min: 0.01
         max: 57
         step: 0.5
+        on_value: root.framerate = self.value
         on_value: root.change_framerate()
+        value: root.framerate
     TextInput:
-        id: frameratetext
         size_hint: (.25, 1)
-        text: str(round(framerate.value, 2))
+        text: str(root.framerate)
+        input_filter: 'float'
+        multiline: False
+        on_text_validate: root.framerate = float(self.text)
+        on_text_validate: root.change_framerate()
+        on_focus:  app.unbind_keys() if self.focus else root.change_framerate()
+        text: str(round(root.framerate, 2))
     Label:
         text: 'Gain'
         size_hint: (.25, 1)
     Slider:
-        id: gain
         size_hint: (.5, 1)
         min: 0
         max: 36
         step: 0.5
+        on_value: root.gain = self.value
         on_value: root.change_gain()
+        value: root.gain
     TextInput:
-        id: gaintext
         size_hint: (.25, 1)
-        text: str(gain.value)
+        text: str(root.gain)
+        input_filter: 'float'
+        multiline: False
+        on_text_validate: root.gain = float(self.text)
+        on_text_validate: root.change_gain()
+        on_focus:  app.unbind_keys() if self.focus else root.change_gain()
+        text: str(root.gain)
     
         
-        
-
     
 #################################
 # Stage motion buttons
@@ -151,24 +165,28 @@ MainWindow:
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/LeftButtonNormal_Double.jpg'
     background_down: 'icons/LeftButtonOnPress_Double.jpg'
+    background_disabled_normal: 'icons/LeftButtonDisabled_Double.jpg'
     
 <StageButtonLeft@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/LeftButtonNormal.jpg'
     background_down: 'icons/LeftButtonOnPress.jpg'
+    background_disabled_normal: 'icons/LeftButtonDisabled.jpg'
     
 <StageButtonRightFast@ToggleButton>:
     size_hint: .5, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/RightButtonNormal_Double.jpg'
     background_down: 'icons/RightButtonOnPress_Double.jpg'
+    background_disabled_normal: 'icons/RightButtonDisabled_Double.jpg'
     
 <StageButtonRight@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/RightButtonNormal.jpg'
     background_down: 'icons/RightButtonOnPress.jpg'
+    background_disabled_normal: 'icons/RightButtonDisabled.jpg'
 
 <XControls>:
     orientation: 'horizontal'
@@ -176,16 +194,20 @@ MainWindow:
     size: root.size
     StageButtonLeftFast:       
         on_state: app.stage.move_speed((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
+        disabled: app.stage.connection is None
     StageButtonLeft:
-        on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage.connection is None
     Label:
         text: 'X'
         font_size: 40
         size_hint: (0.2,1)
     StageButtonRight:
-        on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage.connection is None
     StageButtonRightFast:            
-        on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage.connection is None
 
 <YControls>:
     BoxLayout:
@@ -194,18 +216,22 @@ MainWindow:
         orientation: 'horizontal'
         
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
         StageButtonLeft:
-            on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
         Label:
             text: 'Y'
             valign: 'bottom'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
-            on_state: app.stage.move_speed((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
         StageButtonRightFast:            
-            on_state: app.stage.move_speed((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
             
             
 <ZControls>:
@@ -214,18 +240,21 @@ MainWindow:
         size: root.size
         orientation: 'horizontal'
         StageButtonLeftFast:            
-            on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
         StageButtonLeft:
-            on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.stage.move_speed((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop()
+            disabled: app.stage.connection is None
         Label:
             text: 'Z'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
             on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
+            disabled: app.stage.connection is None
         StageButtonRightFast:            
             on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
-
+            disabled: app.stage.connection is None
 #################################
 # Load camera properties - Popup
 #################################
@@ -282,36 +311,132 @@ MainWindow:
             Button:
                 text: "Save"
                 on_release: root.save(filechooser.path, text_input.text)        
+         
+#################################
+# autofocus - Popup
+#################################
+<AutoFocus>:
+    id: autofocus
+    orientation: 'vertical'
+    
+    GridLayout:
+        id: multipleimages
+        cols: root.nsteps//2#app.config.getint('Autofocus', 'nsteps')//2
+        spacing: 30,30
+        
+    BoxLayout:
+        size_hint_y: 0.05
+        Label:
+            text: 'Number of steps'
+        Label:
+            text: str(root.nsteps)
+        TextInput:
+            text: str(root.nsteps)
+            multiline: False
+            on_text_validate: root.nsteps = self.text
+        Label:
+            text: 'step size'
+        Label:
+            text: str(root.stepsize)
+        TextInput:
+            text: str(root.stepsize)
+            multiline: False
+            on_text_validate: root.stepsize = self.text
+        Label:
+            text: 'Units'
+        Label:
+            text: str(root.stepunits)
+            multiline: False
+        
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Button:
+            text: "Cancel"
+            on_release: root.cancel()
 
-            
-            
+        Button:
+            text: "Run Autofocus"
+            on_release: root.run_autofocus()   
+
 #################################
 # Middle column
 #################################
 <MiddleColumn>:
-    id: middlecolumn
     runtimecontrols:runtimecontrols
     previewimage:previewimage
+    stagepos: stagepos
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
+    #BoxLayout:
+    orientation: 'vertical'
+    #size: root.size
+    CutBoxLayout:
+        id: stencil
+        size_hint: (1, 0.75)
+        ScalableImage:
+            id: scalableimage
+            size_hint: (None, None)
+            pos: stencil.pos
+            size: previewimage.size
+            auto_bring_to_front: False
+            do_translation: False
+            do_rotation: False
+            do_scale: False
+            scale_max: 2
+            PreviewImage:
+                #pos: 0,0
+                size_hint: (None, None)
+                size: stencil.width, stencil.height
+                id: previewimage
+                texture: app.texture
+                
+                source: "icons/logoSq.png"
     GridLayout:
-        cols: 1
-        rows: 2
-        PreviewImage:
-            id: previewimage
-        RuntimeControls:
-            id:runtimecontrols
+        cols: 2
+        size_hint: (1, 0.05)
+        Label:
+            #size_hint_y: 30
+            #size_hint_: (0.5, 0.05)
+            pos_hint: {'left': 0.0}
+            halign: 'left'
+            valign: 'top'
+            text_size: self.size
+            id: stagepos
+            text: 'Stage (mm): ({:.2f},{:.2f},{:.2f})'.format(*app.coords)
+        Label:
+            #size_hint: (0.5, 0.05)
+            valign: 'top'
+            pos_hint: {'right': 1}
+            text_size: self.size
+            id: pixelvalue
+            text: '(0,0,0)'
+            halign: 'right'
         
+    RuntimeControls:
+        id:runtimecontrols
+        size_hint: (1, 0.2)
+
+
+
+<CutBoxLayout@BoxLayout+StencilView>:
+    orientation: 'horizontal'
 ### live camera image
 <PreviewImage>:
-    size_hint: (0.6, 0.85)
-    
+    canvas:
+        Color:
+            rgba: 1,0,0,1
+        Line:
+            circle: self.circle
+            id: circle
+            
 
 ### toggle tracking or autofocus
 <RuntimeControls>:
     framecounter: framecounter
-    size_hint: (0.6,0.15)
+    autofocuscheckbox: autofocuscheckbox
+    trackingcheckbox: trackingcheckbox
     RecordButtons:
         id: recordbuttons
     GridLayout:
@@ -328,20 +453,26 @@ MainWindow:
             text: 'Autofocus'
             color: '#ffffff'
         CheckBox:
+            id: autofocuscheckbox
+            on_state: root.startFocus() if self.state=='down' else root.stopFocus()
+            
         MyLabel:
             text: 'Tracking'
             color: '#ffffff'
         CheckBox:
-
+            id: trackingcheckbox
+            on_state: root.startTracking() if self.state=='down' else root.stopTracking()
 
 
 ### Live view and Record
 <RecordButtons>:
     orientation: 'horizontal'
     spacing: 30
-    padding: [80,10]
+    padding: [30,10]
     recordbutton:recordbutton
-    iveviewbutton:liveviewbutton
+    liveviewbutton:liveviewbutton
+    snapbutton:snapbutton
+    
     ToggleButton:
         id: liveviewbutton
         border: 0,0,0,0
@@ -364,6 +495,18 @@ MainWindow:
         background_normal: 'icons/record_inactive.png'
         background_down: 'icons/record_active.png'
         on_state: root.startRecording() if self.state=='down' else root.stopRecording()
+    
+    Button: 
+        id: snapbutton
+        border: 0,0,0,0
+        size_hint_x: 0.1
+        size_hint_y: None
+        height: self.width 
+        pos_hint: {'center_x': .5, 'center_y': .5}
+        background_normal: 'icons/snap_inactive.png'
+        background_down: 'icons/snap_active.png'
+        on_release: root.snap()
+
 
 #################################
 # Right column
@@ -382,7 +525,7 @@ MainWindow:
         on_release: app.open_settings()
     MyButton:
         size_hint: (1, 0.1)
-        text: 'Camera'
+        text: 'Macro'
     MyButton: 
         id:recording
         size_hint: (1, 0.1)
@@ -390,7 +533,8 @@ MainWindow:
         on_release: root.show_recording_settings()
     MyButton:
         size_hint: (1, 0.1)
-        text: 'Stage'
+        text: 'Calibrate'
+        on_release: root.show_calibration()
     MyButton:
         size_hint: (1, 0.1)
         text: 'LEDs'
@@ -407,37 +551,96 @@ MainWindow:
     pos: root.pos
     orientation: 'vertical'
     
-    frames: frames
-    framerate : framerate
-    fileformat : fileformat
     GridLayout:
-        cols : 2
+        cols : 3
         Label: 
             text: 'Frames'
+        Label: 
+            text: str(root.nframes)
         TextInput:
             id: frames
-            text: root.frames
+            text: str(root.nframes)
+            multiline: False
+            on_text_validate: root.nframes = self.text
+            on_text_validate: root.duration = float(self.text)/root.framerate
         Label: 
-            text: 'Framerate'
-        Label:
+            text: 'Framerate (1/s)'
+        Label: 
+            text: str(root.framerate)
+        TextInput:
             id: framerate
-            text: root.framerate
+            text: str(root.framerate)
+            multiline: False
+            on_text_validate: root.framerate = self.text
+            on_text_validate: root.duration = root.nframes/float(self.text)
         Label: 
-            text: 'Filetype'
-        Label:
+            text: 'Duration (sec)'
+        Label: 
+            text: str(root.duration)
+        TextInput:
+            id: duration
+            text: "{:.2f}".format(root.duration)
+            multiline: False
+            on_text_validate: root.duration = self.text
+            on_text_validate: root.nframes = int(float(self.text)*root.framerate)
+        Label: 
+            text: 'Extension'
+        Label: 
+            text: str(root.fileformat)
+        TextInput:
             id: fileformat
             text: root.fileformat
+            multiline: False
+            on_text_validate: root.fileformat = self.text
+        Label:
+            text: 'buffer'
+        Label:
+            text: str(root.buffersize)
+        TextInput:
+            id: buffersize
+            text: str(root.buffersize)
+            multiline: False
+            on_text_validate: root.buffersize = int(self.text)
+        
     BoxLayout:
         size_hint_y: None
         height: 30
+        Button:
+            text: "OK"
+            on_release: root.ok()
+
+        # Button:
+        #     text: "Confirm"
+        #     on_release: root.update(frames.text)
+
+<AutoCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    GridLayout:
+        cols: 2
+        spacing: 30
+        Image:
+            id: image_one
+        Image:
+            id: image_two
+    
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Label:
+            id: pxsize
+            text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
+        Label:
+            id: rotation
+            text: f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
         Button:
             text: "Cancel"
             on_release: root.cancel()
 
         Button:
-            text: "Confirm"
-            on_release: root.update(frames.text)
-
+            text: "Calibrate"
+            on_release: root.calibrate()
 ### display if hardware is connected successfully     
 <Connections>:
     orientation: 'vertical'
@@ -505,4 +708,32 @@ MainWindow:
 <MyCounter@Label>:
     value: 0
 
+<LabelImage@BoxLayout>:
+    orientation: 'vertical'
+    image: image
+    label: label
+    Label:
+        id: label
+        size_hint: (1, 0.1)
+        text: ""
+    Image:
+        id: image
+        keep_ratio: True
+        size_hint: (1,0.9)
 
+
+<WarningPopup@Popup>:
+    BoxLayout:
+        orientation: 'vertical'
+        
+        Label:
+			text: root.text
+			size_hint_y: 0.9
+			halign: 'center'
+            valign: 'center'
+        Button:
+            size_hint_x: 0.25
+            size_hint_y: None
+			height: sp(48)
+            text: root.ok_text
+            on_press: root.ok()

@@ -1,6 +1,6 @@
 # {05D8C294-F295-4dfb-9D01-096BD04049F4}
 # GenApi persistence file (version 3.1.0)
-# Device = Basler::UsbCameraParams -- Basler USB3Vision camera interface -- Device version = 1.0.0 -- Product GUID = 5a809e15-f447-480f-a21f-0fb7256b8400 -- Product version GUID = DBDF463A-45ED-4174-A231-D26EECD109E7
+# Device = Basler::UsbCameraParams -- Basler USB3Vision camera interface -- Device version = 1.0.0 -- Product GUID = 5a809e15-f447-480f-a21f-0fb7256b8400 -- Product version GUID = FA27F14A-CDFE-470D-BC09-0C63297119DB
 ExposureAuto	Off
 GainAuto	Off
 Width	3088
@@ -18,7 +18,7 @@ ReverseY	0
 PixelFormat	Mono8
 TestImageSelector	Off
 GainSelector	All
-Gain	0.00000
+Gain	17.60000
 GainSelector	All
 BlackLevelSelector	All
 BlackLevel	0.00000
@@ -28,9 +28,11 @@ DigitalShift	0
 RemoveParameterLimitSelector	Gain
 RemoveParameterLimit	0
 RemoveParameterLimitSelector	Gain
+PgiMode	Off
+VignettingCorrectionMode	Off
 ShutterMode	Rolling
 ExposureMode	Timed
-ExposureTime	15000.0
+ExposureTime	30000.0
 AcquisitionBurstFrameCount	1
 TriggerSelector	FrameBurstStart
 TriggerMode	Off
@@ -76,7 +78,7 @@ AutoTargetBrightness	0.50196
 AutoFunctionProfile	MinimizeGain
 AutoGainLowerLimit	0.00000
 AutoGainUpperLimit	24.00000
-AutoExposureTimeLowerLimit	50.0
+AutoExposureTimeLowerLimit	48.0
 AutoExposureTimeUpperLimit	100000.0
 AutoFunctionROISelector	ROI1
 AutoFunctionROIWidth	3088
@@ -146,6 +148,7 @@ LineSelector	Line2
 LineMinimumOutputPulseWidth	0.000
 LineSelector	Line1
 UserOutputValueAll	0
+BslLightControlMode	Off
 TimerSelector	Timer1
 TimerDuration	10.0
 TimerSelector	Timer1
@@ -165,6 +168,7 @@ CounterResetSource	Off
 CounterSelector	Counter2
 CounterResetSource	Counter2End
 CounterSelector	Counter1
+BslLightControlTriggerMode	ExposureActive
 EventSelector	ExposureEnd
 EventNotification	Off
 EventSelector	FrameBurstStart

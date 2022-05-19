@@ -1,6 +1,10 @@
 # Macroscope
 Documentation and scripts to control the behavior macroscope
 
+## Install the correct environment
+- conda env create --file .\StageEnvironment.yml
+- activate the environment
+ conda activate macroscope
 
 To get the BASLER package running on windows 64 do the following:
 
@@ -10,11 +14,7 @@ To get the BASLER package running on windows 64 do the following:
  - run this using the comandline within the package folder
  - pip install pypylon-1.5.4-cp37-cp37m-win_amd64.whl
 
-To get the NI DAQ card working:
 
- - Install the NI device drivers: www.ni.com/de-de/support/downloads/drivers/download.ni-device-drivers.html#327643
- - Install the nidaqmx python package using pip: https://github.com/ni/nidaqmx-python 
- 
 
 To get controls for zaber stage running:
 
