@@ -166,6 +166,7 @@ MainWindow:
     background_normal: 'icons/LeftButtonNormal_Double.jpg'
     background_down: 'icons/LeftButtonOnPress_Double.jpg'
     
+    
 <StageButtonLeft@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
@@ -190,16 +191,20 @@ MainWindow:
     size: root.size
     StageButtonLeftFast:       
         on_state: app.stage.move_speed((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
+        disabled: app.stage ==None
     StageButtonLeft:
-        on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage ==None
     Label:
         text: 'X'
         font_size: 40
         size_hint: (0.2,1)
     StageButtonRight:
-        on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage ==None
     StageButtonRightFast:            
-        on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop() 
+        on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        disabled: app.stage ==None
 
 <YControls>:
     BoxLayout:
@@ -447,8 +452,6 @@ MainWindow:
         CheckBox:
             id: trackingcheckbox
             on_state: root.startTracking() if self.state=='down' else root.stopTracking()
-            
-
 
 
 ### Live view and Record
@@ -724,5 +727,3 @@ MainWindow:
 			height: sp(48)
             text: root.ok_text
             on_press: root.ok()
-
-

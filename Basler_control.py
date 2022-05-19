@@ -63,15 +63,16 @@ def stop_grabbing(camera):
 
 
 def retrieve_result(camera):
-    grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
-    if grabResult.GrabSucceeded():
-        conversion_factor = 1e6  # for conversion in ms
-        img = grabResult.Array.copy()
-        time = round(grabResult.TimeStamp/conversion_factor, 1)
-        grabResult.Release()
-        return True, img, time
-    else:
-        return False, None, None
+    if camera.IsGrabbing():
+        grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+        if grabResult.GrabSucceeded():
+            conversion_factor = 1e6  # for conversion in ms
+            img = grabResult.Array
+            time = round(grabResult.TimeStamp/conversion_factor, 1)
+            grabResult.Release()
+            return True, img, time
+    
+    return False, None, None
 
 
 class ImageEventPrinter(pylon.ImageEventHandler):
@@ -137,7 +138,7 @@ def cam_resetROI(camera):
     camera.TLParamsLocked = True
     # cam start
     camera.AcquisitionStart.Execute()
-    return camera.Height(), camera.Width()
+    return camera.Height.GetValue(), camera.Width.GetValue()
 
 
 def set_framerate(camera, fps):
@@ -145,3 +146,8 @@ def set_framerate(camera, fps):
     camera.AcquisitionFrameRateEnable = True
     camera.AcquisitionFrameRate = float(fps)
     return camera.ResultingFrameRate()
+
+
+def get_shape(camera):
+    """return current field of view size."""
+    return  camera.Height.GetValue(), camera.Width.GetValue()

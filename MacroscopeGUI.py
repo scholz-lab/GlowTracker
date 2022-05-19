@@ -46,15 +46,17 @@ from skimage.io import imsave
 #from pypylon import genicam
 
 # get the free clock (more accurate timing)
-Config.set('graphics', 'KIVY_CLOCK', 'free')
+#Config.set('graphics', 'KIVY_CLOCK', 'free')
+Config.set('modules', 'monitor', '')
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
-    # This creates a timestamped filename so we don't overwrite our good work
+    """This creates a timestamped filename so we don't overwrite our good work."""
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
 
 def im_to_texture(image):
     """helper function to create kivy textures from image arrays."""
+
     buf = image.tobytes()
     w, h = image.shape
     image_texture = Texture.create(
@@ -437,11 +439,15 @@ class RecordButtons(BoxLayout):
     def startPreview(self):
         camera = App.get_running_app().camera
         if camera is not None:
+            # create a texture
+            print('chip',basler.get_shape(camera))
+            App.get_running_app().create_texture(*basler.get_shape(camera))
             basler.start_grabbing(camera)
             # update the image
             fps = camera.ResultingFrameRate()
-            print("Display Framerate:", fps)
-            self.event = Clock.schedule_interval(self.update, 1.0 / fps/1.1)
+            print("Grabbing Framerate:", fps)
+            t = Thread(target=self.update, daemon = True).start()
+            
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -452,22 +458,35 @@ class RecordButtons(BoxLayout):
         if camera is not None:
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
+            #Clock.unschedule(self.display_event)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
         # reset scale of image
         app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def update(self, dt, save=False):
-        camera = App.get_running_app().camera
-        if camera is not None and camera.IsGrabbing():
-            ret, img, timeStamp = basler.retrieve_result(camera)
+    def update(self):
+        app = App.get_running_app()
+        camera = app.camera
+        
+        self.event = Clock.schedule_interval(self.display, 1.0 /40)
+            
+        while camera is not None and camera.IsGrabbing():
+            ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
-                # store image as class variable - this will also trigger a canvas update
+                print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
-                #App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
+                
+                app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
+                app.timestamp = timestamp
                 self.parent.framecounter.value += 1
+        return
 
+
+    def display(self, dt):
+        if App.get_running_app().lastframe is not None:
+            App.get_running_app().image = App.get_running_app().lastframe
+        
 
     def startRecording(self):
         app = App.get_running_app()
@@ -518,7 +537,7 @@ class RecordButtons(BoxLayout):
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
                 #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
                 #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-                t = thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
+                t = Thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
                 # # set daemon to true so the thread dies when app is closed
                 t.daemon = True
                 # # start the thread
@@ -532,7 +551,6 @@ class RecordButtons(BoxLayout):
         # save image to file
         basler.save_image(img, path, file_name)
         
-
 
     def init_recording(self, *args):
         """set up some recording filenames"""
@@ -675,8 +693,8 @@ class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
     autofocuscheckbox = ObjectProperty(rebind=True)
     trackingcheckbox = ObjectProperty(rebind=True)
-    cropX = NumericProperty(1, rebind=True)
-    cropY = NumericProperty(1, rebind=True)
+    cropX = ObjectProperty(0, rebind=True)
+    cropY = ObjectProperty(0, rebind=True)
 
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
@@ -747,7 +765,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None :#and stage is not None and camera.IsGrabbing():
+        if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
@@ -770,8 +788,8 @@ class RuntimeControls(BoxLayout):
             # reset camera params
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
-            self.cropX = 1
-            self.cropY = 1
+            self.cropX = None
+            self.cropY = None
 
 
     def center_image(self):
@@ -909,9 +927,10 @@ class MacroscopeApp(App):
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
+    lastframe = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
-    timestamps = ObjectProperty(None, force_dispatch=True, rebind=True)
+    timestamp = NumericProperty(0, force_dispatch=True, rebind=True)
     frameBuffer = list()
     #
 
@@ -1064,6 +1083,8 @@ class MacroscopeApp(App):
 
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
+        #event = Clock.create_trigger(self.im_to_texture())
+        #event()
         self.im_to_texture()
 
 
@@ -1095,15 +1116,17 @@ class MacroscopeApp(App):
         self.root_window.close()
 
 
+    def create_texture(self, w, h):
+        """create the initial texture."""
+        self.texture = Texture.create(
+            size=(h, w), colorfmt="luminance"
+        )
+
+
     def im_to_texture(self):
         """helper function to create kivy textures from image arrays."""
         buf = self.image.tobytes()
-        w, h = self.image.shape
-        image_texture = Texture.create(
-            size=(h, w), colorfmt="luminance"
-        )
-        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-        self.texture = image_texture
+        self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
 
 
 def reset():
