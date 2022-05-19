@@ -9,6 +9,11 @@ from skimage.io import imsave
 
 #%% Camera initialization
 def camera_init():
+    """Initialize a basler camera.
+
+    Returns:
+        camera object (GenICam)
+    """
     try:
         # Create an instant camera object with the camera device found first.
         camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
@@ -18,10 +23,10 @@ def camera_init():
         # Print the model name of the camera.
         print("Using device ", camera.GetDeviceInfo().GetModelName())
         return camera
-    except genicam.GenericException as e:
+    except genicam.GenericException as exception:
         # Error handling.
         print("An exception occurred.")
-        print(e)
+        print(exception)
         #print(e.GetDescription())
     return None
 
@@ -62,9 +67,9 @@ def retrieve_result(camera):
     if grabResult.GrabSucceeded():
         conversion_factor = 1e6  # for conversion in ms
         img = grabResult.Array.copy()
-        Time = round(grabResult.TimeStamp/conversion_factor, 1)
+        time = round(grabResult.TimeStamp/conversion_factor, 1)
         grabResult.Release()
-        return True, img, Time
+        return True, img, time
     else:
         return False, None, None
 

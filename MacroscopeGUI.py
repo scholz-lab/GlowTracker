@@ -425,7 +425,7 @@ class RecordButtons(BoxLayout):
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
-        # if 
+        # if we have a camera this will save a single take
         if app.camera is not None:
             basler.stop_grabbing(app.camera)
             # get image
@@ -458,6 +458,17 @@ class RecordButtons(BoxLayout):
         app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
+    def update(self, dt, save=False):
+        camera = App.get_running_app().camera
+        if camera is not None and camera.IsGrabbing():
+            ret, img, timeStamp = basler.retrieve_result(camera)
+            if ret:
+                # store image as class variable - this will also trigger a canvas update
+                cropY, cropX = self.parent.cropY, self.parent.cropX
+                #App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
+                self.parent.framecounter.value += 1
+
+
     def startRecording(self):
         app = App.get_running_app()
         camera = app.camera
@@ -482,25 +493,12 @@ class RecordButtons(BoxLayout):
         if camera is not None:
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
-            #Clock.unschedule(self.event_canvas)
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
         print("Finished recording")
-        #self.liveviewbutton.state = 'down'
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
-
-
-    def update(self, dt, save=False):
-        camera = App.get_running_app().camera
-        if camera is not None and camera.IsGrabbing():
-            ret, img, timeStamp = basler.retrieve_result(camera)
-            if ret:
-                # store image as class variable - this will also trigger a canvas update
-                cropY, cropX = self.parent.cropY, self.parent.cropX
-                App.get_running_app().image = img[cropY:-cropY, cropX:-cropX]
-                self.parent.framecounter.value += 1
 
 
     def record(self, app, camera, nframes):
@@ -913,6 +911,8 @@ class MacroscopeApp(App):
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
+    timestamps = ObjectProperty(None, force_dispatch=True, rebind=True)
+    frameBuffer = list()
     #
 
     def __init__(self,  **kwargs):
