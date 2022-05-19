@@ -54,14 +54,14 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
 
 
 def im_to_texture(image):
-        """helper function to create kivy textures from image arrays."""
-        buf = image.tobytes()
-        w, h = image.shape
-        image_texture = Texture.create(
-            size=(h, w), colorfmt="luminance"
-        )
-        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-        return image_texture
+    """helper function to create kivy textures from image arrays."""
+    buf = image.tobytes()
+    w, h = image.shape
+    image_texture = Texture.create(
+        size=(h, w), colorfmt="luminance"
+    )
+    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+    return image_texture
 
 
 class WarningPopup(Popup):
@@ -503,9 +503,9 @@ class RecordButtons(BoxLayout):
                 self.parent.framecounter.value += 1
 
 
-    def record(self, app, camera, nframes, dim, dt):
+    def record(self, app, camera, nframes):
         if camera.GetGrabResultWaitObject().Wait(0):
-            ret, img, timeStamp = basler.retrieve_result(camera)
+            ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
                 # store image as class variable
                 cropY, cropX = self.parent.cropY, self.parent.cropX
@@ -517,7 +517,7 @@ class RecordButtons(BoxLayout):
                 # self.save(img, app.coords, self.parent.framecounter.value)
                 # # # save image in thread
                 # self.save(img, app.coords, self.parent.framecounter.value, TimeStamp)
-                self.coordinate_file.write(f"{self.parent.framecounter.value} {TimeStamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
+                self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
                 #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
                 #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
                 t = thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
@@ -575,8 +575,8 @@ class RecordButtons(BoxLayout):
         # The camera device is parameterized with a default configuration which
         # sets up free-running continuous acquisition.
         basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
-        self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
-        #self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes, dim, cv2), 1.0 / fps)
+        #self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
+        self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps)
 
 
 class ScalableImage(ScatterLayout):
@@ -892,8 +892,8 @@ class MyCounter(Label):
 
 
 class ExitApp(BoxLayout):
-   stop = ObjectProperty(None)
-   cancel = ObjectProperty(None)
+    stop = ObjectProperty(None)
+    cancel = ObjectProperty(None)
 # set window size at startup
 
 
@@ -1109,7 +1109,8 @@ class MacroscopeApp(App):
 def reset():
     # Cleaner for the events in memory
     if not EventLoop.event_listeners:
-        window.Window = window.core_select_lib('window', window.window_impl, True)
+        
+        Window = Window.core_select_lib('window', Window.window_impl, True)
         Cache.print_usage()
         for cat in Cache._categories:
             Cache._objects[cat] = {}
@@ -1119,4 +1120,3 @@ if __name__ == '__main__':
     reset()
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
-

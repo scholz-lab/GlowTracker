@@ -3,7 +3,7 @@ from pypylon import genicam, pylon
 from PIL import Image
 import os
 import time
-#from skimage.io import imsave
+from skimage.io import imsave
 #import cv2
 #from libtiff import TIFF
 
