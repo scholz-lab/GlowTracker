@@ -550,9 +550,9 @@ class RecordButtons(BoxLayout):
         # schedule a display update
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
-        
+        counter = 0
         # grab and write images
-        while camera is not None and camera.GetGrabResultWaitObject().Wait(0):
+        while camera is not None and counter <=nframes and self.recordbutton.state == 'down':#camera.GetGrabResultWaitObject().Wait(0):
             # get image
             ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
@@ -567,7 +567,8 @@ class RecordButtons(BoxLayout):
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
-        print('Finished recordings ', self.parent.framecounter.value, 'frames')
+                counter += 1
+        print(f'Finished recordings {counter} frames.')
         return
 
     # def record(self, app, camera, nframes):
