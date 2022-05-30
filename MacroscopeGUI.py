@@ -466,7 +466,7 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         # schedule a display update
-        fps = app.config.get('Camera', 'display_fps')
+        fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
             
         while camera is not None and camera.IsGrabbing():
@@ -543,7 +543,7 @@ class RecordButtons(BoxLayout):
         basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
 
         # schedule a display update
-        fps = app.config.get('Camera', 'display_fps')
+        fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         
         # grab and write images
