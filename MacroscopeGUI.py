@@ -66,7 +66,7 @@ def im_to_texture(image):
     return image_texture
 
 
-class WarningPopup(Popup):
+class WarningPopup():
     ok_text = StringProperty('OK')
     text = StringProperty('Label')
 
@@ -350,7 +350,7 @@ class AutoFocus(BoxLayout):
 
 
 
-class LabelImage(BoxLayout):
+class LabelImage():
     def __init__(self,  **kwargs):
         super(LabelImage, self).__init__(**kwargs)
         self.text = ''
@@ -440,14 +440,12 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None:
             # create a texture
-            print('chip',basler.get_shape(camera))
             App.get_running_app().create_texture(*basler.get_shape(camera))
             basler.start_grabbing(camera)
             # update the image
             fps = camera.ResultingFrameRate()
             print("Grabbing Framerate:", fps)
             t = Thread(target=self.update, daemon = True).start()
-            
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -457,19 +455,19 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         if camera is not None:
             basler.stop_grabbing(camera)
-            Clock.unschedule(self.event)
-            #Clock.unschedule(self.display_event)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
         # reset scale of image
         app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def update(self):
+    def update(self, record = True):
         app = App.get_running_app()
         camera = app.camera
         
-        self.event = Clock.schedule_interval(self.display, 1.0 /40)
+        # schedule a display update
+        fps = app.config.get('Camera', 'display_fps')
+        self.event = Clock.schedule_interval(self.display, 1.0 /fps)
             
         while camera is not None and camera.IsGrabbing():
             ret, img, timestamp = basler.retrieve_result(camera)
@@ -499,10 +497,14 @@ class RecordButtons(BoxLayout):
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
             # schedule immediately
             Clock.schedule_once(self.open_file, 0)
-            # schedule  a bit later
-            Clock.schedule_once(self.init_recording, 0.1)
-            # schedule acquisition
-            Clock.schedule_once(self.schedule_saving, 0.2)
+            # start thread for grabbing and saving images
+            fps = camera.ResultingFrameRate()
+            print("Recording Framerate:", fps)
+            t = Thread(target=self.record, daemon = True).start()
+            # # schedule  a bit later
+            # Clock.schedule_once(self.init_recording, 0.1)
+            # # schedule acquisition
+            # Clock.schedule_once(self.schedule_saving, 0.2)
         else:
             self.recordbutton.state = 'normal'
 
@@ -511,7 +513,7 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-            Clock.unschedule(self.event)
+            #Clock.unschedule(self.event)
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
@@ -520,31 +522,74 @@ class RecordButtons(BoxLayout):
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def record(self, app, camera, nframes):
-        if camera.GetGrabResultWaitObject().Wait(0):
+    def record(self):
+        app = App.get_running_app()
+        camera = app.camera
+
+         # create a texture
+        App.get_running_app().create_texture(*basler.get_shape(camera))
+        # set up grabbing with recording settings here
+        fps = app.config.getfloat('Experiment', 'framerate')
+        nframes = app.config.getint('Experiment', 'nframes')
+        buffersize = app.config.getint('Experiment', 'buffersize')
+        # get cropping
+        cropY, cropX = self.parent.cropY, self.parent.cropX
+
+        print("Desired recording Framerate:", fps)
+        # set recording framerate - returns
+        fps = basler.set_framerate(app.camera, fps)
+        print('Actual recording fps: ' + str(fps))
+        app.root.ids.leftcolumn.update_settings_display()
+        basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
+
+        # schedule a display update
+        fps = app.config.get('Camera', 'display_fps')
+        self.event = Clock.schedule_interval(self.display, 1.0 /fps)
+        
+        # grab and write images
+        while camera is not None and camera.GetGrabResultWaitObject().Wait(0):
+            # get image
             ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
-                # store image as class variable
-                cropY, cropX = self.parent.cropY, self.parent.cropX
+                print('dt: ', timestamp-app.timestamp)
+                print('(x,y,z): ', app.coords)
                 
-                if app.stage is not None:
-                    app.coords = app.coords
-                else:
-                    app.coords = (0, 0, 0)
-                # self.save(img, app.coords, self.parent.framecounter.value)
-                # # # save image in thread
-                # self.save(img, app.coords, self.parent.framecounter.value, TimeStamp)
+                
+                app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
+                # write coordinates
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-                #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
-                #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-                t = Thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-                # # set daemon to true so the thread dies when app is closed
-                t.daemon = True
-                # # start the thread
+                # write image in thread
+                t = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True).start()
+                # update time and frame counter
+                app.timestamp = timestamp
                 self.parent.framecounter.value += 1
-        if self.parent.framecounter.value == nframes:
-            self.recordbutton.state = 'normal'
-        return True
+        return
+
+    # def record(self, app, camera, nframes):
+    #     if camera.GetGrabResultWaitObject().Wait(0):
+    #         ret, img, timestamp = basler.retrieve_result(camera)
+    #         if ret:
+    #             # store image as class variable
+    #             cropY, cropX = self.parent.cropY, self.parent.cropX
+                
+    #             if app.stage is not None:
+    #                 app.coords = app.coords
+    #             else:
+    #                 app.coords = (0, 0, 0)
+    #             # self.save(img, app.coords, self.parent.framecounter.value)
+    #             # # # save image in thread
+    #             # self.save(img, app.coords, self.parent.framecounter.value, TimeStamp)
+    #             self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
+    #             #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
+    #             #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
+    #             t = Thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
+    #             # # set daemon to true so the thread dies when app is closed
+    #             t.daemon = True
+    #             # # start the thread
+    #             self.parent.framecounter.value += 1
+    #     if self.parent.framecounter.value == nframes:
+    #         self.recordbutton.state = 'normal'
+    #     return True
 
 
     def save(self, img, path, file_name):
@@ -552,12 +597,12 @@ class RecordButtons(BoxLayout):
         basler.save_image(img, path, file_name)
         
 
-    def init_recording(self, *args):
-        """set up some recording filenames"""
-        app = App.get_running_app()
-        # precalculate the filename
-        ext = app.config.get('Experiment', 'extension')
-        self.image_filename = timeStamped("basler_{}."+f"{ext}")
+    # def init_recording(self, *args):
+    #     """set up some recording filenames"""
+    #     app = App.get_running_app()
+    #     # precalculate the filename
+    #     ext = app.config.get('Experiment', 'extension')
+    #     self.image_filename = timeStamped("basler_{}."+f"{ext}")
         
 
     def open_file(self, *args):
@@ -567,32 +612,32 @@ class RecordButtons(BoxLayout):
         self.coordinate_file.write(f"Frame Time X Y Z \n")
 
 
-    def schedule_saving(self, *args):
-        """this delays the recording start a bit."""
-        app = App.get_running_app()
-        width = app.camera.Width.Value
-        height = app.camera.Height.Value
-        cropY, cropX = self.parent.cropY, self.parent.cropX
-        last_frame = np.zeros((2 * cropY + 1, 2 * cropX + 1), dtype='uint16')  # this is the array to show the canvas
+    # def schedule_saving(self, *args):
+    #     """this delays the recording start a bit."""
+    #     app = App.get_running_app()
+    #     width = app.camera.Width.Value
+    #     height = app.camera.Height.Value
+    #     cropY, cropX = self.parent.cropY, self.parent.cropX
+    #     last_frame = np.zeros((2 * cropY + 1, 2 * cropX + 1), dtype='uint16')  # this is the array to show the canvas
 
-        fps = app.config.getfloat('Experiment', 'framerate')
-        nframes = app.config.getint('Experiment', 'nframes')
-        buffersize = app.config.getint('Experiment', 'buffersize')
-        print("Desired recording Framerate:", fps)
-        # set recording framerate - returns
-        fps = basler.set_framerate(app.camera, fps)
-        print('This is the fps that I get back: ' + str(fps))
-        app.root.ids.leftcolumn.update_settings_display()
-        # prepare variables to store the last image for update of the canvas
-        camera = app.camera
-        path_root = self.path
+    #     fps = app.config.getfloat('Experiment', 'framerate')
+    #     nframes = app.config.getint('Experiment', 'nframes')
+    #     buffersize = app.config.getint('Experiment', 'buffersize')
+    #     print("Desired recording Framerate:", fps)
+    #     # set recording framerate - returns
+    #     fps = basler.set_framerate(app.camera, fps)
+    #     print('Actual recording fps: ' + str(fps))
+    #     app.root.ids.leftcolumn.update_settings_display()
+    #     # prepare variables to store the last image for update of the canvas
+    #     camera = app.camera
+    #     path_root = self.path
 
-        # Start the grabbing of c_countOfImagesToGrab images.
-        # The camera device is parameterized with a default configuration which
-        # sets up free-running continuous acquisition.
-        basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
-        #self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
-        self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps)
+    #     # Start the grabbing of c_countOfImagesToGrab images.
+    #     # The camera device is parameterized with a default configuration which
+    #     # sets up free-running continuous acquisition.
+    #     basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
+    #     #self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
+    #     self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps)
 
 
 class ScalableImage(ScatterLayout):
@@ -903,7 +948,7 @@ class Connections(BoxLayout):
             App.get_running_app().stage = None
 
 
-class MyCounter(Label):
+class MyCounter():
     value = NumericProperty(0)
 
 

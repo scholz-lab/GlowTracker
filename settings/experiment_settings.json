@@ -34,7 +34,7 @@
     {
         "type": "numeric",
         "title": "Recording framerate",
-        "desc": "How long is the video (min)",
+        "desc": "Recording framerate (fps)",
         "section": "Experiment",
         "key": "framerate"
     },
