@@ -519,6 +519,7 @@ class RecordButtons(BoxLayout):
         print("Finished recording")
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
+        self.recordbutton.state = 'normal'
 
 
     def init_recording(self):
@@ -542,7 +543,7 @@ class RecordButtons(BoxLayout):
         # set filename dummy
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
-        self.image_filename = "basler_{}."+f"{ext}"
+        self.image_filename = timeStamped("basler_{}."+f"{ext}")
         return nframes, buffersize, cropX, cropY
 
 
@@ -556,7 +557,7 @@ class RecordButtons(BoxLayout):
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         counter = 0
         # grab and write images
-        while camera is not None and counter <=nframes and self.recordbutton.state == 'down':#camera.GetGrabResultWaitObject().Wait(0):
+        while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
             # get image
             ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
@@ -573,46 +574,12 @@ class RecordButtons(BoxLayout):
                 self.parent.framecounter.value += 1
                 counter += 1
         print(f'Finished recordings {counter} frames.')
-        return
-
-    # def record(self, app, camera, nframes):
-    #     if camera.GetGrabResultWaitObject().Wait(0):
-    #         ret, img, timestamp = basler.retrieve_result(camera)
-    #         if ret:
-    #             # store image as class variable
-    #             cropY, cropX = self.parent.cropY, self.parent.cropX
-                
-    #             if app.stage is not None:
-    #                 app.coords = app.coords
-    #             else:
-    #                 app.coords = (0, 0, 0)
-    #             # self.save(img, app.coords, self.parent.framecounter.value)
-    #             # # # save image in thread
-    #             # self.save(img, app.coords, self.parent.framecounter.value, TimeStamp)
-    #             self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-    #             #self.save(img, self.path, self.image_filename.format(self.parent.framecounter.value))
-    #             #thread.start_new_thread(self.save, (img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-    #             t = Thread(target=self.save, args=(img, self.path, self.image_filename.format(self.parent.framecounter.value)))
-    #             # # set daemon to true so the thread dies when app is closed
-    #             t.daemon = True
-    #             # # start the thread
-    #             self.parent.framecounter.value += 1
-    #     if self.parent.framecounter.value == nframes:
-    #         self.recordbutton.state = 'normal'
-    #     return True
-
+        self.recordbutton.state = 'normal'
+        return 
 
     def save(self, img, path, file_name):
         # save image to file
         basler.save_image(img, path, file_name)
-        
-
-    # def init_recording(self, *args):
-    #     """set up some recording filenames"""
-    #     app = App.get_running_app()
-    #     # precalculate the filename
-    #     ext = app.config.get('Experiment', 'extension')
-    #     self.image_filename = timeStamped("basler_{}."+f"{ext}")
         
 
     def open_file(self, *args):
@@ -620,34 +587,6 @@ class RecordButtons(BoxLayout):
         # open a file for the coordinates
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
         self.coordinate_file.write(f"Frame Time X Y Z \n")
-
-
-    # def schedule_saving(self, *args):
-    #     """this delays the recording start a bit."""
-    #     app = App.get_running_app()
-    #     width = app.camera.Width.Value
-    #     height = app.camera.Height.Value
-    #     cropY, cropX = self.parent.cropY, self.parent.cropX
-    #     last_frame = np.zeros((2 * cropY + 1, 2 * cropX + 1), dtype='uint16')  # this is the array to show the canvas
-
-    #     fps = app.config.getfloat('Experiment', 'framerate')
-    #     nframes = app.config.getint('Experiment', 'nframes')
-    #     buffersize = app.config.getint('Experiment', 'buffersize')
-    #     print("Desired recording Framerate:", fps)
-    #     # set recording framerate - returns
-    #     fps = basler.set_framerate(app.camera, fps)
-    #     print('Actual recording fps: ' + str(fps))
-    #     app.root.ids.leftcolumn.update_settings_display()
-    #     # prepare variables to store the last image for update of the canvas
-    #     camera = app.camera
-    #     path_root = self.path
-
-    #     # Start the grabbing of c_countOfImagesToGrab images.
-    #     # The camera device is parameterized with a default configuration which
-    #     # sets up free-running continuous acquisition.
-    #     basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
-    #     #self.event = Clock.schedule_interval(partial(self.record_new, camera, path_root, dim, cv2, app, nframes), 1.0 / fps)
-    #     self.event = Clock.schedule_interval(partial(self.record, app, app.camera, nframes), 1.0 / fps)
 
 
 class ScalableImage(ScatterLayout):
@@ -942,7 +881,7 @@ class Connections(BoxLayout):
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a thread, it is slow
-            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits))
+            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits, app.coords))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread

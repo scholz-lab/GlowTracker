@@ -192,13 +192,13 @@ class Stage:
             self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
-    def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155)):
+    def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155), coords = None):
         """startup routine to home, set range and move to start if desired. """
         if home:
             self.home_stage()
         self.set_rangelimits(limits)
         self.move_abs(start)
-        
+        coords = self.get_position()
         
     
     def disconnect(self):
