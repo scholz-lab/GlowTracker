@@ -445,7 +445,7 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = camera.ResultingFrameRate()
             print("Grabbing Framerate:", fps)
-            t = Thread(target=self.update, daemon = True).start()
+            self.updatethread = Thread(target=self.update, daemon = True).start()
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -455,6 +455,7 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         if camera is not None:
+            self.updatethread.join()
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
         # reset displayed framecounter
@@ -468,8 +469,10 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         # schedule a display update
+        
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
+        print(f'Displaying at {fps} fps')
             
         while camera is not None and camera.IsGrabbing():
             ret, img, timestamp = basler.retrieve_result(camera)
@@ -489,9 +492,10 @@ class RecordButtons(BoxLayout):
         
 
     def startRecording(self):
-        camera = App.get_running_app().camera
+        app = App.get_running_app()
+        camera = app.camera
         self.parent.framecounter.value = 0
-        self.path = App.get_running_app().root.ids.leftcolumn.savefile
+        self.path = app.root.ids.leftcolumn.savefile
 
         if camera is not None:
             # stop camera if already running
@@ -500,7 +504,7 @@ class RecordButtons(BoxLayout):
             Clock.schedule_once(self.open_file, 0)
             # start thread for grabbing and saving images
             record_args = self.init_recording()
-            t = Thread(target=self.record, args = record_args, daemon = True).start()
+            self.recordthread = Thread(target=self.record, args = record_args, daemon = True).start()
         else:
             self.recordbutton.state = 'normal'
 
