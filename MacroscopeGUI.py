@@ -455,7 +455,6 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         if camera is not None:
-            self.updatethread.join()
             basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
         # reset displayed framecounter
@@ -474,7 +473,7 @@ class RecordButtons(BoxLayout):
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
             
-        while camera is not None and camera.IsGrabbing():
+        while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
             ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
                 print('dt: ', timestamp-app.timestamp)
