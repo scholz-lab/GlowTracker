@@ -539,6 +539,10 @@ class RecordButtons(BoxLayout):
         print('Actual recording fps: ' + str(fps))
         app.root.ids.leftcolumn.update_settings_display()
 
+        # set filename dummy
+        # precalculate the filename
+        ext = app.config.get('Experiment', 'extension')
+        self.image_filename = "basler_{}."+f"{ext}"
         return nframes, buffersize, cropX, cropY
 
 
