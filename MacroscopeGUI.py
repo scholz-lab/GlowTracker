@@ -429,7 +429,7 @@ class RecordButtons(BoxLayout):
         snap_filename = timeStamped("snap."+f"{ext}")
         # if we have a camera this will save a single take
         if app.camera is not None:
-            basler.stop_grabbing(app.camera)
+            self.liveviewbutton.state = 'normal'
             # get image
             ret, im = basler.single_take(app.camera)
             if ret:
@@ -453,8 +453,10 @@ class RecordButtons(BoxLayout):
     def stopPreview(self):
         app = App.get_running_app()
         camera = app.camera
+        
         if camera is not None:
             basler.stop_grabbing(camera)
+            Clock.unschedule(self.event)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
         # reset scale of image
@@ -487,8 +489,7 @@ class RecordButtons(BoxLayout):
         
 
     def startRecording(self):
-        app = App.get_running_app()
-        camera = app.camera
+        camera = App.get_running_app().camera
         self.parent.framecounter.value = 0
         self.path = App.get_running_app().root.ids.leftcolumn.savefile
 
@@ -498,13 +499,8 @@ class RecordButtons(BoxLayout):
             # schedule immediately
             Clock.schedule_once(self.open_file, 0)
             # start thread for grabbing and saving images
-            fps = camera.ResultingFrameRate()
-            print("Recording Framerate:", fps)
-            t = Thread(target=self.record, daemon = True).start()
-            # # schedule  a bit later
-            # Clock.schedule_once(self.init_recording, 0.1)
-            # # schedule acquisition
-            # Clock.schedule_once(self.schedule_saving, 0.2)
+            record_args = self.init_recording()
+            t = Thread(target=self.record, args = record_args, daemon = True).start()
         else:
             self.recordbutton.state = 'normal'
 
@@ -513,7 +509,7 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None:
             basler.stop_grabbing(camera)
-            #Clock.unschedule(self.event)
+            Clock.unschedule(self.event)
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
@@ -522,11 +518,10 @@ class RecordButtons(BoxLayout):
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def record(self):
+    def init_recording(self):
         app = App.get_running_app()
         camera = app.camera
-
-         # create a texture
+        # create a texture
         App.get_running_app().create_texture(*basler.get_shape(camera))
         # set up grabbing with recording settings here
         fps = app.config.getfloat('Experiment', 'framerate')
@@ -540,6 +535,13 @@ class RecordButtons(BoxLayout):
         fps = basler.set_framerate(app.camera, fps)
         print('Actual recording fps: ' + str(fps))
         app.root.ids.leftcolumn.update_settings_display()
+
+        return nframes, buffersize, cropX, cropY
+
+
+    def record(self, nframes, buffersize, cropX, cropY):
+        app = App.get_running_app()
+        camera = app.camera
         basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
 
         # schedule a display update
@@ -554,7 +556,6 @@ class RecordButtons(BoxLayout):
                 print('dt: ', timestamp-app.timestamp)
                 print('(x,y,z): ', app.coords)
                 
-                
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 # write coordinates
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
@@ -563,6 +564,7 @@ class RecordButtons(BoxLayout):
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
+        print('Finished recordings ', self.parent.framecounter.value, 'frames')
         return
 
     # def record(self, app, camera, nframes):
