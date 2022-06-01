@@ -155,8 +155,8 @@ class Stage:
 
     def get_position(self, unit = 'mm', fast = True):
         """return the current position of the stage for all axes."""
+        pos = []
         if fast:
-            pos = []
             loop = []
             if self.connection is not None:
                 loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
