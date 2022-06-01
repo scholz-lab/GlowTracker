@@ -1,6 +1,6 @@
 import asyncio
 from zaber_motion import Library, Units, Measurement
-from zaber_motion.ascii import Connection
+from zaber_motion.ascii import Connection, AlertEvent, AllAxes
 
 #library.toggle_device_db_store(True)
 
@@ -198,6 +198,7 @@ class Stage:
             self.home_stage()
         self.set_rangelimits(limits)
         self.move_abs(start)
+        AllAxes.wait_until_idle(throw_error_on_fault = True)
         coords = self.get_position()
         
     

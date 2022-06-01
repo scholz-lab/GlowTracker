@@ -194,20 +194,20 @@ MainWindow:
     size: root.size
     StageButtonLeftFast:       
         on_state: app.stage.move_speed((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
-        disabled: app.stage.connection is None
+        #disabled: app.stage.connection is None
     StageButtonLeft:
         on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
-        disabled: app.stage.connection is None
+        #disabled: app.stage.connection is None
     Label:
         text: 'X'
         font_size: 40
         size_hint: (0.2,1)
     StageButtonRight:
         on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
-        disabled: app.stage.connection is None
+        #disabled: app.stage.connection is None
     StageButtonRightFast:            
         on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
-        disabled: app.stage.connection is None
+        #disabled: app.stage.connection is None
 
 <YControls>:
     BoxLayout:
@@ -217,10 +217,10 @@ MainWindow:
         
         StageButtonLeftFast:            
             on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         StageButtonLeft:
             on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         Label:
             text: 'Y'
             valign: 'bottom'
@@ -228,10 +228,10 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             on_state: app.stage.move_speed((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         StageButtonRightFast:            
             on_state: app.stage.move_speed((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
             
             
 <ZControls>:
@@ -241,20 +241,20 @@ MainWindow:
         orientation: 'horizontal'
         StageButtonLeftFast:            
             on_state: app.stage.move_speed((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         StageButtonLeft:
             on_state: app.stage.move_speed((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop()
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         Label:
             text: 'Z'
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
             on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
         StageButtonRightFast:            
             on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
-            disabled: app.stage.connection is None
+            #disabled: app.stage.connection is None
 #################################
 # Load camera properties - Popup
 #################################
@@ -722,7 +722,7 @@ MainWindow:
         size_hint: (1,0.9)
 
 
-<WarningPopup@Popup>:
+<WarningPopup>:
     BoxLayout:
         orientation: 'vertical'
         
