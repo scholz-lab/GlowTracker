@@ -523,6 +523,7 @@ class RecordButtons(BoxLayout):
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         self.parent.framecounter.value = 0
+        self.buffertrigger()
         print("Finished recording")
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
@@ -583,7 +584,9 @@ class RecordButtons(BoxLayout):
                 self.parent.framecounter.value += 1
                 counter += 1
         print(f'Finished recordings {counter} frames.')
+        self.buffertrigger()
         self.recordbutton.state = 'normal'
+        
         return 
 
     def save(self, img, path, file_name):

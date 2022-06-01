@@ -153,26 +153,29 @@ class Stage:
                 self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
    
 
-    def get_position(self, unit = 'mm'):
+    def get_position(self, unit = 'mm', fast = True):
         """return the current position of the stage for all axes."""
-        pos = []
-        loop = []
-        if self.connection is not None:
-            loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
-            loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
-            if self.no_axes >2:
-                loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
+        if fast:
+            pos = []
+            loop = []
+            if self.connection is not None:
+                loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
+                loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
+                if self.no_axes >2:
+                    loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
 
-        move_coroutine = asyncio.gather(*loop)
+            move_coroutine = asyncio.gather(*loop)
 
-        loop = asyncio.get_event_loop()
-        pos = loop.run_until_complete(move_coroutine)
-        # if self.connection is not None:
-        #     pos.append(self.connection.axis_x.get_position(self.units[unit]))
-        #     pos.append(self.connection.axis_y.get_position(self.units[unit]))
-        #     if self.no_axes >2:
-        #         pos.append(self.connection.axis_z.get_position(self.units[unit]))
-        return pos
+            loop = asyncio.get_event_loop()
+            pos = loop.run_until_complete(move_coroutine)
+            return pos
+        else:
+            if self.connection is not None:
+                pos.append(self.connection.axis_x.get_position(self.units[unit]))
+                pos.append(self.connection.axis_y.get_position(self.units[unit]))
+                if self.no_axes >2:
+                    pos.append(self.connection.axis_z.get_position(self.units[unit]))
+
 
     def stop(self):
         if self.connection is not None:
@@ -202,7 +205,7 @@ class Stage:
         device_list = self.connection.detect_devices()
         for device in device_list:
             device.all_axes.wait_until_idle(throw_error_on_fault = True)
-        coords = self.get_position()
+        coords = self.get_position(fast = False)
         
     
     def disconnect(self):
