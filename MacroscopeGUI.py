@@ -66,7 +66,7 @@ def im_to_texture(image):
     return image_texture
 
 
-class WarningPopup():
+class WarningPopup(Popup):
     ok_text = StringProperty('OK')
     text = StringProperty('Label')
 
@@ -463,7 +463,7 @@ class RecordButtons(BoxLayout):
         app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def update(self, record = True):
+    def update(self):
         app = App.get_running_app()
         camera = app.camera
         
@@ -485,9 +485,14 @@ class RecordButtons(BoxLayout):
         return
 
 
-    def display(self, dt):
+    def display(self, dt, record = False):
         if App.get_running_app().lastframe is not None:
             App.get_running_app().image = App.get_running_app().lastframe
+    
+
+    def update_buffer(self, dt):
+        # update buffer display
+        self.parent.buffer.value =  App.get_running_app().camera.NumQueuedBuffers()
         
 
     def startRecording(self):
@@ -497,10 +502,12 @@ class RecordButtons(BoxLayout):
         self.path = app.root.ids.leftcolumn.savefile
 
         if camera is not None:
-            # stop camera if already running
-            app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+            # stop camera if already running 
+            self.liveviewbutton.state = 'normal'
             # schedule immediately
             Clock.schedule_once(self.open_file, 0)
+            # schedule buffer update
+            self.buffertrigger = Clock.create_trigger(self.update_buffer)
             # start thread for grabbing and saving images
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True).start()
@@ -554,12 +561,14 @@ class RecordButtons(BoxLayout):
 
         # schedule a display update
         fps = app.config.getfloat('Camera', 'display_fps')
-        self.event = Clock.schedule_interval(self.display, 1.0 /fps)
+        self.event = Clock.schedule_interval(self.display, 1.0 /fps, record = True)
         counter = 0
         # grab and write images
         while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
             # get image
             ret, img, timestamp = basler.retrieve_result(camera)
+            # trigger a buffer update
+            self.buffertrigger()
             if ret:
                 print('dt: ', timestamp-app.timestamp)
                 print('(x,y,z): ', app.coords)

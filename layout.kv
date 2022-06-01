@@ -435,11 +435,14 @@ MainWindow:
 ### toggle tracking or autofocus
 <RuntimeControls>:
     framecounter: framecounter
+    buffer : buffer
     autofocuscheckbox: autofocuscheckbox
     trackingcheckbox: trackingcheckbox
     RecordButtons:
         id: recordbuttons
+        size_hint: (2.5, 1)
     GridLayout:
+        
         cols: 2
         rows: 3
         MyLabel:
@@ -462,7 +465,16 @@ MainWindow:
         CheckBox:
             id: trackingcheckbox
             on_state: root.startTracking() if self.state=='down' else root.stopTracking()
-
+    GridLayout:
+        cols: 2
+        rows: 3
+        MyLabel:
+            text: 'Buffer'
+            color: '#ffffff'
+        MyCounter:
+            id: buffer
+            color: '#ffffff'
+            text: str(self.value)
 
 ### Live view and Record
 <RecordButtons>:

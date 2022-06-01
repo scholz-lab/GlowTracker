@@ -198,7 +198,10 @@ class Stage:
             self.home_stage()
         self.set_rangelimits(limits)
         self.move_abs(start)
-        AllAxes.wait_until_idle(throw_error_on_fault = True)
+        
+        device_list = self.connection.detect_devices()
+        for device in device_list:
+            device.all_axes.wait_until_idle(throw_error_on_fault = True)
         coords = self.get_position()
         
     
