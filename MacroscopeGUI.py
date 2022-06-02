@@ -561,7 +561,6 @@ class RecordButtons(BoxLayout):
         print("Finished recording")
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
-        print('Lost buffers', camera.Statistic_Buffer_Underrun_Count())
         self.recordbutton.state = 'normal'
 
 
@@ -933,9 +932,12 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
+            self.coordinate_update = Clock.trigger(self.update_coordinates)
+            self.coordinate_update()
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
+            
 
 
     def disconnectStage(self):
@@ -1124,6 +1126,10 @@ class MacroscopeApp(App):
             self.bind_keys()
 
 
+    def on_coords(self):
+        print('hiyahoo')
+
+
     def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
         if config is self.config:
@@ -1185,6 +1191,11 @@ class MacroscopeApp(App):
         buf = self.image.tobytes()
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
 
+
+    def update_coordinates(self):
+        """get the current stage position."""
+        if self.stage is not None:
+            self.coords = self.stage.get_position()
 
 def reset():
     # Cleaner for the events in memory
