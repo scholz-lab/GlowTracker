@@ -904,7 +904,7 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-        self.coordinate_update = Clock.create_trigger(self.update_coordinates)
+        self.coordinate_update = Clock.create_trigger(app.update_coordinates)
         self.coordinate_update()
 
     def disconnectStage(self):
