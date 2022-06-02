@@ -483,8 +483,9 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         if camera is not None:
-            basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
+            self.updatethread.join()
+            basler.stop_grabbing(camera)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
         # reset scale of image
@@ -521,7 +522,7 @@ class RecordButtons(BoxLayout):
     def update_buffer(self, dt):
         # update buffer display
         camera = App.get_running_app().camera
-        self.parent.buffer.value = camera.MaxNumBuffers()- camera.NumQueuedBuffers()
+        self.parent.buffer.value = camera.MaxNumBuffer()- camera.NumQueuedBuffers()
         
 
     def startRecording(self):
@@ -548,10 +549,13 @@ class RecordButtons(BoxLayout):
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            basler.stop_grabbing(camera)
+           
             Clock.unschedule(self.event)
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
+            if self.recordthread.is_alive():
+                self.recordthread.join()
+            basler.stop_grabbing(camera)
         self.parent.framecounter.value = 0
         self.buffertrigger()
         print("Finished recording")
