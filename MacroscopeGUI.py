@@ -445,7 +445,8 @@ class RecordButtons(BoxLayout):
             # update the image
             fps = camera.ResultingFrameRate()
             print("Grabbing Framerate:", fps)
-            self.updatethread = Thread(target=self.update, daemon = True).start()
+            self.updatethread = Thread(target=self.update, daemon = True)
+            self.updatethread.start()
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -455,9 +456,8 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         if camera is not None:
-            Clock.unschedule(self.event)
-            self.updatethread.join()
             basler.stop_grabbing(camera)
+            Clock.unschedule(self.event)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
         # reset scale of image
@@ -494,7 +494,7 @@ class RecordButtons(BoxLayout):
     def update_buffer(self, dt):
         # update buffer display
         camera = App.get_running_app().camera
-        self.parent.buffer.value = camera.MaxNumBuffer() - camera.NumQueuedBuffers()
+        self.parent.buffer.value = camera.MaxNumBuffers()- camera.NumQueuedBuffers()
         
 
     def startRecording(self):
@@ -512,7 +512,8 @@ class RecordButtons(BoxLayout):
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
             # start thread for grabbing and saving images
             record_args = self.init_recording()
-            self.recordthread = Thread(target=self.record, args = record_args, daemon = True).start()
+            self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
+            self.recordthread.start()
         else:
             self.recordbutton.state = 'normal'
 
@@ -520,13 +521,10 @@ class RecordButtons(BoxLayout):
     def stopRecording(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            
+            basler.stop_grabbing(camera)
             Clock.unschedule(self.event)
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
-            if self.recordthread.is_alive():
-                self.recordthread.join()
-            basler.stop_grabbing(camera)
         self.parent.framecounter.value = 0
         self.buffertrigger()
         print("Finished recording")
@@ -571,7 +569,7 @@ class RecordButtons(BoxLayout):
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         counter = 0
         # grab and write images
-        while (camera is not None and counter <nframes and self.recordbutton.state == 'down'):# and camera.GetGrabResultWaitObject().Wait(0):
+        while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
             # get image
             ret, img, timestamp = basler.retrieve_result(camera)
             # trigger a buffer update
@@ -904,8 +902,7 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-        Clock.schedule_once(app.update_coordinates, 5)
-       
+
 
     def disconnectStage(self):
         print('disconnecting Stage')
@@ -915,9 +912,6 @@ class Connections(BoxLayout):
             App.get_running_app().stage.disconnect()
             App.get_running_app().stage = None
 
-
-    def on_coords():
-        print('hiyahoo')
 
 class MyCounter():
     value = NumericProperty(0)
@@ -959,7 +953,6 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
-
 
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -1144,12 +1137,6 @@ class MacroscopeApp(App):
         """helper function to create kivy textures from image arrays."""
         buf = self.image.tobytes()
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-
-
-    def update_coordinates(self, dt):
-        """get the current stage position."""
-        if self.stage is not None:
-            self.coords = self.stage.get_position()
 
 
 def reset():
