@@ -294,15 +294,42 @@ class AutoCalibration(BoxLayout):
 
 # Stage controls
 class XControls(BoxLayout):
-    pass
+    def __init__(self,  **kwargs):
+        super(XControls, self).__init__(**kwargs)
+
+    def disable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = True
+    
+    def enable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = False
 
 
 class YControls(Widget):
-    pass
+    def __init__(self,  **kwargs):
+        super(YControls, self).__init__(**kwargs)
+
+    def disable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = True
+    
+    def enable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = False
 
 
 class ZControls(Widget):
-    pass
+    def __init__(self,  **kwargs):
+        super(ZControls, self).__init__(**kwargs)
+
+    def disable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = True
+
+    def enable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = False
 
 
 # load camera settings
@@ -902,15 +929,24 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
+            app.root.ids.leftcolumn.ids.xcontrols.enable_all()
+            app.root.ids.leftcolumn.ids.ycontrols.enable_all()
+            app.root.ids.leftcolumn.ids.zcontrols.enable_all()
 
 
     def disconnectStage(self):
         print('disconnecting Stage')
-        if App.get_running_app().stage is None:
+        app = App.get_running_app()
+        if app.stage is None:
             self.stage_connection.state = 'normal'
         else:
-            App.get_running_app().stage.disconnect()
-            App.get_running_app().stage = None
+            app.stage.disconnect()
+            app.stage = None
+        # disable buttons
+        app.root.ids.leftcolumn.ids.xcontrols.disable_all()
+        app.root.ids.leftcolumn.ids.ycontrols.disable_all()
+        app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+        print(app.root.ids.leftcolumn.ids.xcontrols.disable_all())
 
 
 class MyCounter():
@@ -1075,6 +1111,13 @@ class MacroscopeApp(App):
     def bind_keys(self):
         Window.bind(on_key_up=self._keyup)
         Window.bind(on_key_down=self._keydown)
+
+
+    def toggle_key_binding(self, focus):
+        if focus:
+            self.unbind_keys()
+        else:
+            self.bind_keys()
 
 
     def on_config_change(self, config, section, key, value):

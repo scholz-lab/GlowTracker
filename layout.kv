@@ -58,8 +58,11 @@ MainWindow:
     MyLabel: 
         text: 'Stage Controls'
     XControls:
+        id: xcontrols
     YControls:
+        id: ycontrols
     ZControls:
+        id: zcontrols
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
@@ -83,7 +86,10 @@ MainWindow:
         multiline: False
         text: root.savefile
         on_text_validate: root.path_validate()
-        on_focus:  app.unbind_keys() if self.focus else root.path_validate()
+        on_focus: app.toggle_key_binding(self.focus)
+        on_focus: 
+            if not self.focus: root.path_validate()  
+                
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
@@ -112,7 +118,8 @@ MainWindow:
         multiline: False
         on_text_validate: root.exposure = float(self.text)
         on_text_validate: root.change_exposure()
-        on_focus:  app.unbind_keys() if self.focus else root.change_exposure()
+        on_focus: app.toggle_key_binding(self.focus)
+        on_focus: if not self.focus: root.change_exposure()
     Label: 
         text: 'Framerate (fps)'
         size_hint: (.25, 1)
@@ -131,7 +138,8 @@ MainWindow:
         multiline: False
         on_text_validate: root.framerate = float(self.text)
         on_text_validate: root.change_framerate()
-        on_focus:  app.unbind_keys() if self.focus else root.change_framerate()
+        on_focus: app.toggle_key_binding(self.focus)
+        on_focus:  if not self.focus: root.change_framerate()
         text: str(round(root.framerate, 2))
     Label:
         text: 'Gain'
@@ -151,7 +159,8 @@ MainWindow:
         multiline: False
         on_text_validate: root.gain = float(self.text)
         on_text_validate: root.change_gain()
-        on_focus:  app.unbind_keys() if self.focus else root.change_gain()
+        on_focus: app.toggle_key_binding(self.focus)
+        on_focus:  if not self.focus: root.change_gain()
         text: str(root.gain)
     
         
@@ -192,10 +201,13 @@ MainWindow:
     orientation: 'horizontal'
     pos: root.pos
     size: root.size
-    StageButtonLeftFast:       
+    
+    StageButtonLeftFast:
+        id: sbl1
         on_state: app.stage.move_speed((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
         #disabled: app.stage.connection is None
     StageButtonLeft:
+        id: sbl2
         on_state: app.stage.move_speed((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
     Label:
@@ -203,9 +215,11 @@ MainWindow:
         font_size: 40
         size_hint: (0.2,1)
     StageButtonRight:
+        id: sbl3
         on_state: app.stage.move_speed((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
-    StageButtonRightFast:            
+    StageButtonRightFast:
+        id: sbl4       
         on_state: app.stage.move_speed((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
 
@@ -215,10 +229,12 @@ MainWindow:
         size: root.size
         orientation: 'horizontal'
         
-        StageButtonLeftFast:            
+        StageButtonLeftFast:
+            id: sbl1        
             on_state: app.stage.move_speed((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
+            id: sbl2
             on_state: app.stage.move_speed((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         Label:
@@ -227,9 +243,11 @@ MainWindow:
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
+            id: sbl3
             on_state: app.stage.move_speed((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
-        StageButtonRightFast:            
+        StageButtonRightFast:
+            id: sbl4
             on_state: app.stage.move_speed((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
             
@@ -239,10 +257,13 @@ MainWindow:
         pos: root.pos
         size: root.size
         orientation: 'horizontal'
-        StageButtonLeftFast:            
+        
+        StageButtonLeftFast: 
+            id: sbl1
             on_state: app.stage.move_speed((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
+            id: sbl2
             on_state: app.stage.move_speed((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         Label:
@@ -250,9 +271,11 @@ MainWindow:
             font_size: 40
             size_hint: (0.2,1)
         StageButtonRight:
+            id: sbl3
             on_state: app.stage.move_speed((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
             #disabled: app.stage.connection is None
-        StageButtonRightFast:            
+        StageButtonRightFast:   
+            id: sbl4    
             on_state: app.stage.move_speed((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
             #disabled: app.stage.connection is None
 #################################
