@@ -904,7 +904,8 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-
+        self.coordinate_update = Clock.trigger(self.update_coordinates)
+        self.coordinate_update()
 
     def disconnectStage(self):
         print('disconnecting Stage')
@@ -914,6 +915,9 @@ class Connections(BoxLayout):
             App.get_running_app().stage.disconnect()
             App.get_running_app().stage = None
 
+
+    def on_coords():
+        print('hiyahoo')
 
 class MyCounter():
     value = NumericProperty(0)
@@ -955,6 +959,7 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage = stg.Stage(None)
+
 
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -1140,6 +1145,11 @@ class MacroscopeApp(App):
         buf = self.image.tobytes()
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
 
+
+    def update_coordinates(self):
+        """get the current stage position."""
+        if self.stage is not None:
+            self.coords = self.stage.get_position()
 
 def reset():
     # Cleaner for the events in memory
