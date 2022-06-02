@@ -183,6 +183,7 @@ class Stage:
             self.connection.axis_y.stop(wait_until_idle = False)
             self.connection.axis_z.stop(wait_until_idle = False)
 
+
     def set_rangelimits(self, limits = (160,160,155), unit = 'mm'):
         '''
         Sets limit for every device axis separately. necessary to avoid collision with other set-up elements.
