@@ -492,7 +492,8 @@ class RecordButtons(BoxLayout):
 
     def update_buffer(self, dt):
         # update buffer display
-        self.parent.buffer.value =  App.get_running_app().camera.NumQueuedBuffers()
+        camera = App.get_running_app().camera
+        self.parent.buffer.value = camera.MaxNumBuffers()- camera.NumQueuedBuffers()
         
 
     def startRecording(self):
@@ -527,6 +528,7 @@ class RecordButtons(BoxLayout):
         print("Finished recording")
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
+        print('Lost buffers', camera.Statistic_Buffer_Underrun_Count())
         self.recordbutton.state = 'normal'
 
 
