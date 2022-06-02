@@ -19,9 +19,7 @@ def camera_init():
         camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
         # Register an image event handler that accesses the chunk data.
         camera.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
-        # register camera event handler for buffer overruns
-        camera.RegisterCameraEventHandler(CameraEventHandler(), "EventFrameBufferOverrun", None,
-                                      pylon.RegistrationMode_Append, pylon.Cleanup_None)
+        
         camera.Open()
         # Print the model name of the camera.
         print("Using device ", camera.GetDeviceInfo().GetModelName())
@@ -156,11 +154,5 @@ def get_shape(camera):
     return  camera.Height.GetValue(), camera.Width.GetValue()
 
 
-# Example handler for camera events.
-class CameraEventHandler(pylon.CameraEventHandler):
-    # Only very short processing tasks should be performed by this method. Otherwise, the event notification will block the
-    # processing of images.
-    def OnCameraEvent(self, camera):
-        print()
-        print(camera.EventFrameBufferOverrunTimestamp.Value)
+
         
