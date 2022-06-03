@@ -932,7 +932,7 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-            self.coordinate_update = Clock.trigger(self.update_coordinates)
+            self.coordinate_update = Clock.create_trigger(self.update_coordinates)
             self.coordinate_update()
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
@@ -965,7 +965,7 @@ class ExitApp(BoxLayout):
 # set window size at startup
 
 
-Window.size = (1280, 800)
+
 
 
 # load the layout
@@ -1000,6 +1000,9 @@ class MacroscopeApp(App):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
+
+        # manage xbox input
+        Window.bind(on_joy_axis= self.on_controller_input)
         # load some stuff
         # other useful features
         pixelsize = self.config.getfloat('Camera', 'pixelsize')
@@ -1064,6 +1067,25 @@ class MacroscopeApp(App):
         self.bind_keys()
         self.destroy_settings()
 
+    def on_controller_input(self, win, stickid, axisid, value):
+        print(win, stickid, axisid, value)
+        if self.stage is not None or True:
+            v = self.vhigh*value/32767
+            # left joystick - x axis
+            if axisid ==0:
+                v = (v,0,0)
+                print('up/down', v)
+            # left joystick - y axis
+            elif axisid ==1:
+                print('left/right')
+                v = (0,v,0)
+            # left joystick - y axis
+            elif axisid ==4:
+                print('focus')
+                v = (0,0,v)
+            self.stage.move_speed((-self.vlow, 0, 0), self.unit)
+            #self.stage.stop()
+            #self.coords = self.stage.get_position()
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
@@ -1209,5 +1231,6 @@ def reset():
 
 if __name__ == '__main__':
     reset()
+    Window.size = (1280, 800)
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
