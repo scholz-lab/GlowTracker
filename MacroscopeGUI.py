@@ -1151,7 +1151,7 @@ class MacroscopeApp(App):
             self.bind_keys()
 
 
-    def on_coords(self):
+    def on_coords(self, instance, value):
         print('hiyahoo')
 
 
