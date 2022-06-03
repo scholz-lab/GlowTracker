@@ -953,6 +953,12 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
         print(app.root.ids.leftcolumn.ids.xcontrols.disable_all())
+    
+
+    def update_coordinates(self):
+        """get the current stage position."""
+        if self.stage is not None:
+            self.coords = self.stage.get_position()
 
 
 class MyCounter():
@@ -1214,10 +1220,7 @@ class MacroscopeApp(App):
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
 
 
-    def update_coordinates(self):
-        """get the current stage position."""
-        if self.stage is not None:
-            self.coords = self.stage.get_position()
+
 
 def reset():
     # Cleaner for the events in memory
