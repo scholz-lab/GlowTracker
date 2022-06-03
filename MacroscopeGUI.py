@@ -932,7 +932,7 @@ class Connections(BoxLayout):
             t.daemon = True
             # start the thread
             t.start()
-            self.coordinate_update = Clock.create_trigger(self.update_coordinates)
+            self.coordinate_update = Clock.create_trigger(app.update_coordinates)
             self.coordinate_update()
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
@@ -955,10 +955,7 @@ class Connections(BoxLayout):
         print(app.root.ids.leftcolumn.ids.xcontrols.disable_all())
     
 
-    def update_coordinates(self, dt):
-        """get the current stage position."""
-        if self.stage is not None:
-            self.coords = self.stage.get_position()
+  
 
 
 class MyCounter():
@@ -1218,7 +1215,12 @@ class MacroscopeApp(App):
         """helper function to create kivy textures from image arrays."""
         buf = self.image.tobytes()
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-
+    
+    
+    def update_coordinates(self, dt):
+        """get the current stage position."""
+        if self.stage is not None:
+            self.coords = self.stage.get_position()
 
 
 
