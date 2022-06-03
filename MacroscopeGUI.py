@@ -955,7 +955,7 @@ class Connections(BoxLayout):
         print(app.root.ids.leftcolumn.ids.xcontrols.disable_all())
     
 
-    def update_coordinates(self):
+    def update_coordinates(self, dt):
         """get the current stage position."""
         if self.stage is not None:
             self.coords = self.stage.get_position()
