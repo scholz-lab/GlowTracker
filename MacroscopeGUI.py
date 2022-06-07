@@ -1069,10 +1069,11 @@ class MacroscopeApp(App):
 
     def on_controller_input(self, win, stickid, axisid, value):
         print(win, stickid, axisid, value)
-        
-        if self.stage is not None and not self.stage.is_busy():
-            #if self.stopevent is not None:
-            #    Clock.unschedule(self.stopevent)
+        if  self.stage.is_busy():
+            return
+        if self.stage is not None:
+            if self.stopevent is not None:
+               Clock.unschedule(self.stopevent)
             #scale velocity
             v = self.vhigh*value/32767
             if v < self.vlow*0.25:
@@ -1085,7 +1086,7 @@ class MacroscopeApp(App):
                 }
                 if axisid in [0,1,4]:
                     self.stage.move_speed(direction[axisid], self.unit)
-                    self.stopevent()# = Clock.schedule_once(lambda dt: self.stage.stop(), 0.5)
+                    self.stopevent = Clock.schedule_once(lambda dt: self.stage.stop(), 0.1)
             
 
     # manage keyboard input for stage and focus
