@@ -1066,15 +1066,16 @@ class MacroscopeApp(App):
         self.bind_keys()
         self.destroy_settings()
 
+
     def on_controller_input(self, win, stickid, axisid, value):
         print(win, stickid, axisid, value)
         
-        if self.stage is not None or True:
+        if self.stage is not None and not self.stage.is_busy():
             #if self.stopevent is not None:
             #    Clock.unschedule(self.stopevent)
             #scale velocity
             v = self.vhigh*value/32767
-            if v ==0:
+            if v < self.vlow*0.25:
                 self.stage.stop()
                 self.coords = self.stage.get_position()
             direction = {0: (v,0,0),
@@ -1084,21 +1085,7 @@ class MacroscopeApp(App):
             if axisid in [0,1,4]:
                 self.stage.move_speed(direction[axisid], self.unit)
                 self.stopevent()# = Clock.schedule_once(lambda dt: self.stage.stop(), 0.5)
-            # # left joystick - x axis
-            # if axisid ==0:
-            #     v = (v,0,0)
-            #     print('up/down', v)
-            # # left joystick - y axis
-            # elif axisid ==1:
-            #     print('left/right')
-            #     v = (0,v,0)
-            # # left joystick - y axis
-            # elif axisid ==4:
-            #     print('focus')
-            #     v = (0,0,v)
             
-            #self.stage.stop()
-            #self.coords = self.stage.get_position()
 
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
