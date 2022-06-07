@@ -1066,6 +1066,13 @@ class MacroscopeApp(App):
         self.bind_keys()
         self.destroy_settings()
 
+    def stage_stop(self):
+        """stop all axes and report coordinates."""
+         self.stage.stop()
+         self.coords = self.stage.get_position()
+         self.stopevent = None
+         print('stopped')
+
 
     def on_controller_input(self, win, stickid, axisid, value):
         print(win, stickid, axisid, value)
@@ -1076,9 +1083,8 @@ class MacroscopeApp(App):
                Clock.unschedule(self.stopevent)
             #scale velocity
             v = self.vhigh*value/32767
-            if v < self.vlow*0.25:
-                self.stage.stop()
-                self.coords = self.stage.get_position()
+            if v < self.vlow*0.1:
+                self.stage_stop()
             else:
                 direction = {0: (v,0,0),
                             1: (0,v,0),
@@ -1086,7 +1092,7 @@ class MacroscopeApp(App):
                 }
                 if axisid in [0,1,4]:
                     self.stage.move_speed(direction[axisid], self.unit)
-                    self.stopevent = Clock.schedule_once(lambda dt: self.stage.stop(), 0.1)
+                    self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
             
 
     # manage keyboard input for stage and focus
