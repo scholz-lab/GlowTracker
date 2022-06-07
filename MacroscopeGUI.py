@@ -1104,35 +1104,6 @@ class MacroscopeApp(App):
         }
         if self.stage is not None:
             self.stage.move_speed(direction[key], self.unit)
-            # # left arrow - x axis
-            # if key == 276:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((-self.vlow, 0, 0), self.unit)
-            #     else: self.stage.move_speed((-self.vhigh, 0, 0), self.unit)
-            # #right arrow - x-axis
-            # if key == 275:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((self.vlow, 0, 0), self.unit)
-            #     else: self.stage.move_speed((self.vhigh, 0, 0), self.unit)
-            # # up and down arrow are y stage
-            # if key == 273:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((0, -self.vlow, 0), self.unit)
-            #     else: self.stage.move_speed((0, -self.vhigh, 0), self.unit)
-            # if key == 274:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((0, self.vlow, 0), self.unit)
-            #     else: self.stage.move_speed((0, self.vhigh, 0), self.unit)
-            # #focus keys -pg up and down for z
-
-            # if key == 280:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((0, 0, -self.vlow), self.unit)
-            #     else: self.stage.move_speed((0, 0, -self.vhigh), self.unit)
-            # if key == 281:
-            #     if 'shift' in modifier:
-            #         self.stage.move_speed((0, 0, self.vlow), self.unit)
-            #     else: self.stage.move_speed((0, 0, self.vhigh), self.unit)
 
 
     def _keyup(self, *args):

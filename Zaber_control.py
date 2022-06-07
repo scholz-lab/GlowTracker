@@ -138,6 +138,7 @@ class Stage:
         if len(step) > 2 and self.no_axes >2 and step[2] !=0:
             self.move_z(step[1], unit = unit, wait_until_idle=wait_until_idle)
         
+
     ###TODO check if we can do , wait_until_idle = False here too
     def move_speed(self, velocity, unit = 'ums', wait_until_idle = False):
         """Move to a given relative location
@@ -213,3 +214,13 @@ class Stage:
         """close com port connection."""
         if self.connection is not None:
             self.connection.close()
+    
+    
+    def is_busy(self):
+        """report status"""
+        if self.connection is not None:
+            device_list = self.connection.detect_devices()
+            for device in device_list:
+                if device.all_axes.is_busy():#wait_until_idle =False)
+                    return True
+        return False
