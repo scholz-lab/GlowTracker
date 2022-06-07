@@ -1083,7 +1083,7 @@ class MacroscopeApp(App):
                Clock.unschedule(self.stopevent)
             #scale velocity
             v = self.vhigh*value/32767
-            if v < self.vlow*0.1:
+            if v < self.vlow*0.01:
                 self.stage_stop()
             else:
                 direction = {0: (v,0,0),
@@ -1091,8 +1091,9 @@ class MacroscopeApp(App):
                             4: (0,0,v)
                 }
                 if axisid in [0,1,4]:
-                    self.stage.move_speed(direction[axisid], self.unit)
                     self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
+                    self.stage.move_speed(direction[axisid], self.unit)
+                    
             
 
     # manage keyboard input for stage and focus
