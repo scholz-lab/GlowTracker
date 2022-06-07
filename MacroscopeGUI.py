@@ -952,10 +952,7 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
-        print(app.root.ids.leftcolumn.ids.xcontrols.disable_all())
     
-
-  
 
 
 class MyCounter():
@@ -966,8 +963,6 @@ class ExitApp(BoxLayout):
     stop = ObjectProperty(None)
     cancel = ObjectProperty(None)
 # set window size at startup
-
-
 
 
 
@@ -1072,21 +1067,34 @@ class MacroscopeApp(App):
 
     def on_controller_input(self, win, stickid, axisid, value):
         print(win, stickid, axisid, value)
+        
         if self.stage is not None or True:
+            if self.stopevent is not None:
+                Clock.unschedule(self.stopevent)
+            #scale velocity
             v = self.vhigh*value/32767
-            # left joystick - x axis
-            if axisid ==0:
-                v = (v,0,0)
-                print('up/down', v)
-            # left joystick - y axis
-            elif axisid ==1:
-                print('left/right')
-                v = (0,v,0)
-            # left joystick - y axis
-            elif axisid ==4:
-                print('focus')
-                v = (0,0,v)
-            self.stage.move_speed((-self.vlow, 0, 0), self.unit)
+            if v ==0:
+                self.stage.stop()
+                self.coords = self.stage.get_position()
+            direction = {0: (v,0,0),
+                         1: (0,v,0),
+                         4: (0,0,v)
+            }
+            self.stage.move_speed(direction[axisid], self.unit)
+            self.stopevent = Clock.schedule(lambda dt: self.stage.stop(), 0.5)
+            # # left joystick - x axis
+            # if axisid ==0:
+            #     v = (v,0,0)
+            #     print('up/down', v)
+            # # left joystick - y axis
+            # elif axisid ==1:
+            #     print('left/right')
+            #     v = (0,v,0)
+            # # left joystick - y axis
+            # elif axisid ==4:
+            #     print('focus')
+            #     v = (0,0,v)
+            
             #self.stage.stop()
             #self.coords = self.stage.get_position()
 
@@ -1094,37 +1102,48 @@ class MacroscopeApp(App):
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
         # use arrow key codes here. This might be OS dependent.
         print(key, scancode, codepoint, modifier)
+        if 'shift' in modifier:
+            v = self.vlow
+        else:
+            v = self.vhigh
+        direction = {273: (0,-v,0),
+                    274: (0,v,0),
+                    275: (-v,0,0),
+                    276: (v,0,0),
+                    280: (0,0,-v),
+                    281: (0,0,v)
+        }
         if self.stage is not None:
+            self.stage.move_speed(direction[key], self.unit)
+            # # left arrow - x axis
+            # if key == 276:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((-self.vlow, 0, 0), self.unit)
+            #     else: self.stage.move_speed((-self.vhigh, 0, 0), self.unit)
+            # #right arrow - x-axis
+            # if key == 275:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((self.vlow, 0, 0), self.unit)
+            #     else: self.stage.move_speed((self.vhigh, 0, 0), self.unit)
+            # # up and down arrow are y stage
+            # if key == 273:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((0, -self.vlow, 0), self.unit)
+            #     else: self.stage.move_speed((0, -self.vhigh, 0), self.unit)
+            # if key == 274:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((0, self.vlow, 0), self.unit)
+            #     else: self.stage.move_speed((0, self.vhigh, 0), self.unit)
+            # #focus keys -pg up and down for z
 
-            # left arrow - x axis
-            if key == 276:
-                if 'shift' in modifier:
-                    self.stage.move_speed((-self.vlow, 0, 0), self.unit)
-                else: self.stage.move_speed((-self.vhigh, 0, 0), self.unit)
-            #right arrow - x-axis
-            if key == 275:
-                if 'shift' in modifier:
-                    self.stage.move_speed((self.vlow, 0, 0), self.unit)
-                else: self.stage.move_speed((self.vhigh, 0, 0), self.unit)
-            # up and down arrow are y stage
-            if key == 273:
-                if 'shift' in modifier:
-                    self.stage.move_speed((0, -self.vlow, 0), self.unit)
-                else: self.stage.move_speed((0, -self.vhigh, 0), self.unit)
-            if key == 274:
-                if 'shift' in modifier:
-                    self.stage.move_speed((0, self.vlow, 0), self.unit)
-                else: self.stage.move_speed((0, self.vhigh, 0), self.unit)
-            #focus keys -pg up and down for z
-
-            if key == 280:
-                if 'shift' in modifier:
-                    self.stage.move_speed((0, 0, -self.vlow), self.unit)
-                else: self.stage.move_speed((0, 0, -self.vhigh), self.unit)
-            if key == 281:
-                if 'shift' in modifier:
-                    self.stage.move_speed((0, 0, self.vlow), self.unit)
-                else: self.stage.move_speed((0, 0, self.vhigh), self.unit)
+            # if key == 280:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((0, 0, -self.vlow), self.unit)
+            #     else: self.stage.move_speed((0, 0, -self.vhigh), self.unit)
+            # if key == 281:
+            #     if 'shift' in modifier:
+            #         self.stage.move_speed((0, 0, self.vlow), self.unit)
+            #     else: self.stage.move_speed((0, 0, self.vhigh), self.unit)
 
 
     def _keyup(self, *args):
@@ -1149,10 +1168,6 @@ class MacroscopeApp(App):
             self.unbind_keys()
         else:
             self.bind_keys()
-
-
-    def on_coords(self, instance, value):
-        print('hiyahoo')
 
 
     def on_config_change(self, config, section, key, value):
