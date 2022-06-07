@@ -1068,10 +1068,10 @@ class MacroscopeApp(App):
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
-         self.stage.stop()
-         self.coords = self.stage.get_position()
-         self.stopevent = None
-         print('stopped')
+        self.stage.stop()
+        self.coords = self.stage.get_position()
+        self.stopevent = None
+        print('stopped')
 
 
     def on_controller_input(self, win, stickid, axisid, value):
