@@ -147,11 +147,11 @@ class Stage:
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
         if self.connection is not None:
-            self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
+            self.connection.axis_x.move_velocity(velocity[0], self.units[unit], wait_until_idle)
             if len(velocity) > 1:
-                self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
+                self.connection.axis_y.move_velocity(velocity[1], self.units[unit], wait_until_idle)
             if len(velocity) > 2 and self.no_axes >2:
-                self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
+                self.connection.axis_z.move_velocity(velocity[2], self.units[unit], wait_until_idle)
    
 
     def get_position(self, unit = 'mm', fast = True):

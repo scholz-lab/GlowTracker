@@ -1069,7 +1069,7 @@ class MacroscopeApp(App):
 
     def on_controller_input(self, win, stickid, axisid, value):
         print(win, stickid, axisid, value)
-        print(self.stage.is_busy())
+        
         if self.stage is not None and not self.stage.is_busy():
             #if self.stopevent is not None:
             #    Clock.unschedule(self.stopevent)
