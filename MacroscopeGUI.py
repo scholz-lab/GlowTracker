@@ -1099,11 +1099,6 @@ class MacroscopeApp(App):
     # manage keyboard input for stage and focus
     def _keydown(self,  instance, key, scancode, codepoint, modifier):
         # use arrow key codes here. This might be OS dependent.
-        print(key, scancode, codepoint, modifier)
-        if 'shift' in modifier:
-            v = self.vlow
-        else:
-            v = self.vhigh
         direction = {273: (0,-v,0),
                     274: (0,v,0),
                     275: (-v,0,0),
@@ -1111,6 +1106,14 @@ class MacroscopeApp(App):
                     280: (0,0,-v),
                     281: (0,0,v)
         }
+        print(key, scancode, codepoint, modifier)
+        if key not in direction.keys():
+            return
+        if 'shift' in modifier:
+            v = self.vlow
+        else:
+            v = self.vhigh
+        
         if self.stage is not None:
             self.stage.move_speed(direction[key], self.unit)
 
