@@ -842,9 +842,13 @@ class RuntimeControls(BoxLayout):
         # move stage based on user input - happens here.
         #print(self.parent.parent.ids.previewimage.offset)
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
-        #print("Move stage (x,y)", xstep, ystep)
-        stage.move_x(xstep, unit='um', wait_until_idle=False)
-        stage.move_y(ystep, unit='um', wait_until_idle=False)
+        units = app.config.get('Calibration', 'step_units')
+        minstep = app.config.getfloat('Tracking', 'min_step')
+        if xstep > minstep:
+            #print("Move stage (x,y)", xstep, ystep)
+            stage.move_x(xstep, unit=units, wait_until_idle=False)
+        if ystep > minstep:
+            stage.move_y(ystep, unit=units, wait_until_idle=False)
         # reset camera field of view to smaller size around center
         hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
         # if desired FOV is smaller than allowed by camera, crop in GUI
@@ -855,28 +859,34 @@ class RuntimeControls(BoxLayout):
         # schedule the tracker
         focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
         app.coords =  app.stage.get_position()
-        self.trackingevent = Clock.schedule_interval(self.tracking, 1.0 / focus_fps)
+        # start the tracking
+        area = app.config.getfloat('Tracking', 'area')
+        binning = app.config.getfloat('Tracking', 'binning')
+        self.trackingevent = Clock.schedule_interval(partial(self.tracking, minstep, units, area, binning), 1.0 / focus_fps)
+        # schedule occasional position check of the stage
+        Clock.schedule_interval(lambda dt: self.stage.get_position(), dt)
 
 
-    def tracking(self,*args):
+    def tracking(self,minstep, units, area, *args):
         # execute actual tracking code
         app = App.get_running_app()
         stage = app.stage
-        img = app.image
+        img = app.lastframe
         # threshold and find objects
-        coords = macro.extractWorms(img, area=50, bin_factor=2, li_init=10)
+        coords = macro.extractWorms(img, area, bin_factor=2, li_init=10)
         # if we find stuff move
         if len(coords) > 0:
             print(len(coords))
             offset = macro.getDistanceToCenter(coords, img.shape)
             ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
-            stage.move_x(xstep, unit='um', wait_until_idle = False)
-            stage.move_y(ystep, unit='um', wait_until_idle = False)
+            if xstep > minstep:
+                stage.move_x(xstep, unit=units, wait_until_idle = False)
+                app.coords[0] += xstep/1000.
+            if xstep > minstep:
+                stage.move_y(ystep, unit=units, wait_until_idle = False)
+                app.coords[1] += ystep/1000.
             print("Move stage (x,y)", xstep, ystep)
             # getting stage coord is slow so we will interpolate from movements
-            app.coords[0] += xstep/1000.
-            app.coords[1] += ystep/1000.
-            #print(app.coords)
 
 
 # display if hardware is connected

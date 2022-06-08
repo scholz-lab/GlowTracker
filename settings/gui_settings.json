@@ -186,6 +186,27 @@
         "desc": "Radius around center that captures a worm",
         "section": "Tracking",
         "key": "capture_radius"
+    },
+    {
+        "type": "numeric",
+        "title": "Minimal step",
+        "desc": "what is the smallest step during tracking that should be executed?",
+        "section": "Tracking",
+        "key": "min_step"
+    },
+    {
+        "type": "numeric",
+        "title": "Area (px)",
+        "desc": "What is the minimal area of the object?",
+        "section": "Tracking",
+        "key": "area"
+    },
+    {
+        "type": "numeric",
+        "title": "Binning",
+        "desc": "Binning factor to increase thresholding speed.",
+        "section": "Tracking",
+        "key": "binning"
     }
 ]
 
