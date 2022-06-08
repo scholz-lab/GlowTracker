@@ -864,7 +864,7 @@ class RuntimeControls(BoxLayout):
         binning = app.config.getfloat('Tracking', 'binning')
         self.trackingevent = Clock.schedule_interval(partial(self.tracking, minstep, units, area, binning), 1.0 / focus_fps)
         # schedule occasional position check of the stage
-        Clock.schedule_interval(lambda dt: self.stage.get_position(), dt)
+        Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
     def tracking(self,minstep, units, area, *args):
