@@ -535,7 +535,7 @@ class RecordButtons(BoxLayout):
             # stop camera if already running 
             self.liveviewbutton.state = 'normal'
             # schedule immediately
-            Clock.schedule_once(self.open_file, 0)
+            self.open_file()
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
             # start thread for grabbing and saving images
@@ -582,7 +582,6 @@ class RecordButtons(BoxLayout):
         print('Actual recording fps: ' + str(fps))
         app.root.ids.leftcolumn.update_settings_display()
 
-        # set filename dummy
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
         self.image_filename = timeStamped("basler_{}."+f"{ext}")
