@@ -115,6 +115,7 @@ def extractWorms(img, area=0, bin_factor=4, li_init=10):
     output: array of worm coordinates.
     '''
     img = img[::bin_factor, ::bin_factor]
+    print('image shape', img.shape)
     mask = img > threshold_otsu(img)
     labeled = label(mask)
     coords = []

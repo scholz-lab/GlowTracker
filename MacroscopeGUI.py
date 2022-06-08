@@ -885,10 +885,10 @@ class RuntimeControls(BoxLayout):
             # getting stage coord is slow so we will interpolate from movements
             if xstep > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle = False)
-                app.coords[0] += xstep*1000.
-            if xstep > minstep:
+                app.coords[0] += xstep/1000.
+            if ystep > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
-                app.coords[1] += ystep*1000.
+                app.coords[1] += ystep/1000.
             print("Move stage (x,y)", xstep, ystep)
             
 
