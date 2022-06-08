@@ -844,7 +844,7 @@ class RuntimeControls(BoxLayout):
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
-        print('Centering image',xstep//1000, ystep//1000, 'um')
+        print('Centering image',xstep, ystep, 'um')
         if xstep > minstep:
             #print("Move stage (x,y)", xstep, ystep)
             stage.move_x(xstep, unit=units, wait_until_idle=False)
@@ -885,10 +885,10 @@ class RuntimeControls(BoxLayout):
             # getting stage coord is slow so we will interpolate from movements
             if xstep > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle = False)
-                app.coords[0] += xstep/1000.
+                app.coords[0] += xstep*1000.
             if xstep > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
-                app.coords[1] += ystep/1000.
+                app.coords[1] += ystep*1000.
             print("Move stage (x,y)", xstep, ystep)
             
 
