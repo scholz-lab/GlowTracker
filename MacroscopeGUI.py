@@ -843,6 +843,7 @@ class RuntimeControls(BoxLayout):
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
+        print('Centering image',xstep, ystep )
         if xstep > minstep:
             #print("Move stage (x,y)", xstep, ystep)
             stage.move_x(xstep, unit=units, wait_until_idle=False)
@@ -873,6 +874,7 @@ class RuntimeControls(BoxLayout):
         img = app.lastframe
         # threshold and find objects
         coords = macro.extractWorms(img, area, bin_factor=2, li_init=10)
+        print('tracking', coords)
         # if we find stuff move
         if len(coords) > 0:
             print(len(coords))
