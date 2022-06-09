@@ -108,7 +108,7 @@ def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor
 
 # functions for tracking
 #%% Functions used for centering stage
-def extractWorms(img, area=0, bin_factor=4, li_init=10):
+def extractWorms(img, area=0, bin_factor=4, li_init=10, display = False):
     '''
     use otsu threshold to obtain mask of pharynx & label them
     input: image of shape (N,M) 
@@ -117,7 +117,16 @@ def extractWorms(img, area=0, bin_factor=4, li_init=10):
     img = img[::bin_factor, ::bin_factor]
     print('image shape', img.shape)
     mask = img > threshold_otsu(img)
+
+
     labeled = label(mask)
+    if display:
+        plt.figure()
+        plt.subplot(211)
+        plt.imshow(img)
+        plt.subplot(212)
+        plt.imshow(labeled)
+        plt.show()
     coords = []
     for region in regionprops(labeled):
         if region.area >=area:
