@@ -724,7 +724,8 @@ class PreviewImage(Image):
             if rtc.trackingcheckbox.state == 'down' and rtc.trackingevent is None:
                 #
                 self.captureCircle(touch.pos)
-                Clock.schedule_once(lambda dt: rtc.center_image(), 0.5)
+                # get the image center
+                Clock.schedule_once(lambda dt: rtc.center_image(), 0)
                 # remove the circle 
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
@@ -822,9 +823,10 @@ class RuntimeControls(BoxLayout):
 
     def stopTracking(self):
         # unschedule a tracking routine
-        if self.trackingevent:
-            Clock.unschedule(self.trackingevent)
-            self.trackingevent = None
+        if self.trackthread.is_alive():
+        # if self.trackingevent:
+        #     Clock.unschedule(self.trackingevent)
+        #     self.trackingevent = None
             # reset camera params
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
@@ -847,9 +849,9 @@ class RuntimeControls(BoxLayout):
         print('Centering image',xstep, ystep, 'um')
         if xstep > minstep:
             #print("Move stage (x,y)", xstep, ystep)
-            stage.move_x(xstep, unit=units, wait_until_idle=False)
+            stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
-            stage.move_y(ystep, unit=units, wait_until_idle=False)
+            stage.move_y(ystep, unit=units, wait_until_idle=True)
         # reset camera field of view to smaller size around center
         hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
         print(hc, wc, roiX, roiY)
@@ -864,32 +866,63 @@ class RuntimeControls(BoxLayout):
         # start the tracking
         area = app.config.getfloat('Tracking', 'area')
         binning = app.config.getfloat('Tracking', 'binning')
-        self.trackingevent = Clock.schedule_interval(partial(self.tracking, minstep, units, area, binning), 1.0 / focus_fps)
+        # make a tracking thread 
+        #self.trackingevent = Clock.schedule_interval(partial(self.tracking, minstep, units, area, binning), 1.0 / focus_fps)
+        track_args = minstep, units, area, binning
+        self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
+        self.trackthread.start()
         # schedule occasional position check of the stage
         Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
-    def tracking(self,minstep, units, area, *args):
-        # execute actual tracking code
+    def tracking(self, minstep, units, area, binning):
+        """thread for tracking"""
         app = App.get_running_app()
         stage = app.stage
-        img = app.lastframe
-        # threshold and find objects
-        coords = macro.extractWorms(img, area, bin_factor=2, li_init=10)
-        print('tracking', coords)
-        # if we find stuff move
-        if len(coords) > 0:
-            print(len(coords))
-            offset = macro.getDistanceToCenter(coords, img.shape)
-            ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
-            # getting stage coord is slow so we will interpolate from movements
-            if xstep > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle = False)
-                app.coords[0] += xstep/1000.
-            if ystep > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = False)
-                app.coords[1] += ystep/1000.
-            print("Move stage (x,y)", xstep, ystep)
+        camera = app.camera
+        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+            # threshold and find objects
+            coords = macro.extractWorms(app.lastframe, area, bin_factor=2, li_init=10)
+            print('tracking', coords)
+            # if we find stuff move
+            if len(coords) > 0:
+                print(len(coords))
+                offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
+                ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+                # getting stage coord is slow so we will interpolate from movements
+                if xstep > minstep:
+                    stage.move_x(xstep, unit=units, wait_until_idle = True)
+                    app.coords[0] += xstep/1000.
+                if ystep > minstep:
+                    stage.move_y(ystep, unit=units, wait_until_idle = True)
+                    app.coords[1] += ystep/1000.
+                print("Move stage (x,y)", xstep, ystep)
+        # reset camera params
+        camera = App.get_running_app().camera
+        basler.cam_resetROI(camera)
+        self.cropX = None
+        self.cropY = None
+    # def tracking(self,minstep, units, area, *args):
+    #     # execute actual tracking code
+    #     app = App.get_running_app()
+    #     stage = app.stage
+    #     img = app.lastframe
+    #     # threshold and find objects
+    #     coords = macro.extractWorms(img, area, bin_factor=2, li_init=10)
+    #     print('tracking', coords)
+    #     # if we find stuff move
+    #     if len(coords) > 0:
+    #         print(len(coords))
+    #         offset = macro.getDistanceToCenter(coords, img.shape)
+    #         ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+    #         # getting stage coord is slow so we will interpolate from movements
+    #         if xstep > minstep:
+    #             stage.move_x(xstep, unit=units, wait_until_idle = False)
+    #             app.coords[0] += xstep/1000.
+    #         if ystep > minstep:
+    #             stage.move_y(ystep, unit=units, wait_until_idle = False)
+    #             app.coords[1] += ystep/1000.
+    #         print("Move stage (x,y)", xstep, ystep)
             
 
 
@@ -941,7 +974,7 @@ class Connections(BoxLayout):
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a thread, it is slow
-            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits, app.coords))
+            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits))
             # set daemon to true so the thread dies when app is closed
             t.daemon = True
             # start the thread

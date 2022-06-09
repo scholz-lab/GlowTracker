@@ -2,7 +2,7 @@ import asyncio
 from zaber_motion import Library, Units, Measurement
 from zaber_motion.ascii import Connection, AlertEvent, AllAxes
 
-#library.toggle_device_db_store(True)
+Library.toggle_device_db_store(True)
 
 
 class Stage:
@@ -197,7 +197,7 @@ class Stage:
             self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
-    def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155), coords = None):
+    def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155)):
         """startup routine to home, set range and move to start if desired. """
         if home:
             self.home_stage()
@@ -207,7 +207,7 @@ class Stage:
         device_list = self.connection.detect_devices()
         for device in device_list:
             device.all_axes.wait_until_idle(throw_error_on_fault = True)
-        coords = self.get_position(fast = False)
+
         
     
     def disconnect(self):
