@@ -852,8 +852,20 @@ class RuntimeControls(BoxLayout):
             stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
             stage.move_y(ystep, unit=units, wait_until_idle=True)
-        # reset camera field of view to smaller size around center
-        hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+        # stop acquisition
+        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
+        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
+        if rec == 'down':
+            rec = 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            rec = 'down'
+        elif disp == 'down':
+            disp= 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            disp = 'down'
+        # 
         print(hc, wc, roiX, roiY)
         # if desired FOV is smaller than allowed by camera, crop in GUI
         if wc > roiX:

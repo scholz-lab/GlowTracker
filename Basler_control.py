@@ -121,7 +121,7 @@ def cam_setROI(camera, w, h, center=True):
         # grab lock
         camera.TLParamsLocked = True
         # cam start
-        camera.AcquisitionStart.Execute()
+        #camera.AcquisitionStart.Execute()
     return camera.Height(), camera.Width()
 
 
@@ -137,8 +137,8 @@ def cam_resetROI(camera):
     camera.Height = camera.Height.Max
     # grab lock
     camera.TLParamsLocked = True
-    # cam start
-    camera.AcquisitionStart.Execute()
+    # cam start -- do not!
+    #camera.AcquisitionStart.Execute()
     return camera.Height.GetValue(), camera.Width.GetValue()
 
 
