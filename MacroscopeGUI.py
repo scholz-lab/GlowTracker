@@ -554,6 +554,7 @@ class RecordButtons(BoxLayout):
             # close file a bit later
             Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
             if self.recordthread.is_alive():
+                self.savingthread.join()
                 self.recordthread.join()
             basler.stop_grabbing(camera)
         self.parent.framecounter.value = 0
@@ -611,7 +612,8 @@ class RecordButtons(BoxLayout):
                 # write coordinates
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
                 # write image in thread
-                t = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True).start()
+                self.savingthread = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True)
+                self.savingthread.start()
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
@@ -859,13 +861,13 @@ class RuntimeControls(BoxLayout):
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
         
         if rec == 'down':
-            basler.stop_grabbing(camera)
+            #basler.stop_grabbing(camera)
             rec = 'normal'
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
             rec = 'down'
         elif disp == 'down':
-            basler.stop_grabbing(camera)
+            #basler.stop_grabbing(camera)
             disp= 'normal'
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
