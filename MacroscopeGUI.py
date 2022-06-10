@@ -829,8 +829,8 @@ class RuntimeControls(BoxLayout):
             # reset camera params
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
-            self.cropX = None
-            self.cropY = None
+            self.cropX = 0
+            self.cropY = 0
 
 
     def center_image(self):
@@ -912,8 +912,8 @@ class RuntimeControls(BoxLayout):
         # reset camera params
         camera = App.get_running_app().camera
         basler.cam_resetROI(camera)
-        self.cropX = None
-        self.cropY = None
+        self.cropX = 0
+        self.cropY = 0
     # def tracking(self,minstep, units, area, *args):
     #     # execute actual tracking code
     #     app = App.get_running_app()
@@ -1219,6 +1219,9 @@ class MacroscopeApp(App):
         """update GUI texture when image changes."""
         #event = Clock.create_trigger(self.im_to_texture())
         #event()
+        print(self.image.shape, self.texture.size)
+        if self.image.shape != self.texture.size:
+            self.create_texture(self, *self.image.shape)
         self.im_to_texture()
 
 
