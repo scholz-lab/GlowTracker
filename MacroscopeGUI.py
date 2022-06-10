@@ -561,7 +561,7 @@ class RecordButtons(BoxLayout):
         print("Finished recording")
         # reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
-        self.recordbutton.state = 'normal'
+        #self.recordbutton.state = 'normal'
 
 
     def init_recording(self):
@@ -821,16 +821,17 @@ class RuntimeControls(BoxLayout):
 
 
     def stopTracking(self):
+        self.trackingevent = False
         # unschedule a tracking routine
-        if self.trackthread.is_alive():
+        #if self.trackthread.is_alive():
         # if self.trackingevent:
-            Clock.unschedule(self.coord_updateevent)
-            self.trackingevent = None
-            # reset camera params
-            camera = App.get_running_app().camera
-            basler.cam_resetROI(camera)
-            self.cropX = 0
-            self.cropY = 0
+        Clock.unschedule(self.coord_updateevent)
+        
+        # reset camera params
+        camera = App.get_running_app().camera
+        basler.cam_resetROI(camera)
+        self.cropX = 0
+        self.cropY = 0
 
 
     def center_image(self):
@@ -876,6 +877,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
       
         app.coords =  app.stage.get_position()
+        print('updated coords')
         # start the tracking
         area = app.config.getfloat('Tracking', 'area')
         binning = app.config.getfloat('Tracking', 'binning')
@@ -883,6 +885,7 @@ class RuntimeControls(BoxLayout):
         track_args = minstep, units, area, binning
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
+        print('started thread')
         # schedule occasional position check of the stage
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
@@ -912,11 +915,12 @@ class RuntimeControls(BoxLayout):
                     app.coords[1] += ystep/1000.
                 print("Move stage (x,y)", xstep, ystep)
         # reset camera params
-        camera = App.get_running_app().camera
-        basler.cam_resetROI(camera)
-        Clock.unschedule(self.coord_updateevent)
-        self.cropX = 0
-        self.cropY = 0
+        # camera = App.get_running_app().camera
+        # basler.cam_resetROI(camera)
+        # Clock.unschedule(self.coord_updateevent)
+        # self.cropX = 0
+        # self.cropY = 0
+        self.trackingcheckbox.state = 'normal'
 
 
     def cont_tracking(self, minstep, units, area, binning):
