@@ -839,7 +839,6 @@ class RuntimeControls(BoxLayout):
     def center_image(self):
         app = App.get_running_app()
         # schedule a tracking routine
-        camera = app.camera
         stage = app.stage
         # smaller FOV for the worm
         roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
@@ -965,7 +964,7 @@ class RuntimeControls(BoxLayout):
             rec = 'normal'
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_resetROI(camera)
-            rec = 'down'
+            
         elif disp == 'down':
             #basler.stop_grabbing(camera)
             disp= 'normal'
