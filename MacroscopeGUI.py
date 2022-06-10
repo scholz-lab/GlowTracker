@@ -484,7 +484,8 @@ class RecordButtons(BoxLayout):
         
         if camera is not None:
             Clock.unschedule(self.event)
-            self.updatethread.join()
+            if self.updatethread.is_alive():
+                self.updatethread.join()
             basler.stop_grabbing(camera)
         # reset displayed framecounter
         self.parent.framecounter.value = 0
@@ -497,7 +498,6 @@ class RecordButtons(BoxLayout):
         camera = app.camera
         
         # schedule a display update
-        
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
@@ -706,7 +706,6 @@ class PreviewImage(Image):
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
-        print('offset', self.offset)
 
 
     def clearcircle(self):
@@ -855,12 +854,15 @@ class RuntimeControls(BoxLayout):
         # stop acquisition
         rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
+        
         if rec == 'down':
+            basler.stop_grabbing(camera)
             rec = 'normal'
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
             rec = 'down'
         elif disp == 'down':
+            basler.stop_grabbing(camera)
             disp= 'normal'
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
@@ -872,14 +874,12 @@ class RuntimeControls(BoxLayout):
             self.cropX = int((wc-roiX)//2)
         if hc > roiY:
             self.cropY = int((hc-roiY)//2)
-        # schedule the tracker
-        focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+      
         app.coords =  app.stage.get_position()
         # start the tracking
         area = app.config.getfloat('Tracking', 'area')
         binning = app.config.getfloat('Tracking', 'binning')
         # make a tracking thread 
-        #self.trackingevent = Clock.schedule_interval(partial(self.tracking, minstep, units, area, binning), 1.0 / focus_fps)
         track_args = minstep, units, area, binning
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
