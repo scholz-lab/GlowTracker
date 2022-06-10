@@ -743,6 +743,7 @@ class RuntimeControls(BoxLayout):
         self.focusevent = None
         self.focus_motion = 0
         self.trackingevent = False
+        self.coord_updateevent = None
 
 
     def on_framecounter(self, instance, value):
@@ -827,7 +828,7 @@ class RuntimeControls(BoxLayout):
         #if self.trackthread.is_alive():
         if self.coord_updateevent is not None:
             Clock.unschedule(self.coord_updateevent)
-        
+            self.coord_updateevent = None
         # reset camera params
         camera = App.get_running_app().camera
         basler.cam_resetROI(camera)
@@ -897,7 +898,7 @@ class RuntimeControls(BoxLayout):
         stage = app.stage
         camera = app.camera
         self.trackingevent = True
-        
+        print(self.trackingcheckbox.state, camera.IsGrabbing())
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
             # threshold and find objects
             coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
