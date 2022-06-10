@@ -567,9 +567,6 @@ class RecordButtons(BoxLayout):
 
     def init_recording(self):
         app = App.get_running_app()
-        camera = app.camera
-        # create a texture
-        #App.get_running_app().create_texture(*basler.get_shape(camera))
         # set up grabbing with recording settings here
         fps = app.config.getfloat('Experiment', 'framerate')
         nframes = app.config.getint('Experiment', 'nframes')
@@ -833,7 +830,7 @@ class RuntimeControls(BoxLayout):
             self.coord_updateevent = None
         # reset camera params
         camera = App.get_running_app().camera
-        basler.cam_resetROI(camera)
+        self.reset_ROI(camera)
         self.cropX = 0
         self.cropY = 0
 
@@ -856,30 +853,8 @@ class RuntimeControls(BoxLayout):
             stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
             stage.move_y(ystep, unit=units, wait_until_idle=True)
-        # stop acquisition
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
-        
-        if rec == 'down':
-            #basler.stop_grabbing(camera)
-            rec = 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
-            rec = 'down'
-        elif disp == 'down':
-            #basler.stop_grabbing(camera)
-            disp= 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
-            disp = 'down'
-        # 
-        print(hc, wc, roiX, roiY)
-        # if desired FOV is smaller than allowed by camera, crop in GUI
-        if wc > roiX:
-            self.cropX = int((wc-roiX)//2)
-        if hc > roiY:
-            self.cropY = int((hc-roiY)//2)
-      
+        # set small ROI
+        self.set_ROI(roiX, roiY)
         app.coords =  app.stage.get_position()
         print('updated coords')
         # start the tracking
@@ -900,7 +875,7 @@ class RuntimeControls(BoxLayout):
         stage = app.stage
         camera = app.camera
         self.trackingevent = True
-        print(self.trackingcheckbox.state, camera.IsGrabbing())
+
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
             # threshold and find objects
             coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
@@ -918,12 +893,7 @@ class RuntimeControls(BoxLayout):
                     stage.move_y(ystep, unit=units, wait_until_idle = False)
                     app.coords[1] += ystep/1000.
                 print("Move stage (x,y)", xstep, ystep)
-        # reset camera params
-        # camera = App.get_running_app().camera
-        # basler.cam_resetROI(camera)
-        # Clock.unschedule(self.coord_updateevent)
-        # self.cropX = 0
-        # self.cropY = 0
+        
         self.trackingcheckbox.state = 'normal'
 
 
@@ -955,7 +925,53 @@ class RuntimeControls(BoxLayout):
         self.cropX = 0
         self.cropY = 0
 
-            
+
+    def set_ROI(self, roiX, roiY):
+        app = App.get_running_app()
+        camera = app.camera
+        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
+        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
+       
+        if rec == 'down':
+            #basler.stop_grabbing(camera)
+            rec = 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            rec = 'down'
+        elif disp == 'down':
+            #basler.stop_grabbing(camera)
+            disp= 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            disp = 'down'
+            # 
+        print(hc, wc, roiX, roiY)
+        # if desired FOV is smaller than allowed by camera, crop in GUI
+        if wc > roiX:
+            self.cropX = int((wc-roiX)//2)
+        if hc > roiY:
+            self.cropY = int((hc-roiY)//2)
+
+
+    def reset_ROI(self):
+        app = App.get_running_app()
+        camera = app.camera
+        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
+        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
+       
+        if rec == 'down':
+            #basler.stop_grabbing(camera)
+            rec = 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_resetROI(camera)
+            rec = 'down'
+        elif disp == 'down':
+            #basler.stop_grabbing(camera)
+            disp= 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_resetROI(camera)
+            disp = 'down'
+
 
 
 # display if hardware is connected
