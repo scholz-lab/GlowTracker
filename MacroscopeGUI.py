@@ -884,7 +884,7 @@ class RuntimeControls(BoxLayout):
         print('updated coords')
         # start the tracking
         area = app.config.getfloat('Tracking', 'area')
-        binning = app.config.getfloat('Tracking', 'binning')
+        binning = app.config.getint('Tracking', 'binning')
         # make a tracking thread 
         track_args = minstep, units, area, binning
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
