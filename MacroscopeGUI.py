@@ -514,7 +514,7 @@ class RecordButtons(BoxLayout):
         return
 
 
-    def display(self, dt, record = False):
+    def display(self, dt):
         if App.get_running_app().lastframe is not None:
             App.get_running_app().image = App.get_running_app().lastframe
     
@@ -594,6 +594,7 @@ class RecordButtons(BoxLayout):
         # schedule a display update
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
+        print(f'Displaying at {fps} fps')
         counter = 0
         # grab and write images
         while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
@@ -830,7 +831,7 @@ class RuntimeControls(BoxLayout):
             self.coord_updateevent = None
         # reset camera params
         camera = App.get_running_app().camera
-        self.reset_ROI(camera)
+        self.reset_ROI()
         self.cropX = 0
         self.cropY = 0
 
