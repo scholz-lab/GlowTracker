@@ -720,7 +720,7 @@ class PreviewImage(Image):
         # if a click happens in this widget
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
-            if rtc.trackingcheckbox.state == 'down' and rtc.trackingevent is None:
+            if rtc.trackingcheckbox.state == 'down' and not rtc.trackingevent:
                 #
                 self.captureCircle(touch.pos)
                 # get the image center
@@ -735,13 +735,14 @@ class RuntimeControls(BoxLayout):
     trackingcheckbox = ObjectProperty(rebind=True)
     cropX = ObjectProperty(0, rebind=True)
     cropY = ObjectProperty(0, rebind=True)
+    
 
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
         self.focusevent = None
         self.focus_motion = 0
-        self.trackingevent = None
+        self.trackingevent = False
 
 
     def on_framecounter(self, instance, value):
@@ -824,8 +825,8 @@ class RuntimeControls(BoxLayout):
         self.trackingevent = False
         # unschedule a tracking routine
         #if self.trackthread.is_alive():
-        # if self.trackingevent:
-        Clock.unschedule(self.coord_updateevent)
+        if self.coord_updateevent is not None:
+            Clock.unschedule(self.coord_updateevent)
         
         # reset camera params
         camera = App.get_running_app().camera
