@@ -467,7 +467,7 @@ class RecordButtons(BoxLayout):
         camera = App.get_running_app().camera
         if camera is not None:
             # create a texture
-            App.get_running_app().create_texture(*basler.get_shape(camera))
+            #App.get_running_app().create_texture(*basler.get_shape(camera))
             basler.start_grabbing(camera)
             # update the image
             fps = camera.ResultingFrameRate()
@@ -568,7 +568,7 @@ class RecordButtons(BoxLayout):
         app = App.get_running_app()
         camera = app.camera
         # create a texture
-        App.get_running_app().create_texture(*basler.get_shape(camera))
+        #App.get_running_app().create_texture(*basler.get_shape(camera))
         # set up grabbing with recording settings here
         fps = app.config.getfloat('Experiment', 'framerate')
         nframes = app.config.getint('Experiment', 'nframes')
@@ -1217,10 +1217,8 @@ class MacroscopeApp(App):
 
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
-        #event = Clock.create_trigger(self.im_to_texture())
-        #event()
-        print(self.image.shape, self.texture.size)
-        if self.image.shape != self.texture.size:
+
+        if self.image.shape[::-1] != self.texture.size:
             self.create_texture(*self.image.shape)
         self.im_to_texture()
 
