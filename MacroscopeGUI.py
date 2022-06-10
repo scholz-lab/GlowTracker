@@ -1227,8 +1227,9 @@ class MacroscopeApp(App):
 
     def on_image(self, instance, value):
         """update GUI texture when image changes."""
-
-        if self.image.shape[::-1] != self.texture.size:
+        if self.texture is None:
+            self.create_texture(*self.image.shape)
+        elif self.image.shape[::-1] != self.texture.size:
             self.create_texture(*self.image.shape)
         self.im_to_texture()
 
