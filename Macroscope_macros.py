@@ -126,7 +126,7 @@ def extractWorms(img, area=0, bin_factor=4, li_init=10, display = True):
         plt.imshow(img)
         plt.subplot(212)
         plt.imshow(labeled)
-        plt.show()
+        
     coords = []
     for region in regionprops(labeled):
         if region.area >=area:

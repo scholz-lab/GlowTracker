@@ -481,7 +481,7 @@ class RecordButtons(BoxLayout):
     def stopPreview(self):
         app = App.get_running_app()
         camera = app.camera
-        
+        print('stopping preview')
         if camera is not None:
             Clock.unschedule(self.event)
             if self.updatethread.is_alive():
@@ -505,7 +505,7 @@ class RecordButtons(BoxLayout):
         while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
             ret, img, timestamp = basler.retrieve_result(camera)
             if ret:
-                print('dt: ', timestamp-app.timestamp)
+                #print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
@@ -706,7 +706,7 @@ class PreviewImage(Image):
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
-
+        print(cx, cy, ox, oy, imy, imx)
 
     def clearcircle(self):
         self.circle = (0, 0, 0)
@@ -830,7 +830,6 @@ class RuntimeControls(BoxLayout):
             Clock.unschedule(self.coord_updateevent)
             self.coord_updateevent = None
         # reset camera params
-        camera = App.get_running_app().camera
         self.reset_ROI()
         self.cropX = 0
         self.cropY = 0
