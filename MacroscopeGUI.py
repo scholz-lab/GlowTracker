@@ -1221,7 +1221,7 @@ class MacroscopeApp(App):
         #event()
         print(self.image.shape, self.texture.size)
         if self.image.shape != self.texture.size:
-            self.create_texture(self, *self.image.shape)
+            self.create_texture(*self.image.shape)
         self.im_to_texture()
 
 
