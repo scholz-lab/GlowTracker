@@ -689,7 +689,7 @@ class PreviewImage(Image):
 
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
-        wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
+        wx, wy = self.to_widget(pos[0], pos[1])#, relative = True)
         image = App.get_running_app().image
         h, w = image.shape
         # paint a circle and make the coordinates available
@@ -706,7 +706,7 @@ class PreviewImage(Image):
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image
         self.offset = (imy-h//2, imx-w//2)
-        print(cx, cy, ox, oy, imy, imx)
+        print(wx, wy, cx, cy, ox, oy, imx, imy)
 
     def clearcircle(self):
         self.circle = (0, 0, 0)
