@@ -853,9 +853,9 @@ class RuntimeControls(BoxLayout):
         print('Centering image',xstep, ystep, 'um')
         if xstep > minstep:
             #print("Move stage (x,y)", xstep, ystep)
-            stage.move_x(xstep, unit=units, wait_until_idle=False)
+            stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
-            stage.move_y(ystep, unit=units, wait_until_idle=False)
+            stage.move_y(ystep, unit=units, wait_until_idle=True)
         # stop acquisition
         rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
@@ -901,7 +901,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         self.trackingevent = True
         print(self.trackingcheckbox.state, camera.IsGrabbing())
-        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
             # threshold and find objects
             coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
             print('tracking', coords)
