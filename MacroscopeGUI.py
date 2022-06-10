@@ -824,7 +824,7 @@ class RuntimeControls(BoxLayout):
         # unschedule a tracking routine
         if self.trackthread.is_alive():
         # if self.trackingevent:
-        #     Clock.unschedule(self.trackingevent)
+            Clock.unschedule(self.coord_updateevent)
         #     self.trackingevent = None
             # reset camera params
             camera = App.get_running_app().camera
@@ -848,9 +848,9 @@ class RuntimeControls(BoxLayout):
         print('Centering image',xstep, ystep, 'um')
         if xstep > minstep:
             #print("Move stage (x,y)", xstep, ystep)
-            stage.move_x(xstep, unit=units, wait_until_idle=True)
+            stage.move_x(xstep, unit=units, wait_until_idle=False)
         if ystep > minstep:
-            stage.move_y(ystep, unit=units, wait_until_idle=True)
+            stage.move_y(ystep, unit=units, wait_until_idle=False)
         # stop acquisition
         rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
@@ -884,7 +884,7 @@ class RuntimeControls(BoxLayout):
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         # schedule occasional position check of the stage
-        Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+        self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
     def tracking(self, minstep, units, area, binning):
@@ -894,7 +894,37 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
             # threshold and find objects
-            coords = macro.extractWorms(app.lastframe, area, bin_factor=2, li_init=10)
+            coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
+            print('tracking', coords)
+            # if we find stuff move
+            if len(coords) > 0:
+                print('coords len ',len(coords))
+                offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
+                ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+                # getting stage coord is slow so we will interpolate from movements
+                if xstep > minstep:
+                    stage.move_x(xstep, unit=units, wait_until_idle = False)
+                    app.coords[0] += xstep/1000.
+                if ystep > minstep:
+                    stage.move_y(ystep, unit=units, wait_until_idle = False)
+                    app.coords[1] += ystep/1000.
+                print("Move stage (x,y)", xstep, ystep)
+        # reset camera params
+        camera = App.get_running_app().camera
+        basler.cam_resetROI(camera)
+        Clock.unschedule(self.coord_updateevent)
+        self.cropX = 0
+        self.cropY = 0
+
+
+    def cont_tracking(self, minstep, units, area, binning):
+        """thread for tracking. Uses continual motion of the x,y axes"""
+        app = App.get_running_app()
+        stage = app.stage
+        camera = app.camera
+        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+            # threshold and find objects
+            coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
             print('tracking', coords)
             # if we find stuff move
             if len(coords) > 0:
@@ -914,27 +944,7 @@ class RuntimeControls(BoxLayout):
         basler.cam_resetROI(camera)
         self.cropX = 0
         self.cropY = 0
-    # def tracking(self,minstep, units, area, *args):
-    #     # execute actual tracking code
-    #     app = App.get_running_app()
-    #     stage = app.stage
-    #     img = app.lastframe
-    #     # threshold and find objects
-    #     coords = macro.extractWorms(img, area, bin_factor=2, li_init=10)
-    #     print('tracking', coords)
-    #     # if we find stuff move
-    #     if len(coords) > 0:
-    #         print(len(coords))
-    #         offset = macro.getDistanceToCenter(coords, img.shape)
-    #         ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
-    #         # getting stage coord is slow so we will interpolate from movements
-    #         if xstep > minstep:
-    #             stage.move_x(xstep, unit=units, wait_until_idle = False)
-    #             app.coords[0] += xstep/1000.
-    #         if ystep > minstep:
-    #             stage.move_y(ystep, unit=units, wait_until_idle = False)
-    #             app.coords[1] += ystep/1000.
-    #         print("Move stage (x,y)", xstep, ystep)
+
             
 
 
