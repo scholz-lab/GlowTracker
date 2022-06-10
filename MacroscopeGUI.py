@@ -441,9 +441,9 @@ class CameraProperties(GridLayout):
 
 #record and live view buttons
 class RecordButtons(BoxLayout):
-    recordbutton = ObjectProperty(None)
-    liveviewbutton = ObjectProperty(None)
-    snapbutton = ObjectProperty(None)
+    recordbutton = ObjectProperty(None, rebind = True)
+    liveviewbutton = ObjectProperty(None, rebind = True)
+    snapbutton = ObjectProperty(None, rebind = True)
 
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
@@ -825,7 +825,7 @@ class RuntimeControls(BoxLayout):
         if self.trackthread.is_alive():
         # if self.trackingevent:
             Clock.unschedule(self.coord_updateevent)
-        #     self.trackingevent = None
+            self.trackingevent = None
             # reset camera params
             camera = App.get_running_app().camera
             basler.cam_resetROI(camera)
@@ -892,6 +892,8 @@ class RuntimeControls(BoxLayout):
         app = App.get_running_app()
         stage = app.stage
         camera = app.camera
+        self.trackingevent = True
+        
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
             # threshold and find objects
             coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
