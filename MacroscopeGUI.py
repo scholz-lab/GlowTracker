@@ -687,16 +687,19 @@ class PreviewImage(Image):
                     #self.parent.parent.parent.ids.
 
 
-    def captureCircle(self, pos):
+    def captureCircle(self, pos2):
         """define the capture circle and draw it."""
-        wx, wy = self.to_widget(pos[0], pos[1])#, relative = True)
+        wx, wy = pos2#self.to_widget(pos[0], pos[1])#, relative = True)
+        print(self.to_widget(pos2[0], pos2[1]))
+        print(self.to_local(pos2[0], pos2[1]))
+        print(self.to_parent(pos2[0], pos2[1]))
         image = App.get_running_app().image
         h, w = image.shape
         # paint a circle and make the coordinates available
         radius = App.get_running_app().config.getfloat('Tracking', 'capture_radius')
         # make the circle into pixel units
         r = radius/w*self.norm_image_size[0]#, radius/h*self.norm_image_size[1]
-        self.circle = (*pos, r)
+        self.circle = (*pos2, r)
         # calculate in image units where the click was relative to image center and return that
         #offset if the image is not fitting inside the widget
         texture_w, texture_h = self.norm_image_size
@@ -704,9 +707,10 @@ class PreviewImage(Image):
         cx, cy = self.center_x, self.center_y
         ox, oy = cx - texture_w / 2., cy - texture_h/ 2
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-        # offset of click from center of image
+        # offset of click from center of image - origin is left lower corner
         self.offset = (imy-h//2, imx-w//2)
         print(wx, wy, cx, cy, ox, oy, imx, imy, self.offset)
+
 
     def clearcircle(self):
         self.circle = (0, 0, 0)
