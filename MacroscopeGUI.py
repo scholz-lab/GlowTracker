@@ -689,7 +689,7 @@ class PreviewImage(Image):
 
     def captureCircle(self, pos):
         """define the capture circle and draw it."""
-        wx, wy = self.to_widget(pos[0], pos[1])#, relative = True)
+        wx, wy = self.to_widget(pos[0], pos[1], relative = True)
         image = App.get_running_app().image
         h, w = image.shape
         # paint a circle and make the coordinates available
@@ -875,7 +875,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         self.trackingevent = True
         app.prevframe = None
-        scale = 1.1
+        scale = 1.0
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
             img1 = app.lastframe
