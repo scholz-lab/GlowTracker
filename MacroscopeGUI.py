@@ -687,19 +687,16 @@ class PreviewImage(Image):
                     #self.parent.parent.parent.ids.
 
 
-    def captureCircle(self, pos2):
+    def captureCircle(self, pos):
         """define the capture circle and draw it."""
-        wx, wy = pos2#self.to_widget(pos[0], pos[1])#, relative = True)
-        print(self.to_widget(pos2[0], pos2[1]))
-        print(self.to_local(pos2[0], pos2[1]))
-        print(self.to_parent(pos2[0], pos2[1]))
+        wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
         image = App.get_running_app().image
         h, w = image.shape
         # paint a circle and make the coordinates available
         radius = App.get_running_app().config.getfloat('Tracking', 'capture_radius')
         # make the circle into pixel units
         r = radius/w*self.norm_image_size[0]#, radius/h*self.norm_image_size[1]
-        self.circle = (*pos2, r)
+        self.circle = (*pos, r)
         # calculate in image units where the click was relative to image center and return that
         #offset if the image is not fitting inside the widget
         texture_w, texture_h = self.norm_image_size
@@ -899,10 +896,10 @@ class RuntimeControls(BoxLayout):
                 #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
             if xstep > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle = True)
+                stage.move_x(xstep, unit=units, wait_until_idle = False)
                 app.coords[0] += xstep/1000.
             if ystep > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = True)
+                stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
             print("Move stage (x,y)", xstep, ystep)
         

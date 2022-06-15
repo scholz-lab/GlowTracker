@@ -191,5 +191,5 @@ def extractWorms(img1, img2, capture_radius = -1, area=0, bin_factor=4, dark_bg 
     else:
         yc = np.argmax(np.sum(img, axis = 1))
         xc = np.argmax(np.sum(img, axis = 0))
-
-    return yc*bin_factor-h//2, xc*bin_factor - w//2
+    print(yc, xc)
+    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
