@@ -874,11 +874,14 @@ class RuntimeControls(BoxLayout):
         stage = app.stage
         camera = app.camera
         self.trackingevent = True
-        app.prevframe = app.lastframe
+        app.prevframe = None
         scale = 1.1
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
-            ystep, xstep = macro.extractWorms(app.lastframe, app.prevframe, capture_radius = -1, bin_factor=10, dark_bg = True)
+            img1 = app.lastframe
+            if app.prevframe is None:
+                app.prevframe = img1
+            ystep, xstep = macro.extractWorms(img1, app.prevframe, capture_radius = -1, bin_factor=10, dark_bg = True)
             app.prevframe = app.lastframe
             ystep *= scale
             xstep *= scale
