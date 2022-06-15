@@ -896,10 +896,10 @@ class RuntimeControls(BoxLayout):
                 #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
             if xstep > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle = False)
+                stage.move_x(xstep, unit=units, wait_until_idle =True)
                 app.coords[0] += xstep/1000.
             if ystep > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = False)
+                stage.move_y(ystep, unit=units, wait_until_idle = True)
                 app.coords[1] += ystep/1000.
             print("Move stage (x,y)", xstep, ystep)
         
