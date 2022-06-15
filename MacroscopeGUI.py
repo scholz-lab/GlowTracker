@@ -882,7 +882,7 @@ class RuntimeControls(BoxLayout):
             img1 = app.lastframe
             if app.prevframe is None:
                 app.prevframe = img1
-            ystep, xstep = macro.extractWorms(img1, app.prevframe, capture_radius = -1, bin_factor=10, dark_bg = True)
+            ystep, xstep = macro.extractWorms(img1, app.prevframe, capture_radius = -1, threshold = 100, bin_factor = 10, dark_bg = True)
             app.prevframe = app.lastframe
             ystep *= scale
             xstep *= scale
