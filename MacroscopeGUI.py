@@ -874,24 +874,30 @@ class RuntimeControls(BoxLayout):
         stage = app.stage
         camera = app.camera
         self.trackingevent = True
+        app.prevframe = app.lastframe
+        scale = 1.1
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
-            # threshold and find objects
-            coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
-            print('tracking', coords)
-            # if we find stuff move
-            if len(coords) > 0:
-                print('coords len ',len(coords))
-                offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
-                ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+            ystep, xstep = macro.extractWorms(app.lastframe, app.prevframe, capture_radius = -1, bin_factor=10, dark_bg = True)
+            app.prevframe = app.lastframe
+            ystep *= scale
+            xstep *= scale
+            # # threshold and find objects
+            # coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
+            # print('tracking', coords)
+            # # if we find stuff move
+            # if len(coords) > 0:
+            #     print('coords len ',len(coords))
+            #     offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
+                #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
-                if xstep > minstep:
-                    stage.move_x(xstep, unit=units, wait_until_idle = False)
-                    app.coords[0] += xstep/1000.
-                if ystep > minstep:
-                    stage.move_y(ystep, unit=units, wait_until_idle = False)
-                    app.coords[1] += ystep/1000.
-                print("Move stage (x,y)", xstep, ystep)
+            if xstep > minstep:
+                stage.move_x(xstep, unit=units, wait_until_idle = True)
+                app.coords[0] += xstep/1000.
+            if ystep > minstep:
+                stage.move_y(ystep, unit=units, wait_until_idle = True)
+                app.coords[1] += ystep/1000.
+            print("Move stage (x,y)", xstep, ystep)
         
         self.trackingcheckbox.state = 'normal'
 

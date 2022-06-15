@@ -108,52 +108,52 @@ def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor
 
 # functions for tracking
 #%% Functions used for centering stage
-def extractWorms(img, area=0, bin_factor=4, li_init=10, display = True):
-    '''
-    use otsu threshold to obtain mask of pharynx & label them
-    input: image of shape (N,M) 
-    output: array of worm coordinates.
-    '''
-    img = img[::bin_factor, ::bin_factor]
-    print('image shape', img.shape)
-    mask = img > threshold_otsu(img)
+# def extractWorms(img, area=0, bin_factor=4, li_init=10, display = True):
+#     '''
+#     use otsu threshold to obtain mask of pharynx & label them
+#     input: image of shape (N,M) 
+#     output: array of worm coordinates.
+#     '''
+#     img = img[::bin_factor, ::bin_factor]
+#     print('image shape', img.shape)
+#     mask = img > threshold_otsu(img)
 
 
-    labeled = label(mask)
-    if display:
-        plt.figure()
-        plt.subplot(211)
-        plt.imshow(img)
-        plt.subplot(212)
-        plt.imshow(labeled)
+#     labeled = label(mask)
+#     if display:
+#         plt.figure()
+#         plt.subplot(211)
+#         plt.imshow(img)
+#         plt.subplot(212)
+#         plt.imshow(labeled)
         
-    coords = []
-    for region in regionprops(labeled):
-        if region.area >=area:
-            y, x = region.centroid
-            coords.append([y*bin_factor,x*bin_factor])
-    return np.array(coords)
+#     coords = []
+#     for region in regionprops(labeled):
+#         if region.area >=area:
+#             y, x = region.centroid
+#             coords.append([y*bin_factor,x*bin_factor])
+#     return np.array(coords)
 
 
-def getDistanceToCenter(coords, imshape):
-    '''
-    calculates distance of worms to center, keeps x/y-distances for worm closest to center
-    input: list of all worm coordinates & tuple of image shape
-    output: list of distances(px) of closest worm to center
-    '''
-    #centerCoords = [px/2 for px in imshape]
-    # calculate maximal distance from center in field of view
-    #smallestDistanceToCenter = (imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2
-    h,w = imshape
-    current_distance = h**2+w**2
-    yc, xc = 0,0
-    for (y,x) in coords:
-        distanceToCenter = (h//2 - y)**2 + (w//2-x)**2
-        if distanceToCenter < current_distance:
-            current_distance  = distanceToCenter    
-            yc, xc = y,x
-    # return offset from center for closest object
-    return yc-h//2, xc-w//2
+# def getDistanceToCenter(coords, imshape):
+#     '''
+#     calculates distance of worms to center, keeps x/y-distances for worm closest to center
+#     input: list of all worm coordinates & tuple of image shape
+#     output: list of distances(px) of closest worm to center
+#     '''
+#     #centerCoords = [px/2 for px in imshape]
+#     # calculate maximal distance from center in field of view
+#     #smallestDistanceToCenter = (imshape[0] - centerCoords[0])**2 + (imshape[1] - centerCoords[1])**2
+#     h,w = imshape
+#     current_distance = h**2+w**2
+#     yc, xc = 0,0
+#     for (y,x) in coords:
+#         distanceToCenter = (h//2 - y)**2 + (w//2-x)**2
+#         if distanceToCenter < current_distance:
+#             current_distance  = distanceToCenter    
+#             yc, xc = y,x
+#     # return offset from center for closest object
+#     return yc-h//2, xc-w//2
 
 
 def getStageDistances(deltaCoords, calibrationMatrix):
@@ -166,3 +166,30 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     return stageDistances
 
 
+# functions for tracking
+#%% Functions used for centering stage
+def extractWorms(img1, img2, capture_radius = -1, area=0, bin_factor=4, dark_bg = True):
+    '''
+    use image difference to detect motion of object.
+    input: image of shape (N,M) 
+    output: vector of maximal/minimal change indicating where stage should compensate.
+    '''
+    # generate image difference
+    img = img1[::bin_factor, ::bin_factor] - img2[::bin_factor, ::bin_factor]
+    # return early if there was no change in the image
+    if np.sum(img) ==0:
+        return 0,0
+    h,w = img.shape
+    # reduce image size to region of interest
+    if capture_radius > 0 :
+        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius), np.min([h,h//2+capture_radius), np.max([0,w//2-capture_radius), np.min([w,w//2+capture_radius)
+        img = img[np.max([0,h//2-capture_radius): np.min([h,h//2+capture_radius), np.max([0,w//2-capture_radius): np.min([w,w//2+capture_radius)]
+    print('image shape after binning', img.shape)
+    if dark_bg:
+        yc = np.argmax(np.sum(img, axis = 1))
+        xc = np.argmax(np.sum(img, axis = 0))
+    else:
+        yc = np.argmin(np.sum(img, axis = 1))
+        xc = np.argmin(np.sum(img, axis = 0))
+
+    return yc*bin_factor-h//2, xc*bin_factor - w//2

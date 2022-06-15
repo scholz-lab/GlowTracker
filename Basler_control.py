@@ -138,7 +138,7 @@ def cam_resetROI(camera):
     # grab lock
     camera.TLParamsLocked = True
     # cam start -- do not!
-    #camera.AcquisitionStart.Execute()
+    camera.AcquisitionStart.Execute()
     return camera.Height.GetValue(), camera.Width.GetValue()
 
 
