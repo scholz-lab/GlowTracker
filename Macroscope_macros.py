@@ -182,8 +182,8 @@ def extractWorms(img1, img2, capture_radius = -1, area=0, bin_factor=4, dark_bg 
     h,w = img.shape
     # reduce image size to region of interest
     if capture_radius > 0 :
-        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius), np.min([h,h//2+capture_radius), np.max([0,w//2-capture_radius), np.min([w,w//2+capture_radius)
-        img = img[np.max([0,h//2-capture_radius): np.min([h,h//2+capture_radius), np.max([0,w//2-capture_radius): np.min([w,w//2+capture_radius)]
+        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
+        img = img[ymin:ymax, xmin:xmax]
     print('image shape after binning', img.shape)
     if dark_bg:
         yc = np.argmax(np.sum(img, axis = 1))
