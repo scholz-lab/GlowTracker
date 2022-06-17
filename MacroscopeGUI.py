@@ -879,11 +879,11 @@ class RuntimeControls(BoxLayout):
         scale = 1.0
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
-            img1 = app.lastframe
+            img2 = app.lastframe
             if app.prevframe is None:
-                app.prevframe = img1
-            ystep, xstep = macro.extractWorms(img1, app.prevframe, capture_radius = -1, threshold = 100, bin_factor = 10, dark_bg = True)
-            app.prevframe = app.lastframe
+                app.prevframe = img2
+            ystep, xstep = macro.extractWorms(app.prevframe, img2, capture_radius = -1, bin_factor = binning, minimal_difference = 0.01, dark_bg = True)
+            
             ystep *= scale
             xstep *= scale
             # # threshold and find objects
@@ -898,9 +898,11 @@ class RuntimeControls(BoxLayout):
             if xstep > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =True)
                 app.coords[0] += xstep/1000.
+                app.prevframe = img2
             if ystep > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = True)
                 app.coords[1] += ystep/1000.
+                app.prevframe = img2
             print("Move stage (x,y)", xstep, ystep)
         
         self.trackingcheckbox.state = 'normal'
