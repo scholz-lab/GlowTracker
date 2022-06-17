@@ -5,7 +5,7 @@ import os
 import csv
 import matplotlib.pylab as plt
 from pypylon import pylon
-from skimage.filters import threshold_otsu, threshold_li
+from skimage.filters import threshold_otsu, threshold_li, threshold_yen
 from skimage.measure import regionprops, label
 #from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
@@ -165,37 +165,61 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     stageDistances = np.dot(calibrationMatrix, deltaCoords)
     return stageDistances
 
-
+from skimage.transform import downscale_local_mean
 # functions for tracking
 #%% Functions used for centering stage
-def extractWorms(img1, img2, capture_radius = -1, threshold=0, bin_factor=4, dark_bg = True):
+def extractWorms(img1, img2, capture_radius = -1,  bin_factor=4, minimal_difference = 0, dark_bg = True, display = False):
     '''
     use image difference to detect motion of object.
     input: image of shape (N,M) 
+    minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
-    # generate image difference
-    img = img1[::bin_factor, ::bin_factor] - img2[::bin_factor, ::bin_factor]
+    # reduce image size
+    img1_sm = downscale_local_mean(img1, (bin_factor, bin_factor), cval=0, clip=True)
+    img2_sm = downscale_local_mean(img2, (bin_factor, bin_factor), cval=0, clip=True)
+    capture_radius //= bin_factor 
+    # threshold
+    # threshold = threshold_yen(img1_sm)
+    # if dark_bg:
+    #     img1_sm = img1_sm > threshold
+    #     img2_sm = img2_sm > threshold
+    # else:
+    #     img1_sm = img1_sm < threshold
+    #     img2_sm = img2_sm < threshold
+   
+     # generate image difference - use floats!
+    diff = img1_sm.astype(int) - img2_sm.astype(int)
+    
+    h,w = diff.shape
+    # reduced image size
+    print('image shape after binning', diff.shape)
     # return early if there was no change in the image
-    if np.sum(np.abs(img)) < threshold:
+    if np.sum(np.abs(diff)>0) < minimal_difference*h*w:
         return 0,0
-    h,w = img.shape
-    # reduce image size to region of interest
+
+    #to region of interest
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-        img = img[ymin:ymax, xmin:xmax]
-    print('image shape after binning', img.shape)
-    print(np.unravel_index(img.argmax(), img.shape))
+        diff = diff[ymin:ymax, xmin:xmax]
+    
     if dark_bg:
-        yc, xc = np.unravel_index(img.argmin(), img.shape)
+        yc, xc = np.unravel_index(diff.argmin(), diff.shape)
     else:
-        yc, xc = np.unravel_index(img.argmax(), img.shape)
-    #     img[img>0] = 0
-    #     yc = np.argmin(np.sum(img, axis = 1))
-    #     xc = np.argmin(np.sum(img, axis = 0))
-    # else:
-        # img[img<0] = 0
-        # yc = np.argmax(np.sum(img, axis = 1))
-        # xc = np.argmax(np.sum(img, axis = 0))
+        yc, xc = np.unravel_index(diff.argmax(), diff.shape)
+    # show intermediate steps for debugging
+    if display:
+        plt.subplot(221)
+        plt.imshow(img1_sm)
+        plt.title('Previous - img1')
+        plt.subplot(222)
+        plt.title('Current - img2')
+        plt.imshow(img2_sm)
+        plt.subplot(223)
+        plt.title('Difference')
+        plt.imshow(diff)
+        plt.plot(xc, yc, 'ro')
+        plt.colorbar()
+
     print(yc, xc)
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
