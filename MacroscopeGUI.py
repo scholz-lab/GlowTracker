@@ -883,7 +883,7 @@ class RuntimeControls(BoxLayout):
             if app.prevframe is None:
                 app.prevframe = img2
             ystep, xstep = macro.extractWorms(app.prevframe, img2, capture_radius = -1, bin_factor = binning, minimal_difference = 0.01, dark_bg = True)
-            
+            ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
             # # threshold and find objects
@@ -895,11 +895,11 @@ class RuntimeControls(BoxLayout):
             #     offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
                 #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
-            if xstep > minstep:
+            if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =True)
                 app.coords[0] += xstep/1000.
                 app.prevframe = img2
-            if ystep > minstep:
+            if abs(ystep) > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = True)
                 app.coords[1] += ystep/1000.
                 app.prevframe = img2
