@@ -858,11 +858,11 @@ class RuntimeControls(BoxLayout):
         app.coords =  app.stage.get_position()
         print('updated coords')
         # start the tracking
-        capture_radius = app.config.getfloat('Tracking', 'capture_radius')
+        capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
         diff =  app.config.getboolean('Tracking', 'difference')
-        area = app.config.getfloat('Tracking', 'area')
+        area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
         # make a tracking thread 
