@@ -209,7 +209,7 @@
         "key": "binning"
     },
     {
-        "type": "boolean",
+        "type": "bool",
         "title": "Dark background",
         "desc": "True if the object appears bright and the background dark.",
         "section": "Tracking",
