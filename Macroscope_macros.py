@@ -170,7 +170,7 @@ def getStageDistances(deltaCoords, calibrationMatrix):
 
 # functions for tracking
 #%% Functions used for centering stage
-def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, minimal_difference = 0, dark_bg = True, display = False):
+def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, threshold = 10, dark_bg = True, display = False):
     '''
     use image difference to detect motion of object.
     input: image of shape (N,M) 
@@ -205,8 +205,8 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, minimal_dif
     h,w = diff.shape
     # reduced image size
     print('image shape after binning', diff.shape)
-    # return early if there was no change in the image
-    if np.sum(np.abs(diff)>0) < minimal_difference*h*w:
+    # return early if there was no substantial change in the image
+    if np.sum(np.abs(diff)>threshold) < area/bin_factor:
         return 0,0
 
     if dark_bg:

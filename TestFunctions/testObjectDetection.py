@@ -16,10 +16,10 @@ diff = True
 if single:
     if diff:
         img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
-        img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_20.tiff')
+        img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_10.tiff')
         print(img1.shape, img1.T.shape)
         t0 = time.time()
-        c = extractWormsDiff(img1, img2, capture_radius = 300, bin_factor=10, minimal_difference = 0.1, dark_bg = True, display=False)
+        c = extractWormsDiff(img1, img2, capture_radius = 300, bin_factor=10, area = 200, threshold = 12, dark_bg = True, display=True)
         t1 = time.time()
         plt.show()
 

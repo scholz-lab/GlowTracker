@@ -189,17 +189,17 @@
     },
     {
         "type": "numeric",
-        "title": "Minimal step",
+        "title": "Minimal step (um)",
         "desc": "what is the smallest step during tracking that should be executed?",
         "section": "Tracking",
         "key": "min_step"
     },
     {
         "type": "numeric",
-        "title": "Area (px)",
-        "desc": "What is the minimal area of the object?",
+        "title": "threshold (bits)",
+        "desc": "What is considered a relevant change in the image (e.g., grayscale out of 255)?",
         "section": "Tracking",
-        "key": "area"
+        "key": "threshold"
     },
     {
         "type": "numeric",
