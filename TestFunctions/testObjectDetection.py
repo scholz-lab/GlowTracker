@@ -11,7 +11,7 @@ sys.path.append(".")
 from Macroscope_macros import extractWorms, extractWormsDiff
 
 single = True
-diff = False
+diff = True
 # test a single image pair to optimize parameters
 if single:
     if diff:

@@ -180,12 +180,12 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, minimal_dif
     # clip image
     h,w = img1.shape
     #to region of interest
-    ymin, xmin = 0,0
+    ymin, ymax, xmin, xmax = 0,h,0,w
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-        img1_sm = img1[ymin:ymax, xmin:xmax]
-        img2_sm = img2[ymin:ymax, xmin:xmax]
-    print(img1_sm.shape)
+    img1_sm = img1[ymin:ymax, xmin:xmax]
+    img2_sm = img2[ymin:ymax, xmin:xmax]
+    
     # reduce image size
     img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
     img2_sm = downscale_local_mean(img2_sm, (bin_factor, bin_factor), cval=0, clip=True)
@@ -253,11 +253,11 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     h,w = img1.shape
     #to region of interest
     ymin, ymax, xmin, xmax = 0,h,0,w
-    img1_sm = img1
+    
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-        print(xmin, xmax, ymin, ymax)
-        img1_sm = img1[ymin:ymax, xmin:xmax]
+    print(xmin, xmax, ymin, ymax)
+    img1_sm = img1[ymin:ymax, xmin:xmax]
         
     # reduce image size
     img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
