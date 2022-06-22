@@ -207,6 +207,13 @@
         "desc": "Binning factor to increase thresholding speed.",
         "section": "Tracking",
         "key": "binning"
+    },
+    {
+        "type": "boolean",
+        "title": "Dark background",
+        "desc": "True if the object appears bright and the background dark.",
+        "section": "Tracking",
+        "key": "dark_bg"
     }
 ]
 

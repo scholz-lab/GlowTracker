@@ -3,6 +3,8 @@ import math
 import numpy as np
 import os
 import csv
+import scipy.ndimage as ndi
+import matplotlib as mpl
 import matplotlib.pylab as plt
 from pypylon import pylon
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen
@@ -168,17 +170,26 @@ def getStageDistances(deltaCoords, calibrationMatrix):
 from skimage.transform import downscale_local_mean
 # functions for tracking
 #%% Functions used for centering stage
-def extractWorms(img1, img2, capture_radius = -1,  bin_factor=4, minimal_difference = 0, dark_bg = True, display = False):
+def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, minimal_difference = 0, dark_bg = True, display = False):
     '''
     use image difference to detect motion of object.
     input: image of shape (N,M) 
     minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
+    # clip image
+    h,w = img1.shape
+    #to region of interest
+    ymin, xmin = 0,0
+    if capture_radius > 0 :
+        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
+        img1_sm = img1[ymin:ymax, xmin:xmax]
+        img2_sm = img2[ymin:ymax, xmin:xmax]
+    print(img1_sm.shape)
     # reduce image size
-    img1_sm = downscale_local_mean(img1, (bin_factor, bin_factor), cval=0, clip=True)
-    img2_sm = downscale_local_mean(img2, (bin_factor, bin_factor), cval=0, clip=True)
-    capture_radius //= bin_factor 
+    img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
+    img2_sm = downscale_local_mean(img2_sm, (bin_factor, bin_factor), cval=0, clip=True)
+    
     # threshold
     # threshold = threshold_yen(img1_sm)
     # if dark_bg:
@@ -198,11 +209,6 @@ def extractWorms(img1, img2, capture_radius = -1,  bin_factor=4, minimal_differe
     if np.sum(np.abs(diff)>0) < minimal_difference*h*w:
         return 0,0
 
-    #to region of interest
-    if capture_radius > 0 :
-        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-        diff = diff[ymin:ymax, xmin:xmax]
-    
     if dark_bg:
         yc, xc = np.unravel_index(diff.argmin(), diff.shape)
     else:
@@ -220,6 +226,69 @@ def extractWorms(img1, img2, capture_radius = -1,  bin_factor=4, minimal_differe
         plt.imshow(diff)
         plt.plot(xc, yc, 'ro')
         plt.colorbar()
+        plt.subplot(224)
+        plt.title('Original')
+        plt.imshow(img2)
+        plt.plot( (xc*bin_factor + xmin) ,(yc*bin_factor+ymin), 'ro')
+        rect = mpl.patches.Rectangle((xc+xmin, yc+ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='w', facecolor='none')
+
+        # Add the patch to the Axes
+        plt.gca().add_patch(rect)
+        plt.colorbar()
+
 
     print(yc, xc)
-    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+    return (yc-h//2)*bin_factor+ymin, (xc - w//2)*bin_factor+xmin
+
+
+def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False):
+    '''
+    use image to detect motion of object.
+    input: image of shape (N,M) 
+    minimal_difference: fraction of pixel that need to have changed to consider a difference
+    output: vector of maximal/minimal change indicating where stage should compensate.
+    '''
+    # capture radius
+    # clip image
+    h,w = img1.shape
+    #to region of interest
+    ymin, ymax, xmin, xmax = 0,h,0,w
+    img1_sm = img1
+    if capture_radius > 0 :
+        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
+        img1_sm = img1[ymin:ymax, xmin:xmax]
+        
+    # reduce image size
+    img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
+
+    
+    h,w = img1_sm.shape
+    # reduced image size
+    print('image shape after binning',h,w)
+
+    # get cms
+    h,w = img1_sm.shape
+    if dark_bg:
+        yc, xc = ndi.center_of_mass(img1_sm)
+    else:
+        yc, xc = ndi.center_of_mass(-img1_sm)
+    # show intermediate steps for debugging
+    if display:
+        plt.subplot(211)
+        plt.imshow(img1)
+        plt.title('img1 original')
+        plt.plot(xc*bin_factor+xmin, yc*bin_factor+ymin, 'ro')
+        plt.plot( (xc*bin_factor + xmin) ,(yc*bin_factor+ymin), 'ro')
+        rect = mpl.patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='r', facecolor='none')
+        # Add the patch to the Axes
+        plt.gca().add_patch(rect)
+        
+        plt.colorbar()
+        plt.subplot(212)
+        plt.imshow(img1_sm)
+        plt.title('img1_reduced')
+        plt.plot(xc, yc, 'ro')
+        plt.colorbar()
+
+    print(yc, xc)
+    return (yc-h//2)*bin_factor+ymin, (xc - w//2)*bin_factor+xmin

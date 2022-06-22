@@ -1,26 +1,40 @@
 #!/usr/bin/env python3
 import datetime
 import os
+from pickle import TRUE
 import time
 from skimage.io import imread
 import numpy as np
 import matplotlib.pylab as plt
 import sys
 sys.path.append(".")
-from Macroscope_macros import extractWorms
+from Macroscope_macros import extractWorms, extractWormsDiff
 
 single = True
+diff = False
 # test a single image pair to optimize parameters
 if single:
-    img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
-    img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_2.tiff')
-    print(img1.shape, img1.T.shape)
-    t0 = time.time()
-    c = extractWorms(img1, img2, capture_radius = 300, bin_factor=25, minimal_difference = 0.1, dark_bg = True, display=False)
-    t1 = time.time()
-    plt.show()
+    if diff:
+        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
+        img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_20.tiff')
+        print(img1.shape, img1.T.shape)
+        t0 = time.time()
+        c = extractWormsDiff(img1, img2, capture_radius = 300, bin_factor=10, minimal_difference = 0.1, dark_bg = True, display=False)
+        t1 = time.time()
+        plt.show()
 
-    print(f'duration: {t1-t0}, {c}')
+        print(f'duration: {t1-t0}, {c}')
+    else:
+        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_170.tiff')
+        #img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_2.tiff')
+        #print(img1.shape, img1.T.shape)
+        t0 = time.time()
+        c = extractWorms(img1, capture_radius = 300, bin_factor=25, dark_bg = True, display=TRUE)
+        t1 = time.time()
+        plt.show()
+
+        print(f'duration: {t1-t0}, {c}')
+
 
 else:
     for i in range(15, 30):
