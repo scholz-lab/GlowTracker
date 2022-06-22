@@ -9,6 +9,7 @@ import matplotlib.pylab as plt
 from pypylon import pylon
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen
 from skimage.measure import regionprops, label
+from skimage.transform import downscale_local_mean
 #from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
 from skimage import io
@@ -167,7 +168,6 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     stageDistances = np.dot(calibrationMatrix, deltaCoords)
     return stageDistances
 
-from skimage.transform import downscale_local_mean
 # functions for tracking
 #%% Functions used for centering stage
 def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, minimal_difference = 0, dark_bg = True, display = False):
@@ -256,6 +256,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     img1_sm = img1
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
+        print(xmin, xmax, ymin, ymax)
         img1_sm = img1[ymin:ymax, xmin:xmax]
         
     # reduce image size

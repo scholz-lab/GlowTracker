@@ -214,6 +214,13 @@
         "desc": "True if the object appears bright and the background dark.",
         "section": "Tracking",
         "key": "dark_bg"
+    },
+    {
+        "type": "bool",
+        "title": "Use image difference",
+        "desc": "When true, uses the difference between frames to determine motion direction.",
+        "section": "Tracking",
+        "key": "difference"
     }
 ]
 

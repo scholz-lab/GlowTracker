@@ -861,8 +861,9 @@ class RuntimeControls(BoxLayout):
         capture_radius = app.config.getfloat('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
+        diff = dark_bg = app.config.getboolean('Tracking', 'difference')
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg
+        track_args = minstep, units, capture_radius, binning, dark_bg, diff
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started thread')
@@ -870,7 +871,7 @@ class RuntimeControls(BoxLayout):
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
-    def tracking(self, minstep, units, capture_radius, binning, dark_bg):
+    def tracking(self, minstep, units, capture_radius, binning, dark_bg, diff):
         """thread for tracking"""
         app = App.get_running_app()
         stage = app.stage
@@ -884,8 +885,10 @@ class RuntimeControls(BoxLayout):
             if app.prevframe is None:
                 app.prevframe = img2
             # difference image
-            #ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius = -1, bin_factor = binning, minimal_difference = 0.01, dark_bg = True)
-            ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            if diff:
+                ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, minimal_difference = 0.01, dark_bg = True)
+            else:
+                ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
