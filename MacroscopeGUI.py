@@ -860,7 +860,7 @@ class RuntimeControls(BoxLayout):
         # start the tracking
         capture_radius = app.config.getfloat('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
-        dark_bg = app.config.getbool('Tracking', 'dark_bg')
+        dark_bg = app.config.getboolean('Tracking', 'dark_bg')
         # make a tracking thread 
         track_args = minstep, units, capture_radius, binning, dark_bg
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
