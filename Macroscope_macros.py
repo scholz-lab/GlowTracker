@@ -238,7 +238,7 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
 
 
     print(yc, xc)
-    return (yc-h//2)*bin_factor+ymin, (xc - w//2)*bin_factor+xmin
+    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
 
 
 def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False):
@@ -292,4 +292,4 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
         plt.colorbar()
 
     print(yc, xc)
-    return (yc-h//2)*bin_factor+ymin, (xc - w//2)*bin_factor+xmin
+    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
