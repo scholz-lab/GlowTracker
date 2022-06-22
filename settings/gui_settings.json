@@ -202,6 +202,13 @@
         "key": "threshold"
     },
     {
+    "type": "numeric",
+    "title": "Area (px)",
+    "desc": "What is the relevant area that changes?",
+    "section": "Tracking",
+    "key": "area"
+    },
+    {
         "type": "numeric",
         "title": "Binning",
         "desc": "Binning factor to increase thresholding speed.",
