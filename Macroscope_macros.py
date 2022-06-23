@@ -200,7 +200,7 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
     #     img2_sm = img2_sm < threshold
    
      # generate image difference - use floats!
-    diff = img1_sm.astype(int) - img2_sm.astype(int)
+    diff = img1_sm.astype(float) - img2_sm.astype(float)
     
     h,w = diff.shape
     # reduced image size
@@ -269,10 +269,18 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
 
     # get cms
     h,w = img1_sm.shape
+    ### threshold object cms
+    # if dark_bg:
+    #     img1_sm = img1_sm > threshold_yen(img1_sm)
+    #     yc, xc = ndi.center_of_mass(img1_sm)
+    # else:
+    #     img1_sm = img1_sm < threshold_yen(img1_sm)
+    #     yc, xc = ndi.center_of_mass(-img1_sm)
+    # simply use max or min location
     if dark_bg:
-        yc, xc = ndi.center_of_mass(img1_sm)
+        yc, xc = np.unravel_index(img1_sm.argmax(), img1_sm.shape)
     else:
-        yc, xc = ndi.center_of_mass(-img1_sm)
+        yc, xc = np.unravel_index(img1_sm.argmin(), img1_sm.shape)
     # show intermediate steps for debugging
     if display:
         plt.subplot(211)

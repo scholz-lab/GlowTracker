@@ -11,7 +11,7 @@ sys.path.append(".")
 from Macroscope_macros import extractWorms, extractWormsDiff
 
 single = True
-diff = True
+diff = False
 # test a single image pair to optimize parameters
 if single:
     if diff:
@@ -25,11 +25,11 @@ if single:
 
         print(f'duration: {t1-t0}, {c}')
     else:
-        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_170.tiff')
+        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
         #img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_2.tiff')
         #print(img1.shape, img1.T.shape)
         t0 = time.time()
-        c = extractWorms(img1, capture_radius = 1000, bin_factor=25, dark_bg = True, display=TRUE)
+        c = extractWorms(img1, capture_radius = 1000, bin_factor=10, dark_bg = True, display=TRUE)
         t1 = time.time()
         plt.show()
 
