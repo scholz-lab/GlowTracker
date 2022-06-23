@@ -706,7 +706,6 @@ class PreviewImage(Image):
         imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
         # offset of click from center of image - origin is left lower corner
         self.offset = (imy-h//2, imx-w//2)
-        print(wx, wy, cx, cy, ox, oy, imx, imy, self.offset)
 
 
     def clearcircle(self):
@@ -861,12 +860,12 @@ class RuntimeControls(BoxLayout):
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
-        diff =  app.config.getboolean('Tracking', 'difference')
+        diff =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, diff, area, threshold
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, mode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started thread')
@@ -874,7 +873,7 @@ class RuntimeControls(BoxLayout):
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
-    def tracking(self, minstep, units, capture_radius, binning, dark_bg, diff, area, threshold):
+    def tracking(self, minstep, units, capture_radius, binning, dark_bg, area, threshold, mode):
         """thread for tracking"""
         app = App.get_running_app()
         stage = app.stage
@@ -888,10 +887,12 @@ class RuntimeControls(BoxLayout):
             if app.prevframe is None:
                 app.prevframe = img2
             # difference image
-            if diff:
+            if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
-            else:
+            elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            elif mode=='CMS':
+                ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
@@ -1043,7 +1044,7 @@ class Connections(BoxLayout):
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a thread, it is slow
             t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits))
-            # set daemon to true so the thread dies when app is closed
+            # set daemon to true so the thread dies when app is closeds
             t.daemon = True
             # start the thread
             t.start()

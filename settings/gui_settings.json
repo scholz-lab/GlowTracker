@@ -223,12 +223,13 @@
         "key": "dark_bg"
     },
     {
-        "type": "bool",
-        "title": "Use image difference",
-        "desc": "When true, uses the difference between frames to determine motion direction.",
+        "type": "options",
+        "title": "Tracking mode",
+        "desc": "select tracking by difference, center of mass or max/min brightness.",
         "section": "Tracking",
-        "key": "difference"
-    }
+        "key": "mode",
+        "options": ["CMS", "Diff", "Min/Max"]
+    },
 ]
 
 

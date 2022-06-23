@@ -8,22 +8,33 @@ import numpy as np
 import matplotlib.pylab as plt
 import sys
 sys.path.append(".")
-from Macroscope_macros import extractWorms, extractWormsDiff
+from Macroscope_macros import extractWorms, extractWormsDiff,extractWormsCMS
 
 single = True
-diff = False
+mode = 'Di'
 # test a single image pair to optimize parameters
 if single:
-    if diff:
+    if mode=='Diff':
         img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
         img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_10.tiff')
-        print(img1.shape, img1.T.shape)
+        
         t0 = time.time()
         c = extractWormsDiff(img1, img2, capture_radius = 300, bin_factor=10, area = 200, threshold = 12, dark_bg = True, display=True)
         t1 = time.time()
         plt.show()
 
         print(f'duration: {t1-t0}, {c}')
+    elif mode=='CMS':
+        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
+        
+        t0 = time.time()
+        c = extractWormsCMS(img1, capture_radius = 1000, bin_factor=10, dark_bg = True, display=TRUE)
+        t1 = time.time()
+        plt.show()
+
+        print(f'duration: {t1-t0}, {c}')
+
+       
     else:
         img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
         #img2 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_2.tiff')
