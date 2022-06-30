@@ -881,7 +881,7 @@ class RuntimeControls(BoxLayout):
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
-       
+        print('Tracking mode:', mode)
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
             t0 = time.time()
             img2 = app.lastframe
@@ -892,7 +892,7 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
-            elif mode=='CMS':
+            else:
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
