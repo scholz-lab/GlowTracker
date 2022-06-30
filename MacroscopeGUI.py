@@ -881,8 +881,10 @@ class RuntimeControls(BoxLayout):
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
-
+       
+        
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
+            t0 = time.time()
             img2 = app.lastframe
             if app.prevframe is None:
                 app.prevframe = img2
@@ -906,15 +908,16 @@ class RuntimeControls(BoxLayout):
                 #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle =True)
+                stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
                 app.prevframe = img2
             if abs(ystep) > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = True)
+                stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 app.prevframe = img2
             print("Move stage (x,y)", xstep, ystep)
-        
+            t1 = time.time()
+            print(f'duration tracking loop (ms): {t1-t0}')
         self.trackingcheckbox.state = 'normal'
 
 
