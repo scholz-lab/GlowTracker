@@ -860,7 +860,7 @@ class RuntimeControls(BoxLayout):
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
-        diff =  app.config.get('Tracking', 'mode')
+        mode =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
@@ -882,7 +882,6 @@ class RuntimeControls(BoxLayout):
         app.prevframe = None
         scale = 1.0
        
-        
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
             t0 = time.time()
             img2 = app.lastframe
@@ -898,14 +897,6 @@ class RuntimeControls(BoxLayout):
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
-            # # threshold and find objects
-            # coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
-            # print('tracking', coords)
-            # # if we find stuff move
-            # if len(coords) > 0:
-            #     print('coords len ',len(coords))
-            #     offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
-                #ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
                 # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
