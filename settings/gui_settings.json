@@ -3,7 +3,7 @@
         "title": "Stage"
     },
     {
-        "type": "numeric",
+        "type": "string",
         "title": "Stage serial port",
         "desc": "Find the port (path) for the stage.",
         "section": "Stage",
@@ -44,6 +44,13 @@
         "desc": "limit to the stage to avoid obstacles (mm)",
         "section": "Stage",
         "key": "stage_limits"
+    },
+    {
+        "type": "bool",
+        "title": "Move to start location",
+        "desc": "Moves the stage to start coordinates every time the GUI is started.",
+        "section": "Stage",
+        "key": "move_start"
     },
     {
         "type": "string",

@@ -1034,10 +1034,11 @@ class Connections(BoxLayout):
         else:
             app.stage = stage
             homing = app.config.getboolean('Stage', 'homing')
+            move_start = app.config.getboolean('Stage', 'move_start')
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             # home stage - do this in a thread, it is slow
-            t = Thread(target=app.stage.on_connect, args = (homing,  startloc, limits))
+            t = Thread(target=app.stage.on_connect, args = (homing,  move_start, startloc, limits))
             # set daemon to true so the thread dies when app is closeds
             t.daemon = True
             # start the thread
@@ -1048,7 +1049,6 @@ class Connections(BoxLayout):
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
             
-
 
     def disconnectStage(self):
         print('disconnecting Stage')
@@ -1062,7 +1062,6 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
-    
 
 
 class MyCounter():
@@ -1175,6 +1174,7 @@ class MacroscopeApp(App):
         self.close_settings()
         self.bind_keys()
         self.destroy_settings()
+
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
@@ -1336,5 +1336,8 @@ def reset():
 if __name__ == '__main__':
     reset()
     Window.size = (1280, 800)
+    Config.set('graphics', 'position', 'custom')
+    Config.set('graphics', 'top', '0') 
+    Config.set('graphics', 'left', '0') 
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below

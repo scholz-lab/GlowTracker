@@ -36,8 +36,8 @@ class Stage:
                 return connection
             else:
                 return None
-        except Exception:
-            print(Exception)
+        except Exception as e:
+            print(e)
             return None
 
 
@@ -61,7 +61,7 @@ class Stage:
             for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
                 ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
                 speed = self.connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
-            print("Maximum speed [mm/s]:", speed)
+                print("Maximum speed [mm/s]:", speed)
             
 
     #  Stage homing
@@ -197,18 +197,18 @@ class Stage:
             self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
-    def on_connect(self, home = True, start = (20,75, 130), limits =(160,160,155)):
+    def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)):
         """startup routine to home, set range and move to start if desired. """
         if home:
             self.home_stage()
         self.set_rangelimits(limits)
-        self.move_abs(start)
+        if startloc:
+            self.move_abs(start)
         
         device_list = self.connection.detect_devices()
         for device in device_list:
             device.all_axes.wait_until_idle(throw_error_on_fault = True)
 
-        
     
     def disconnect(self):
         """close com port connection."""
