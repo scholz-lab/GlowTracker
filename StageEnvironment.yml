@@ -1,4 +1,4 @@
-name: macroscope2
+name: macroscope
 channels:
   - conda-forge
   - defaults
