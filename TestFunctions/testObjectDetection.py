@@ -7,11 +7,11 @@ from skimage.io import imread
 import numpy as np
 import matplotlib.pylab as plt
 import sys
-sys.path.append(".")
+sys.path.append("..")
 from Macroscope_macros import extractWorms, extractWormsDiff,extractWormsCMS
 
 single = True
-mode = 'Di'
+mode = 'CMS'
 # test a single image pair to optimize parameters
 if single:
     if mode=='Diff':
@@ -25,10 +25,10 @@ if single:
 
         print(f'duration: {t1-t0}, {c}')
     elif mode=='CMS':
-        img1 = imread('/media/nif9202/Monika/KITP/Larvae/Larvae_testTracking/2022-06-15-22-51-41-basler_0.tiff')
+        img1 = imread('/home/monika/Documents/wormies/2022-08-04-macroscope_E002/2022-08-05-01-04-11-basler_5.tiff')
         
         t0 = time.time()
-        c = extractWormsCMS(img1, capture_radius = 1000, bin_factor=10, dark_bg = True, display=TRUE)
+        c = extractWormsCMS(img1, capture_radius = 1000, bin_factor=5, dark_bg = True, display=TRUE)
         t1 = time.time()
         plt.show()
 

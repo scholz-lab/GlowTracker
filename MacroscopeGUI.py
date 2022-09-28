@@ -1231,6 +1231,7 @@ class MacroscopeApp(App):
     def _keyup(self, *args):
         if self.stage is not None:
             self.stage.stop()
+            print(self.stage.get_position())
             self.coords = self.stage.get_position()
 
 

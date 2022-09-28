@@ -58,10 +58,16 @@ class Stage:
 
     def set_maxspeed(self, speed = 20):
         if self.connection is not None:
-            for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
-                ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                speed = self.connection.axis_z.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                print("Maximum speed [mm/s]:", speed)
+            if self.no_axes ==3:
+                for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
+                    ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+                    speed = ax.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
+                    print("Maximum speed [mm/s]:", speed)
+            elif self.no_axes == 2:
+                for ax in [self.connection.axis_x, self.connection.axis_y]:
+                    ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+                    speed = ax.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
+                    print("Maximum speed [mm/s]:", speed)
             
 
     #  Stage homing
@@ -164,11 +170,14 @@ class Stage:
                 loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
                 if self.no_axes >2:
                     loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
+                else:
+                    pos.append(0)
 
             move_coroutine = asyncio.gather(*loop)
 
             loop = asyncio.get_event_loop()
             pos = loop.run_until_complete(move_coroutine)
+            
             return pos
         else:
             if self.connection is not None:
@@ -176,13 +185,17 @@ class Stage:
                 pos.append(self.connection.axis_y.get_position(self.units[unit]))
                 if self.no_axes >2:
                     pos.append(self.connection.axis_z.get_position(self.units[unit]))
+                else:
+                    pos.append(0)
+            return pos
 
 
     def stop(self):
         if self.connection is not None:
             self.connection.axis_x.stop(wait_until_idle = False)
             self.connection.axis_y.stop(wait_until_idle = False)
-            self.connection.axis_z.stop(wait_until_idle = False)
+            if self.no_axes == 3:
+               self.connection.axis_z.stop(wait_until_idle = False)
 
 
     def set_rangelimits(self, limits = (160,160,155), unit = 'mm'):
@@ -194,7 +207,8 @@ class Stage:
         if self.connection is not None:
             self.connection.axis_x.settings.set('limit.max', limits[0], self.units[unit])
             self.connection.axis_y.settings.set('limit.max', limits[1], self.units[unit])
-            self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
+            if self.no_axes == 3:
+                self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
     def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)):

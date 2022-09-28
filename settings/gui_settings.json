@@ -236,7 +236,7 @@
         "section": "Tracking",
         "key": "mode",
         "options": ["CMS", "Diff", "Min/Max"]
-    },
+    }
 ]
 
 
