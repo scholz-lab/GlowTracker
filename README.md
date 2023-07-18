@@ -8,9 +8,15 @@ The macroscope GUI is intened to provide a tracking interface for manual and aut
 
 ## Getting started
 ### Install the correct environment
+
+#### Using Conda
 - conda env create --file .\StageEnvironment.yml
 - activate the environment
  conda activate macroscope
+
+#### Using Mamba (faster, recommended)
+- Install mamba from https://mamba.readthedocs.io/en/latest/installation.html
+- Create environment: `mamba env update -n macroscope --file .\StageEnvironment.yml`
 
 To get the BASLER package running on windows 64 do the following:
 
@@ -21,8 +27,12 @@ To get the BASLER package running on windows 64 do the following:
  - pip install pypylon-1.5.4-cp37-cp37m-win_amd64.whl
 
 
+### Device Setup
+#### Stage
+In `macroscope.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
 
-
+#### Camera
+In `macroscope.ini`, specify path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtain from the `pylon Viewver` software that you have downloaded.
 
 ## GUI overview
 <img alt="annotated GUI" src="images/gui_annotation.png" width="1250">
