@@ -13,10 +13,10 @@ The macroscope GUI is intened to provide a tracking interface for manual and aut
 1. Install conda from https://conda.io/projects/conda/en/latest/user-guide/install/index.html
 2. Create environment
     - Using Conda
-        1. Create environment: `conda env create --file .\StageEnvironment.yml`
+        1. Create environment: `conda env create --file StageEnvironment.yml`
     - Using Mamba (faster, recommended)
         1. Install mamba from https://mamba.readthedocs.io/en/latest/installation.html
-        2. Create environment: `mamba env update -n macroscope --file .\StageEnvironment.yml`
+        2. Create environment: `mamba env update -n macroscope --file StageEnvironment.yml`
 
 3. Activate the environment: `conda activate macroscope`
 
