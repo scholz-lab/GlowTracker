@@ -4,27 +4,28 @@ Documentation and scripts to control the behavior macroscope. The behavior macro
 
 The macroscope GUI is intened to provide a tracking interface for manual and automated tracking. Limited access to camera parameters is provided, but we assume users will use the pylon software from Basler to adjust and save complex configurations as we do not wish to duplicate this work.
 
+<br />
 
+---
 
 ## Getting started
 ### Install the correct environment
+1. Install conda from https://conda.io/projects/conda/en/latest/user-guide/install/index.html
+2. Create environment
+    - Using Conda
+        1. Create environment: `conda env create --file .\StageEnvironment.yml`
+    - Using Mamba (faster, recommended)
+        1. Install mamba from https://mamba.readthedocs.io/en/latest/installation.html
+        2. Create environment: `mamba env update -n macroscope --file .\StageEnvironment.yml`
 
-#### Using Conda
-- conda env create --file .\StageEnvironment.yml
-- activate the environment
- conda activate macroscope
+3. Activate the environment: `conda activate macroscope`
 
-#### Using Mamba (faster, recommended)
-- Install mamba from https://mamba.readthedocs.io/en/latest/installation.html
-- Create environment: `mamba env update -n macroscope --file .\StageEnvironment.yml`
-
-To get the BASLER package running on windows 64 do the following:
-
- - install pylon (software from BASLER) including all interfaces
- - Get the pypylon package from GitHub: https://github.com/basler/pypylon
- - use pip to install the package using the proper wheel (in my case pypylon-1.5.4-cp37-cp37m-win_amd64.whl)
- - run this using the comandline within the package folder
- - pip install pypylon-1.5.4-cp37-cp37m-win_amd64.whl
+4. Install the BASLER package
+   To get the BASLER package running on windows 64 do the following:
+    1. Install pylon (software from BASLER) including all interfaces
+    2. Get the pypylon package from GitHub: https://github.com/basler/pypylon
+    3. Use pip to install the package using the proper wheel (in my case pypylon-1.5.4-cp37-cp37m-win_amd64.whl)
+    4. Run this using the comandline within the package folder: `pip install pypylon-1.5.4-cp37-cp37m-win_amd64.whl`
 
 
 ### Device Setup
@@ -33,6 +34,8 @@ In `macroscope.ini`, specify the connection `port` name to your Stage. In Window
 
 #### Camera
 In `macroscope.ini`, specify path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtain from the `pylon Viewver` software that you have downloaded.
+
+---
 
 ## GUI overview
 <img alt="annotated GUI" src="images/gui_annotation.png" width="1250">
