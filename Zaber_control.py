@@ -2,7 +2,7 @@ import asyncio
 from zaber_motion import Library, Units, Measurement
 from zaber_motion.ascii import Connection, AlertEvent, AllAxes
 
-Library.toggle_device_db_store(True)
+Library.enable_device_db_store()
 
 
 class Stage:
