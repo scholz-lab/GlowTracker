@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from typing import Tuple, TypeAlias
 
+from enum import Enum
+
 # Declare common type
 Vec3: TypeAlias = Tuple[float, float, float]
 
@@ -13,10 +15,16 @@ Library.enable_device_db_store()
 @dataclass
 class StageState:
     """State machine for the Zaber's stage"""
-    isMoving: bool = False
     isMoving_x: bool = False
     isMoving_y: bool = False
     isMoving_z: bool = False
+
+class Axis(Enum):
+    """Enum for refering to which axis"""
+    X = 1
+    Y = 2
+    Z = 3
+    ALL = 4
 
 
 class Stage:
@@ -173,49 +181,71 @@ class Stage:
             self.move_z(step[1], unit = unit, wait_until_idle=wait_until_idle)
         
 
-    def start_move(self, velocity, unit = 'ums'):
+    def start_move(self, velocity: Vec3, unit = 'ums') -> None:
         """Start moving in a given velocity's direction.
             ALWAYS call in conjuction with self.stop() to stop moving.
         Parameters: 
                     velocity (tuple, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
+        if self.connection is None:
+            return
 
-        print('Enter start_move()')
-        if self.connection is not None:
-
-            print('Moving X')
+        # Move each axis simultaneously
+        if self.no_axes >= 1 and not self.state.isMoving_x and velocity[0] != 0:
+            self.state.isMoving_x = True
             self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
-            # self.connection.axis_x.move_velocity(20, self.units[unit])
-            # self.connection.axis_y.move_velocity(20, self.units[unit])
+        
+        if self.no_axes >= 2 and not self.state.isMoving_y and velocity[1] != 0:
+            self.state.isMoving_y = True
+            self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
 
-            if len(velocity) > 1:
-                print('Moving Y')
-                self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
-                
-            if len(velocity) > 2 and self.no_axes >2:
-                print('Moving Z')
-                self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
+        if self.no_axes >= 3 and not self.state.isMoving_z and velocity[2] != 0:
+            self.state.isMoving_z = True
+            self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
 
 
-    def stop(self):
-        if self.connection is not None:
+    def stop(self, stopAxis: Axis = Axis.ALL) -> None:
+        """Stop movement of an axis or all axes
+
+        Args:
+            stopAxis (Axis, optional): Specific axis to stop. Defaults to Axis.ALL.
+        """
+        if self.connection is None:
+            return
+        
+        if stopAxis == Axis.ALL:
             self.connection.axis_x.stop(wait_until_idle = False)
             self.connection.axis_y.stop(wait_until_idle = False)
             if self.no_axes == 3:
-               self.connection.axis_z.stop(wait_until_idle = False)
+                self.connection.axis_z.stop(wait_until_idle = False)
+            
+            self.state.isMoving_x = False
+            self.state.isMoving_y = False
+            self.state.isMoving_z = False
+
+
+        elif stopAxis == Axis.X:
+            self.connection.axis_x.stop(wait_until_idle = False)
+            self.state.isMoving_x = False
         
-        self.state.isMoving = False
+        elif stopAxis == Axis.Y:
+            self.connection.axis_y.stop(wait_until_idle = False)
+            self.state.isMoving_y = False
+        
+        elif stopAxis == Axis.Z and self.no_axes == 3:
+            self.state.isMoving_z = False
 
 
-    def get_position(self, unit = 'mm', isAsync = True) -> None | Vec3:
+    def get_position(self, unit = 'mm', isAsync = True) -> Vec3 | None:
         """Get the current position of the stage for all axes."""
         # print('Stage::get_position()')
         # TODO: Investigate slowness
         if self.connection is None:
             return None
         
-        pos: Vec3 = [0, 0, 0]
+        pos: Vec3 | None = None
+        
         try:
             if isAsync:
 
@@ -231,6 +261,8 @@ class Stage:
                 pos = event_loop.run_until_complete(move_coroutine)
                 
             else:
+
+                pos = []
                 pos.append(self.connection.axis_x.get_position(self.units[unit]))
                 pos.append(self.connection.axis_y.get_position(self.units[unit]))
 
@@ -242,7 +274,6 @@ class Stage:
             #   This is usually a DeviceNotIdentifiedException from trying 
             #   get_position_async() while device is not fully initiated
             print(e)
-            pos = None
         
         return pos
 
