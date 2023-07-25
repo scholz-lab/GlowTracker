@@ -1,8 +1,22 @@
 import asyncio
-from zaber_motion import Library, Units, Measurement
-from zaber_motion.ascii import Connection, AlertEvent, AllAxes
+from zaber_motion import Library, Units, Measurement, MotionLibException
+from zaber_motion.ascii import Connection, AlertEvent, AllAxes, Axis
+from dataclasses import dataclass
+
+from typing import Tuple, TypeAlias
+
+# Declare common type
+Vec3: TypeAlias = Tuple[float, float, float]
 
 Library.enable_device_db_store()
+
+@dataclass
+class StageState:
+    """State machine for the Zaber's stage"""
+    isMoving: bool = False
+    isMoving_x: bool = False
+    isMoving_y: bool = False
+    isMoving_z: bool = False
 
 
 class Stage:
@@ -17,9 +31,11 @@ class Stage:
         connection = self.connect_stage(port)
         print(connection)
         if connection is not None:
-            self.connection = connection
+            self.connection: Connection = connection
             self.assign_axes()
             self.set_maxspeed(speed = 20)
+        
+        self.state = StageState()
             
             
     def connect_stage(self, port='COM3'):
@@ -41,18 +57,30 @@ class Stage:
             return None
 
 
-    def assign_axes(self):
+    def assign_axes(self) -> None:
         """
         Order the axis and name them as x,y,z where x is the closest to the computer.
         """
         self.connection.renumber_devices(first_address=1)
         device_list = self.connection.detect_devices()
+
         print("Found {} devices".format(len(device_list)))
-        self.connection.axis_x = device_list[0].get_axis(1)
-        self.connection.axis_y = device_list[1].get_axis(1)
+
+        # Get each axes' handler and inject them into the 
+        #   Zaber's Connection class for ease of access.
+        self.connection.axis_x: Axis = device_list[0].get_axis(1)
+        self.connection.axis_y: Axis = device_list[1].get_axis(1)
+        
+        # Activate devices
+        self.connection.axis_x.device.identify()
+        self.connection.axis_y.device.identify()
+        
         self.no_axes = 2
+
+        # Optional 3rd axis
         if len(device_list) > 2:
-            self.connection.axis_z = device_list[2].get_axis(1)
+            self.connection.axis_z: Axis = device_list[2].get_axis(1)
+            self.connection.axis_z.device.identify()
             self.no_axes = 3
 
 
@@ -145,49 +173,29 @@ class Stage:
             self.move_z(step[1], unit = unit, wait_until_idle=wait_until_idle)
         
 
-    # 
-    def move_speed(self, velocity, unit = 'ums'):
-        """Move to a given relative location
+    def start_move(self, velocity, unit = 'ums'):
+        """Start moving in a given velocity's direction.
+            ALWAYS call in conjuction with self.stop() to stop moving.
         Parameters: 
                     velocity (tuple, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(obj): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
+
+        print('Enter start_move()')
         if self.connection is not None:
+
+            print('Moving X')
             self.connection.axis_x.move_velocity(velocity[0], self.units[unit])
+            # self.connection.axis_x.move_velocity(20, self.units[unit])
+            # self.connection.axis_y.move_velocity(20, self.units[unit])
+
             if len(velocity) > 1:
+                print('Moving Y')
                 self.connection.axis_y.move_velocity(velocity[1], self.units[unit])
+                
             if len(velocity) > 2 and self.no_axes >2:
+                print('Moving Z')
                 self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
-   
-
-    def get_position(self, unit = 'mm', fast = True):
-        """return the current position of the stage for all axes."""
-        pos = []
-        if fast:
-            loop = []
-            if self.connection is not None:
-                loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
-                loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
-                if self.no_axes >2:
-                    loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
-                else:
-                    pos.append(0)
-
-            move_coroutine = asyncio.gather(*loop)
-
-            loop = asyncio.get_event_loop()
-            pos = loop.run_until_complete(move_coroutine)
-            
-            return pos
-        else:
-            if self.connection is not None:
-                pos.append(self.connection.axis_x.get_position(self.units[unit]))
-                pos.append(self.connection.axis_y.get_position(self.units[unit]))
-                if self.no_axes >2:
-                    pos.append(self.connection.axis_z.get_position(self.units[unit]))
-                else:
-                    pos.append(0)
-            return pos
 
 
     def stop(self):
@@ -196,6 +204,47 @@ class Stage:
             self.connection.axis_y.stop(wait_until_idle = False)
             if self.no_axes == 3:
                self.connection.axis_z.stop(wait_until_idle = False)
+        
+        self.state.isMoving = False
+
+
+    def get_position(self, unit = 'mm', isAsync = True) -> None | Vec3:
+        """Get the current position of the stage for all axes."""
+        # print('Stage::get_position()')
+        # TODO: Investigate slowness
+        if self.connection is None:
+            return None
+        
+        pos: Vec3 = [0, 0, 0]
+        try:
+            if isAsync:
+
+                loop = []
+                loop.append(self.connection.axis_x.get_position_async(self.units[unit]))
+                loop.append(self.connection.axis_y.get_position_async(self.units[unit]))
+
+                if self.no_axes == 3:
+                    loop.append(self.connection.axis_z.get_position_async(self.units[unit]))
+
+                move_coroutine = asyncio.gather(*loop)
+                event_loop = asyncio.get_event_loop()
+                pos = event_loop.run_until_complete(move_coroutine)
+                
+            else:
+                pos.append(self.connection.axis_x.get_position(self.units[unit]))
+                pos.append(self.connection.axis_y.get_position(self.units[unit]))
+
+                if self.no_axes == 3:
+                    pos.append(self.connection.axis_z.get_position(self.units[unit]))
+            
+        except MotionLibException as e:
+            # Handle exception
+            #   This is usually a DeviceNotIdentifiedException from trying 
+            #   get_position_async() while device is not fully initiated
+            print(e)
+            pos = None
+        
+        return pos
 
 
     def set_rangelimits(self, limits = (160,160,155), unit = 'mm'):
@@ -211,11 +260,14 @@ class Stage:
                 self.connection.axis_z.settings.set('limit.max', limits[2], self.units[unit])
 
 
-    def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)):
+    def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)) -> None:
         """startup routine to home, set range and move to start if desired. """
+
         if home:
             self.home_stage()
+        
         self.set_rangelimits(limits)
+
         if startloc:
             self.move_abs(start)
         
