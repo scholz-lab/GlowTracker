@@ -1228,7 +1228,7 @@ class MacroscopeApp(App):
             
 
     
-    def _keydown(self, instance, key, scancode, codepoint, modifier):
+    def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
         """Manage keyboard input for stage and focus"""
         
         if self.stage is None:
@@ -1258,7 +1258,7 @@ class MacroscopeApp(App):
         self.stage.start_move(direction[key], self.unit)
 
 
-    def _keyup(self, instance, key, scancode):
+    def _keyup(self, instance, key, scancode) -> None:
         """Handle keyup callbacks. This is usually only for stopping axis movement"""
         if self.stage is None:
             return
