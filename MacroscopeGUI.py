@@ -42,7 +42,7 @@ import numpy as np
 import datetime
 import os
 import time
-from Zaber_control import Stage
+from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from skimage.io import imsave
@@ -1227,34 +1227,54 @@ class MacroscopeApp(App):
                     
             
 
-    # manage keyboard input for stage and focus
-    def _keydown(self,  instance, key, scancode, codepoint, modifier):
+    
+    def _keydown(self, instance, key, scancode, codepoint, modifier):
+        """Manage keyboard input for stage and focus"""
+        
+        if self.stage is None:
+            return
+
+        print(key, scancode, codepoint, modifier)
+
         # use arrow key codes here. This might be OS dependent.
         if 'shift' in modifier:
             v = self.vlow
         else:
             v = self.vhigh
-        direction = {273: (0,-v,0),
-                    274: (0,v,0),
-                    275: (-v,0,0),
-                    276: (v,0,0),
-                    280: (0,0,-v),
-                    281: (0,0,v)
+        
+        # TODO: Move this direction keymap into a setting file
+        direction = {
+            273: (0,-v,0),
+            274: (0,v,0),
+            275: (-v,0,0),
+            276: (v,0,0),
+            280: (0,0,-v),
+            281: (0,0,v)
         }
-        print(key, scancode, codepoint, modifier)
+        
         if key not in direction.keys():
             return
         
-        if self.stage is not None:
-            self.stage.start_move(direction[key], self.unit)
+        self.stage.start_move(direction[key], self.unit)
 
 
-    def _keyup(self, *args):
-        print('STOP')
-        if self.stage is not None:
-            self.stage.stop()
-            print(self.stage.get_position())
-            self.coords = self.stage.get_position()
+    def _keyup(self, instance, key, scancode):
+        """Handle keyup callbacks. This is usually only for stopping axis movement"""
+        if self.stage is None:
+            return
+        
+        if key == 275 or key == 276:
+            self.stage.stop(stopAxis= AxisEnum.X)
+
+        elif key == 273 or key == 274:
+            self.stage.stop(stopAxis= AxisEnum.Y)
+
+        elif key == 280 or key == 281:
+            self.stage.stop(stopAxis= AxisEnum.Z)
+
+        # Update current position
+        self.coords = self.stage.get_position()
+        print(self.coords)
 
 
     def unbind_keys(self):

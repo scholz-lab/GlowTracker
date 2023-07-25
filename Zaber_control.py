@@ -19,7 +19,7 @@ class StageState:
     isMoving_y: bool = False
     isMoving_z: bool = False
 
-class Axis(Enum):
+class AxisEnum(Enum):
     """Enum for refering to which axis"""
     X = 1
     Y = 2
@@ -76,8 +76,8 @@ class Stage:
 
         # Get each axes' handler and inject them into the 
         #   Zaber's Connection class for ease of access.
-        self.connection.axis_x: Axis = device_list[0].get_axis(1)
-        self.connection.axis_y: Axis = device_list[1].get_axis(1)
+        self.connection.axis_x: AxisEnum = device_list[0].get_axis(1)
+        self.connection.axis_y: AxisEnum = device_list[1].get_axis(1)
         
         # Activate devices
         self.connection.axis_x.device.identify()
@@ -87,7 +87,7 @@ class Stage:
 
         # Optional 3rd axis
         if len(device_list) > 2:
-            self.connection.axis_z: Axis = device_list[2].get_axis(1)
+            self.connection.axis_z: AxisEnum = device_list[2].get_axis(1)
             self.connection.axis_z.device.identify()
             self.no_axes = 3
 
@@ -205,16 +205,18 @@ class Stage:
             self.connection.axis_z.move_velocity(velocity[2], self.units[unit])
 
 
-    def stop(self, stopAxis: Axis = Axis.ALL) -> None:
+    def stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> None:
         """Stop movement of an axis or all axes
 
         Args:
-            stopAxis (Axis, optional): Specific axis to stop. Defaults to Axis.ALL.
+            stopAxis (AxisEnum, optional): Specific axis to stop. Defaults to AxisEnum.ALL.
         """
         if self.connection is None:
             return
         
-        if stopAxis == Axis.ALL:
+        print('Stop: ', stopAxis)
+        
+        if stopAxis == AxisEnum.ALL:
             self.connection.axis_x.stop(wait_until_idle = False)
             self.connection.axis_y.stop(wait_until_idle = False)
             if self.no_axes == 3:
@@ -225,15 +227,16 @@ class Stage:
             self.state.isMoving_z = False
 
 
-        elif stopAxis == Axis.X:
+        elif stopAxis == AxisEnum.X:
             self.connection.axis_x.stop(wait_until_idle = False)
             self.state.isMoving_x = False
         
-        elif stopAxis == Axis.Y:
+        elif stopAxis == AxisEnum.Y:
             self.connection.axis_y.stop(wait_until_idle = False)
             self.state.isMoving_y = False
         
-        elif stopAxis == Axis.Z and self.no_axes == 3:
+        elif stopAxis == AxisEnum.Z and self.no_axes == 3:
+            self.connection.axis_z.stop(wait_until_idle = False)
             self.state.isMoving_z = False
 
 
