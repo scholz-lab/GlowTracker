@@ -1,3 +1,8 @@
+import os
+# Suppress kivy normal initialization logs in the beginning
+# for easier debugging
+os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
+
 import kivy
 kivy.require('2.0.0')
 
@@ -37,7 +42,7 @@ import numpy as np
 import datetime
 import os
 import time
-import Zaber_control as stg
+from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from skimage.io import imsave
@@ -1027,24 +1032,35 @@ class Connections(BoxLayout):
         print('connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
-        stage = stg.Stage(port)
+        stage = Stage(port)
+        
         if stage.connection is None:
             self.stage_connection.state = 'normal'
             App.get_running_app().stage = None
+
         else:
-            app.stage = stage
+            app.stage: Stage = stage
+            
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
-            # home stage - do this in a thread, it is slow
-            t = Thread(target=app.stage.on_connect, args = (homing,  move_start, startloc, limits))
-            # set daemon to true so the thread dies when app is closeds
-            t.daemon = True
-            # start the thread
-            t.start()
-            self.coordinate_update = Clock.create_trigger(app.update_coordinates)
-            self.coordinate_update()
+            
+            def connect_async():
+
+                # home stage - do this in a thread, it is slow, ~2 sec
+                app.stage.on_connect(homing,  move_start, startloc, limits)
+                
+                # Call update_coordinates once.
+                #   We have to specify not to run 'update_coordinates' in async mode because it's going to
+                #   be run inside a thread.
+                app.update_coordinates(isAsync= False)  
+
+            
+            thread_connect_async = Thread(target= connect_async)
+            thread_connect_async.daemon = True
+            thread_connect_async.start()
+            
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
@@ -1101,7 +1117,7 @@ class MacroscopeApp(App):
         self.bind_keys()
         # hardware
         self.camera = None
-        self.stage = stg.Stage(None)
+        self.stage: Stage = Stage(None)
 
     def build(self):
         layout = Builder.load_file('layout.kv')
@@ -1184,55 +1200,81 @@ class MacroscopeApp(App):
         print('stopped')
 
 
-    def on_controller_input(self, win, stickid, axisid, value):
+    def on_controller_input(self, win, stickid, axisid, value) -> None:
+        """Handle controller input from Kivi App"""
+
         print(win, stickid, axisid, value)
-        if  self.stage.is_busy():
+
+        if self.stage is None or self.stage.is_busy():
             return
-        if self.stage is not None:
-            if self.stopevent is not None:
-               Clock.unschedule(self.stopevent)
-            #scale velocity
-            v = self.vhigh*value/32767
-            if v < self.vlow*0.01:
-                self.stage_stop()
-            else:
-                direction = {0: (v,0,0),
-                            1: (0,v,0),
-                            4: (0,0,v)
-                }
-                if axisid in [0,1,4]:
-                    self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
-                    self.stage.move_speed(direction[axisid], self.unit)
+
+        if self.stopevent is not None:
+            Clock.unschedule(self.stopevent)
+            
+        #scale velocity
+        v = self.vhigh*value/32767
+        if v < self.vlow*0.01:
+            self.stage_stop()
+        else:
+            direction = {
+                0: (v,0,0),
+                1: (0,v,0),
+                4: (0,0,v)
+            }
+            if axisid in [0,1,4]:
+                self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
+                self.stage.start_move(direction[axisid], self.unit)
                     
             
 
-    # manage keyboard input for stage and focus
-    def _keydown(self,  instance, key, scancode, codepoint, modifier):
+    
+    def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
+        """Manage keyboard input for stage and focus"""
+        
+        if self.stage is None:
+            return
+
+        print(key, scancode, codepoint, modifier)
+
         # use arrow key codes here. This might be OS dependent.
         if 'shift' in modifier:
             v = self.vlow
         else:
             v = self.vhigh
-        direction = {273: (0,-v,0),
-                    274: (0,v,0),
-                    275: (-v,0,0),
-                    276: (v,0,0),
-                    280: (0,0,-v),
-                    281: (0,0,v)
+        
+        # TODO: Move this direction keymap into a setting file
+        direction = {
+            273: (0,-v,0),
+            274: (0,v,0),
+            275: (-v,0,0),
+            276: (v,0,0),
+            280: (0,0,-v),
+            281: (0,0,v)
         }
-        print(key, scancode, codepoint, modifier)
+        
         if key not in direction.keys():
             return
         
-        if self.stage is not None:
-            self.stage.move_speed(direction[key], self.unit)
+        self.stage.start_move(direction[key], self.unit)
 
 
-    def _keyup(self, *args):
-        if self.stage is not None:
-            self.stage.stop()
-            print(self.stage.get_position())
-            self.coords = self.stage.get_position()
+    def _keyup(self, instance, key, scancode) -> None:
+        """Handle keyup callbacks. This is usually only for stopping axis movement"""
+        if self.stage is None:
+            return
+        
+        if key == 275 or key == 276:
+            self.stage.stop(stopAxis= AxisEnum.X)
+
+        elif key == 273 or key == 274:
+            self.stage.stop(stopAxis= AxisEnum.Y)
+
+        elif key == 280 or key == 281:
+            self.stage.stop(stopAxis= AxisEnum.Z)
+
+        # Update current position
+        self.coords = self.stage.get_position()
+        print(self.coords)
 
 
     def unbind_keys(self):
@@ -1317,10 +1359,10 @@ class MacroscopeApp(App):
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
     
     
-    def update_coordinates(self, dt):
+    def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
-            self.coords = self.stage.get_position()
+            self.coords = self.stage.get_position(isAsync= isAsync)
 
 
 
