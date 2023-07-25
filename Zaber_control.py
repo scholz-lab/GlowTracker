@@ -214,8 +214,6 @@ class Stage:
         if self.connection is None:
             return
         
-        print('Stop: ', stopAxis)
-        
         if stopAxis == AxisEnum.ALL:
             self.connection.axis_x.stop(wait_until_idle = False)
             self.connection.axis_y.stop(wait_until_idle = False)
