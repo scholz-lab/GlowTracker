@@ -883,26 +883,38 @@ class RuntimeControls(BoxLayout):
         app = App.get_running_app()
         stage = app.stage
         camera = app.camera
+
+        # Compute second per frame to determine lower bound waiting time
+        camera_spf = 1 / camera.ResultingFrameRate()
+        
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
-        print('Tracking mode:', mode)
-        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
-            t0 = time.time()
+
+        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+
+            tracking_frame_begin_time = time.perf_counter()
+
+            # Get the latest image
             img2 = app.lastframe
             if app.prevframe is None:
                 app.prevframe = img2
-            # difference image
+            
+            # Extract worm position
             if mode=='Diff':
+                # mode: difference image
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            
+            # Compute relative distancec in each axis
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
-                # getting stage coord is slow so we will interpolate from movements
+            
+            # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
@@ -912,8 +924,18 @@ class RuntimeControls(BoxLayout):
                 app.coords[1] += ystep/1000.
                 app.prevframe = img2
             print("Move stage (x,y)", xstep, ystep)
-            t1 = time.time()
-            print(f'duration tracking loop (ms): {t1-t0}')
+
+            # Compute performance time
+            tracking_frame_end_time = time.perf_counter()
+            tracking_frame_time = tracking_frame_end_time - tracking_frame_begin_time
+            # print(f'duration tracking loop (ms): {tracking_frame_time}')
+
+            frame_wait_time = max( 0, camera_spf - tracking_frame_time)
+            # print(f'duration tracking loop waiting (ms): {frame_wait_time}')
+
+            # Wait until the camera can capture a new image again
+            time.sleep(frame_wait_time)
+            
         self.trackingcheckbox.state = 'normal'
 
 
@@ -1263,18 +1285,21 @@ class MacroscopeApp(App):
         if self.stage is None:
             return
         
+        # Movement key up
+        #   Call the coresponding axis to stop and update te stage position
         if key == 275 or key == 276:
             self.stage.stop(stopAxis= AxisEnum.X)
+            self.coords = self.stage.get_position()
 
         elif key == 273 or key == 274:
             self.stage.stop(stopAxis= AxisEnum.Y)
+            self.coords = self.stage.get_position()
 
         elif key == 280 or key == 281:
             self.stage.stop(stopAxis= AxisEnum.Z)
+            self.coords = self.stage.get_position()
 
-        # Update current position
-        self.coords = self.stage.get_position()
-        print(self.coords)
+        print(f'Stage position: {self.coords}')
 
 
     def unbind_keys(self):
