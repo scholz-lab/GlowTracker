@@ -454,18 +454,28 @@ class RecordButtons(BoxLayout):
         super(RecordButtons, self).__init__(**kwargs)
 
     def snap(self):
-        """single image saved to experiment location."""
+        """save a single image to experiment location."""
         app = App.get_running_app()
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
-        # if we have a camera this will save a single take
-        if app.camera is not None:
-            self.liveviewbutton.state = 'normal'
-            # get image
+        
+        if app.camera is None:
+            return
+        
+        # Get an image appropriately acoording to current viewing mode
+        if self.liveviewbutton.state == 'normal':
+            # Call capture an image
             ret, im = basler.single_take(app.camera)
             if ret:
                 basler.save_image(im,path,snap_filename)
+                
+        elif self.liveviewbutton.state == 'down':
+            # If currently in live view mode
+            #   then save the current image
+            im = app.lastframe
+            basler.save_image(im,path,snap_filename)
+                
 
 
     def startPreview(self):
@@ -726,11 +736,12 @@ class PreviewImage(Image):
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
             if rtc.trackingcheckbox.state == 'down' and not rtc.trackingevent:
-                #
+                # Draw a red circle
                 self.captureCircle(touch.pos)
-                # get the image center
-                Clock.schedule_once(lambda dt: rtc.center_image(), 0)
+                # Start tracking procedure
+                Clock.schedule_once(lambda dt: rtc.startTrackingProcedure(), 0)
                 # remove the circle 
+                # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
@@ -840,28 +851,36 @@ class RuntimeControls(BoxLayout):
         self.cropY = 0
 
 
-    def center_image(self):
+    def startTrackingProcedure(self):
+
         app = App.get_running_app()
-        # schedule a tracking routine
         stage = app.stage
-        # smaller FOV for the worm
-        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
-        # move stage based on user input - happens here.
-        #print(self.parent.parent.ids.previewimage.offset)
+        
+        # 
+        # Move stage based on user input - happens here.
+        # 
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         print('Centering image',xstep, ystep, 'um')
+        
         if xstep > minstep:
-            #print("Move stage (x,y)", xstep, ystep)
             stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
             stage.move_y(ystep, unit=units, wait_until_idle=True)
-        # set small ROI
-        self.set_ROI(roiX, roiY)
+
         app.coords =  app.stage.get_position()
         print('updated coords')
-        # start the tracking
+        
+        # 
+        # Set smaller FOV for the worm
+        # 
+        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+        self.set_ROI(roiX, roiY)
+        
+        # 
+        # Start the tracking
+        # 
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
@@ -873,18 +892,19 @@ class RuntimeControls(BoxLayout):
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, mode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
-        print('started thread')
+        print('started tracking thread')
         # schedule occasional position check of the stage
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
-    def tracking(self, minstep, units, capture_radius, binning, dark_bg, area, threshold, mode):
-        """thread for tracking"""
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
+        """Tracking function to be running inside a thread
+        """
         app = App.get_running_app()
         stage = app.stage
         camera = app.camera
 
-        # Compute second per frame to determine lower bound waiting time
+        # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
         
         self.trackingevent = True
@@ -933,8 +953,17 @@ class RuntimeControls(BoxLayout):
             frame_wait_time = max( 0, camera_spf - tracking_frame_time)
             # print(f'duration tracking loop waiting (ms): {frame_wait_time}')
 
-            # Wait until the camera can capture a new image again
+            # Wait until the camera can capture a new image again:
+            #   Wait for effective capture spf
             time.sleep(frame_wait_time)
+
+            #   Wait for stage movement to finish to not get motion blur.
+            #   This could be done by checking with stage.is_busy().
+            #   However, that function call is very costly (~50ms) 
+            #   and is not good for loop checking.
+            #   So we are going to just estimate it here
+            time.sleep(60 * 1e-3)
+            
             
         self.trackingcheckbox.state = 'normal'
 
@@ -998,23 +1027,7 @@ class RuntimeControls(BoxLayout):
     def reset_ROI(self):
         app = App.get_running_app()
         camera = app.camera
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
-       
-        if rec == 'down':
-            #basler.stop_grabbing(camera)
-            rec = 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_resetROI(camera)
-            
-        elif disp == 'down':
-            #basler.stop_grabbing(camera)
-            disp= 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_resetROI(camera)
-            disp = 'down'
-
-
+        basler.cam_resetROI(camera)
 
 # display if hardware is connected
 class Connections(BoxLayout):
