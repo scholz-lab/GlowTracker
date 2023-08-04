@@ -950,9 +950,12 @@ class RuntimeControls(BoxLayout):
 
             # Get the latest image
             img2 = app.lastframe
+            img2_timestamp = app.timestamp
+
+            # If prev frame is empty then use the same as current
             if app.prevframe is None:
                 app.prevframe = img2
-            
+                
             # Extract worm position
             if mode=='Diff':
                 # mode: difference image
@@ -978,26 +981,47 @@ class RuntimeControls(BoxLayout):
                 app.prevframe = img2
             print("Move stage (x,y)", xstep, ystep)
 
-            # Compute performance time
-            tracking_frame_end_time = time.perf_counter()
-            tracking_frame_time = tracking_frame_end_time - tracking_frame_begin_time
-            # print(f'duration tracking loop (ms): {tracking_frame_time}')
-
-            frame_wait_time = max( 0, camera_spf - tracking_frame_time)
-            # print(f'duration tracking loop waiting (ms): {frame_wait_time}')
-
-            # Wait until the camera can capture a new image again:
-            #   Wait for effective capture spf
-            time.sleep(frame_wait_time)
-
             #   Wait for stage movement to finish to not get motion blur.
             #   This could be done by checking with stage.is_busy().
             #   However, that function call is very costly (~50ms) 
             #   and is not good for loop checking.
-            #   So we are going to just estimate it here
-            time.sleep(60 * 1e-3)
+            #   So we are going to just estimate it here.
+            #   Compute distance, get velocity, estimate translation time.
+            travel_speed = 20                               # in milli meter per sec : 1e-3
+            travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
+            travel_time = travel_dist / travel_speed        # 1e-6 / 1e-3 = 1e-3
+            travel_time *= 1e-3
+            print(f'sleep travel_time {travel_time}')
+            time.sleep(travel_time)
+
+            # Compute performance time
+            tracking_frame_end_time = time.perf_counter()
+
+            img2_current_timestamp = app.timestamp
+            if img2_timestamp == img2_current_timestamp:
+                # If there is no new picture taken yet, then wait until new one will be taken
+                estimated_next_capture_time = img2_current_timestamp + camera_spf
+                frame_wait_time = max(0, estimated_next_capture_time - tracking_frame_end_time)
+
+            else:
+                # If there is already a new picture, we need to distinguish whether it is taken
+                #   during the movement (motion blur), or after the movement is finished.
+
+                if tracking_frame_end_time <= img2_current_timestamp:
+                    # The latest image is taken after the movement is finished so it's not blurry
+                    #   and we can continue to next tracking frame
+                    frame_wait_time = 0
+
+                else:
+                    # The image is taken before the movement is finished so it's blurry
+                    #   we should wait until a new frame is captured
+                    estimated_next_capture_time = img2_current_timestamp + camera_spf
+                    frame_wait_time = max(0, estimated_next_capture_time - tracking_frame_end_time)
             
-            
+            print(f'sleep frame_wait_time {frame_wait_time}')
+            time.sleep(frame_wait_time)
+        
+        # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
 
 
