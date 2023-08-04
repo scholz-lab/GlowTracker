@@ -73,10 +73,10 @@ def zFocus(stage, camera, stepsize, stepunits, nsteps):
     zpos = []
     stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
     for i in np.arange(0, nsteps):
-            ret, img = basler.single_take(camera)
+            isSuccess, img = basler.single_take(camera)
             pos = stage.get_position()
             print(pos)
-            if ret and len(pos) > 2:
+            if isSuccess and len(pos) > 2:
                 stack.append(img)
                 zpos.append(pos[2])
                 print(stepunits)

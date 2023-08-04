@@ -49,6 +49,7 @@ from skimage.io import imsave
 #import cv2
 #from pypylon import pylon
 #from pypylon import genicam
+from typing import Tuple
 
 # get the free clock (more accurate timing)
 #Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -466,15 +467,15 @@ class RecordButtons(BoxLayout):
         # Get an image appropriately acoording to current viewing mode
         if self.liveviewbutton.state == 'normal':
             # Call capture an image
-            ret, im = basler.single_take(app.camera)
-            if ret:
-                basler.save_image(im,path,snap_filename)
+            isSuccess, img = basler.single_take(app.camera)
+            if isSuccess:
+                basler.save_image(img,path,snap_filename)
                 
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
-            im = app.lastframe
-            basler.save_image(im,path,snap_filename)
+            img = app.lastframe
+            basler.save_image(img,path,snap_filename)
                 
 
 
@@ -518,8 +519,8 @@ class RecordButtons(BoxLayout):
         print(f'Displaying at {fps} fps')
             
         while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
-            ret, img, timestamp = basler.retrieve_result(camera)
-            if ret:
+            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
+            if isSuccess:
                 #print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 
@@ -543,44 +544,70 @@ class RecordButtons(BoxLayout):
     def startRecording(self):
         app = App.get_running_app()
         camera = app.camera
+
         self.parent.framecounter.value = 0
         self.path = app.root.ids.leftcolumn.savefile
 
         if camera is not None:
             # stop camera if already running 
             self.liveviewbutton.state = 'normal'
-            # schedule immediately
-            self.open_file()
+
+            # open coordinate file
+            self.open_coord_file()
+
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
+
             # start thread for grabbing and saving images
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
             self.recordthread.start()
+
         else:
             self.recordbutton.state = 'normal'
 
 
     def stopRecording(self):
         camera = App.get_running_app().camera
-        if camera is not None:
-           
-            Clock.unschedule(self.event)
-            # close file a bit later
-            Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
-            if self.recordthread.is_alive():
-                self.savingthread.join()
-                self.recordthread.join()
-            basler.stop_grabbing(camera)
+
+        if camera is None:
+            return
+        
+        # Unschedule self.display() event
+        Clock.unschedule(self.event)
+
+        # Schedule closing coordinate file a bit later
+        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
+        
+        # Close recording and saving threads 
+        #   this is unsafe because we only join the most recent thread that just created and not the others before
+        if self.recordthread.is_alive():
+            self.savingthread.join()
+            self.recordthread.join()
+            
+        # Tell camera to stop grabbing mode
+        basler.stop_grabbing(camera)
+        # Reset frame counter
         self.parent.framecounter.value = 0
+        # Call update_buffer() once
         self.buffertrigger()
-        print("Finished recording")
-        # reset scale of image
+        # Reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
-        #self.recordbutton.state = 'normal'
+        # Set button state back to normal
+        self.recordbutton.state = 'normal'
+        
+        print("Finished recording")
 
 
-    def init_recording(self):
+    def init_recording(self) -> Tuple[ int, int, int, int ]:
+        """Initialize recording parameters
+
+        Returns:
+            nframes (int): number of frames to grab
+            buffersize (int): number of buffers to allocate, used for grabbing
+            cropX (int): starting cropping position in X
+            cropY (int): starting cropping position in Y
+        """
         app = App.get_running_app()
         # set up grabbing with recording settings here
         fps = app.config.getfloat('Experiment', 'framerate')
@@ -610,27 +637,31 @@ class RecordButtons(BoxLayout):
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
-        counter = 0
+        
         # grab and write images
-        while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
+        counter = 0
+        while camera is not None and counter <nframes and self.recordbutton.state == 'down':
             # get image
-            ret, img, timestamp = basler.retrieve_result(camera)
+            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
             # trigger a buffer update
             self.buffertrigger()
-            if ret:
+            if isSuccess:
                 print('dt: ', timestamp-app.timestamp)
                 print('(x,y,z): ', app.coords)
                 
+                # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
-                # write coordinates
+                # write coordinate into file
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-                # write image in thread
+                # This might be problematic as we spawn a new thread for each image
+                #   so we will only have a handle of the latest thread.
                 self.savingthread = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True)
                 self.savingthread.start()
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
                 counter += 1
+        
         print(f'Finished recordings {counter} frames.')
         self.buffertrigger()
         self.recordbutton.state = 'normal'
@@ -642,7 +673,7 @@ class RecordButtons(BoxLayout):
         basler.save_image(img, path, file_name)
         
 
-    def open_file(self, *args):
+    def open_coord_file(self, *args):
         """open coordinate file."""
         # open a file for the coordinates
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
@@ -739,7 +770,7 @@ class PreviewImage(Image):
                 # Draw a red circle
                 self.captureCircle(touch.pos)
                 # Start tracking procedure
-                Clock.schedule_once(lambda dt: rtc.startTrackingProcedure(), 0)
+                Clock.schedule_once(lambda dt: rtc.startTracking(), 0)
                 # remove the circle 
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
@@ -817,7 +848,9 @@ class RuntimeControls(BoxLayout):
         return
 
 
-    def startTracking(self):
+    def trackingButtonCallback(self):
+        """Display tracking instruction popup
+        """
         app = App.get_running_app()
         # schedule a tracking routine
         camera = app.camera
@@ -851,7 +884,7 @@ class RuntimeControls(BoxLayout):
         self.cropY = 0
 
 
-    def startTrackingProcedure(self):
+    def startTracking(self):
 
         app = App.get_running_app()
         stage = app.stage

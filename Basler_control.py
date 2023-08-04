@@ -6,6 +6,8 @@ import time
 from skimage.io import imsave
 #import cv2
 #from libtiff import TIFF
+from typing import Tuple
+import numpy as np
 
 #%% Camera initialization
 def camera_init():
@@ -42,11 +44,19 @@ def update_props(camera, propfile):
         print("Camera features could not be loaded.")
        
 
-def single_take(camera):
-    """take and return a single image."""
+def single_take(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray ]:
+    """Take and return a single image.
+
+    Args:
+        camera (pylon.InstantCamera): the camera use for capture
+
+    Returns:
+        isSuccess (bool): is the capturing image successful
+        img (np.ndarray): the resulting image
+    """
     camera.StartGrabbingMax(1)
-    ret, img,_ = retrieve_result(camera)
-    return ret, img
+    isSuccess, img, _ = retrieve_grabbing_result(camera)
+    return isSuccess, img
 
 
 def start_grabbing(camera, numberOfImagesToGrab=100, record=False, buffersize=16):
@@ -63,15 +73,34 @@ def stop_grabbing(camera):
     camera.StopGrabbing()
 
 
-def retrieve_result(camera):
+def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray, int]:
+    """Retrieve a grabbed image from a camera
+
+    Args:
+        camera (pylon.InstantCamera): camera to retrieve result
+
+    Returns:
+        isSuccess (bool): boolean indicate if the retrieving is successful
+        img (np.array): the retrieved image
+        timeStamp (int): time stamp when the result is received via time.perf_counter()
+
+    """
     if camera.IsGrabbing():
-        grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
-        if grabResult.GrabSucceeded():
-            conversion_factor = 1e6  # for conversion in ms
-            img = grabResult.Array
-            time = round(grabResult.TimeStamp/conversion_factor, 1)
-            grabResult.Release()
-            return True, img, time
+        try:
+            grabResult: pylon.GrabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+            if grabResult.GrabSucceeded():
+                # conversion_factor = 1e6  # for conversion in ms
+                img = grabResult.Array
+                # time = round(grabResult.TimeStamp/conversion_factor, 1)
+                timeStamp = time.perf_counter()
+                grabResult.Release()
+                return True, img, timeStamp
+                
+        except genicam.RuntimeException as e:
+            # Handle a RuntimeException here because
+            #   when closing the app while in a grabbing mode,
+            #   this thread will still trying to access the camera result
+            print(e)
     
     return False, None, None
 
