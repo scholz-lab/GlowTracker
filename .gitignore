@@ -5,4 +5,4 @@
 *.pyc
 
 # Recorded images
-record/*.tiff
+record/*
