@@ -183,5 +183,50 @@ def get_shape(camera):
     return  camera.Height.GetValue(), camera.Width.GetValue()
 
 
+def estimateCamPipelineLatency(camera: pylon.InstantCamera) -> float:
+    """Estimate the camera latency time i.e. the time since sending capture image signal
+    to the time receiving the result. This is estimated by differences between calling
+    camera.GrabOne() and camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly).
+    The latency is independent of the FPS
+
+    Args:
+        camera (pylon.InstantCamera): the camera to be estimated
+
+    Returns:
+        latency (float): pipeline latency of the camera in second unit.
+    """
+    # Estimation sample size
+    N = 30
+
+    # Estimate GrabOne time
+    grabOneAvgTime = 0
+    for i in range(N):
+        beginTime = time.perf_counter()
+
+        grabResult = camera.GrabOne(1000)
+        
+        endTime = time.perf_counter()
+        grabOneAvgTime += endTime - beginTime
+    
+    grabOneAvgTime /= N
+
+    # Estimate StartGrabbing-LatestImage
+    grabbingAvgTime = 0
+    camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+    for i in range(N):
+        beginTime = time.perf_counter()
+
+        grabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+
+        endTime = time.perf_counter()
+        grabbingAvgTime += endTime - beginTime
+    
+    camera.StopGrabbing()
+    grabbingAvgTime /= N
+
+    # Compute Estimated latency time
+    estimatedLatency = grabOneAvgTime - grabbingAvgTime
+
+    return estimatedLatency
 
         
