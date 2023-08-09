@@ -92,6 +92,13 @@
         "key": "rotation"
     },
     {
+        "type": "numeric",
+        "title": "Latency",
+        "desc": "Camera pipeline latency from start taking a picture to receiving the picture",
+        "section": "Camera",
+        "key": "latency"
+    },
+    {
         "type": "title",
         "title": "Autofocus"
     },

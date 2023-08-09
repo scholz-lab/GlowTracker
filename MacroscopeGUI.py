@@ -50,6 +50,8 @@ from skimage.io import imsave
 #from pypylon import pylon
 #from pypylon import genicam
 from typing import Tuple
+from concurrent.futures import ThreadPoolExecutor
+from math import ceil, modf
 
 # get the free clock (more accurate timing)
 #Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -272,25 +274,39 @@ class RightColumn(BoxLayout):
         app = App.get_running_app()
         camera = app.camera
         stage = app.stage
+
         if camera is not None and stage is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+            
             # get config values
             stepsize = app.config.getfloat('Calibration', 'step_size')
             stepunits = app.config.get('Calibration', 'step_units')
+
             # run the calibration
             img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
+            
             # calculate calibration from shift
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
-            app.config.write()
+            
+            # update calibration matrix
             app.calibration_matrix = macro.genCalibrationMatrix(pxsize, rotation)
-            #update labels shown
+
+            # update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
             self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
+
+            # calibrate camera latency
+            latency = basler.estimateCamPipelineLatency(camera)
+            print(f'Estimated camera latency: {latency}')
+            app.config.set('Camera', 'latency', latency)
+
+            # save configs
+            app.config.write()
 
 
 class AutoCalibration(BoxLayout):
@@ -557,6 +573,9 @@ class RecordButtons(BoxLayout):
 
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
+            
+            # Create thread pool for image saving
+            self.savingthreadpool = ThreadPoolExecutor(thread_name_prefix='RecordingThreadPool')
 
             # start thread for grabbing and saving images
             record_args = self.init_recording()
@@ -579,11 +598,12 @@ class RecordButtons(BoxLayout):
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         
-        # Close recording and saving threads 
-        #   this is unsafe because we only join the most recent thread that just created and not the others before
+        # Close recording threads 
         if self.recordthread.is_alive():
-            self.savingthread.join()
             self.recordthread.join()
+        
+        # Close the saving thread pool
+        self.savingthreadpool.shutdown(wait= True)
             
         # Tell camera to stop grabbing mode
         basler.stop_grabbing(camera)
@@ -653,10 +673,16 @@ class RecordButtons(BoxLayout):
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 # write coordinate into file
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-                # This might be problematic as we spawn a new thread for each image
-                #   so we will only have a handle of the latest thread.
-                self.savingthread = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True)
-                self.savingthread.start()
+
+                # Apply an image saving job into the pool if the pool is not closed yet
+                if not self.savingthreadpool._shutdown_lock.locked():
+                    self.savingthreadpool.submit(
+                        basler.save_image, 
+                        app.lastframe, 
+                        self.path, 
+                        self.image_filename.format(self.parent.framecounter.value)
+                    )
+                
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
@@ -666,12 +692,8 @@ class RecordButtons(BoxLayout):
         self.buffertrigger()
         self.recordbutton.state = 'normal'
         
-        return 
+        return
 
-    def save(self, img, path, file_name):
-        # save image to file
-        basler.save_image(img, path, file_name)
-        
 
     def open_coord_file(self, *args):
         """open coordinate file."""
@@ -943,11 +965,43 @@ class RuntimeControls(BoxLayout):
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
+        latency = app.config.getfloat('Camera', 'latency')
+
+        estimated_next_timestamp: float | None = None
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
 
-            tracking_frame_begin_time = time.perf_counter()
+            # Handling image cycle synchronization.
+            # Because the recording and tracking thread are asynchronous
+            # and doesn't have the same priority, it could be the case that
+            # one thread get executed more than the other and the estimated time
+            # became inaccurate.
+            if estimated_next_timestamp is not None:
+                
+                img2_timestamp = app.timestamp
+                diff_estimated_time = estimated_next_timestamp - img2_timestamp
+                epsilon = camera_spf / 5
+                # If the estimated time is approximately the same as image timestamp
+                # then it's ok to use the current image
+                if abs(diff_estimated_time) < epsilon:
+                    pass
+                else:
+                    # If the estimated time is less than the current time
+                    # then it is also ok to use the current image
+                    if estimated_next_timestamp < img2_timestamp:
+                        pass
+                    # If the estimated time is more than the current image timestamp
+                    # then compute the estimated next cycle time and wait
+                    else:
+                        current_time = time.perf_counter()
 
+                        diff_time_factor = (current_time - img2_timestamp) / camera_spf
+                        fractional_part, integer_part = modf(diff_time_factor)
+
+                        wait_time = camera_spf * ( 1.0 - fractional_part )
+
+                        time.sleep(wait_time)
+            
             # Get the latest image
             img2 = app.lastframe
             img2_timestamp = app.timestamp
@@ -969,7 +1023,7 @@ class RuntimeControls(BoxLayout):
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
-            
+
             # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
@@ -979,7 +1033,8 @@ class RuntimeControls(BoxLayout):
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 app.prevframe = img2
-            print("Move stage (x,y)", xstep, ystep)
+
+            tracking_frame_end_time = time.perf_counter()
 
             #   Wait for stage movement to finish to not get motion blur.
             #   This could be done by checking with stage.is_busy().
@@ -994,32 +1049,27 @@ class RuntimeControls(BoxLayout):
             print(f'sleep travel_time {travel_time}')
             time.sleep(travel_time)
 
-            # Compute performance time
-            tracking_frame_end_time = time.perf_counter()
+            computation_time = tracking_frame_end_time - img2_timestamp
 
-            img2_current_timestamp = app.timestamp
-            if img2_timestamp == img2_current_timestamp:
-                # If there is no new picture taken yet, then wait until new one will be taken
-                estimated_next_capture_time = img2_current_timestamp + camera_spf
-                frame_wait_time = max(0, estimated_next_capture_time - tracking_frame_end_time)
+            # Sums up all the waiting time ingredient
+            tracking_process_time = computation_time + travel_time + latency + camera_spf
 
-            else:
-                # If there is already a new picture, we need to distinguish whether it is taken
-                #   during the movement (motion blur), or after the movement is finished.
+            # Roundup to match the image recording cycle
+            estimated_time_to_next_timestamp = ceil(tracking_process_time / camera_spf) * camera_spf
 
-                if tracking_frame_end_time <= img2_current_timestamp:
-                    # The latest image is taken after the movement is finished so it's not blurry
-                    #   and we can continue to next tracking frame
-                    frame_wait_time = 0
+            # Estimate the next image stable image timestamp
+            estimated_next_timestamp = img2_timestamp + estimated_time_to_next_timestamp
 
-                else:
-                    # The image is taken before the movement is finished so it's blurry
-                    #   we should wait until a new frame is captured
-                    estimated_next_capture_time = img2_current_timestamp + camera_spf
-                    frame_wait_time = max(0, estimated_next_capture_time - tracking_frame_end_time)
-            
-            print(f'sleep frame_wait_time {frame_wait_time}')
-            time.sleep(frame_wait_time)
+            # We have already spend the time to compute tracking, so deduct it
+            waiting_time = estimated_time_to_next_timestamp - computation_time
+
+            lastTimeStamp = img2_timestamp
+
+            time.sleep(waiting_time)
+
+        
+        # Wait until all images are saved
+        savingthreadpool.shutdown(wait= True)
         
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
