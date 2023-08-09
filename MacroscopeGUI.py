@@ -1046,8 +1046,6 @@ class RuntimeControls(BoxLayout):
             travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
             travel_time = travel_dist / travel_speed        # 1e-6 / 1e-3 = 1e-3
             travel_time *= 1e-3
-            print(f'sleep travel_time {travel_time}')
-            time.sleep(travel_time)
 
             computation_time = tracking_frame_end_time - img2_timestamp
 

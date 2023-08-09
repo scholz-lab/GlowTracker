@@ -238,9 +238,17 @@ class Stage:
             self.state.isMoving_z = False
 
 
-    def get_position(self, unit = 'mm', isAsync = True) -> Vec3 | None:
-        """Get the current position of the stage for all axes."""
-        # print('Stage::get_position()')
+    def get_position(self, unit: str = 'mm', isAsync: bool = True) -> Vec3 | None:
+        """Get the current position of the stage for all axes.
+
+        Args:
+            unit (str, optional): Unit to get position in. Defaults to 'mm'.
+            isAsync (bool, optional): Is running in async mode. Defaults to True.
+
+        Returns:
+            pos (Vec3 | None): Position. Return None if the execution is unsuccessful.
+        """
+
         # TODO: Investigate slowness
         if self.connection is None:
             return None
