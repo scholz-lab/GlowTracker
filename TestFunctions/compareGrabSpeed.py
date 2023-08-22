@@ -43,7 +43,6 @@ def grabStreamLatestImages_10_buffer(camera: pylon.InstantCamera):
 if __name__ == '__main__':
 
     # Init camera
-
     camera = pylon.InstantCamera(
         pylon.TlFactory.GetInstance().CreateFirstDevice())
 
@@ -56,11 +55,48 @@ if __name__ == '__main__':
         camera.ChunkSelector = cf
         camera.ChunkEnable = True
     
+    # Specify FPS and Exposure 
+    #   FPS
     FPS = 60
-    SPF = 1/FPS * 1e6 # in micro second unit
-    camera.ExposureTime.SetValue( SPF )
+    camera.AcquisitionFrameRateEnable = True
+    camera.AcquisitionFrameRate = float(FPS)
 
+    #   Exposure
+    SPF = 1/FPS
+    exposureTime = SPF/2 * 1e6 # in micro second unit
+    camera.ExposureTime.SetValue( exposureTime )
+
+    # #   Image ROI
+    # #       Set the width, height to minimum of the camera model acA3088-57um
+    # camera.Width.SetValue(376)
+    # camera.Height.SetValue(320)
+    # #       Set the offset to 0
+    # camera.OffsetX.SetValue(0)
+    # camera.OffsetY.SetValue(0)
+
+
+    # Exposure Time: Duration of sensor exposed to light
+    print(f'Exposure= {camera.ExposureTime.GetValue()}')
+
+    # Sensor Readout Time (SRT): Amount of time to transfer from sensor to camera buffer.
+    #   Q: Is the Sensor Readout Time bound to Exposure Time, Acquisition Frame Rate, or a hardware constant?
+    #   A: Sensor Readout Time isn't affected by Exposure Time or Acquisition Frame Rate. 
+    #       It is affected by ROI, Binning, Decimation, etc.
+    print(f'Sensor Readout Time= {camera.SensorReadoutTime.GetValue()}');
+    
+    # Acquisition Frames Per Seconds: User specified maximum amount of frames that are able to be gathered in a second
+    print(f'Acquisition FPS= {camera.AcquisitionFrameRate.GetValue()}')
+    
+    # Resulting FPS: Estimated FPS with the current camera setting.
+    print(f'Resulting FPS= {camera.ResultingFrameRate.GetValue()}')
+
+    # Sample size
     N = 100
+
+    # Wait time for testing grabbing time with external wait
+    resultingFPS = camera.ResultingFrameRate.GetValue()
+    resultingSPF = 1/resultingFPS
+    waitTime = resultingSPF * 10
 
     # 
     # Time Grab One perf
@@ -78,7 +114,7 @@ if __name__ == '__main__':
     
     grabOneAvgTime /= N
 
-    print(f'GrabOne AvgTime: {grabOneAvgTime}')
+    print(f'GrabOne AvgTime= {grabOneAvgTime}')
 
     # 
     # Time Single Grab perf
@@ -100,7 +136,7 @@ if __name__ == '__main__':
     
     singleGrabAvgTime /= N
     
-    print(f'Single Grab Avg Time: {singleGrabAvgTime}')
+    print(f'Single Grab Avg Time= {singleGrabAvgTime}')
 
     # 
     # Time Grab Stream: One-by-One 1 frame buffer
@@ -123,7 +159,7 @@ if __name__ == '__main__':
 
     grabStreamOnebyOne_1_buffer_AvgTime /= N
     
-    print(f'Grab Stream: One-by-One 1 buffer Avg Time: {grabStreamOnebyOne_1_buffer_AvgTime}')
+    print(f'Grab Stream: One-by-One 1 buffer Avg Time= {grabStreamOnebyOne_1_buffer_AvgTime}')
 
     # 
     # Time Grab Stream: One-by-One 10 frame buffer
@@ -146,7 +182,7 @@ if __name__ == '__main__':
     
     grabStreamOnebyOne_10_buffer_AvgTime /= N
     
-    print(f'Grab Stream: One-by-One 10 buffers Avg Time: {grabStreamOnebyOne_10_buffer_AvgTime}')
+    print(f'Grab Stream: One-by-One 10 buffers Avg Time= {grabStreamOnebyOne_10_buffer_AvgTime}')
 
 
     # 
@@ -170,7 +206,7 @@ if __name__ == '__main__':
     
     grabStreamLatestImageOnly_AvgTime /= N
     
-    print(f'Grab Stream: Latest Image Only Avg Time: {grabStreamLatestImageOnly_AvgTime}')
+    print(f'Grab Stream: Latest Image Only Avg Time= {grabStreamLatestImageOnly_AvgTime}')
 
     # 
     # Time Grab Stream: One-by-One 1 frame buffer
@@ -193,7 +229,7 @@ if __name__ == '__main__':
 
     grabStreamLatestImages_1_buffer_AvgTime /= N
     
-    print(f'Grab Stream: Latest Images 1 buffer Avg Time: {grabStreamLatestImages_1_buffer_AvgTime}')
+    print(f'Grab Stream: Latest Images 1 buffer Avg Time= {grabStreamLatestImages_1_buffer_AvgTime}')
 
     # 
     # Time Grab Stream: One-by-One 10 frame buffer
@@ -216,7 +252,7 @@ if __name__ == '__main__':
 
     grabStreamLatestImages_10_buffer_AvgTime /= N
     
-    print(f'Grab Stream: Latest Images 10 buffers Avg Time: {grabStreamLatestImages_10_buffer_AvgTime}')
+    print(f'Grab Stream: Latest Images 10 buffers Avg Time= {grabStreamLatestImages_10_buffer_AvgTime}')
 
 
     # Close

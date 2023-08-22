@@ -91,7 +91,7 @@ def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.nda
             if grabResult.GrabSucceeded():
                 # conversion_factor = 1e6  # for conversion in ms
                 img = grabResult.Array
-                # time = round(grabResult.TimeStamp/conversion_factor, 1)
+                # timeStamp = round(grabResult.TimeStamp/conversion_factor, 1)
                 timeStamp = time.perf_counter()
                 grabResult.Release()
                 return True, img, timeStamp

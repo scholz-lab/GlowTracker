@@ -324,6 +324,9 @@ class Stage:
     
     def is_busy(self):
         """report status"""
+        # TODO: Refactor device_list = self.connection.detect_devices() into self property
+        # self.connection.detect_devices() took about ~1.5 sec which is extreamly long.
+        # The loopchecking device.all_axes.is_busy() also spends roughly the same time.
         if self.connection is not None:
             device_list = self.connection.detect_devices()
             for device in device_list:

@@ -204,7 +204,7 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
     
     h,w = diff.shape
     # reduced image size
-    print('image shape after binning', diff.shape)
+    # print('image shape after binning', diff.shape)
     # return early if there was no substantial change in the image
     if np.sum(np.abs(diff)>threshold) < area/bin_factor:
         return 0,0
@@ -262,7 +262,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
     h,w = img1_sm.shape
     # reduced image size
-    print('image shape after binning',h,w)
+    # print('image shape after binning',h,w)
     # get cms
     h,w = img1_sm.shape
     
@@ -308,7 +308,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-    print(xmin, xmax, ymin, ymax)
+    # print(xmin, xmax, ymin, ymax)
     img1_sm = img1[ymin:ymax, xmin:xmax]
         
     # reduce image size
@@ -316,7 +316,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
     h,w = img1_sm.shape
     # reduced image size
-    print('image shape after binning',h,w)
+    # print('image shape after binning',h,w)
 
     # get cms
     h,w = img1_sm.shape
@@ -346,5 +346,5 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.plot(xc, yc, 'ro')
         plt.colorbar()
 
-    print(yc, xc)
+    # print(yc, xc)
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor

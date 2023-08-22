@@ -51,7 +51,7 @@ from skimage.io import imsave
 #from pypylon import genicam
 from typing import Tuple
 from concurrent.futures import ThreadPoolExecutor
-from math import ceil, modf
+import math
 
 # get the free clock (more accurate timing)
 #Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -630,7 +630,9 @@ class RecordButtons(BoxLayout):
         """
         app = App.get_running_app()
         # set up grabbing with recording settings here
-        fps = app.config.getfloat('Experiment', 'framerate')
+        # fps = app.config.getfloat('Experiment', 'framerate')
+        fps = app.root.ids.leftcolumn.ids.camprops.framerate
+        
         nframes = app.config.getint('Experiment', 'nframes')
         buffersize = app.config.getint('Experiment', 'buffersize')
         # get cropping
@@ -666,8 +668,8 @@ class RecordButtons(BoxLayout):
             # trigger a buffer update
             self.buffertrigger()
             if isSuccess:
-                print('dt: ', timestamp-app.timestamp)
-                print('(x,y,z): ', app.coords)
+                # print('dt: ', timestamp-app.timestamp)
+                # print('(x,y,z): ', app.coords)
                 
                 # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
@@ -976,14 +978,16 @@ class RuntimeControls(BoxLayout):
             # and doesn't have the same priority, it could be the case that
             # one thread get executed more than the other and the estimated time
             # became inaccurate.
+            wait_time = 0
             if estimated_next_timestamp is not None:
                 
                 img2_timestamp = app.timestamp
                 diff_estimated_time = estimated_next_timestamp - img2_timestamp
-                epsilon = camera_spf / 5
-                # If the estimated time is approximately the same as image timestamp
-                # then it's ok to use the current image
-                if abs(diff_estimated_time) < epsilon:
+
+                # If the estimated time is approximately close to the image timestamp
+                # then it's ok to use the current image. The epsilon in this case is 10% of the camera exposure time
+                epsilon = camera_spf / 10
+                if abs(diff_estimated_time)/camera_spf < 0.1:
                     pass
                 else:
                     # If the estimated time is less than the current time
@@ -996,15 +1000,20 @@ class RuntimeControls(BoxLayout):
                         current_time = time.perf_counter()
 
                         diff_time_factor = (current_time - img2_timestamp) / camera_spf
-                        fractional_part, integer_part = modf(diff_time_factor)
+                        fractional_part, integer_part = math.modf(diff_time_factor)
 
                         wait_time = camera_spf * ( 1.0 - fractional_part )
 
                         time.sleep(wait_time)
-            
+            else:
+                img2_timestamp = app.timestamp
+                estimated_next_timestamp = app.timestamp
+
             # Get the latest image
             img2 = app.lastframe
             img2_timestamp = app.timestamp
+
+            tracking_frame_start_time = time.perf_counter()
 
             # If prev frame is empty then use the same as current
             if app.prevframe is None:
@@ -1038,7 +1047,7 @@ class RuntimeControls(BoxLayout):
 
             #   Wait for stage movement to finish to not get motion blur.
             #   This could be done by checking with stage.is_busy().
-            #   However, that function call is very costly (~50ms) 
+            #   However, that function call is very costly (~3 secs) 
             #   and is not good for loop checking.
             #   So we are going to just estimate it here.
             #   Compute distance, get velocity, estimate translation time.
@@ -1047,13 +1056,13 @@ class RuntimeControls(BoxLayout):
             travel_time = travel_dist / travel_speed        # 1e-6 / 1e-3 = 1e-3
             travel_time *= 1e-3
 
-            computation_time = tracking_frame_end_time - img2_timestamp
+            computation_time = tracking_frame_end_time - tracking_frame_start_time
 
             # Sums up all the waiting time ingredient
             tracking_process_time = computation_time + travel_time + latency + camera_spf
 
             # Roundup to match the image recording cycle
-            estimated_time_to_next_timestamp = ceil(tracking_process_time / camera_spf) * camera_spf
+            estimated_time_to_next_timestamp = math.ceil(tracking_process_time / camera_spf) * camera_spf
 
             # Estimate the next image stable image timestamp
             estimated_next_timestamp = img2_timestamp + estimated_time_to_next_timestamp
