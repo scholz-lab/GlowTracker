@@ -958,7 +958,7 @@ class RuntimeControls(BoxLayout):
         """Tracking function to be running inside a thread
         """
         app = App.get_running_app()
-        stage = app.stage
+        stage: Stage = app.stage
         camera = app.camera
 
         # Compute second per frame to determine the lower bound waiting time
@@ -1051,10 +1051,12 @@ class RuntimeControls(BoxLayout):
             #   and is not good for loop checking.
             #   So we are going to just estimate it here.
             #   Compute distance, get velocity, estimate translation time.
-            travel_speed = 20                               # in milli meter per sec : 1e-3
+
+            #   Because x and y axis travel independently, the speed that we have to wait 
+            #       is the maximum between the two.
             travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
-            travel_time = travel_dist / travel_speed        # 1e-6 / 1e-3 = 1e-3
-            travel_time *= 1e-3
+            travel_time = stage.estimateTravelTime(travel_dist * 1e-3)
+
 
             computation_time = tracking_frame_end_time - tracking_frame_start_time
 

@@ -1,10 +1,10 @@
 import asyncio
 from zaber_motion import Library, Units, Measurement, MotionLibException
+from zaber_motion.units import units_from_literals
 from zaber_motion.ascii import Connection, AlertEvent, AllAxes, Axis
 from dataclasses import dataclass
-
-from typing import Tuple, TypeAlias
-
+import math
+from typing import List, Tuple, TypeAlias
 from enum import Enum
 
 # Declare common type
@@ -41,7 +41,8 @@ class Stage:
         if connection is not None:
             self.connection: Connection = connection
             self.assign_axes()
-            self.set_maxspeed(speed = 20)
+            self.maxspeed = self.set_maxspeed(20, Units.VELOCITY_MILLIMETRES_PER_SECOND)
+            self.accel = self.set_accel(60, Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED)
         
         self.state = StageState()
             
@@ -92,19 +93,68 @@ class Stage:
             self.no_axes = 3
 
 
-    def set_maxspeed(self, speed = 20):
-        if self.connection is not None:
-            if self.no_axes ==3:
-                for ax in [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]:
-                    ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                    speed = ax.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                    print("Maximum speed [mm/s]:", speed)
-            elif self.no_axes == 2:
-                for ax in [self.connection.axis_x, self.connection.axis_y]:
-                    ax.settings.set("maxspeed", speed, Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                    speed = ax.settings.get("maxspeed", Units.VELOCITY_MILLIMETRES_PER_SECOND)
-                    print("Maximum speed [mm/s]:", speed)
+    def set_maxspeed(self, maxspeed: float = 20.0, unit: Units = Units.VELOCITY_MILLIMETRES_PER_SECOND) -> float:
+        """Set maximum speed to every axes.
+
+        Args:
+            speed (float, optional): maximum speed. Defaults to 20.0.
+            unit (Units, optional): unit of the maximum speed. Defaults to Units.VELOCITY_MILLIMETRES_PER_SECOND.
+
+        Returns:
+            maxspeed (float): the device returned maximum speed, indicating the actual value it is set to
+        """
+
+        if self.connection is None:
+            return
+
+        axes: List[Axis] = []
+        
+        if self.no_axes == 2:
+            axes = [self.connection.axis_x, self.connection.axis_y]
+        elif self.no_axes == 3:
+            axes = [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]
+        
+        for axis in axes:
+            # Set axis max speed
+            axis.settings.set("maxspeed", maxspeed, unit)
+
+            # Retrieve actual axis max speed
+            self.maxspeed = axis.settings.get("maxspeed", unit)
+            print(f'Maximum speed: {self.maxspeed}[{units_from_literals(unit)}]')
             
+        return self.maxspeed
+    
+
+    def set_accel(self, accel: float = 60, unit: Units = Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED) -> float:
+        """Set acceleration to every axes.
+
+        Args:
+            accel (float, optional): acceleration. Defaults to 20.0.
+            unit (Units, optional): unit of the acceleration. Defaults to Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED.
+
+        Returns:
+            accel (float): the device returned acceleration, indicating the actual value it is set to
+        """
+        if self.connection is None:
+            return
+
+        axes: List[Axis] = []
+        
+        if self.no_axes == 2:
+            axes = [self.connection.axis_x, self.connection.axis_y]
+        elif self.no_axes == 3:
+            axes = [self.connection.axis_x, self.connection.axis_y, self.connection.axis_z]
+        
+        for axis in axes:
+            # Set axis acceleration
+            axis.settings.set("accel", accel, unit)
+
+            # Retrieve actual axis acceleration 
+            self.accel = axis.settings.get("accel", unit)
+            print(f'Acceleration: {self.accel}[{units_from_literals(unit)}]')
+
+        return self.accel
+
 
     #  Stage homing
     def home_stage(self):
@@ -333,3 +383,60 @@ class Stage:
                 if device.all_axes.is_busy():#wait_until_idle =False)
                     return True
         return False
+    
+    
+    def estimateTravelTime( self, dist: float ) -> float:
+        """Estimate the travel time with assumption of 0 acceleration ramping time.
+        The acceleration ramping time is a feture to set the acceleration to a linear function
+        instead of a constant value, which makes the velocity become a smooth curve (quadratic)
+        instead of a linear line, which makes reduce motion jerkness.
+            However, it is a bit more tricky to compute an estimated time with such a profile,
+        and since 0 acceleration ramp time is the default setting, we will focus only in this case.
+        https://www.zaber.com/protocol-manual#topic_setting_motion_accel_ramptime
+            In the case of no acceleration time, the velocity function is a linear pice-wise 
+        functino consist of 3 parts: ramp-up (increase velocity), stable (stable at maximum velocity),
+        and ramp-down. Which forms a trapezoid shape.
+            By Zaber's design, the acceleration when ramping up and ramping down are scalar value
+        with the same size but in an opposite direction, described by 'motion.accelonly'
+        and 'motion.decelonly' respectively
+        (https://www.zaber.com/protocol-manual?device=X-LSM150A&peripheral=N%2FA&version=7.34&protocol=ASCII#topic_setting_motion).
+        This resulting in a vertically symmetric trapezoid shape (i.e. isosceles trapezoid),
+        which we can derive an estimated travel time (x-axis in the velocity graph) which 
+        is the width of the shape by the given acceleration and distance (area of the graph).
+            However, in the case where the travelling speed did not get ramp up fast enough to
+        reach the maximum speed before started to slowing down, the shape becomes a triangle,
+        which simplifies the computation by a bit, but will have a different closed-form solution.
+
+            Unit of the return value depends on the unit of the inputs. If the inputs
+        have same exponential unit e.g. accel: mm/s^2, dist: mm, maxspeed: mm/s, the
+        resulting output will be in the second unit (s). Otherwise, please handle it
+        accordingly.
+        
+        Args:
+            dist (float): travel distance
+
+        Returns:
+            time (float): estimated travel time
+        """
+        pass
+
+        # Compute minimum distance to reach max velocity
+        dist_to_reach_v_max = self.maxspeed*self.maxspeed / self.accel
+
+        estimated_travel_time = 0
+
+        if dist <= dist_to_reach_v_max:
+            # Isosceles Triangle shape
+            estimated_travel_time = 2.0 * math.sqrt( dist / self.accel )
+            
+        else:
+            # Isosceles Trapezoid shape
+            time_ramp_up = self.maxspeed / self.accel
+
+            dist_travel_at_vel_max = dist - (self.maxspeed * self.maxspeed / self.accel)
+
+            time_travel_at_vel_max = dist_travel_at_vel_max / self.maxspeed
+
+            estimated_travel_time = 2.0 * time_ramp_up + time_travel_at_vel_max
+        
+        return estimated_travel_time
