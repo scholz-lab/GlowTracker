@@ -45,6 +45,7 @@ import time
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
+from pypylon import pylon
 from skimage.io import imsave
 #import cv2
 #from pypylon import pylon
@@ -299,11 +300,6 @@ class RightColumn(BoxLayout):
             # update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
             self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
-
-            # calibrate camera latency
-            latency = basler.estimateCamPipelineLatency(camera)
-            print(f'Estimated camera latency: {latency}')
-            app.config.set('Camera', 'latency', latency)
 
             # save configs
             app.config.write()
@@ -630,7 +626,6 @@ class RecordButtons(BoxLayout):
         """
         app = App.get_running_app()
         # set up grabbing with recording settings here
-        # fps = app.config.getfloat('Experiment', 'framerate')
         fps = app.root.ids.leftcolumn.ids.camprops.framerate
         
         nframes = app.config.getint('Experiment', 'nframes')
@@ -908,8 +903,9 @@ class RuntimeControls(BoxLayout):
         self.cropY = 0
 
 
-    def startTracking(self):
-
+    def startTracking(self) -> None:
+        """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop
+        """
         app = App.get_running_app()
         stage = app.stage
         
@@ -959,7 +955,7 @@ class RuntimeControls(BoxLayout):
         """
         app = App.get_running_app()
         stage: Stage = app.stage
-        camera = app.camera
+        camera: pylon.InstantCamera = app.camera
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
@@ -967,7 +963,6 @@ class RuntimeControls(BoxLayout):
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
-        latency = app.config.getfloat('Camera', 'latency')
 
         estimated_next_timestamp: float | None = None
 
@@ -1020,7 +1015,6 @@ class RuntimeControls(BoxLayout):
                 
             # Extract worm position
             if mode=='Diff':
-                # mode: difference image
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
@@ -1053,40 +1047,36 @@ class RuntimeControls(BoxLayout):
             #   Delay from receing the image in recording and tracking it
             delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_timestamp
 
-            # Time take to compute tracking
+            #   Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
 
-            # Communication delay from host to stage is 20 ms
+            #   Communication delay from host to stage is 20 ms
             communication_delay = 20e-3 
 
             #   Travel time
-            #   Because x and y axis travel independently, the speed that we have to wait 
+            #       Because x and y axis travel independently, the speed that we have to wait 
             #       is the maximum between the two.
             max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
             stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
 
-            # Sums up all the waiting time ingredient
+            #   Sums up all the waiting time ingredient
             tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
 
-            # Compute the waiting time to reach the next receive image
+            #   Compute the waiting time to reach the next receive image
             fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
             time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
 
-            # Sums up the total time we need to wait, which are:
-            #   communication delay
-            #   + stage travelling time
-            #   + time to receiving the last blurry image
+            #   Sums up the total time we need to wait, which are:
+            #       communication delay
+            #       + stage travelling time
+            #       + time to receiving the last blurry image
             total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
-
-            # We have already spend the time to compute tracking, so deduct it
-            waiting_time = estimated_time_to_next_timestamp - computation_time
 
             estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
 
             # Wait
             time.sleep(total_waiting_time)
 
-        
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
 

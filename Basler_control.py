@@ -181,39 +181,3 @@ def set_framerate(camera, fps):
 def get_shape(camera):
     """return current field of view size."""
     return  camera.Height.GetValue(), camera.Width.GetValue()
-
-
-def estimateCamPipelineLatency(camera: pylon.InstantCamera) -> float:
-    """Estimate the camera latency time i.e. the time since sending capture image signal
-    to the time receiving the result. This is estimated by calling
-    camera.GrabOne() multiple times.
-    This latency includes a single SPF.
-        However, the pipeline latency without SPF (time to travel through the API stack) 
-    is independent of the FPS setting. And this value can be estimated by also calling 
-    camera.StartGrabbing(pylon.GrabStrategy_OneByOne) multiple times and compute 
-    the average difference between the two.
-
-    Args:
-        camera (pylon.InstantCamera): the camera to be estimated
-
-    Returns:
-        latency (float): pipeline latency of the camera in second unit.
-    """
-    # Estimation sample size
-    N = 50
-
-    # Estimate GrabOne time
-    grabOneAvgTime = 0
-    for i in range(N):
-        beginTime = time.perf_counter()
-
-        grabResult = camera.GrabOne(1000)
-        
-        endTime = time.perf_counter()
-        grabOneAvgTime += endTime - beginTime
-    
-    grabOneAvgTime /= N
-
-    return grabOneAvgTime
-
-        

@@ -9,7 +9,6 @@ def grabOne(camera: pylon.InstantCamera):
 
 
 def singleGrab(camera: pylon.InstantCamera):
-    return
     camera.StartGrabbingMax(1)
     grabResult: pylon.GrabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
     camera.StopGrabbing()
