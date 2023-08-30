@@ -165,7 +165,7 @@ def getStageDistances(deltaCoords, calibrationMatrix):
     input: distance of worm to center in px
     output: distance of worm to center in um
     '''
-    stageDistances = np.dot(calibrationMatrix, deltaCoords)
+    stageDistances = np.matmul(calibrationMatrix, deltaCoords)
     return stageDistances
 
 # functions for tracking

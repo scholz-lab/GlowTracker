@@ -985,8 +985,7 @@ class RuntimeControls(BoxLayout):
                 diff_estimated_time = estimated_next_timestamp - img2_timestamp
 
                 # If the estimated time is approximately close to the image timestamp
-                # then it's ok to use the current image. The epsilon in this case is 10% of the camera exposure time
-                epsilon = camera_spf / 10
+                # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
                 if abs(diff_estimated_time)/camera_spf < 0.1:
                     pass
                 else:
@@ -1050,35 +1049,43 @@ class RuntimeControls(BoxLayout):
             #   However, that function call is very costly (~3 secs) 
             #   and is not good for loop checking.
             #   So we are going to just estimate it here.
-            #   Compute distance, get velocity, estimate translation time.
 
-            #   Because x and y axis travel independently, the speed that we have to wait 
-            #       is the maximum between the two.
-            travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
-            travel_time = stage.estimateTravelTime(travel_dist * 1e-3)
+            #   Delay from receing the image in recording and tracking it
+            delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_timestamp
 
-
+            # Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
 
+            # Communication delay from host to stage is 20 ms
+            communication_delay = 20e-3 
+
+            #   Travel time
+            #   Because x and y axis travel independently, the speed that we have to wait 
+            #       is the maximum between the two.
+            max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
+            stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
+
             # Sums up all the waiting time ingredient
-            tracking_process_time = computation_time + travel_time + latency + camera_spf
+            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
 
-            # Roundup to match the image recording cycle
-            estimated_time_to_next_timestamp = math.ceil(tracking_process_time / camera_spf) * camera_spf
+            # Compute the waiting time to reach the next receive image
+            fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
+            time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
 
-            # Estimate the next image stable image timestamp
-            estimated_next_timestamp = img2_timestamp + estimated_time_to_next_timestamp
+            # Sums up the total time we need to wait, which are:
+            #   communication delay
+            #   + stage travelling time
+            #   + time to receiving the last blurry image
+            total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
 
             # We have already spend the time to compute tracking, so deduct it
             waiting_time = estimated_time_to_next_timestamp - computation_time
 
-            lastTimeStamp = img2_timestamp
+            estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
 
-            time.sleep(waiting_time)
+            # Wait
+            time.sleep(total_waiting_time)
 
-        
-        # Wait until all images are saved
-        savingthreadpool.shutdown(wait= True)
         
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'

@@ -57,13 +57,12 @@ if __name__ == '__main__':
     
     # Specify FPS and Exposure 
     #   FPS
-    FPS = 60
+    FPS = 30
     camera.AcquisitionFrameRateEnable = True
     camera.AcquisitionFrameRate = float(FPS)
 
     #   Exposure
-    SPF = 1/FPS
-    exposureTime = SPF/2 * 1e6 # in micro second unit
+    exposureTime = 30000 # in micro second unit
     camera.ExposureTime.SetValue( exposureTime )
 
     # #   Image ROI
@@ -97,6 +96,29 @@ if __name__ == '__main__':
     resultingFPS = camera.ResultingFrameRate.GetValue()
     resultingSPF = 1/resultingFPS
     waitTime = resultingSPF * 10
+
+    # 
+    # Time Start & Stop Grabbing call
+    # 
+    start_grabbing_time = 0
+    stop_grabbing_time = 0
+    for i in range(N):
+
+        beginTime = time.perf_counter()
+
+        camera.StartGrabbingMax(1)
+
+        midTime = time.perf_counter()
+
+        camera.StopGrabbing()
+
+        endTime = time.perf_counter()
+
+    start_grabbing_time = (midTime - beginTime) / N
+    stop_grabbing_time = (endTime - midTime) / N
+
+    print(f'Starting Grabing Time= {start_grabbing_time}')
+    print(f'Stopping Grabing Time= {stop_grabbing_time}')
 
     # 
     # Time Grab One perf
