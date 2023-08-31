@@ -7,8 +7,14 @@ from skimage.io import imread
 import numpy as np
 import matplotlib.pylab as plt
 import sys
-sys.path.append("..")
-from Macroscope_macros import extractWorms, extractWormsDiff,extractWormsCMS
+import inspect
+
+# Append parent directory
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0, parentdir) 
+
+from Macroscope_macros import extractWorms, extractWormsDiff, extractWormsCMS
 
 single = True
 mode = 'CMS'

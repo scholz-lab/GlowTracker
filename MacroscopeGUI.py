@@ -45,10 +45,14 @@ import time
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
+from pypylon import pylon
 from skimage.io import imsave
 #import cv2
 #from pypylon import pylon
 #from pypylon import genicam
+from typing import Tuple
+from concurrent.futures import ThreadPoolExecutor
+import math
 
 # get the free clock (more accurate timing)
 #Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -271,25 +275,34 @@ class RightColumn(BoxLayout):
         app = App.get_running_app()
         camera = app.camera
         stage = app.stage
+
         if camera is not None and stage is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+            
             # get config values
             stepsize = app.config.getfloat('Calibration', 'step_size')
             stepunits = app.config.get('Calibration', 'step_units')
+
             # run the calibration
             img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
+            
             # calculate calibration from shift
             pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
-            app.config.write()
+            
+            # update calibration matrix
             app.calibration_matrix = macro.genCalibrationMatrix(pxsize, rotation)
-            #update labels shown
+
+            # update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
             self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
+
+            # save configs
+            app.config.write()
 
 
 class AutoCalibration(BoxLayout):
@@ -454,18 +467,28 @@ class RecordButtons(BoxLayout):
         super(RecordButtons, self).__init__(**kwargs)
 
     def snap(self):
-        """single image saved to experiment location."""
+        """save a single image to experiment location."""
         app = App.get_running_app()
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
-        # if we have a camera this will save a single take
-        if app.camera is not None:
-            self.liveviewbutton.state = 'normal'
-            # get image
-            ret, im = basler.single_take(app.camera)
-            if ret:
-                basler.save_image(im,path,snap_filename)
+        
+        if app.camera is None:
+            return
+        
+        # Get an image appropriately acoording to current viewing mode
+        if self.liveviewbutton.state == 'normal':
+            # Call capture an image
+            isSuccess, img = basler.single_take(app.camera)
+            if isSuccess:
+                basler.save_image(img,path,snap_filename)
+                
+        elif self.liveviewbutton.state == 'down':
+            # If currently in live view mode
+            #   then save the current image
+            img = app.lastframe
+            basler.save_image(img,path,snap_filename)
+                
 
 
     def startPreview(self):
@@ -508,8 +531,8 @@ class RecordButtons(BoxLayout):
         print(f'Displaying at {fps} fps')
             
         while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
-            ret, img, timestamp = basler.retrieve_result(camera)
-            if ret:
+            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
+            if isSuccess:
                 #print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 
@@ -533,47 +556,78 @@ class RecordButtons(BoxLayout):
     def startRecording(self):
         app = App.get_running_app()
         camera = app.camera
+
         self.parent.framecounter.value = 0
         self.path = app.root.ids.leftcolumn.savefile
 
         if camera is not None:
             # stop camera if already running 
             self.liveviewbutton.state = 'normal'
-            # schedule immediately
-            self.open_file()
+
+            # open coordinate file
+            self.open_coord_file()
+
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
+            
+            # Create thread pool for image saving
+            self.savingthreadpool = ThreadPoolExecutor(thread_name_prefix='RecordingThreadPool')
+
             # start thread for grabbing and saving images
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
             self.recordthread.start()
+
         else:
             self.recordbutton.state = 'normal'
 
 
     def stopRecording(self):
         camera = App.get_running_app().camera
-        if camera is not None:
-           
-            Clock.unschedule(self.event)
-            # close file a bit later
-            Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
-            if self.recordthread.is_alive():
-                self.savingthread.join()
-                self.recordthread.join()
-            basler.stop_grabbing(camera)
+
+        if camera is None:
+            return
+        
+        # Unschedule self.display() event
+        Clock.unschedule(self.event)
+
+        # Schedule closing coordinate file a bit later
+        Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
+        
+        # Close recording threads 
+        if self.recordthread.is_alive():
+            self.recordthread.join()
+        
+        # Close the saving thread pool
+        self.savingthreadpool.shutdown(wait= True)
+            
+        # Tell camera to stop grabbing mode
+        basler.stop_grabbing(camera)
+        # Reset frame counter
         self.parent.framecounter.value = 0
+        # Call update_buffer() once
         self.buffertrigger()
-        print("Finished recording")
-        # reset scale of image
+        # Reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
-        #self.recordbutton.state = 'normal'
+        # Set button state back to normal
+        self.recordbutton.state = 'normal'
+        
+        print("Finished recording")
 
 
-    def init_recording(self):
+    def init_recording(self) -> Tuple[ int, int, int, int ]:
+        """Initialize recording parameters
+
+        Returns:
+            nframes (int): number of frames to grab
+            buffersize (int): number of buffers to allocate, used for grabbing
+            cropX (int): starting cropping position in X
+            cropY (int): starting cropping position in Y
+        """
         app = App.get_running_app()
         # set up grabbing with recording settings here
-        fps = app.config.getfloat('Experiment', 'framerate')
+        fps = app.root.ids.leftcolumn.ids.camprops.framerate
+        
         nframes = app.config.getint('Experiment', 'nframes')
         buffersize = app.config.getint('Experiment', 'buffersize')
         # get cropping
@@ -600,39 +654,45 @@ class RecordButtons(BoxLayout):
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
-        counter = 0
+        
         # grab and write images
-        while camera is not None and counter <nframes and self.recordbutton.state == 'down':# and camera.GetGrabResultWaitObject().Wait(0):
+        counter = 0
+        while camera is not None and counter <nframes and self.recordbutton.state == 'down':
             # get image
-            ret, img, timestamp = basler.retrieve_result(camera)
+            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
             # trigger a buffer update
             self.buffertrigger()
-            if ret:
-                print('dt: ', timestamp-app.timestamp)
-                print('(x,y,z): ', app.coords)
+            if isSuccess:
+                # print('dt: ', timestamp-app.timestamp)
+                # print('(x,y,z): ', app.coords)
                 
+                # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
-                # write coordinates
+                # write coordinate into file
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-                # write image in thread
-                self.savingthread = Thread(target=self.save,args=(app.lastframe, self.path, self.image_filename.format(self.parent.framecounter.value)), daemon = True)
-                self.savingthread.start()
+
+                # Apply an image saving job into the pool if the pool is not closed yet
+                if not self.savingthreadpool._shutdown_lock.locked():
+                    self.savingthreadpool.submit(
+                        basler.save_image, 
+                        app.lastframe, 
+                        self.path, 
+                        self.image_filename.format(self.parent.framecounter.value)
+                    )
+                
                 # update time and frame counter
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
                 counter += 1
+        
         print(f'Finished recordings {counter} frames.')
         self.buffertrigger()
         self.recordbutton.state = 'normal'
         
-        return 
+        return
 
-    def save(self, img, path, file_name):
-        # save image to file
-        basler.save_image(img, path, file_name)
-        
 
-    def open_file(self, *args):
+    def open_coord_file(self, *args):
         """open coordinate file."""
         # open a file for the coordinates
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
@@ -726,11 +786,12 @@ class PreviewImage(Image):
         if self.collide_point(*touch.pos):
             #if tracking is active and not yet scheduled:
             if rtc.trackingcheckbox.state == 'down' and not rtc.trackingevent:
-                #
+                # Draw a red circle
                 self.captureCircle(touch.pos)
-                # get the image center
-                Clock.schedule_once(lambda dt: rtc.center_image(), 0)
+                # Start tracking procedure
+                Clock.schedule_once(lambda dt: rtc.startTracking(), 0)
                 # remove the circle 
+                # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
@@ -806,7 +867,9 @@ class RuntimeControls(BoxLayout):
         return
 
 
-    def startTracking(self):
+    def trackingButtonCallback(self):
+        """Display tracking instruction popup
+        """
         app = App.get_running_app()
         # schedule a tracking routine
         camera = app.camera
@@ -840,28 +903,37 @@ class RuntimeControls(BoxLayout):
         self.cropY = 0
 
 
-    def center_image(self):
+    def startTracking(self) -> None:
+        """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop
+        """
         app = App.get_running_app()
-        # schedule a tracking routine
         stage = app.stage
-        # smaller FOV for the worm
-        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
-        # move stage based on user input - happens here.
-        #print(self.parent.parent.ids.previewimage.offset)
+        
+        # 
+        # Move stage based on user input - happens here.
+        # 
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         print('Centering image',xstep, ystep, 'um')
+        
         if xstep > minstep:
-            #print("Move stage (x,y)", xstep, ystep)
             stage.move_x(xstep, unit=units, wait_until_idle=True)
         if ystep > minstep:
             stage.move_y(ystep, unit=units, wait_until_idle=True)
-        # set small ROI
-        self.set_ROI(roiX, roiY)
+
         app.coords =  app.stage.get_position()
         print('updated coords')
-        # start the tracking
+        
+        # 
+        # Set smaller FOV for the worm
+        # 
+        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+        self.set_ROI(roiX, roiY)
+        
+        # 
+        # Start the tracking
+        # 
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
@@ -873,36 +945,88 @@ class RuntimeControls(BoxLayout):
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, mode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
-        print('started thread')
+        print('started tracking thread')
         # schedule occasional position check of the stage
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
-    def tracking(self, minstep, units, capture_radius, binning, dark_bg, area, threshold, mode):
-        """thread for tracking"""
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
+        """Tracking function to be running inside a thread
+        """
         app = App.get_running_app()
-        stage = app.stage
-        camera = app.camera
+        stage: Stage = app.stage
+        camera: pylon.InstantCamera = app.camera
+
+        # Compute second per frame to determine the lower bound waiting time
+        camera_spf = 1 / camera.ResultingFrameRate()
+        
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
-        print('Tracking mode:', mode)
-        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down' and not stage.is_busy():
-            t0 = time.time()
+
+        estimated_next_timestamp: float | None = None
+
+        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+
+            # Handling image cycle synchronization.
+            # Because the recording and tracking thread are asynchronous
+            # and doesn't have the same priority, it could be the case that
+            # one thread get executed more than the other and the estimated time
+            # became inaccurate.
+            wait_time = 0
+            if estimated_next_timestamp is not None:
+                
+                img2_timestamp = app.timestamp
+                diff_estimated_time = estimated_next_timestamp - img2_timestamp
+
+                # If the estimated time is approximately close to the image timestamp
+                # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
+                if abs(diff_estimated_time)/camera_spf < 0.1:
+                    pass
+                else:
+                    # If the estimated time is less than the current time
+                    # then it is also ok to use the current image
+                    if estimated_next_timestamp < img2_timestamp:
+                        pass
+                    # If the estimated time is more than the current image timestamp
+                    # then compute the estimated next cycle time and wait
+                    else:
+                        current_time = time.perf_counter()
+
+                        diff_time_factor = (current_time - img2_timestamp) / camera_spf
+                        fractional_part, integer_part = math.modf(diff_time_factor)
+
+                        wait_time = camera_spf * ( 1.0 - fractional_part )
+
+                        time.sleep(wait_time)
+            else:
+                img2_timestamp = app.timestamp
+                estimated_next_timestamp = app.timestamp
+
+            # Get the latest image
             img2 = app.lastframe
+            img2_timestamp = app.timestamp
+
+            tracking_frame_start_time = time.perf_counter()
+
+            # If prev frame is empty then use the same as current
             if app.prevframe is None:
                 app.prevframe = img2
-            # difference image
+                
+            # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            
+            # Compute relative distancec in each axis
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
             ystep *= scale
             xstep *= scale
-                # getting stage coord is slow so we will interpolate from movements
+
+            # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
@@ -911,9 +1035,49 @@ class RuntimeControls(BoxLayout):
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 app.prevframe = img2
-            print("Move stage (x,y)", xstep, ystep)
-            t1 = time.time()
-            print(f'duration tracking loop (ms): {t1-t0}')
+
+            tracking_frame_end_time = time.perf_counter()
+
+            #   Wait for stage movement to finish to not get motion blur.
+            #   This could be done by checking with stage.is_busy().
+            #   However, that function call is very costly (~3 secs) 
+            #   and is not good for loop checking.
+            #   So we are going to just estimate it here.
+
+            #   Delay from receing the image in recording and tracking it
+            delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_timestamp
+
+            #   Time take to compute tracking
+            computation_time = tracking_frame_end_time - tracking_frame_start_time
+
+            #   Communication delay from host to stage is 20 ms
+            communication_delay = 20e-3 
+
+            #   Travel time
+            #       Because x and y axis travel independently, the speed that we have to wait 
+            #       is the maximum between the two.
+            max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
+            stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
+
+            #   Sums up all the waiting time ingredient
+            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
+
+            #   Compute the waiting time to reach the next receive image
+            fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
+            time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
+
+            #   Sums up the total time we need to wait, which are:
+            #       communication delay
+            #       + stage travelling time
+            #       + time to receiving the last blurry image
+            total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
+
+            estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
+
+            # Wait
+            time.sleep(total_waiting_time)
+
+        # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
 
 
@@ -976,23 +1140,7 @@ class RuntimeControls(BoxLayout):
     def reset_ROI(self):
         app = App.get_running_app()
         camera = app.camera
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
-       
-        if rec == 'down':
-            #basler.stop_grabbing(camera)
-            rec = 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_resetROI(camera)
-            
-        elif disp == 'down':
-            #basler.stop_grabbing(camera)
-            disp= 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_resetROI(camera)
-            disp = 'down'
-
-
+        basler.cam_resetROI(camera)
 
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -1263,18 +1411,21 @@ class MacroscopeApp(App):
         if self.stage is None:
             return
         
+        # Movement key up
+        #   Call the coresponding axis to stop and update te stage position
         if key == 275 or key == 276:
             self.stage.stop(stopAxis= AxisEnum.X)
+            self.coords = self.stage.get_position()
 
         elif key == 273 or key == 274:
             self.stage.stop(stopAxis= AxisEnum.Y)
+            self.coords = self.stage.get_position()
 
         elif key == 280 or key == 281:
             self.stage.stop(stopAxis= AxisEnum.Z)
+            self.coords = self.stage.get_position()
 
-        # Update current position
-        self.coords = self.stage.get_position()
-        print(self.coords)
+        print(f'Stage position: {self.coords}')
 
 
     def unbind_keys(self):
