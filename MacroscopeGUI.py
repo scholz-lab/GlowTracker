@@ -1180,7 +1180,11 @@ class Connections(BoxLayout):
         print('connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
-        stage = Stage(port)
+        maxspeed = float( app.config.get('Stage', 'maxspeed') )
+        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
+        accel = float( app.config.get('Stage', 'acceleration') )
+        accel_unit = app.config.get('Stage', 'acceleration_unit')
+        stage = Stage(port, maxspeed, maxspeed_unit, accel, accel_unit)
         
         if stage.connection is None:
             self.stage_connection.state = 'normal'
@@ -1246,7 +1250,7 @@ class MacroscopeApp(App):
                     'Stage', 'vhigh', 'app', val_type=float)
     vlow = ConfigParserProperty(20,
                     'Stage', 'vlow', 'app', val_type=float)
-    unit = ConfigParserProperty('mms',
+    unit = ConfigParserProperty('mm/s',
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
@@ -1288,7 +1292,7 @@ class MacroscopeApp(App):
         Set the default values for the configs sections.
         """
         config.read('macroscope.ini')
-        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'ums', 'stage_limit_x':155})
+        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'um/s', 'stage_limit_x':155})
         #config.setdefaults('Experiment', {'exppath':155})
 
 

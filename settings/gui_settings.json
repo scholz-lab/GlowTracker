@@ -29,7 +29,7 @@
         "desc": "micrometer/sec or millimeter/sec",
         "section": "Stage",
         "key": "speed_unit",
-        "options": ["mms", "ums"]
+        "options": ["mm/s", "um/s"]
     },
     {
         "type": "bool",
@@ -58,6 +58,36 @@
         "desc": "Move stage to these coordinates (mm)",
         "section": "Stage",
         "key": "start_loc"
+    },
+    {
+        "type": "numeric",
+        "title": "Stage maxspeed",
+        "desc": "Set the maximum stage speed",
+        "section": "Stage",
+        "key": "maxspeed"
+    },
+    {
+        "type": "options",
+        "title": "Stage maxspeed units",
+        "desc": "micrometer/sec or millimeter/sec",
+        "section": "Stage",
+        "key": "maxspeed_unit",
+        "options": ["mm/s", "um/s"]
+    },
+    {
+        "type": "numeric",
+        "title": "Stage acceleration",
+        "desc": "Set the stage acceleration",
+        "section": "Stage",
+        "key": "acceleration"
+    },
+    {
+        "type": "options",
+        "title": "Stage acceleration units",
+        "desc": "micrometer/sec^2 or millimeter/sec^2",
+        "section": "Stage",
+        "key": "acceleration_unit",
+        "options": ["mm/s^2", "um/s^2"]
     },
     {
         "type": "title",
@@ -115,7 +145,7 @@
         "desc": "micrometer/sec or millimeter/sec",
         "section": "Autofocus",
         "key": "step_units",
-        "options": ["mms", "ums"]
+        "options": ["mm/s", "um/s"]
     },
     {
         "type": "title",
@@ -134,7 +164,7 @@
         "desc": "micrometer/sec or millimeter/sec",
         "section": "Calibration",
         "key": "step_units",
-        "options": ["mms", "ums"]
+        "options": ["mm/s", "um/s"]
     },
     {
         "type": "title",
