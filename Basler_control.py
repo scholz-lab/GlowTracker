@@ -55,7 +55,7 @@ def single_take(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray ]:
         img (np.ndarray): the resulting image
     """
     camera.StartGrabbingMax(1)
-    isSuccess, img, _ = retrieve_grabbing_result(camera)
+    isSuccess, img, _, _ = retrieve_grabbing_result(camera)
     return isSuccess, img
 
 
@@ -73,7 +73,7 @@ def stop_grabbing(camera):
     camera.StopGrabbing()
 
 
-def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray, int]:
+def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray, int, int]:
     """Retrieve a grabbed image from a camera
 
     Args:
@@ -82,19 +82,19 @@ def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.nda
     Returns:
         isSuccess (bool): boolean indicate if the retrieving is successful
         img (np.array): the retrieved image
-        timeStamp (int): time stamp when the result is received via time.perf_counter()
-
+        timestamp (int): time stamp when the result is captured by camera internal clock
+        retrieveTimestamp (int): time stamp when the result is received via time.perf_counter() 
     """
     if camera.IsGrabbing():
         try:
             grabResult: pylon.GrabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
             if grabResult.GrabSucceeded():
-                # conversion_factor = 1e6  # for conversion in ms
                 img = grabResult.Array
-                # timeStamp = round(grabResult.TimeStamp/conversion_factor, 1)
-                timeStamp = time.perf_counter()
+                retrieveTimestamp = time.perf_counter()
+                conversion_factor = 1e6  # for conversion in ms
+                timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
                 grabResult.Release()
-                return True, img, timeStamp
+                return True, img, timestamp, retrieveTimestamp
                 
         except genicam.RuntimeException as e:
             # Handle a RuntimeException here because
@@ -102,7 +102,7 @@ def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.nda
             #   this thread will still trying to access the camera result
             print(e)
     
-    return False, None, None
+    return False, None, None, None
 
 
 class ImageEventPrinter(pylon.ImageEventHandler):

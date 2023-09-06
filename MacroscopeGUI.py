@@ -531,13 +531,14 @@ class RecordButtons(BoxLayout):
         print(f'Displaying at {fps} fps')
             
         while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
-            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
+            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
             if isSuccess:
                 #print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
                 
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 app.timestamp = timestamp
+                app.retrieveTimestamp = retrieveTimestamp
                 self.parent.framecounter.value += 1
         return
 
@@ -645,7 +646,15 @@ class RecordButtons(BoxLayout):
         return nframes, buffersize, cropX, cropY
 
 
-    def record(self, nframes, buffersize, cropX, cropY):
+    def record(self, nframes: int, buffersize: int, cropX: int, cropY: int) -> None:
+        """Camera recording loop. Start the camera grabbing mode and a loop to repeatedly call retrieving result.
+
+        Args:
+            nframes (int): maximum number of frames to record
+            buffersize (int): number of camera's internal frame buffers
+            cropX (int): cropping position in X
+            cropY (int): cropping position in Y
+        """
         app = App.get_running_app()
         camera = app.camera
         stage: Stage = app.stage
@@ -695,7 +704,7 @@ class RecordButtons(BoxLayout):
                 well_start = time.perf_counter()
 
             # get image
-            isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
+            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
             # trigger a buffer update
             self.buffertrigger()
             if isSuccess:
@@ -718,6 +727,7 @@ class RecordButtons(BoxLayout):
                 
                 # update time and frame counter
                 app.timestamp = timestamp
+                app.retrieveTimestamp = retrieveTimestamp
                 self.parent.framecounter.value += 1
                 counter += 1
                 # NEW
@@ -1020,8 +1030,8 @@ class RuntimeControls(BoxLayout):
             wait_time = 0
             if estimated_next_timestamp is not None:
                 
-                img2_timestamp = app.timestamp
-                diff_estimated_time = estimated_next_timestamp - img2_timestamp
+                img2_retrieveTimestamp = app.retrieveTimestamp
+                diff_estimated_time = estimated_next_timestamp - img2_retrieveTimestamp
 
                 # If the estimated time is approximately close to the image timestamp
                 # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
@@ -1030,26 +1040,28 @@ class RuntimeControls(BoxLayout):
                 else:
                     # If the estimated time is less than the current time
                     # then it is also ok to use the current image
-                    if estimated_next_timestamp < img2_timestamp:
+                    if estimated_next_timestamp < img2_retrieveTimestamp:
                         pass
                     # If the estimated time is more than the current image timestamp
                     # then compute the estimated next cycle time and wait
                     else:
                         current_time = time.perf_counter()
 
-                        diff_time_factor = (current_time - img2_timestamp) / camera_spf
+                        diff_time_factor = (current_time - img2_retrieveTimestamp) / camera_spf
                         fractional_part, integer_part = math.modf(diff_time_factor)
 
                         wait_time = camera_spf * ( 1.0 - fractional_part )
 
                         time.sleep(wait_time)
             else:
-                img2_timestamp = app.timestamp
-                estimated_next_timestamp = app.timestamp
+                img2_retrieveTimestamp = app.retrieveTimestamp
+                estimated_next_timestamp = app.retrieveTimestamp
 
             # Get the latest image
             img2 = app.lastframe
-            img2_timestamp = app.timestamp
+            img2_retrieveTimestamp = app.retrieveTimestamp
+
+            print(f'{app.timestamp}, {app.retrieveTimestamp}')
 
             tracking_frame_start_time = time.perf_counter()
 
@@ -1089,7 +1101,7 @@ class RuntimeControls(BoxLayout):
             #   So we are going to just estimate it here.
 
             #   Delay from receing the image in recording and tracking it
-            delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_timestamp
+            delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_retrieveTimestamp
 
             #   Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
@@ -1224,7 +1236,11 @@ class Connections(BoxLayout):
         print('connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
-        stage = Stage(port)
+        maxspeed = float( app.config.get('Stage', 'maxspeed') )
+        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
+        accel = float( app.config.get('Stage', 'acceleration') )
+        accel_unit = app.config.get('Stage', 'acceleration_unit')
+        stage = Stage(port, maxspeed, maxspeed_unit, accel, accel_unit)
         
         if stage.connection is None:
             self.stage_connection.state = 'normal'
@@ -1290,7 +1306,7 @@ class MacroscopeApp(App):
                     'Stage', 'vhigh', 'app', val_type=float)
     vlow = ConfigParserProperty(20,
                     'Stage', 'vlow', 'app', val_type=float)
-    unit = ConfigParserProperty('mms',
+    unit = ConfigParserProperty('mm/s',
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
@@ -1332,7 +1348,7 @@ class MacroscopeApp(App):
         Set the default values for the configs sections.
         """
         config.read('macroscope.ini')
-        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'ums', 'stage_limit_x':155})
+        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'um/s', 'stage_limit_x':155})
         #config.setdefaults('Experiment', {'exppath':155})
 
 
