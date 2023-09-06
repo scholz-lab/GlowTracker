@@ -648,6 +648,7 @@ class RecordButtons(BoxLayout):
     def record(self, nframes, buffersize, cropX, cropY):
         app = App.get_running_app()
         camera = app.camera
+        stage: Stage = app.stage
         basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
 
         # schedule a display update
@@ -655,9 +656,44 @@ class RecordButtons(BoxLayout):
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
         
+        # NEW
+        rel_positions = [#[0,0,0],
+                         [0,26,0],
+                         [0,26,0],
+                         [0,26,0],
+                         [26,0,0],
+                         [26,0,0],
+                         [0,-26,0],
+                         [-26,0,0],
+                         [0,-26,0],
+                         [26,0,0],
+                         [0,-26,0],
+                         [-26,0,0],
+                         [-26,0,0]
+                         ]
+
+        target_pos_index = 0
+        camera_spf = 1 / camera.ResultingFrameRate()
+        well_record_time = 1 #in sec
+
+        
         # grab and write images
         counter = 0
+        well_counter = 0
         while camera is not None and counter <nframes and self.recordbutton.state == 'down':
+
+            # NEW
+            # Moving to target position
+            if well_counter == 0:
+                target_pos = rel_positions[target_pos_index]
+                print(f'Moving to new relative pos {target_pos}')
+                #stage.move_abs(target_pos, 'mm', wait_until_idle= True)
+                stage.move_rel(target_pos, 'mm', wait_until_idle= True)
+                
+                # Wait for new position image
+                time.sleep(camera_spf)
+                well_start = time.perf_counter()
+
             # get image
             isSuccess, img, timestamp = basler.retrieve_grabbing_result(camera)
             # trigger a buffer update
@@ -684,6 +720,14 @@ class RecordButtons(BoxLayout):
                 app.timestamp = timestamp
                 self.parent.framecounter.value += 1
                 counter += 1
+                # NEW
+                well_counter += 1
+                
+                # NEW
+                if time.perf_counter() >= well_start + well_record_time: # time passed
+                    target_pos_index += 1
+                    target_pos_index = target_pos_index % len(rel_positions)
+                    well_counter = 0
         
         print(f'Finished recordings {counter} frames.')
         self.buffertrigger()
