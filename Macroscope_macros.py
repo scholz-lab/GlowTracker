@@ -28,11 +28,18 @@ def genCalibrationMatrix(pixelsize, rotation):
     output: calibration matrix, translating image distances to stage & correcting rotation
     '''
     # Create calibration matrix (Rotation matrix reordered y, x)
+    # normally rotation = (cos, -sin),(sin, cos)
+    # we instead transpose to get the invers matrix as R-1 = R^T
+    # and we flip rows to accomodate the image convention of y coords first
+    cosval, sinval = math.cos(rotation)*pixelsize, math.sin(rotation)*pixelsize
+
     calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][1] = math.cos(rotation)*pixelsize
-    calibrationMatrix[0][0] = -math.sin(rotation)*pixelsize
-    calibrationMatrix[1][1] = math.sin(rotation)*pixelsize
-    calibrationMatrix[1][0] = math.cos(rotation)*pixelsize
+    calibrationMatrix[0][0] = cosval
+    calibrationMatrix[0][1] = -sinval
+    calibrationMatrix[1][0] = sinval
+    calibrationMatrix[1][1] = cosval
+    print(calibrationMatrix)
+
     return calibrationMatrix
 
 
@@ -41,11 +48,11 @@ def take_calibration_images(stage, camera, stepsize, stepunits):
     # take one image
     _, img1 = basler.single_take(camera)
     # move stage
-    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
+    stage.move_rel((stepsize,0,0), stepunits, wait_until_idle = True)
     # take another one
     _, img2 = basler.single_take(camera)
     # undo stage motion
-    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
+    stage.move_rel((-stepsize,0,0), stepunits, wait_until_idle = True)
     return img1, img2
 
 
@@ -58,12 +65,13 @@ def getCalibrationMatrix(im1, im2, stage_step):
     yTranslation = shift[0]
     print(shift, stage_step)
     # Length translation
-    xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
-    yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
+    #xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
+    #yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
     # Rotation angle - image angle versus stage motion 
     # (45 degrees - both axes move the same amount)
-    rotation = math.atan2(xTranslation, yTranslation) - math.pi/4 
-    return 0.5*(xPixelSize+yPixelSize), rotation
+    rotation = math.atan2(yTranslation, xTranslation)
+    stage_dist = stage_step/np.sqrt(xTranslation**2+yTranslation**2)
+    return stage_dist, rotation
         
 
 #%% Autofocus using z axis
