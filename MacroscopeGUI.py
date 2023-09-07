@@ -642,7 +642,7 @@ class RecordButtons(BoxLayout):
 
         # precalculate the filename
         ext = app.config.get('Experiment', 'extension')
-        self.image_filename = timeStamped("basler_{}."+f"{ext}")
+        self.image_filename = timeStamped("basler_{}_{}."+f"{ext}")
         return nframes, buffersize, cropX, cropY
 
 
@@ -666,8 +666,7 @@ class RecordButtons(BoxLayout):
         print(f'Displaying at {fps} fps')
         
         # NEW
-        rel_positions = [#[0,0,0],
-                         [0,26,0],
+        rel_positions = [[0,26,0],
                          [0,26,0],
                          [0,26,0],
                          [26,0,0],
@@ -680,10 +679,16 @@ class RecordButtons(BoxLayout):
                          [-26,0,0],
                          [-26,0,0]
                          ]
+        rel_positions = [[0,26,0],
+                         [0,26,0],
+                         [26,0,0],
+                         [0,-26,0],
+                         [0,-26,0],
+                         [-26,0,0]]
 
         target_pos_index = 0
         camera_spf = 1 / camera.ResultingFrameRate()
-        well_record_time = 1 #in sec
+        well_record_time = (60*5)-5 #in sec
 
         
         # grab and write images
@@ -700,7 +705,7 @@ class RecordButtons(BoxLayout):
                 stage.move_rel(target_pos, 'mm', wait_until_idle= True)
                 
                 # Wait for new position image
-                time.sleep(camera_spf)
+                time.sleep(camera_spf*5)
                 well_start = time.perf_counter()
 
             # get image
@@ -714,7 +719,7 @@ class RecordButtons(BoxLayout):
                 # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 # write coordinate into file
-                self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
+                self.coordinate_file.write(f"{self.parent.framecounter.value} {target_pos_index} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
 
                 # Apply an image saving job into the pool if the pool is not closed yet
                 if not self.savingthreadpool._shutdown_lock.locked():
@@ -722,7 +727,7 @@ class RecordButtons(BoxLayout):
                         basler.save_image, 
                         app.lastframe, 
                         self.path, 
-                        self.image_filename.format(self.parent.framecounter.value)
+                        self.image_filename.format(target_pos_index, self.parent.framecounter.value)
                     )
                 
                 # update time and frame counter
