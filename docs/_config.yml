@@ -3,3 +3,6 @@ description: A minimal websites presenting the macroscopes we created/worked wit
 theme: just-the-docs
 
 url: https://scholz-lab.github.io/macroscopes
+
+logo: "custom_assets/images/logo.png"
+favicon_ico: "cutom_assets/images/favicon.png"
