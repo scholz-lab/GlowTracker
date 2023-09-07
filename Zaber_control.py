@@ -1,5 +1,5 @@
 import asyncio
-from zaber_motion import Library, Units, MotionLibException
+from zaber_motion import Library, Units, MotionLibException, MovementFailedException
 from zaber_motion.units import LITERALS_TO_UNITS, units_from_literals
 from zaber_motion.ascii import Connection, Axis, Device
 from dataclasses import dataclass
@@ -178,8 +178,20 @@ class Stage:
         homes all connected devices & moves axes to starting positions
         necessary if device was disconnected from power source
         '''
-        for device in self.devices:
-            device.all_axes.home(wait_until_idle= True)
+        if self.connection is not None:
+            self.axis_z.home(wait_until_idle= False)
+            self.axis_y.home(wait_until_idle= False)
+            self.axis_x.home(wait_until_idle= True)
+    
+    def wait_until_idle(self) -> None:
+        """Wait until all axes
+        """
+        if self.connection is None:
+            return
+
+        self.axis_x.wait_until_idle()
+        self.axis_y.wait_until_idle()
+        self.axis_z.wait_until_idle()
         
 
     # Stage moving to a given absolute position 
@@ -268,18 +280,21 @@ class Stage:
                     velocity (Vec3, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str, optional): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
-        # Move each axis simultaneously
-        if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
-            self.state.isMoving_x = True
-            self.axis_x.move_velocity(velocity[0], LITERALS_TO_UNITS.get(unit))
-        
-        if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
-            self.state.isMoving_y = True
-            self.axis_y.move_velocity(velocity[1], LITERALS_TO_UNITS.get(unit))
+        try:
+            # Move each axis simultaneously
+            if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
+                self.state.isMoving_x = True
+                self.axis_x.move_velocity(velocity[0], LITERALS_TO_UNITS.get(unit))
+            
+            if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
+                self.state.isMoving_y = True
+                self.axis_y.move_velocity(velocity[1], LITERALS_TO_UNITS.get(unit))
 
-        if self.axis_z is not None and not self.state.isMoving_z and velocity[2] != 0:
-            self.state.isMoving_z = True
-            self.axis_z.move_velocity(velocity[2], LITERALS_TO_UNITS.get(unit))
+            if self.axis_z is not None and not self.state.isMoving_z and velocity[2] != 0:
+                self.state.isMoving_z = True
+                self.axis_z.move_velocity(velocity[2], LITERALS_TO_UNITS.get(unit))
+        except MovementFailedException as e:
+            print(e)
 
 
     def stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> None:

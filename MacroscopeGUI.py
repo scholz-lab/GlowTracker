@@ -51,7 +51,8 @@ from skimage.io import imsave
 #from pypylon import pylon
 #from pypylon import genicam
 from typing import Tuple
-from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.pool import ThreadPool
+from queue import Queue
 import math
 
 # get the free clock (more accurate timing)
@@ -571,10 +572,14 @@ class RecordButtons(BoxLayout):
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
             
-            # Create thread pool for image saving
-            self.savingthreadpool = ThreadPoolExecutor(thread_name_prefix='RecordingThreadPool')
+            # Image data queue to share between recording and saving
+            self.imageQueue = Queue()
 
-            # start thread for grabbing and saving images
+            # Start a thread for saving images
+            self.savingthread = Thread(target=self.imageSavingThread, args= [None,])
+            self.savingthread.start()
+
+            # start a thread for grabbing images
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
             self.recordthread.start()
@@ -595,13 +600,9 @@ class RecordButtons(BoxLayout):
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
         
-        # Close recording threads 
-        if self.recordthread.is_alive():
-            self.recordthread.join()
+        # Close saving threads
+        self.savingthread.join()
         
-        # Close the saving thread pool
-        self.savingthreadpool.shutdown(wait= True)
-            
         # Tell camera to stop grabbing mode
         basler.stop_grabbing(camera)
         # Reset frame counter
@@ -644,7 +645,52 @@ class RecordButtons(BoxLayout):
         ext = app.config.get('Experiment', 'extension')
         self.image_filename = timeStamped("basler_{}."+f"{ext}")
         return nframes, buffersize, cropX, cropY
+    
+    
+    def imageSavingThread(self, numMaxThreads: int | None = None) -> None:
+        """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
 
+        Args:
+            numMaxThreads (int | None, optional): Maximum number of small threads. Defaults to None.
+        """
+
+        def imageSavingThreadWorker(queue):
+
+            # run until there is no more work
+            while True:
+
+                # retrieve one item from the queue
+                queueItem = queue.get()
+
+                # check for signal of no more work
+                if queueItem is not None:
+                    
+                    img, imgPath, imgFileName = queueItem
+                    # Save the image
+                    imsave(os.path.join(imgPath, imgFileName), img, check_contrast=False,  plugin="tifffile")
+                    
+                else:
+                    # put back on the queue for other consumers
+                    queue.put(None)
+                    # shutdown the thread
+                    break
+        
+        
+        # Create a thread pool
+        consumerThreadPool = ThreadPool(processes= numMaxThreads)
+        
+        # Start spawn image saving workers
+        for i in range(consumerThreadPool._processes):
+            consumerThreadPool.apply_async(
+                func= imageSavingThreadWorker, 
+                args= (self.imageQueue,)
+            )
+        
+        # Wait until all workers are done
+        consumerThreadPool.close()
+        consumerThreadPool.join()
+
+        print(f'Finished saving all the images')
 
     def record(self, nframes: int, buffersize: int, cropX: int, cropY: int) -> None:
         """Camera recording loop. Start the camera grabbing mode and a loop to repeatedly call retrieving result.
@@ -666,7 +712,7 @@ class RecordButtons(BoxLayout):
         
         # grab and write images
         counter = 0
-        while camera is not None and counter <nframes and self.recordbutton.state == 'down':
+        while camera is not None and counter < nframes and self.recordbutton.state == 'down':
             # get image
             isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
             # trigger a buffer update
@@ -680,21 +726,21 @@ class RecordButtons(BoxLayout):
                 # write coordinate into file
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
 
-                # Apply an image saving job into the pool if the pool is not closed yet
-                if not self.savingthreadpool._shutdown_lock.locked():
-                    self.savingthreadpool.submit(
-                        basler.save_image, 
-                        app.lastframe, 
-                        self.path, 
-                        self.image_filename.format(self.parent.framecounter.value)
-                    )
-                
+                self.imageQueue.put([
+                    app.lastframe,
+                    self.path, 
+                    self.image_filename.format(self.parent.framecounter.value)
+                ])
+
                 # update time and frame counter
                 app.timestamp = timestamp
                 app.retrieveTimestamp = retrieveTimestamp
                 self.parent.framecounter.value += 1
                 counter += 1
         
+        # Send signal to terminate recording workers
+        self.imageQueue.put(None)
+
         print(f'Finished recordings {counter} frames.')
         self.buffertrigger()
         self.recordbutton.state = 'normal'
@@ -925,7 +971,7 @@ class RuntimeControls(BoxLayout):
         ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
-        print('Centering image',xstep, ystep, 'um')
+        print('Centering image',xstep, ystep, units)
         
         if xstep > minstep:
             stage.move_x(xstep, unit=units, wait_until_idle=True)
@@ -1010,6 +1056,10 @@ class RuntimeControls(BoxLayout):
 
                         time.sleep(wait_time)
             else:
+                # Wait for the stage to finished moving/centering at location in the
+                # first time
+                stage.wait_until_idle()
+
                 img2_retrieveTimestamp = app.retrieveTimestamp
                 estimated_next_timestamp = app.retrieveTimestamp
 
@@ -1017,7 +1067,6 @@ class RuntimeControls(BoxLayout):
             img2 = app.lastframe
             img2_retrieveTimestamp = app.retrieveTimestamp
 
-            print(f'{app.timestamp}, {app.retrieveTimestamp}')
 
             tracking_frame_start_time = time.perf_counter()
 
