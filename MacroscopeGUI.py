@@ -679,6 +679,8 @@ class RecordButtons(BoxLayout):
                          [-26,0,0],
                          [0,26,0],
                          ]
+        
+        well_name = ['A1', 'A2', 'A3', 'A4', 'B4', 'C4', 'C3', 'B3','B2','C2', 'C1', 'B1']
         """
         rel_positions = [[0,26,0],
                          [0,26,0],
@@ -720,7 +722,7 @@ class RecordButtons(BoxLayout):
                 # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 # write coordinate into file
-                self.coordinate_file.write(f"{self.parent.framecounter.value} {target_pos_index} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
+                self.coordinate_file.write(f"{self.parent.framecounter.value} {well_name[target_pos_index]} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
 
                 # Apply an image saving job into the pool if the pool is not closed yet
                 if not self.savingthreadpool._shutdown_lock.locked():
@@ -728,7 +730,7 @@ class RecordButtons(BoxLayout):
                         basler.save_image, 
                         app.lastframe, 
                         self.path, 
-                        self.image_filename.format(target_pos_index, self.parent.framecounter.value)
+                        self.image_filename.format(well_name[target_pos_index], self.parent.framecounter.value)
                     )
                 
                 # update time and frame counter
