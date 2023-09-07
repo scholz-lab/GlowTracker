@@ -727,7 +727,7 @@ class RecordButtons(BoxLayout):
                 self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
 
                 self.imageQueue.put([
-                    app.lastframe,
+                    np.copy(app.lastframe),
                     self.path, 
                     self.image_filename.format(self.parent.framecounter.value)
                 ])
