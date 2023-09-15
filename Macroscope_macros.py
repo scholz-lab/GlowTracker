@@ -60,8 +60,8 @@ def getCalibrationMatrix(im1, im2, stage_step):
     """generate calibration from correlation between two images separated by known stage distance."""
     # Dual color case
     h, w = im1.shape
-    img1_half = im1[:,:w//2]
-    img2_half = im2[:,:w//2]
+    img1_half = im1[:,w//2:]
+    img2_half = im2[:,w//2:]
 
     # calculate the shift using FFT correlation
     # shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    

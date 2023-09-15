@@ -985,7 +985,7 @@ class RuntimeControls(BoxLayout):
         # Set smaller FOV for the worm
         # 
         roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
-        self.set_ROI(roiX, roiY)
+        # self.set_ROI(roiX, roiY)
         
         # 
         # Start the tracking
@@ -1067,6 +1067,10 @@ class RuntimeControls(BoxLayout):
             img2 = app.lastframe
             img2_retrieveTimestamp = app.retrieveTimestamp
 
+
+            # Crop for dual color
+            h, w = img2.shape
+            img2 = img2[:,w//2:]
 
             tracking_frame_start_time = time.perf_counter()
 
