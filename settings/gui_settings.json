@@ -90,6 +90,13 @@
         "options": ["mm/s^2", "um/s^2"]
     },
     {
+        "type": "bool",
+        "title": "Move in image space mode",
+        "desc": "Control the stage movement relative to the image space. Requires calibration.",
+        "section": "Stage",
+        "key": "move_image_space_mode"
+    },
+    {
         "type": "title",
         "title": "Camera"
     },
