@@ -286,17 +286,17 @@ class RightColumn(BoxLayout):
             stepunits = app.config.get('Calibration', 'step_units')
 
             # run the calibration
-            img1, img2 = macro.take_calibration_images(stage, camera, stepsize, stepunits)
+            img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
             
             # calculate calibration from shift
-            pxsize, rotation = macro.getCalibrationMatrix(img1, img2, stepsize)
+            pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
             
             # update calibration matrix
-            app.calibration_matrix = macro.genCalibrationMatrix(pxsize, rotation)
+            app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
 
             # update labels shown
             self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
@@ -968,7 +968,7 @@ class RuntimeControls(BoxLayout):
         # 
         # Move stage based on user input - happens here.
         # 
-        ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.calibration_matrix)
+        ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         print('Centering image',xstep, ystep, units)
@@ -1083,7 +1083,7 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             
             # Compute relative distancec in each axis
-            ystep, xstep = macro.getStageDistances([ystep, xstep], app.calibration_matrix)
+            ystep, xstep = macro.getStageDistances([ystep, xstep], app.imageToStageMat)
             ystep *= scale
             xstep *= scale
 
@@ -1155,7 +1155,7 @@ class RuntimeControls(BoxLayout):
             if len(coords) > 0:
                 print(len(coords))
                 offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
-                ystep, xstep = macro.getStageDistances(offset, app.calibration_matrix)
+                ystep, xstep = macro.getStageDistances(offset, app.imageToStageMat)
                 # getting stage coord is slow so we will interpolate from movements
                 if xstep > minstep:
                     stage.move_x(xstep, unit=units, wait_until_idle = True)
@@ -1332,6 +1332,7 @@ class MacroscopeApp(App):
         self.camera = None
         self.stage: Stage = Stage(None)
 
+
     def build(self):
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
@@ -1340,14 +1341,18 @@ class MacroscopeApp(App):
         # manage xbox input
         Window.bind(on_joy_axis= self.on_controller_input)
         self.stopevent = Clock.create_trigger(lambda dt: self.stage.stop(), 0.1)
-        # load some stuff
-        # other useful features
+
+        # Load and gen transformation matricies
         pixelsize = self.config.getfloat('Camera', 'pixelsize')
         rotation = self.config.getfloat('Camera', 'rotation')
-        self.calibration_matrix = macro.genCalibrationMatrix(pixelsize, rotation)
+        self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
+
+        # Load moveImageSpaceMode
+        self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
+
         return layout
 
-    #
+    
     def build_config(self, config):
         """
         Set the default values for the configs sections.
@@ -1446,29 +1451,42 @@ class MacroscopeApp(App):
         
         if self.stage is None:
             return
-
+        
         print(key, scancode, codepoint, modifier)
 
-        # use arrow key codes here. This might be OS dependent.
         if 'shift' in modifier:
             v = self.vlow
         else:
             v = self.vhigh
         
-        # TODO: Move this direction keymap into a setting file
         direction = {
-            273: (0,-v,0),
-            274: (0,v,0),
-            275: (-v,0,0),
-            276: (v,0,0),
-            280: (0,0,-v),
-            281: (0,0,v)
+            273: (0,v,0),  # up arrow
+            274: (0,-v,0),   # down arrow
+            275: (v,0,0),  # right arrow
+            276: (-v,0,0),   # left arrow
+            280: (0,0,-v),  # page up
+            281: (0,0,v)    # page down
         }
         
         if key not in direction.keys():
             return
         
-        self.stage.start_move(direction[key], self.unit)
+        # Stage movement mode
+        if self.moveImageSpaceMode:
+            move_img_space = direction[key]
+
+            # Translate from image space into stage space
+            translation_vec_img_space = np.array([move_img_space[1], move_img_space[0]], np.float32)
+            translation_vec_stage_space = self.imageToStageRotMat @ translation_vec_img_space
+
+            # Convert back to a 3D tuple
+            translation_vec_stage_space = ( translation_vec_stage_space[1], translation_vec_stage_space[0], move_img_space[2] )
+            
+            self.stage.start_move(translation_vec_stage_space, self.unit)
+        
+        else:
+            # Move 
+            self.stage.start_move(direction[key], self.unit)
 
 
     def _keyup(self, instance, key, scancode) -> None:
@@ -1476,19 +1494,30 @@ class MacroscopeApp(App):
         if self.stage is None:
             return
         
-        # Movement key up
-        #   Call the coresponding axis to stop and update te stage position
-        if key == 275 or key == 276:
-            self.stage.stop(stopAxis= AxisEnum.X)
-            self.coords = self.stage.get_position()
+        # Stopping axis depending on the movement mode
+        if self.moveImageSpaceMode:
+            
+            # TODO: Improve this feature so that we can move in image space simultaneously
+            #   in both X,Y axis. Will require additive velocity movement handling.
+            if key in [273, 274, 275, 276, 280, 281]:
+                self.stage.stop(stopAxis= AxisEnum.ALL)
+                self.coords = self.stage.get_position()
+        
+        else:
+        
+            # Movement key up
+            #   Call the coresponding axis to stop and update te stage position
+            if key == 275 or key == 276:
+                self.stage.stop(stopAxis= AxisEnum.X)
+                self.coords = self.stage.get_position()
 
-        elif key == 273 or key == 274:
-            self.stage.stop(stopAxis= AxisEnum.Y)
-            self.coords = self.stage.get_position()
+            elif key == 273 or key == 274:
+                self.stage.stop(stopAxis= AxisEnum.Y)
+                self.coords = self.stage.get_position()
 
-        elif key == 280 or key == 281:
-            self.stage.stop(stopAxis= AxisEnum.Z)
-            self.coords = self.stage.get_position()
+            elif key == 280 or key == 281:
+                self.stage.stop(stopAxis= AxisEnum.Z)
+                self.coords = self.stage.get_position()
 
         print(f'Stage position: {self.coords}')
 
@@ -1513,16 +1542,24 @@ class MacroscopeApp(App):
 
     def on_config_change(self, config, section, key, value):
         """if config changes, update certain things."""
-        if config is self.config:
-            print('changed config!', section, key)
-            token = (section, key)
-            if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
-                print('updated calibration matrix')
-                pixelsize = self.config.getfloat('Camera', 'pixelsize')
-                rotation= self.config.getfloat('Camera', 'rotation')
-                self.calibration_matrix = macro.genCalibrationMatrix(pixelsize, rotation)
-            if token == ('Experiment', 'exppath'):
-                self.root.ids.leftcolumn.ids.saveloc.text = value
+        if config is not self.config:
+            return
+        
+        print('changed config!', section, key)
+
+        token = (section, key)
+        if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
+            print('updated calibration matrix')
+            pixelsize = self.config.getfloat('Camera', 'pixelsize')
+            rotation= self.config.getfloat('Camera', 'rotation')
+            self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
+        
+        elif token == ('Experiment', 'exppath'):
+            self.root.ids.leftcolumn.ids.saveloc.text = value
+        
+        elif token == ('Stage', 'move_image_space_mode'):
+            # Token is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
+            self.moveImageSpaceMode = bool(int(value))
 
 
     def on_image(self, instance, value):
