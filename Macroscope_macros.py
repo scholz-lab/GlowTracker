@@ -17,68 +17,104 @@ from tifffile import imsave, TiffWriter
 from zaber_motion import Library, Units
 from zaber_motion.ascii import connection
 import Basler_control as basler
+from typing import Tuple
 
 
-#Library.toggle_device_db_store(True)
+def switchXYMat(matXY: np.ndarray) -> np.ndarray:
+    """Modified a 2x2 matrix such that the the multiplication operation 
+    is suitable for a 2D vector of order y,x
+
+    Args:
+        matXY (np.ndarray): A 2x2 matrix
+
+    Returns:
+        np.ndarray: A modified 2x2 matrix with flipped order x,y
+    """    
+    if matXY.shape != (2, 2):
+        return
+    
+    A = matXY[0][0]
+    B = matXY[0][1]
+    C = matXY[1][0]
+    D = matXY[1][1]
+
+    matYX = np.array([
+        [D, C],
+        [B, A]
+    ], matXY.dtype)
+
+    return matYX
 
 
-#%% Stage Calibration
-def genCalibrationMatrix(pixelsize, rotation):
-    '''Calculating calibration matrix from pixelsize and known rotation.
-    output: calibration matrix, translating image distances to stage & correcting rotation
-    '''
-    # Create calibration matrix (Rotation matrix reordered y, x)
-    # normally rotation = (cos, -sin),(sin, cos)
-    # we instead transpose to get the invers matrix as R-1 = R^T
-    # and we flip rows to accomodate the image convention of y coords first
-    cosval, sinval = math.cos(rotation)*pixelsize, math.sin(rotation)*pixelsize
+def genImageToStageMatrix(scale: float, rotation: float) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute trasnformation matrix from image space to stage space using the given rotation angle and scale. Assume only rotation and uniform scaling.
 
-    calibrationMatrix = np.zeros((2,2))
-    calibrationMatrix[0][0] = cosval
-    calibrationMatrix[0][1] = -sinval
-    calibrationMatrix[1][0] = sinval
-    calibrationMatrix[1][1] = cosval
-    print(calibrationMatrix)
+    Args:
+        scale (float): width or height (meter) per pixel
+        rotation (float): rotation angle between the image space and stage space
 
-    return calibrationMatrix
+    Returns:
+        imageToStageMat (np.ndarray): transformation matrix from image space to stage space
+        imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
+    """    
+
+    # Stage to Image. Standard 2D rotation matrix
+    cosval, sinval = math.cos(rotation), math.sin(rotation)
+    stageToImageMat = np.array([
+        [cosval, -sinval],
+        [sinval, cosval]
+    ], np.float32)
+
+    # Stage to Image
+    imageToStageMat = np.linalg.inv( stageToImageMat )
+
+    # switch x,y to y,x
+    imageToStageMat = switchXYMat(imageToStageMat)
+
+    return imageToStageMat * scale, imageToStageMat
 
 
-def take_calibration_images(stage, camera, stepsize, stepunits):
+def takeCalibrationImages(stage, camera, stepsize, stepunits):
     """take two image between a defined move of the camera."""
     # take one image
     _, img1 = basler.single_take(camera)
     # move stage
-    stage.move_rel((stepsize,0,0), stepunits, wait_until_idle = True)
+    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
     # take another one
     _, img2 = basler.single_take(camera)
     # undo stage motion
-    stage.move_rel((-stepsize,0,0), stepunits, wait_until_idle = True)
+    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
     return img1, img2
 
 
-def getCalibrationMatrix(im1, im2, stage_step):
-    """generate calibration from correlation between two images separated by known stage distance."""
-    # Dual color case
-    h, w = im1.shape
-    img1_half = im1[:,w//2:]
-    img2_half = im2[:,w//2:]
+def computeStageScaleAndRotation(im1: np.ndarray, im2: np.ndarray, stage_step: float) -> Tuple[float, float]:
+    """Compute stage rotation and scale from the correlation between two images moved by a known stage distance.
 
-    # calculate the shift using FFT correlation
-    # shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
-    shift = phase_cross_correlation(img1_half, img2_half, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
+    Args:
+        im1 (np.ndarray): first image
+        im2 (np.ndarray): second image, moved by stage step size
+        stage_step (float): stage step size
+
+    Returns:
+        scale (float): ratio between distance in image space and in stage space
+        theta (float): rotation angle from image space to stage space
+    """    
+    #   Calculate the shift using FFT correlation
+    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
     
-    # Generate calibration matrix
-    xTranslation = shift[1]
-    yTranslation = shift[0]
-    print(shift, stage_step)
-    # Length translation
-    #xPixelSize = stage_step/np.abs(xTranslation) # units of um/px
-    #yPixelSize = stage_step/np.abs(yTranslation) # units of um/px
-    # Rotation angle - image angle versus stage motion 
-    # (45 degrees - both axes move the same amount)
-    rotation = math.atan2(yTranslation, xTranslation)
-    stage_dist = stage_step/np.sqrt(xTranslation**2+yTranslation**2)
-    return stage_dist, rotation
+    # Vector of change in the stage space. Measured by phase cross correlation
+    vec_stage_space = -np.array([shift[1], shift[0]], np.float32)
+    vec_stage_space_len = np.linalg.norm(vec_stage_space)
+    
+    # Vector of change expected from the setting
+    vec_image_space = np.array([-stage_step, -stage_step], np.float32)
+    vec_image_space_len = np.linalg.norm(vec_image_space)
+
+    # Assume both vectors have the same origin, compute rotation and scaling difference
+    theta = np.arccos( np.dot(vec_stage_space, vec_image_space) / (vec_stage_space_len * vec_image_space_len) )
+    scale = vec_image_space_len / vec_stage_space_len
+    
+    return scale, theta
         
 
 #%% Autofocus using z axis
@@ -174,13 +210,13 @@ def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor
 #     return yc-h//2, xc-w//2
 
 
-def getStageDistances(deltaCoords, calibrationMatrix):
+def getStageDistances(deltaCoords, imageToStageMat):
     '''
     translates distance of worm to center from px to um
     input: distance of worm to center in px
     output: distance of worm to center in um
     '''
-    stageDistances = np.matmul(calibrationMatrix, deltaCoords)
+    stageDistances = np.matmul(imageToStageMat, deltaCoords)
     return stageDistances
 
 # functions for tracking
