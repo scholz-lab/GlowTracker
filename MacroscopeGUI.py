@@ -290,12 +290,21 @@ class RightColumn(BoxLayout):
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
             
-            # calculate calibration from shift
             # Dual color case
-            h, w = img1.shape
-            img1_half = img1[:,w//2:]
-            img2_half = img2[:,w//2:]
-            pxsize, rotation = macro.computeStageScaleAndRotation(img1_half, img2_half, stepsize)
+            if app.config.getboolean('DualColor', 'dualcolormode'):
+                h, w = img1.shape
+                mainSide = app.config.get('DualColor', 'mainside')
+
+                if mainSide == 'Left':
+                    img1 = img1[:,:w//2]
+                    img2 = img2[:,:w//2]
+
+                elif mainSide == 'Right':
+                    img1 = img1[:,w//2:]
+                    img2 = img2[:,w//2:]
+                
+            # Compute stage scale and rotation from the shift
+            pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
             
@@ -968,28 +977,30 @@ class RuntimeControls(BoxLayout):
         """
         app = App.get_running_app()
         stage = app.stage
-        
-        # 
-        # Move stage based on user input - happens here.
-        # 
-        ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
-        print('Centering image',xstep, ystep, units)
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
-        if xstep > minstep:
-            stage.move_x(xstep, unit=units, wait_until_idle=True)
-        if ystep > minstep:
-            stage.move_y(ystep, unit=units, wait_until_idle=True)
+        if not dualColorMode:
+            # 
+            # Move stage based on user input - happens here.
+            # 
+            ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
+            print('Centering image',xstep, ystep, units)
+            
+            if xstep > minstep:
+                stage.move_x(xstep, unit=units, wait_until_idle=True)
+            if ystep > minstep:
+                stage.move_y(ystep, unit=units, wait_until_idle=True)
 
-        app.coords =  app.stage.get_position()
-        print('updated coords')
+            app.coords =  app.stage.get_position()
+            print('updated coords')
         
-        # 
-        # Set smaller FOV for the worm
-        # 
-        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
-        # self.set_ROI(roiX, roiY)
+            # 
+            # Set smaller FOV for the worm
+            # 
+            roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+            self.set_ROI(roiX, roiY)
         
         # 
         # Start the tracking
@@ -997,12 +1008,12 @@ class RuntimeControls(BoxLayout):
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
-        mode =  app.config.get('Tracking', 'mode')
+        trackingMode =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, mode
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -1019,6 +1030,10 @@ class RuntimeControls(BoxLayout):
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
+
+        # Dual Color mode settings
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
         
         self.trackingevent = True
         app.prevframe = None
@@ -1071,12 +1086,15 @@ class RuntimeControls(BoxLayout):
             img2 = app.lastframe
             img2_retrieveTimestamp = app.retrieveTimestamp
 
+            tracking_frame_start_time = time.perf_counter()
 
             # Crop for dual color
-            h, w = img2.shape
-            img2 = img2[:,w//2:]
-
-            tracking_frame_start_time = time.perf_counter()
+            if dualColorMode:
+                h, w = img2.shape
+                if mainSide == 'Left':
+                    img2 = img2[:,:w//2]
+                elif mainSide == 'Right':
+                    img2 = img2[:,w//2:]
 
             # If prev frame is empty then use the same as current
             if app.prevframe is None:
