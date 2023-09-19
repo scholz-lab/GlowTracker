@@ -398,13 +398,20 @@ MainWindow:
     CutBoxLayout:
         id: stencil
         size_hint: (1, 0.75)
+        canvas:
+            Color:
+                rgba: 0.4,0.4,0.4,1
+            Rectangle:
+                size: self.size
+                pos: self.pos
+
         ScalableImage:
             id: scalableimage
             size_hint: (None, None)
             pos: stencil.pos
             size: previewimage.size
             auto_bring_to_front: False
-            do_translation: False
+            do_translation: True
             do_rotation: False
             do_scale: False
             scale_max: 2
@@ -557,7 +564,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'GUI'
-        on_release: app.open_settings()
+        on_release: root.open_settings()
     MyButton:
         size_hint: (1, 0.1)
         text: 'Macro'
