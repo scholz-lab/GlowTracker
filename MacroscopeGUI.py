@@ -244,6 +244,13 @@ class RightColumn(BoxLayout):
         #rebind keyboard events
         App.get_running_app().bind_keys()
         self._popup.dismiss()
+    
+
+    def open_settings(self):
+        # Disabled interaction with preview image widget
+        App.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        # Call open settings
+        App.open_settings()
 
 
     def show_recording_settings(self):
@@ -756,15 +763,21 @@ class RecordButtons(BoxLayout):
 
 
 class ScalableImage(ScatterLayout):
+
     def on_touch_up(self, touch):
-        if self.collide_point(*touch.pos):
-            if touch.is_mouse_scrolling:
-                if touch.button == 'scrollup':
-                    mat = Matrix().scale(.9, .9, .9)
-                    self.apply_transform(mat, anchor=touch.pos)
-                elif touch.button == 'scrolldown':
-                    mat = Matrix().scale(1.1, 1.1, 1.1)
-                    self.apply_transform(mat, anchor=touch.pos)
+        
+        # If the widget is enabled and interaction point is inside its bounding box
+        if self.disabled or not self.collide_point(*touch.pos):
+            return
+
+        if touch.is_mouse_scrolling:
+            if touch.button == 'scrollup':
+                mat = Matrix().scale(.9, .9, .9)
+                self.apply_transform(mat, anchor=touch.pos)
+            elif touch.button == 'scrolldown':
+                mat = Matrix().scale(1.1, 1.1, 1.1)
+                self.apply_transform(mat, anchor=touch.pos)
+
         return super().on_touch_up(touch)
 
     # reset tranformation
@@ -1406,8 +1419,10 @@ class MacroscopeApp(App):
             True if the settings has been closed.
         '''
         self.close_settings()
-        self.bind_keys()
         self.destroy_settings()
+        self.bind_keys()
+        # Enabled back the interaction with preview image widget
+        self.root.ids.middlecolumn.ids.scalableimage.disabled = False
 
 
     def stage_stop(self):
