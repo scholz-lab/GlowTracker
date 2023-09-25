@@ -502,13 +502,13 @@ class RecordButtons(BoxLayout):
             # Call capture an image
             isSuccess, img = basler.single_take(app.camera)
             if isSuccess:
-                basler.save_image(img,path,snap_filename)
+                basler.save_image(img, path, snap_filename, isFlipY= True)
                 
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
             img = app.lastframe
-            basler.save_image(img,path,snap_filename)
+            basler.save_image(img, path, snap_filename, isFlipY= True)
                 
 
 
@@ -596,7 +596,7 @@ class RecordButtons(BoxLayout):
             self.imageQueue = Queue()
 
             # Start a thread for saving images
-            self.savingthread = Thread(target=self.imageSavingThread, args= [None,])
+            self.savingthread = Thread(target=self.imageSavingThread, args= [3,])
             self.savingthread.start()
 
             # start a thread for grabbing images
