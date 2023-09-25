@@ -511,18 +511,25 @@ class RecordButtons(BoxLayout):
             basler.save_image(img, path, snap_filename, isFlipY= True)
                 
 
-
-    def startPreview(self):
-        camera = App.get_running_app().camera
+    def startPreview(self) -> None:
+        """Start live preview mode by start camera grabbing, create an image update thread, and draw overlay.
+        """        
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        
         if camera is not None:
-            # create a texture
-            #App.get_running_app().create_texture(*basler.get_shape(camera))
+            # Start grabbing
             basler.start_grabbing(camera)
-            # update the image
+
+            # Update the image
             fps = camera.ResultingFrameRate()
             print("Grabbing Framerate:", fps)
             self.updatethread = Thread(target=self.update, daemon = True)
             self.updatethread.start()
+            
+            # Start dual color overlay
+            app.checkDualColorMode()
+            
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -575,7 +582,9 @@ class RecordButtons(BoxLayout):
         self.parent.buffer.value = camera.MaxNumBuffer()- camera.NumQueuedBuffers()
         
 
-    def startRecording(self):
+    def startRecording(self) -> None:
+        """Start the recording process.
+        """                
         app = App.get_running_app()
         camera = app.camera
 
@@ -603,6 +612,9 @@ class RecordButtons(BoxLayout):
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
             self.recordthread.start()
+
+            # Start dual color overlay
+            app.checkDualColorMode()
 
         else:
             self.recordbutton.state = 'normal'
@@ -876,6 +888,82 @@ class PreviewImage(Image):
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
+
+class ImageOverlay(BoxLayout):
+
+    def __init__(self,  **kwargs):
+        super(ImageOverlay, self).__init__(**kwargs)
+        self.hasDrawDualColorOverlay: bool = False
+        self.label: Label | None = None
+
+
+    def on_size(self, *args) -> None:
+        """Update the position and size of the rectangle when the widget is resized
+        """        
+        if self.hasDrawDualColorOverlay:
+            # Redraw the dual color overlay
+            mainSide = App.get_running_app().config.get('DualColor','mainside')
+            self.redrawDualColorOverlay(mainSide)
+
+
+    def redrawDualColorOverlay(self, mainSide: str= 'Right'):
+        """Redraw the dual color overlay by clear and draw.
+
+        Args:
+            mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
+        """        
+        self.clearDualColorOverlay()
+        self.drawDualColorOverlay(mainSide)
+
+
+    def drawDualColorOverlay(self, mainSide: str= 'Right'):
+        """Draw the dual color overlay which are the middle seperate line and the label
+
+        Args:
+            mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
+        """
+        if self.hasDrawDualColorOverlay:
+            return
+        
+        self.hasDrawDualColorOverlay = True
+
+        # Red line at the middle
+        pos_center_local = self.to_local(self.center_x, self.center_y)
+        p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
+        p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
+        self.canvas.add(Color(1., 0., 0., 0.5))
+        self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
+
+        # Label on the main side
+        if self.label is None:
+            # Create a Label and add it as a child
+            self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
+            self.label.text_size = self.size
+            self.add_widget(self.label)
+        else:
+            # In this case, the self.canvas.clear() has been called so we have to redraw the label.
+            #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
+            #   so we will mimick this by re-adding it again.
+            self.remove_widget(self.label)
+            self.label.text_size = self.size
+            self.add_widget(self.label)
+
+        # Set Label position
+        if mainSide == 'Left':
+            self.label.halign = 'left'
+            self.label.valign = 'top'
+
+        elif mainSide == 'Right':
+            self.label.halign = 'center'
+            self.label.valign = 'top'
+        
+
+    def clearDualColorOverlay(self):
+        """Clear the canvas and set internal hasDraw flag to false
+        """
+        self.canvas.clear()
+        self.hasDrawDualColorOverlay = False
+    
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
@@ -1449,6 +1537,17 @@ class MacroscopeApp(App):
         self.bind_keys()
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
+        # Check turning on or off dual color mode
+        self.checkDualColorMode()
+    
+
+    def checkDualColorMode(self):
+        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
+        mainside = self.config.get('DualColor', 'mainside')
+        if dualcolormode:
+            self.root.ids.middlecolumn.ids.imageoverlay.redrawDualColorOverlay(mainside)
+        else:
+            self.root.ids.middlecolumn.ids.imageoverlay.clearDualColorOverlay()
 
 
     def stage_stop(self):
