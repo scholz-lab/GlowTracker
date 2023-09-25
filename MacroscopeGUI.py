@@ -18,7 +18,7 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
-from kivy.graphics import Color, Ellipse, Line
+from kivy.graphics import Color, Line
 from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.scatter import Scatter
 from kivy.uix.boxlayout import BoxLayout
@@ -927,18 +927,37 @@ class ImageOverlay(BoxLayout):
         
         self.hasDrawDualColorOverlay = True
 
+        app: MacroscopeApp = App.get_running_app()
+        previewImage: PreviewImage = app.root.ids.middlecolumn.previewimage
+
+        # Set the overlay size as the image size
+        normImageSize = previewImage.get_norm_image_size()
+        self.size = normImageSize
+
+        # Set the overlay position to match the image position exactly.
+        #   Note, this is a local position.
+        imageWidgetSize = previewImage.size
+        self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
+        self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
+
+        # 
         # Red line at the middle
+        # 
         pos_center_local = self.to_local(self.center_x, self.center_y)
         p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
         p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
         self.canvas.add(Color(1., 0., 0., 0.5))
         self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
 
+        # 
         # Label on the main side
+        # 
         if self.label is None:
             # Create a Label and add it as a child
             self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
             self.label.text_size = self.size
+            self.label.valign = 'top'
+            self.label.halign = 'left'
             self.add_widget(self.label)
         else:
             # In this case, the self.canvas.clear() has been called so we have to redraw the label.
@@ -949,13 +968,18 @@ class ImageOverlay(BoxLayout):
             self.add_widget(self.label)
 
         # Set Label position
+        topPadding = 7
+        leftPadding = 0
+        wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
+        
         if mainSide == 'Left':
-            self.label.halign = 'left'
-            self.label.valign = 'top'
+            leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
 
         elif mainSide == 'Right':
-            self.label.halign = 'center'
-            self.label.valign = 'top'
+            leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+
+        # left, top, right, bottom
+        self.label.padding= [ leftPadding, topPadding, 0, 0 ]
         
 
     def clearDualColorOverlay(self):
@@ -1702,14 +1726,22 @@ class MacroscopeApp(App):
             self.moveImageSpaceMode = bool(int(value))
 
 
-    def on_image(self, instance, value):
-        """update GUI texture when image changes."""
+    def on_image(self, *args) -> None:
+        """On im age change callback. Update image texture and GUI overlay
+        """
+        # Check if need to create or change the texture size
         if self.texture is None:
             self.create_texture(*self.image.shape)
+
         elif self.image.shape[::-1] != self.texture.size:
             self.create_texture(*self.image.shape)
+        
+        # Upload image data to texture
         self.im_to_texture()
 
+        # Update GUI overlay
+        self.checkDualColorMode()
+    
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
