@@ -420,11 +420,15 @@ MainWindow:
             PreviewImage:
                 #pos: 0,0
                 size_hint: (None, None)
-                size: stencil.width, stencil.height
+                size: stencil.size
                 id: previewimage
                 texture: app.texture
-                
                 source: "icons/logoSq.png"
+            ImageOverlay:
+                size_hint: (None, None)
+                pos: previewimage.pos
+                size: previewimage.size
+                id: imageoverlay
     GridLayout:
         cols: 2
         size_hint: (1, 0.05)

@@ -165,13 +165,32 @@
         "section": "Calibration",
         "key": "step_size"
     },
-     {
+    {
         "type": "options",
         "title": "Calibration step units",
         "desc": "micrometer/sec or millimeter/sec",
         "section": "Calibration",
         "key": "step_units",
         "options": ["mm/s", "um/s"]
+    },
+    {
+        "type": "title",
+        "title": "Dual Color"
+    },
+    {
+        "type": "bool",
+        "title": "Dual Color mode",
+        "desc": "Dual color mode changes the stage calibration and tracking computation",
+        "section": "DualColor",
+        "key": "dualcolormode"
+    },
+    {
+        "type": "options",
+        "title": "Main side",
+        "desc": "Main side of the dual color mode that want to focus on. The main side will be use for tracking and calibration.",
+        "section": "DualColor",
+        "key": "mainside",
+        "options": ["Left", "Right"]
     },
     {
         "type": "title",

@@ -18,7 +18,7 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.graphics.texture import Texture
-from kivy.graphics import Color, Ellipse, Line
+from kivy.graphics import Color, Line
 from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.scatter import Scatter
 from kivy.uix.boxlayout import BoxLayout
@@ -297,7 +297,20 @@ class RightColumn(BoxLayout):
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
             
-            # calculate calibration from shift
+            # Dual color case
+            if app.config.getboolean('DualColor', 'dualcolormode'):
+                h, w = img1.shape
+                mainSide = app.config.get('DualColor', 'mainside')
+
+                if mainSide == 'Left':
+                    img1 = img1[:,:w//2]
+                    img2 = img2[:,:w//2]
+
+                elif mainSide == 'Right':
+                    img1 = img1[:,w//2:]
+                    img2 = img2[:,w//2:]
+                
+            # Compute stage scale and rotation from the shift
             pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
@@ -489,27 +502,34 @@ class RecordButtons(BoxLayout):
             # Call capture an image
             isSuccess, img = basler.single_take(app.camera)
             if isSuccess:
-                basler.save_image(img,path,snap_filename)
+                basler.save_image(img, path, snap_filename, isFlipY= True)
                 
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
             img = app.lastframe
-            basler.save_image(img,path,snap_filename)
+            basler.save_image(img, path, snap_filename, isFlipY= True)
                 
 
-
-    def startPreview(self):
-        camera = App.get_running_app().camera
+    def startPreview(self) -> None:
+        """Start live preview mode by start camera grabbing, create an image update thread, and draw overlay.
+        """        
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        
         if camera is not None:
-            # create a texture
-            #App.get_running_app().create_texture(*basler.get_shape(camera))
+            # Start grabbing
             basler.start_grabbing(camera)
-            # update the image
+
+            # Update the image
             fps = camera.ResultingFrameRate()
             print("Grabbing Framerate:", fps)
             self.updatethread = Thread(target=self.update, daemon = True)
             self.updatethread.start()
+            
+            # Start dual color overlay
+            app.checkDualColorMode()
+            
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -562,7 +582,9 @@ class RecordButtons(BoxLayout):
         self.parent.buffer.value = camera.MaxNumBuffer()- camera.NumQueuedBuffers()
         
 
-    def startRecording(self):
+    def startRecording(self) -> None:
+        """Start the recording process.
+        """                
         app = App.get_running_app()
         camera = app.camera
 
@@ -583,13 +605,16 @@ class RecordButtons(BoxLayout):
             self.imageQueue = Queue()
 
             # Start a thread for saving images
-            self.savingthread = Thread(target=self.imageSavingThread, args= [None,])
+            self.savingthread = Thread(target=self.imageSavingThread, args= [3,])
             self.savingthread.start()
 
             # start a thread for grabbing images
             record_args = self.init_recording()
             self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
             self.recordthread.start()
+
+            # Start dual color overlay
+            app.checkDualColorMode()
 
         else:
             self.recordbutton.state = 'normal'
@@ -864,6 +889,106 @@ class PreviewImage(Image):
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
+class ImageOverlay(BoxLayout):
+
+    def __init__(self,  **kwargs):
+        super(ImageOverlay, self).__init__(**kwargs)
+        self.hasDrawDualColorOverlay: bool = False
+        self.label: Label | None = None
+
+
+    def on_size(self, *args) -> None:
+        """Update the position and size of the rectangle when the widget is resized
+        """        
+        if self.hasDrawDualColorOverlay:
+            # Redraw the dual color overlay
+            mainSide = App.get_running_app().config.get('DualColor','mainside')
+            self.redrawDualColorOverlay(mainSide)
+
+
+    def redrawDualColorOverlay(self, mainSide: str= 'Right'):
+        """Redraw the dual color overlay by clear and draw.
+
+        Args:
+            mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
+        """        
+        self.clearDualColorOverlay()
+        self.drawDualColorOverlay(mainSide)
+
+
+    def drawDualColorOverlay(self, mainSide: str= 'Right'):
+        """Draw the dual color overlay which are the middle seperate line and the label
+
+        Args:
+            mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
+        """
+        if self.hasDrawDualColorOverlay:
+            return
+        
+        self.hasDrawDualColorOverlay = True
+
+        app: MacroscopeApp = App.get_running_app()
+        previewImage: PreviewImage = app.root.ids.middlecolumn.previewimage
+
+        # Set the overlay size as the image size
+        normImageSize = previewImage.get_norm_image_size()
+        self.size = normImageSize
+
+        # Set the overlay position to match the image position exactly.
+        #   Note, this is a local position.
+        imageWidgetSize = previewImage.size
+        self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
+        self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
+
+        # 
+        # Red line at the middle
+        # 
+        pos_center_local = self.to_local(self.center_x, self.center_y)
+        p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
+        p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
+        self.canvas.add(Color(1., 0., 0., 0.5))
+        self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
+
+        # 
+        # Label on the main side
+        # 
+        if self.label is None:
+            # Create a Label and add it as a child
+            self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
+            self.label.text_size = self.size
+            self.label.valign = 'top'
+            self.label.halign = 'left'
+            self.add_widget(self.label)
+        else:
+            # In this case, the self.canvas.clear() has been called so we have to redraw the label.
+            #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
+            #   so we will mimick this by re-adding it again.
+            self.remove_widget(self.label)
+            self.label.text_size = self.size
+            self.add_widget(self.label)
+
+        # Set Label position
+        topPadding = 7
+        leftPadding = 0
+        wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
+        
+        if mainSide == 'Left':
+            leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
+
+        elif mainSide == 'Right':
+            leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+
+        # left, top, right, bottom
+        self.label.padding= [ leftPadding, topPadding, 0, 0 ]
+        
+
+    def clearDualColorOverlay(self):
+        """Clear the canvas and set internal hasDraw flag to false
+        """
+        self.canvas.clear()
+        self.hasDrawDualColorOverlay = False
+    
+
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
     autofocuscheckbox = ObjectProperty(rebind=True)
@@ -977,28 +1102,30 @@ class RuntimeControls(BoxLayout):
         """
         app = App.get_running_app()
         stage = app.stage
-        
-        # 
-        # Move stage based on user input - happens here.
-        # 
-        ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
-        print('Centering image',xstep, ystep, units)
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
-        if xstep > minstep:
-            stage.move_x(xstep, unit=units, wait_until_idle=True)
-        if ystep > minstep:
-            stage.move_y(ystep, unit=units, wait_until_idle=True)
+        if not dualColorMode:
+            # 
+            # Move stage based on user input - happens here.
+            # 
+            ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
+            print('Centering image',xstep, ystep, units)
+            
+            if xstep > minstep:
+                stage.move_x(xstep, unit=units, wait_until_idle=True)
+            if ystep > minstep:
+                stage.move_y(ystep, unit=units, wait_until_idle=True)
 
-        app.coords =  app.stage.get_position()
-        print('updated coords')
+            app.coords =  app.stage.get_position()
+            print('updated coords')
         
-        # 
-        # Set smaller FOV for the worm
-        # 
-        roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
-        self.set_ROI(roiX, roiY)
+            # 
+            # Set smaller FOV for the worm
+            # 
+            roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+            self.set_ROI(roiX, roiY)
         
         # 
         # Start the tracking
@@ -1006,12 +1133,12 @@ class RuntimeControls(BoxLayout):
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
-        mode =  app.config.get('Tracking', 'mode')
+        trackingMode =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, mode
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -1028,6 +1155,10 @@ class RuntimeControls(BoxLayout):
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
+
+        # Dual Color mode settings
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
         
         self.trackingevent = True
         app.prevframe = None
@@ -1080,8 +1211,15 @@ class RuntimeControls(BoxLayout):
             img2 = app.lastframe
             img2_retrieveTimestamp = app.retrieveTimestamp
 
-
             tracking_frame_start_time = time.perf_counter()
+
+            # Crop for dual color
+            if dualColorMode:
+                h, w = img2.shape
+                if mainSide == 'Left':
+                    img2 = img2[:,:w//2]
+                elif mainSide == 'Right':
+                    img2 = img2[:,w//2:]
 
             # If prev frame is empty then use the same as current
             if app.prevframe is None:
@@ -1423,6 +1561,17 @@ class MacroscopeApp(App):
         self.bind_keys()
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
+        # Check turning on or off dual color mode
+        self.checkDualColorMode()
+    
+
+    def checkDualColorMode(self):
+        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
+        mainside = self.config.get('DualColor', 'mainside')
+        if dualcolormode:
+            self.root.ids.middlecolumn.ids.imageoverlay.redrawDualColorOverlay(mainside)
+        else:
+            self.root.ids.middlecolumn.ids.imageoverlay.clearDualColorOverlay()
 
 
     def stage_stop(self):
@@ -1577,14 +1726,22 @@ class MacroscopeApp(App):
             self.moveImageSpaceMode = bool(int(value))
 
 
-    def on_image(self, instance, value):
-        """update GUI texture when image changes."""
+    def on_image(self, *args) -> None:
+        """On im age change callback. Update image texture and GUI overlay
+        """
+        # Check if need to create or change the texture size
         if self.texture is None:
             self.create_texture(*self.image.shape)
+
         elif self.image.shape[::-1] != self.texture.size:
             self.create_texture(*self.image.shape)
+        
+        # Upload image data to texture
         self.im_to_texture()
 
+        # Update GUI overlay
+        self.checkDualColorMode()
+    
 
     # ask for confirmation of closing
     def on_request_close(self, *args):

@@ -123,13 +123,23 @@ class ImageEventPrinter(pylon.ImageEventHandler):
         return True
 
 
-def save_image(im, path, fname):
-    """save image in path using fname and ext as extension."""
+def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> None:
+    """Save image in path using fname and ext as extension.
+
+    Args:
+        im (np.ndarray): the image
+        path (str): image path
+        fname (str): image file name
+        isFlipY (bool, optional): _description_. Defaults to False.
+    """    
     #using PIL - slow
     #im = Image.fromarray(im)
     #im.save(os.path.join(path, fname), quality = 100)
     #using skimage
-    imsave(os.path.join(path, fname), im, check_contrast=False,  plugin="tifffile")
+    img = im
+    if isFlipY:
+        img = np.flip(img, axis= 0)
+    imsave(os.path.join(path, fname), img, check_contrast=False,  plugin="tifffile")
     #cv2.imwrite(os.path.join(path, fname), im)
     #tiff = TIFF.open(os.path.join(path, fname), mode='w')
     #tiff.write_image(im)

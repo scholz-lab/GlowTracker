@@ -306,28 +306,32 @@ class Stage:
         if self.connection is None:
             return
         
-        if stopAxis == AxisEnum.ALL:
-            self.axis_x.stop(wait_until_idle = False)
-            self.axis_y.stop(wait_until_idle = False)
-            if self.axis_z is not None:
-                self.axis_z.stop(wait_until_idle = False)
+        try:
+            if stopAxis == AxisEnum.ALL:
+                self.axis_x.stop(wait_until_idle = False)
+                self.axis_y.stop(wait_until_idle = False)
+                if self.axis_z is not None:
+                    self.axis_z.stop(wait_until_idle = False)
+                
+                self.state.isMoving_x = False
+                self.state.isMoving_y = False
+                self.state.isMoving_z = False
+
+
+            elif stopAxis == AxisEnum.X:
+                self.axis_x.stop(wait_until_idle = False)
+                self.state.isMoving_x = False
             
-            self.state.isMoving_x = False
-            self.state.isMoving_y = False
-            self.state.isMoving_z = False
-
-
-        elif stopAxis == AxisEnum.X:
-            self.axis_x.stop(wait_until_idle = False)
-            self.state.isMoving_x = False
-        
-        elif stopAxis == AxisEnum.Y:
-            self.axis_y.stop(wait_until_idle = False)
-            self.state.isMoving_y = False
-        
-        elif stopAxis == AxisEnum.Z and self.no_axes == 3:
-            self.axis_z.stop(wait_until_idle = False)
-            self.state.isMoving_z = False
+            elif stopAxis == AxisEnum.Y:
+                self.axis_y.stop(wait_until_idle = False)
+                self.state.isMoving_y = False
+            
+            elif stopAxis == AxisEnum.Z and self.no_axes == 3:
+                self.axis_z.stop(wait_until_idle = False)
+                self.state.isMoving_z = False
+                
+        except MovementFailedException as e:
+            print(e)
 
 
     def get_position(self, unit: str = 'mm', isAsync: bool = True) -> Vec3 | None:
