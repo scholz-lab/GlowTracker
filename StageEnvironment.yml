@@ -19,4 +19,5 @@ dependencies:
   - zaber-motion=4.2.0
   - pip:
     - pypylon==2.2.0
+    - itk-elastix
 
