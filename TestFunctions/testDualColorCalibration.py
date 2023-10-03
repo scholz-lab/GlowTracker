@@ -12,7 +12,7 @@ import cv2
 import itk
 
 # Provide the test image path and ground truth transformation here
-DUAL_COLOR_IMG_PATH = 'C:/Workspace/GUI_Macroscope/record/dual_color_grid_bad.tif'
+DUAL_COLOR_IMG_PATH = ''
 
 GROUND_TRUTH_TRANSLATION_X = -59
 GROUND_TRUTH_TRANSLATION_Y = -71
