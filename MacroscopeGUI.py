@@ -316,8 +316,8 @@ class CameraAndStageCalibration(BoxLayout):
 
         # run the calibration
         img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
-        self._popup.content.ids.fixedimage.texture = im_to_texture(img1)
-        self._popup.content.ids.movingimage.texture = im_to_texture(img2)
+        self.ids.fixedimage.texture = im_to_texture(img1)
+        self.ids.movingimage.texture = im_to_texture(img2)
         
         # Dual color case
         if app.config.getboolean('DualColor', 'dualcolormode'):
@@ -341,8 +341,8 @@ class CameraAndStageCalibration(BoxLayout):
         app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
 
         # update labels shown
-        self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
-        self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
+        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {pxsize:.2f}'
+        self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
 
         # save configs
         app.config.write()
