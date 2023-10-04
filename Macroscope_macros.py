@@ -18,7 +18,9 @@ from zaber_motion import Library, Units
 from zaber_motion.ascii import connection
 import Basler_control as basler
 from typing import Tuple
-
+import itk
+import cv2
+from skimage.exposure import match_histograms
 
 def switchXYMat(matXY: np.ndarray) -> np.ndarray:
     """Modified a 2x2 matrix such that the the multiplication operation 
@@ -399,3 +401,149 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
     # print(yc, xc)
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+
+
+def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.ndarray:
+    """Crop the image at the center.
+
+    Args:
+        image (np.ndarray): image
+        cropWidth (int): width of the cropped image
+        cropHeight (int): height of the cropped image
+
+    Returns:
+        croppedImage (np.ndarray): the center cropped image
+    """    
+    y, x = image.shape
+    startx = x//2-(cropWidth//2)
+    starty = y//2-(cropHeight//2)    
+    croppedImage = image[ starty:starty+cropHeight, startx:startx+cropWidth ]
+    return croppedImage
+
+
+def createTranslationAndRotationMat3x3(translation_x, translation_y, rotation):
+    # Create the similarity transformation matrix
+    matrix = np.zeros((3, 3))
+    matrix[0, 0] = np.cos(rotation)
+    matrix[0, 1] = -np.sin(rotation)
+    matrix[0, 2] = translation_x
+    matrix[1, 0] = np.sin(rotation)
+    matrix[1, 1] = np.cos(rotation)
+    matrix[1, 2] = translation_y
+    matrix[2, 2] = 1
+    return matrix
+
+
+class DualColorImageCalibrator:
+    
+    mainSide: str
+    dualColorImage: np.ndarray
+    mainSideImage: np.ndarray
+    minorSideImage: np.ndarray
+    
+    def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str, cropWidth: int, cropHeight: int) -> None:
+        """Crop dual color image into main and minor side. Then apply filties for better visibility.
+
+        Args:
+            dualColorImage (np.ndarray): Dual color image.
+            mainSide (str): The main side of the dual color.
+            cropWidth (int): Crop width of the main and minor images.
+            cropHeight (int): Crop height of the main and minor images.
+
+        Returns:
+            mainImg: main side image
+            minorImg: minor side image
+        """
+
+        # Copy the dual color image
+        self.dualColorImage = np.copy(dualColorImage)
+
+        # Crop into main and minor side
+        fullImg_h, fullImg_w = self.dualColorImage.shape
+        if mainSide == 'Right':
+            # Main at right side, minor at left
+            self.mainSideImage = self.dualColorImage[:,fullImg_w//2:]
+            self.minorSideImage = self.dualColorImage[:,:fullImg_w//2]
+
+        elif mainSide == 'Left':
+            # Main at right side, minor at left
+            self.mainSideImage = self.dualColorImage[:,:fullImg_w//2]
+            self.minorSideImage = self.dualColorImage[:,fullImg_w//2:]
+        
+        # Crop center of both images
+        self.mainSideImage = cropCenterImage(self.mainSideImage, cropWidth, cropHeight)
+        self.minorSideImage = cropCenterImage(self.minorSideImage, cropWidth, cropHeight)
+
+        # Equalize Histogram
+        #   create a CLAHE object (Arguments are optional).
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        self.mainSideImage = clahe.apply(self.mainSideImage)
+        self.minorSideImage = clahe.apply(self.minorSideImage)
+
+        # Normalize min max of both to full range 0, 255
+        def normalizeMinMaxToRange( img: np.ndarray, newMin: float = 0, newMax: float = 1 ) -> None:
+            imgMin, imgMax = img.min(), img.max()
+            img = img.astype(np.float32)
+            img = (img - imgMin) * (newMax - newMin)/(imgMax - imgMin)
+            return img.astype(np.uint8)
+        
+        self.mainSideImage = normalizeMinMaxToRange(self.mainSideImage, 0, 255)
+        self.minorSideImage = normalizeMinMaxToRange(self.minorSideImage, 0, 255)
+
+        # Invert minor to same color as main
+        self.minorSideImage = 255 - self.minorSideImage
+
+        # Match histogram from minorImage to majorImage
+        self.minorSideImage = match_histograms(self.minorSideImage, self.mainSideImage).astype(np.uint8)
+
+        return self.mainSideImage, self.minorSideImage
+    
+
+    def calibrateMinorToMainTransformationMatrix(self) -> Tuple[float, float, float]:
+        """Estimate transformation from minor side to main side. Only account for translation and rotation.
+
+        Returns:
+            translation_x (float): translation x
+            translation_y (float): translation y
+            rotation (float): rotation
+        """        
+
+        # Create an ITK image from the numpy array
+        mainSideImageITK = itk.GetImageFromArray(self.mainSideImage)
+        minorSideImageITK = itk.GetImageFromArray(self.minorSideImage)
+        
+        # Create registration parameter object
+        parameter_object = itk.ParameterObject.New()
+        #   Set regid estimation parameters
+        rigid_parameter_map = parameter_object.GetDefaultParameterMap('rigid')
+        rigid_parameter_map['AutomaticScalesEstimation'] = ['false']
+        rigid_parameter_map['WriteResultImage'] = ['false']
+        rigid_parameter_map.erase('ResultImageFormat')
+        rigid_parameter_map['NumberOfResolutions'] = ['7']
+
+        parameter_object.AddParameterMap(rigid_parameter_map)
+
+        # Execute image registration process
+        result_image, result_transform_parameters = itk.elastix_registration_method(
+            mainSideImageITK, minorSideImageITK,
+            parameter_object= parameter_object,
+            log_to_console= False
+        )
+        
+        # Get transformation matrix result
+        result_parameter_map = result_transform_parameters.GetParameterMap(0)
+        rotation, translation_x, translation_y = ( float(x) for x in result_parameter_map['TransformParameters'] )
+
+        mainToMinorTransformationMatrix = createTranslationAndRotationMat3x3(translation_x, translation_y, rotation)
+
+        # Compute the inverse transform, from minor to main
+        minorToMainTransformationMatrix = np.linalg.inv( mainToMinorTransformationMatrix )
+
+        # Extract translation and rotation parameter back
+        translation_x = minorToMainTransformationMatrix[0,2]
+        translation_y = minorToMainTransformationMatrix[1,2]
+        cosTheta = minorToMainTransformationMatrix[0,0]
+        rotation = math.acos(cosTheta)
+
+        return translation_x, translation_y, rotation
+

@@ -357,8 +357,42 @@ class DualColorCalibration(BoxLayout):
     
 
     def calibrate(self) -> None:
-        # TODO:
-        pass
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        stage: Stage = app.stage
+
+        if camera is None or stage is None:
+            return
+        
+        # Take a dual color image for calibration
+        #   Stop camera if already running
+        app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+        isSuccess, dualColorImage = basler.single_take(camera)
+
+        if not isSuccess:
+            return
+
+        mainSide = app.config.get('DualColor', 'mainside')
+        
+        # Instantiate a dual color calibrator
+        dualColorImageCalibrator = macro.DualColorImageCalibrator()
+
+        # Process the dual color image
+        mainSideImage, minorSideImage = dualColorImageCalibrator.processDualColorImage(
+            dualColorImage= dualColorImage,
+            mainSide= mainSide,
+            cropWidth= 700,
+            cropHeight= 700
+        )
+        
+        # Update display image
+        self.ids.mainsideimage.texture = im_to_texture(mainSideImage)
+        self.ids.minorsideimage.texture = im_to_texture(minorSideImage)
+
+        # Calibrate the transformation
+        translation_x, translation_y, rotation = dualColorImageCalibrator.calibrateMinorToMainTransformationMatrix()
+        
+
 
 
 # Stage controls

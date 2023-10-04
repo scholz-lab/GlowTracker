@@ -229,14 +229,14 @@ def dualColorImageProcessing(dualColorImg: np.ndarray, mainSide: str = 'Right', 
     if mainSide == 'Right':
         # Main at right side, minor at left
         fullImg_h, fullImg_w = dualColorImg.shape
-        mainImg = dualColorImg[:fullImg_h//2,fullImg_w//2:]
-        minorImg = dualColorImg[:fullImg_h//2,:fullImg_w//2]
+        mainImg = dualColorImg[:,fullImg_w//2:]
+        minorImg = dualColorImg[:,:fullImg_w//2]
 
     elif mainSide == 'Left':
         # Main at right side, minor at left
         fullImg_h, fullImg_w = dualColorImg.shape
-        mainImg = dualColorImg[:fullImg_h//2,:fullImg_w//2]
-        minorImg = dualColorImg[:fullImg_h//2,fullImg_w//2:]
+        mainImg = dualColorImg[:,:fullImg_w//2]
+        minorImg = dualColorImg[:,fullImg_w//2:]
 
     # Crop center of both images
     mainImg = cropCenterImage(mainImg, cropWidth, cropHeight)
@@ -362,12 +362,12 @@ if __name__ == '__main__':
     mainImg, minorImg = dualColorImageProcessing(dualColorImg, 'Right', cropWidth, cropHeight)
     
     # Transformation Estimation
-    minorToMainTransformatinonMatrix = estimateMainToMinorTransformation(mainImg, minorImg, mode= 'elastix')
+    minorToMainTransformationMatrix = estimateMainToMinorTransformation(mainImg, minorImg, mode= 'elastix')
 
     # Apply the estimated transform
-    tx = minorToMainTransformatinonMatrix[0,2]
-    ty = minorToMainTransformatinonMatrix[1,2]
-    cosTheta = minorToMainTransformatinonMatrix[0,0]
+    tx = minorToMainTransformationMatrix[0,2]
+    ty = minorToMainTransformationMatrix[1,2]
+    cosTheta = minorToMainTransformationMatrix[0,0]
     theta = math.acos(cosTheta)
     transformedMinorImage = applyTransformationSRTToImage(minorImg, 1, theta * 180 / math.pi, tx, ty)
 
@@ -412,16 +412,13 @@ if __name__ == '__main__':
     ax4.imshow(GTTransformedMinorImage, vmin= 0, vmax= 1, cmap= 'gray')
     ax4.set_title('GT transformed minor')
 
-    ax5 = plt.subplot(subplotRows, subplotColumns, 5)
+    ax5And6 = plt.subplot(subplotRows, subplotColumns//2, 3)
     mainImgHist = cv2.calcHist(mainImg, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
-    ax5.plot(mainImgHist)
-    ax5.set_title('main histogram')
-
-    ax6 = plt.subplot(subplotRows, subplotColumns, 6)
-    # Histograms
     minorImgHist = cv2.calcHist(minorImg, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
-    ax6.plot(minorImgHist)
-    ax6.set_title('minor histogram')
+    ax5And6.plot(mainImgHist)
+    ax5And6.plot(minorImgHist)
+    ax5And6.set_title('main and minor histogram')
+    ax5And6.legend(['main', 'minor'])
 
     ax7 = plt.subplot(subplotRows, subplotColumns, 7)
     ax7.imshow(combinedImage, vmin= 0, vmax= 1)
