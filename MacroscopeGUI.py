@@ -1772,8 +1772,6 @@ class MacroscopeApp(App):
         if config is not self.config:
             return
         
-        print('changed config!', section, key)
-
         token = (section, key)
         if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
             print('updated calibration matrix')
