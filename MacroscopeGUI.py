@@ -21,6 +21,7 @@ from kivy.graphics.texture import Texture
 from kivy.graphics import Color, Line
 from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.scatter import Scatter
+from kivy.uix.tabbedpanel import TabbedPanel
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
@@ -264,71 +265,100 @@ class RightColumn(BoxLayout):
 
 
     def show_calibration(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
-        if camera is not None and stage is not None:
-            content = AutoCalibration(calibrate=self.calibrate, cancel=self.dismiss_popup, \
-                                )
-            self._popup = Popup(title="Autocalibration", content=content,
-                                size_hint=(0.9, 0.75))
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        stage: Stage = app.stage
+
+        if True:
+        # if camera is not None and stage is not None:
+            calibrationTabPanel = CalibrationTabPanel()
+            calibrationTabPanel.setCancelCallback(cancelCallback= self.dismiss_popup)
+
+            self._popup = Popup(title= '', separator_height= 0, content= calibrationTabPanel, size_hint= (0.9, 0.75))
             self._popup.open()
+        
         else:
             self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
 
 
+class CalibrationTabPanel(TabbedPanel):
+    
+    def setCancelCallback(self, cancelCallback: callable) -> None:
+        self.cancelCallback = cancelCallback
+        self.ids.stagecalibration.setCancelCallback( cancelCallback )
+        self.ids.dualcolorcalibration.setCancelCallback( cancelCallback )
+    
+
+class CameraAndStageCalibration(BoxLayout):
+
+    cancelCallback = ObjectProperty(None)
+    
+    def setCancelCallback( self, cancelCallback: callable ) -> None:
+        self.cancelCallback = cancelCallback
+    
+
     def calibrate(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        stage: Stage = app.stage
 
-        if camera is not None and stage is not None:
-            # stop camera if already running
-            app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+        if camera is None or stage is None:
+            return
+        
+        # stop camera if already running
+        app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+        
+        # get config values
+        stepsize = app.config.getfloat('Calibration', 'step_size')
+        stepunits = app.config.get('Calibration', 'step_units')
+
+        # run the calibration
+        img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
+        self._popup.content.ids.fixedimage.texture = im_to_texture(img1)
+        self._popup.content.ids.movingimage.texture = im_to_texture(img2)
+        
+        # Dual color case
+        if app.config.getboolean('DualColor', 'dualcolormode'):
+            h, w = img1.shape
+            mainSide = app.config.get('DualColor', 'mainside')
+
+            if mainSide == 'Left':
+                img1 = img1[:,:w//2]
+                img2 = img2[:,:w//2]
+
+            elif mainSide == 'Right':
+                img1 = img1[:,w//2:]
+                img2 = img2[:,w//2:]
             
-            # get config values
-            stepsize = app.config.getfloat('Calibration', 'step_size')
-            stepunits = app.config.get('Calibration', 'step_units')
+        # Compute stage scale and rotation from the shift
+        pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
+        app.config.set('Camera', 'pixelsize', pxsize)
+        app.config.set('Camera', 'rotation', rotation)
+        
+        # update calibration matrix
+        app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
 
-            # run the calibration
-            img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
-            self._popup.content.ids.image_one.texture = im_to_texture(img1)
-            self._popup.content.ids.image_two.texture = im_to_texture(img2)
-            
-            # Dual color case
-            if app.config.getboolean('DualColor', 'dualcolormode'):
-                h, w = img1.shape
-                mainSide = app.config.get('DualColor', 'mainside')
+        # update labels shown
+        self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
+        self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
 
-                if mainSide == 'Left':
-                    img1 = img1[:,:w//2]
-                    img2 = img2[:,:w//2]
-
-                elif mainSide == 'Right':
-                    img1 = img1[:,w//2:]
-                    img2 = img2[:,w//2:]
-                
-            # Compute stage scale and rotation from the shift
-            pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
-            app.config.set('Camera', 'pixelsize', pxsize)
-            app.config.set('Camera', 'rotation', rotation)
-            
-            # update calibration matrix
-            app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
-
-            # update labels shown
-            self._popup.content.ids.pxsize.text = f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
-            self._popup.content.ids.rotation.text = f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
-
-            # save configs
-            app.config.write()
+        # save configs
+        app.config.write()
 
 
-class AutoCalibration(BoxLayout):
-    calibrate = ObjectProperty(None)
-    cancel = ObjectProperty(None)
+class DualColorCalibration(BoxLayout):
+
+    cancelCallback = ObjectProperty(None)
+    
+    def setCancelCallback( self, cancelCallback: callable ) -> None:
+        self.cancelCallback = cancelCallback
+    
+
+    def calibrate(self) -> None:
+        # TODO:
+        pass
 
 
 # Stage controls

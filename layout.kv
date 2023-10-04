@@ -661,21 +661,54 @@ MainWindow:
         #     text: "Confirm"
         #     on_release: root.update(frames.text)
 
-<AutoCalibration>:
+<CalibrationTabPanel>:
+    size: root.size
+    pos: root.pos
+    do_default_tab: False
+    tab_width: 220
+            
+    TabbedPanelItem:
+        text: 'Camera & Stage Calibration'
+
+        CameraAndStageCalibration:
+            id: stagecalibration
+
+    TabbedPanelItem:
+        text: 'Dual Color Calibration'
+        
+        DualColorCalibration:
+            id: dualcolorcalibration
+
+
+<CameraAndStageCalibration>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
+    spacing: 20
+
     GridLayout:
         cols: 2
-        spacing: 30
-        Image:
-            id: image_one
-        Image:
-            id: image_two
+        spacing: 20
+
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Fixed'
+                size_hint_y: 0.1
+            Image:
+                id: fixedimage
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Moving'
+                size_hint_y: 0.1
+            Image:
+                id: movingimage
     
     BoxLayout:
-        size_hint_y: None
-        height: 30
+        size_hint_y: .08
+
         Label:
             id: pxsize
             text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
@@ -684,11 +717,63 @@ MainWindow:
             text: f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
         Button:
             text: "Cancel"
-            on_release: root.cancel()
-
+            on_release: root.cancelCallback()
         Button:
             text: "Calibrate"
             on_release: root.calibrate()
+
+
+<DualColorCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+    
+    GridLayout:
+        cols: 3
+        spacing: 10
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Main'
+                size_hint_y: 0.1
+            Image:
+                id: mainsideimage
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Minor'
+                size_hint_y: 0.1
+            Image:
+                id: minorsideimage
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Calibrated Minor to Main'
+                size_hint_y: 0.1
+            Image:
+                id: calibratedimage
+    
+    BoxLayout:
+        size_hint_y: .08
+        
+        Label:
+            id: translation
+            text: f"Translation: x,y"
+        Label:
+            id: rotation
+            text: f"Rotation: (rad)"
+        Button:
+            text: "Cancel"
+            on_release: root.cancelCallback()
+        Button:
+            text: "Calibrate"
+            on_release: root.calibrate()
+
+
 ### display if hardware is connected successfully     
 <Connections>:
     orientation: 'vertical'
