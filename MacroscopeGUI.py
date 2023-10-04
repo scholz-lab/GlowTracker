@@ -269,8 +269,7 @@ class RightColumn(BoxLayout):
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
 
-        if True:
-        # if camera is not None and stage is not None:
+        if camera is not None and stage is not None:
             calibrationTabPanel = CalibrationTabPanel()
             calibrationTabPanel.setCancelCallback(cancelCallback= self.dismiss_popup)
 
