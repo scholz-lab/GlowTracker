@@ -762,10 +762,10 @@ MainWindow:
         
         Label:
             id: translation
-            text: f"Translation: x,y"
+            text: f"Translation (x,y): {app.config.getfloat('DualColor', 'translation_x'):.2f}, {app.config.getfloat('DualColor', 'translation_y'):.2f}"
         Label:
             id: rotation
-            text: f"Rotation: (rad)"
+            text: f"Rotation (rad): {app.config.getfloat('DualColor', 'rotation'):.3f}"
         Button:
             text: "Cancel"
             on_release: root.cancelCallback()

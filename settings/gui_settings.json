@@ -193,6 +193,27 @@
         "options": ["Left", "Right"]
     },
     {
+        "type": "numeric",
+        "title": "Translation X",
+        "desc": "Translation from minor to main in X axis",
+        "section": "DualColor",
+        "key": "translation_x"
+    },
+    {
+        "type": "numeric",
+        "title": "Translation Y",
+        "desc": "Translation from minor to main in Y axis",
+        "section": "DualColor",
+        "key": "translation_y"
+    },
+    {
+        "type": "numeric",
+        "title": "Rotation",
+        "desc": "Rotation from minor to main",
+        "section": "DualColor",
+        "key": "rotation"
+    },
+    {
         "type": "title",
         "title": "Live Focus"
     },

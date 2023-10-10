@@ -421,8 +421,19 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     return croppedImage
 
 
-def createTranslationAndRotationMat3x3(translation_x, translation_y, rotation):
-    # Create the similarity transformation matrix
+def createRigidTransformationMat(translation_x: float, translation_y: float, rotation: float) -> np.ndarray:
+    """Create the rigid transformation matrix. Assume center of rotation at origin.
+
+    Args:
+        translation_x (float): translation in x
+        translation_y (float): translation in y
+        rotation (radian) (float): rotation angle around origin
+
+    Returns:
+        mat (np.ndarray): the transformation matrix
+    """    
+    
+    # 
     matrix = np.zeros((3, 3))
     matrix[0, 0] = np.cos(rotation)
     matrix[0, 1] = -np.sin(rotation)
@@ -534,7 +545,7 @@ class DualColorImageCalibrator:
         result_parameter_map = result_transform_parameters.GetParameterMap(0)
         rotation, translation_x, translation_y = ( float(x) for x in result_parameter_map['TransformParameters'] )
 
-        mainToMinorTransformationMatrix = createTranslationAndRotationMat3x3(translation_x, translation_y, rotation)
+        mainToMinorTransformationMatrix = createRigidTransformationMat(translation_x, translation_y, rotation)
 
         # Compute the inverse transform, from minor to main
         minorToMainTransformationMatrix = np.linalg.inv( mainToMinorTransformationMatrix )
@@ -546,4 +557,35 @@ class DualColorImageCalibrator:
         rotation = math.acos(cosTheta)
 
         return translation_x, translation_y, rotation
+    
+
+    @staticmethod
+    def genMinorToMainMatrix(translation_x: float, translation_y: float, rotation: float, center_x: float, center_y: float):
+        """Create a rigid transformation matrix (scale = 1) from minor to main side. 
+
+        Args:
+            translation_x (float): translation in X axis
+            translation_y (float): translation in Y axis
+            rotation (radian) (float): rotation angle in radian about center
+            center_x (float): center of rotation in X
+            center_y (float): center of rotation in Y
+
+        Returns:
+            transformationMatrix (np.ndarray): transformation matrix from minor to main
+        """        
+        # Compute the rotation matrix. The cv2.getRotationMatrix2D returns 2x3 mat so we will need to fill in the last row
+        rotationMat = cv2.getRotationMatrix2D((center_x, center_y), rotation * 180 / math.pi, 1.0)
+        rotationMat = np.vstack([ rotationMat, np.array([0, 0, 1], np.float32) ])
+
+        # Compute the translation matrix
+        translationMat = np.float32([
+            [1, 0, translation_x], 
+            [0, 1, translation_y],
+            [0, 0, 1]
+        ])
+
+        # Compute transformation matrix
+        transformationMat = translationMat @ rotationMat
+        
+        return transformationMat
 

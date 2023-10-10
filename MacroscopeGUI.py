@@ -48,7 +48,7 @@ import Macroscope_macros as macro
 import Basler_control as basler
 from pypylon import pylon
 from skimage.io import imsave
-#import cv2
+import cv2
 #from pypylon import pylon
 #from pypylon import genicam
 from typing import Tuple
@@ -65,15 +65,34 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
 
-def im_to_texture(image):
-    """helper function to create kivy textures from image arrays."""
+def im_to_texture(image: np.ndarray) -> Texture:
+    """A helper function to create kivy textures from numpy arrays.
 
-    buf = image.tobytes()
-    w, h = image.shape
-    image_texture = Texture.create(
-        size=(h, w), colorfmt="luminance"
-    )
-    image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+    Args:
+        image (np.ndarray): image
+
+    Returns:
+        texture (Texture): image as a Kivy Texture
+    """    
+    if image.ndim == 2:
+        # Grayscale image
+        buf = image.tobytes()
+        w, h = image.shape
+        image_texture = Texture.create(
+            size=(h, w), colorfmt="luminance"
+        )
+        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+    
+    elif image.ndim == 3:
+        # RGB image
+        buf = image.tobytes()
+        w, h, c = image.shape
+
+        image_texture = Texture.create(
+            size=(h, w), colorfmt="rgb"
+        )
+        image_texture.blit_buffer(buf, colorfmt="rgb", bufferfmt="ubyte")
+
     return image_texture
 
 
@@ -371,6 +390,8 @@ class DualColorCalibration(BoxLayout):
         if not isSuccess:
             return
 
+        dualColorImage = np.flip(dualColorImage, axis= 0)
+
         mainSide = app.config.get('DualColor', 'mainside')
         
         # Instantiate a dual color calibrator
@@ -390,8 +411,32 @@ class DualColorCalibration(BoxLayout):
 
         # Calibrate the transformation
         translation_x, translation_y, rotation = dualColorImageCalibrator.calibrateMinorToMainTransformationMatrix()
-        
 
+        # Save settines to config
+        app.config.set('DualColor', 'translation_x', translation_x)
+        app.config.set('DualColor', 'translation_y', translation_y)
+        app.config.set('DualColor', 'rotation', rotation)
+        app.config.write()
+
+        # Update labels shown
+        self.ids.translation.text = f"Translation (x,y): {translation_x:.2f}, {translation_y:.2f}"
+        self.ids.rotation.text = f"Rotation (rad): {rotation:.3f}"
+        
+        # Compute minor to main calibration matrix
+        minorToMainMat = dualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[1]/2)
+
+        # Apply transformation
+        #   Use warpAffine() here instead of warpPerspective for a little faster computation.
+        #   It also takes 2x3 mat, so we cut the last row out accordingly.
+        translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
+
+        # Combine main and minor side
+        combinedImage = np.zeros(shape= (mainSideImage.shape[1], mainSideImage.shape[0], 3), dtype= np.uint8)
+        combinedImage[:,:,0] = mainSideImage
+        combinedImage[:,:,1] = translatedMinorSideImage
+
+        # Update the composite display image
+        self.ids.calibratedimage.texture = im_to_texture(combinedImage)
 
 
 # Stage controls
@@ -1177,9 +1222,9 @@ class RuntimeControls(BoxLayout):
             print('Centering image',xstep, ystep, units)
             
             if xstep > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle=True)
+                stage.move_x(xstep, unit= units, wait_until_idle= True)
             if ystep > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle=True)
+                stage.move_y(ystep, unit= units, wait_until_idle= True)
 
             app.coords =  app.stage.get_position()
             print('updated coords')
@@ -1356,35 +1401,6 @@ class RuntimeControls(BoxLayout):
         self.trackingcheckbox.state = 'normal'
 
 
-    def cont_tracking(self, minstep, units, area, binning):
-        """thread for tracking. Uses continual motion of the x,y axes"""
-        app = App.get_running_app()
-        stage = app.stage
-        camera = app.camera
-        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
-            # threshold and find objects
-            coords = macro.extractWorms(app.lastframe, area, bin_factor=binning, li_init=10)
-            print('tracking', coords)
-            # if we find stuff move
-            if len(coords) > 0:
-                print(len(coords))
-                offset = macro.getDistanceToCenter(coords, app.lastframe.shape)
-                ystep, xstep = macro.getStageDistances(offset, app.imageToStageMat)
-                # getting stage coord is slow so we will interpolate from movements
-                if xstep > minstep:
-                    stage.move_x(xstep, unit=units, wait_until_idle = True)
-                    app.coords[0] += xstep/1000.
-                if ystep > minstep:
-                    stage.move_y(ystep, unit=units, wait_until_idle = True)
-                    app.coords[1] += ystep/1000.
-                print("Move stage (x,y)", xstep, ystep)
-        # reset camera params
-        camera = App.get_running_app().camera
-        basler.cam_resetROI(camera)
-        self.cropX = 0
-        self.cropY = 0
-
-
     def set_ROI(self, roiX, roiY):
         app = App.get_running_app()
         camera = app.camera
@@ -1556,7 +1572,7 @@ class MacroscopeApp(App):
         Window.bind(on_joy_axis= self.on_controller_input)
         self.stopevent = Clock.create_trigger(lambda dt: self.stage.stop(), 0.1)
 
-        # Load and gen transformation matricies
+        # Load and gen camera&stage transformation matricies
         pixelsize = self.config.getfloat('Camera', 'pixelsize')
         rotation = self.config.getfloat('Camera', 'rotation')
         self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
