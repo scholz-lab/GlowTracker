@@ -359,49 +359,46 @@ if __name__ == '__main__':
 
     # Main and Minor image processing
     cropWidth, cropHeight = 700, 700
-    mainImg, minorImg = dualColorImageProcessing(dualColorImg, 'Right', cropWidth, cropHeight)
+    mainSideImage, minorSideImage = dualColorImageProcessing(dualColorImg, 'Right', cropWidth, cropHeight)
     
     # Transformation Estimation
-    minorToMainTransformationMatrix = estimateMainToMinorTransformation(mainImg, minorImg, mode= 'elastix')
+    minorToMainTransformationMatrix = estimateMainToMinorTransformation(mainSideImage, minorSideImage, mode= 'elastix')
 
     # Apply the estimated transform
     tx = minorToMainTransformationMatrix[0,2]
     ty = minorToMainTransformationMatrix[1,2]
     cosTheta = minorToMainTransformationMatrix[0,0]
     theta = math.acos(cosTheta)
-    transformedMinorImage = applyTransformationSRTToImage(minorImg, 1, theta * 180 / math.pi, tx, ty)
+    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta * 180 / math.pi, tx, ty)
 
     # Combined main and the transformed minor image
     combinedImage = np.zeros(shape= (cropHeight, cropWidth, 3), dtype= np.float32)
-    combinedImage[:,:,0] = mainImg
+    combinedImage[:,:,0] = mainSideImage
     combinedImage[:,:,1] = transformedMinorImage
 
     # 
     # Ground truth
     # 
-    GTTransformedMinorImage = applyTransformationSRTToImage(minorImg, GROUND_TRUTH_SCALE, GROUND_TRUTH_ROTATION_DEG, GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y)
+    GTTransformedMinorImage = applyTransformationSRTToImage(minorSideImage, GROUND_TRUTH_SCALE, GROUND_TRUTH_ROTATION_DEG, GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y)
 
     # Create a ground truth combined image
     GTCombinedImage = np.zeros(shape= (cropHeight, cropWidth, 3), dtype= np.float32)
-    GTCombinedImage[:,:,0] = mainImg
+    GTCombinedImage[:,:,0] = mainSideImage
     GTCombinedImage[:,:,1] = GTTransformedMinorImage
 
     # 
     # Plot
     # 
 
-    plt.figure()
-    plt.imshow(dualColorImg, vmin= 0, vmax= 1, cmap= 'gray')
-    
     subplotRows = 2
     subplotColumns = 4
     subfig = plt.figure( figsize= (11, 6) )
     ax1 = plt.subplot(subplotRows, subplotColumns, 1)
-    ax1.imshow(mainImg, vmin= 0, vmax= 1, cmap= 'gray')
+    ax1.imshow(mainSideImage, vmin= 0, vmax= 1, cmap= 'gray')
     ax1.set_title('main')
 
     ax2 = plt.subplot(subplotRows, subplotColumns, 2)
-    ax2.imshow(minorImg, vmin= 0, vmax= 1, cmap= 'gray')
+    ax2.imshow(minorSideImage, vmin= 0, vmax= 1, cmap= 'gray')
     ax2.set_title('minor')
 
     ax3 = plt.subplot(subplotRows, subplotColumns, 3)
@@ -413,8 +410,8 @@ if __name__ == '__main__':
     ax4.set_title('GT transformed minor')
 
     ax5And6 = plt.subplot(subplotRows, subplotColumns//2, 3)
-    mainImgHist = cv2.calcHist(mainImg, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
-    minorImgHist = cv2.calcHist(minorImg, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
+    mainImgHist = cv2.calcHist(mainSideImage, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
+    minorImgHist = cv2.calcHist(minorSideImage, channels= [0], mask= None, histSize= [100], ranges= [0, 1])
     ax5And6.plot(mainImgHist)
     ax5And6.plot(minorImgHist)
     ax5And6.set_title('main and minor histogram')
@@ -427,5 +424,35 @@ if __name__ == '__main__':
     ax8 = plt.subplot(subplotRows, subplotColumns, 8)
     ax8.imshow(GTCombinedImage, vmin= 0, vmax= 1)
     ax8.set_title('GT combined')
+
+    subfig.suptitle('Dual Color Calibration')
+
+    # 
+    # Apply the calibration to the whole image
+    # 
+    # Main at right side, minor at left
+    fullImg_h, fullImg_w = dualColorImg.shape
+    mainSideImage = dualColorImg[:,fullImg_w//2:]
+    minorSideImage = dualColorImg[:,:fullImg_w//2]
+
+    # Generate minor to main calibration mat
+    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta * 180 / math.pi, tx, ty)
+
+    # Combined main and the transformed minor image
+    combinedImage = np.zeros(shape= (mainSideImage.shape + (3,)), dtype= np.float32)
+    combinedImage[:,:,0] = mainSideImage
+    combinedImage[:,:,1] = transformedMinorImage
+
+    
+    subfig = plt.figure( figsize= (11, 6) )
+    ax1 = plt.subplot(1, 2, 1)
+    ax1.imshow(dualColorImg, vmin= 0, vmax= 1, cmap= 'gray')
+    ax1.set_title('Dual Color Split (original)')
+
+    ax2 = plt.subplot(1, 2, 2)
+    ax2.imshow(combinedImage)
+    ax2.set_title('Dual Color Merged')
+
+    subfig.suptitle('Dual Color: Split vs. Merge')
 
     plt.show()
