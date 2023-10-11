@@ -17,7 +17,7 @@ DUAL_COLOR_IMG_PATH = ''
 GROUND_TRUTH_TRANSLATION_X = -59
 GROUND_TRUTH_TRANSLATION_Y = -71
 GROUND_TRUTH_ROTATION_DEG = 4.5
-GROUND_TRUTH_ROTATION_RADIAN = GROUND_TRUTH_ROTATION_DEG * math.pi / 180.0
+GROUND_TRUTH_ROTATION_RAD = GROUND_TRUTH_ROTATION_DEG * math.pi / 180.0
 GROUND_TRUTH_SCALE = 1.0
 
 
@@ -71,14 +71,28 @@ def equalizeHistogram( img: np.ndarray, isLocalMode: bool= False ) -> np.ndarray
 def translationAndRotationToMat3x3(translation_x, translation_y, rotation):
     # Create the similarity transformation matrix
     matrix = np.zeros((3, 3))
-    matrix[0, 0] = np.cos(rotation)
-    matrix[0, 1] = -np.sin(rotation)
+    matrix[0, 0] = math.cos(rotation)
+    matrix[0, 1] = -math.sin(rotation)
     matrix[0, 2] = translation_x
-    matrix[1, 0] = np.sin(rotation)
-    matrix[1, 1] = np.cos(rotation)
+    matrix[1, 0] = math.sin(rotation)
+    matrix[1, 1] = math.cos(rotation)
     matrix[1, 2] = translation_y
     matrix[2, 2] = 1
     return matrix
+
+
+def createScaleAndRotationMatrix(scale: float, rotation: float, center_x: float, center_y: float) -> np.ndarray:
+    
+    alpha = scale * math.cos(rotation)
+    beta = scale * math.sin(rotation)
+
+    mat = np.array([
+        [ alpha,    -beta,      (1-alpha) * center_x + beta * center_y ],
+        [ beta,     alpha,      (1-alpha) * center_y - beta * center_x ],
+        [ 0,        0,          1]
+    ])
+
+    return mat
 
 
 def applyTransformationSRTToImage(img: np.ndarray, scale: float, rotation: float, translation_x: float, translation_y: float) -> np.ndarray:
@@ -95,9 +109,13 @@ def applyTransformationSRTToImage(img: np.ndarray, scale: float, rotation: float
         np.ndarray: The transformed image
     """    
     
-    # Compute the rotation matrix. The cv2.getRotationMatrix2D returns 2x3 mat so we will need to fill in the last row
-    rotationMat = cv2.getRotationMatrix2D((img.shape[1] / 2, img.shape[0] / 2), rotation, scale)
-    rotationMat = np.vstack([ rotationMat, np.array([0,0,1], np.float32) ])
+    # Compute the rotation matrix.
+    rotationMat = createScaleAndRotationMatrix(
+        scale= 1,
+        rotation= rotation,
+        center_x= img.shape[1] / 2,
+        center_y= img.shape[0] / 2
+    )
 
     # Compute the translation matrix
     translationMat = np.float32([
@@ -342,7 +360,7 @@ def estimateMainToMinorTransformation(mainImg: np.ndarray, minorImg: np.ndarray,
     print('Estimation:')
     print(minorToMainTransformationMatrix)
 
-    groundTruthTransformation = translationAndRotationToMat3x3(GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y, GROUND_TRUTH_ROTATION_RADIAN)
+    groundTruthTransformation = translationAndRotationToMat3x3(GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y, GROUND_TRUTH_ROTATION_RAD)
     print('Ground Truth:')
     print(groundTruthTransformation)
 
@@ -358,18 +376,23 @@ if __name__ == '__main__':
     dualColorImg = load_tiff_and_convert_to_gray_and_float(DUAL_COLOR_IMG_PATH)
 
     # Main and Minor image processing
-    cropWidth, cropHeight = 700, 700
-    mainSideImage, minorSideImage = dualColorImageProcessing(dualColorImg, 'Right', cropWidth, cropHeight)
+    cropWidth, cropHeight = dualColorImg.shape[1]//4, dualColorImg.shape[0]//2
+    mainSide = 'Right'
+    mainSideImage, minorSideImage = dualColorImageProcessing(dualColorImg, mainSide, cropWidth, cropHeight)
     
     # Transformation Estimation
     minorToMainTransformationMatrix = estimateMainToMinorTransformation(mainSideImage, minorSideImage, mode= 'elastix')
 
-    # Apply the estimated transform
+    # Extract translation and rotation from matrix
     tx = minorToMainTransformationMatrix[0,2]
     ty = minorToMainTransformationMatrix[1,2]
+
     cosTheta = minorToMainTransformationMatrix[0,0]
-    theta = math.acos(cosTheta)
-    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta * 180 / math.pi, tx, ty)
+    sinTheta = minorToMainTransformationMatrix[1,0]
+    theta = math.atan2( sinTheta, cosTheta )
+
+    # Apply the estimated transform
+    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta, tx, ty)
 
     # Combined main and the transformed minor image
     combinedImage = np.zeros(shape= (cropHeight, cropWidth, 3), dtype= np.float32)
@@ -379,7 +402,7 @@ if __name__ == '__main__':
     # 
     # Ground truth
     # 
-    GTTransformedMinorImage = applyTransformationSRTToImage(minorSideImage, GROUND_TRUTH_SCALE, GROUND_TRUTH_ROTATION_DEG, GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y)
+    GTTransformedMinorImage = applyTransformationSRTToImage(minorSideImage, GROUND_TRUTH_SCALE, GROUND_TRUTH_ROTATION_RAD, GROUND_TRUTH_TRANSLATION_X, GROUND_TRUTH_TRANSLATION_Y)
 
     # Create a ground truth combined image
     GTCombinedImage = np.zeros(shape= (cropHeight, cropWidth, 3), dtype= np.float32)
@@ -432,11 +455,16 @@ if __name__ == '__main__':
     # 
     # Main at right side, minor at left
     fullImg_h, fullImg_w = dualColorImg.shape
-    mainSideImage = dualColorImg[:,fullImg_w//2:]
-    minorSideImage = dualColorImg[:,:fullImg_w//2]
+    if mainSide == 'Right':
+        mainSideImage = dualColorImg[:,fullImg_w//2:]
+        minorSideImage = dualColorImg[:,:fullImg_w//2]
+
+    elif mainSide == 'Left':
+        mainSideImage = dualColorImg[:,:fullImg_w//2]
+        minorSideImage = dualColorImg[:,fullImg_w//2:]
 
     # Generate minor to main calibration mat
-    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta * 180 / math.pi, tx, ty)
+    transformedMinorImage = applyTransformationSRTToImage(minorSideImage, 1, theta, tx, ty)
 
     # Combined main and the transformed minor image
     combinedImage = np.zeros(shape= (mainSideImage.shape + (3,)), dtype= np.float32)

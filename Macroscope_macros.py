@@ -22,7 +22,7 @@ import itk
 import cv2
 from skimage.exposure import match_histograms
 
-def switchXYMat(matXY: np.ndarray) -> np.ndarray:
+def switchXY2x2Mat(matXY: np.ndarray) -> np.ndarray:
     """Modified a 2x2 matrix such that the the multiplication operation 
     is suitable for a 2D vector of order y,x
 
@@ -71,7 +71,7 @@ def genImageToStageMatrix(scale: float, rotation: float) -> Tuple[np.ndarray, np
     imageToStageMat = np.linalg.inv( stageToImageMat )
 
     # switch x,y to y,x
-    imageToStageMat = switchXYMat(imageToStageMat)
+    imageToStageMat = switchXY2x2Mat(imageToStageMat)
 
     return imageToStageMat * scale, imageToStageMat
 
@@ -435,14 +435,28 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
     
     # 
     matrix = np.zeros((3, 3))
-    matrix[0, 0] = np.cos(rotation)
-    matrix[0, 1] = -np.sin(rotation)
+    matrix[0, 0] = math.cos(rotation)
+    matrix[0, 1] = -math.sin(rotation)
     matrix[0, 2] = translation_x
-    matrix[1, 0] = np.sin(rotation)
-    matrix[1, 1] = np.cos(rotation)
+    matrix[1, 0] = math.sin(rotation)
+    matrix[1, 1] = math.cos(rotation)
     matrix[1, 2] = translation_y
     matrix[2, 2] = 1
     return matrix
+
+
+def createScaleAndRotationMatrix(scale: float, theta: float, center_x: float, center_y: float) -> np.ndarray:
+    
+    alpha = scale * math.cos(theta)
+    beta = scale * math.sin(theta)
+
+    mat = np.array([
+        [ alpha,    -beta,      (1-alpha) * center_x + beta * center_y ],
+        [ beta,     alpha,      (1-alpha) * center_y - beta * center_x ],
+        [ 0,        0,          1]
+    ])
+
+    return mat
 
 
 class DualColorImageCalibrator:
@@ -498,14 +512,14 @@ class DualColorImageCalibrator:
             img = (img - imgMin) * (newMax - newMin)/(imgMax - imgMin)
             return img.astype(np.uint8)
         
-        self.mainSideImage = normalizeMinMaxToRange(self.mainSideImage, 0, 255)
-        self.minorSideImage = normalizeMinMaxToRange(self.minorSideImage, 0, 255)
+        # self.mainSideImage = normalizeMinMaxToRange(self.mainSideImage, 0, 255)
+        # self.minorSideImage = normalizeMinMaxToRange(self.minorSideImage, 0, 255)
 
-        # Invert minor to same color as main
-        self.minorSideImage = 255 - self.minorSideImage
+        # # Invert minor to same color as main
+        # self.minorSideImage = 255 - self.minorSideImage
 
-        # Match histogram from minorImage to majorImage
-        self.minorSideImage = match_histograms(self.minorSideImage, self.mainSideImage).astype(np.uint8)
+        # # Match histogram from minorImage to majorImage
+        # self.minorSideImage = match_histograms(self.minorSideImage, self.mainSideImage).astype(np.uint8)
 
         return self.mainSideImage, self.minorSideImage
     
@@ -553,10 +567,12 @@ class DualColorImageCalibrator:
         # Extract translation and rotation parameter back
         translation_x = minorToMainTransformationMatrix[0,2]
         translation_y = minorToMainTransformationMatrix[1,2]
-        cosTheta = minorToMainTransformationMatrix[0,0]
-        rotation = math.acos(cosTheta)
 
-        return translation_x, translation_y, rotation
+        cosTheta = minorToMainTransformationMatrix[0,0]
+        sinTheta = minorToMainTransformationMatrix[1,0]
+        theta = math.atan2( sinTheta, cosTheta )
+
+        return translation_x, translation_y, theta
     
 
     @staticmethod
@@ -573,9 +589,13 @@ class DualColorImageCalibrator:
         Returns:
             transformationMatrix (np.ndarray): transformation matrix from minor to main
         """        
-        # Compute the rotation matrix. The cv2.getRotationMatrix2D returns 2x3 mat so we will need to fill in the last row
-        rotationMat = cv2.getRotationMatrix2D((center_x, center_y), rotation * 180 / math.pi, 1.0)
-        rotationMat = np.vstack([ rotationMat, np.array([0, 0, 1], np.float32) ])
+        # Compute the rotation matrix.
+        rotationMat = createScaleAndRotationMatrix(
+            scale= 1,
+            theta= rotation,
+            center_x= center_x,
+            center_y= center_y
+        )
 
         # Compute the translation matrix
         translationMat = np.float32([
