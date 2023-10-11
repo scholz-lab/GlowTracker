@@ -290,7 +290,7 @@ class RightColumn(BoxLayout):
 
         if camera is not None and stage is not None:
             calibrationTabPanel = CalibrationTabPanel()
-            calibrationTabPanel.setCancelCallback(cancelCallback= self.dismiss_popup)
+            calibrationTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
 
             self._popup = Popup(title= '', separator_height= 0, content= calibrationTabPanel, size_hint= (0.9, 0.75))
             self._popup.open()
@@ -303,18 +303,18 @@ class RightColumn(BoxLayout):
 
 class CalibrationTabPanel(TabbedPanel):
     
-    def setCancelCallback(self, cancelCallback: callable) -> None:
-        self.cancelCallback = cancelCallback
-        self.ids.stagecalibration.setCancelCallback( cancelCallback )
-        self.ids.dualcolorcalibration.setCancelCallback( cancelCallback )
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        self.closeCallback = closeCallback
+        self.ids.stagecalibration.setCloseCallback( closeCallback )
+        self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
     
 
 class CameraAndStageCalibration(BoxLayout):
 
-    cancelCallback = ObjectProperty(None)
+    closeCallback = ObjectProperty(None)
     
-    def setCancelCallback( self, cancelCallback: callable ) -> None:
-        self.cancelCallback = cancelCallback
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        self.closeCallback = closeCallback
     
 
     def calibrate(self):
@@ -368,10 +368,10 @@ class CameraAndStageCalibration(BoxLayout):
 
 class DualColorCalibration(BoxLayout):
 
-    cancelCallback = ObjectProperty(None)
+    closeCallback = ObjectProperty(None)
     
-    def setCancelCallback( self, cancelCallback: callable ) -> None:
-        self.cancelCallback = cancelCallback
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        self.closeCallback = closeCallback
     
 
     def calibrate(self) -> None:

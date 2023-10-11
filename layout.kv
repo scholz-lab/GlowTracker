@@ -711,16 +711,20 @@ MainWindow:
 
         Label:
             id: pxsize
+            size_hint_x: .25
             text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
         Label:
             id: rotation
+            size_hint_x: .25
             text: f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
         Button:
-            text: "Cancel"
-            on_release: root.cancelCallback()
-        Button:
             text: "Calibrate"
+            size_hint_x: .35
             on_release: root.calibrate()
+        Button:
+            text: "Close"
+            size_hint_x: .15
+            on_release: root.closeCallback()
 
 
 <DualColorCalibration>:
@@ -762,16 +766,20 @@ MainWindow:
         
         Label:
             id: translation
+            size_hint_x: .25
             text: f"Translation (x,y): {app.config.getfloat('DualColor', 'translation_x'):.2f}, {app.config.getfloat('DualColor', 'translation_y'):.2f}"
         Label:
             id: rotation
+            size_hint_x: .25
             text: f"Rotation (rad): {app.config.getfloat('DualColor', 'rotation'):.3f}"
         Button:
-            text: "Cancel"
-            on_release: root.cancelCallback()
-        Button:
             text: "Calibrate"
+            size_hint_x: .35
             on_release: root.calibrate()
+        Button:
+            text: "Close"
+            size_hint_x: .15
+            on_release: root.closeCallback()
 
 
 ### display if hardware is connected successfully     
