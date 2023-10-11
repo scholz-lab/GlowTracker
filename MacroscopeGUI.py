@@ -74,24 +74,21 @@ def im_to_texture(image: np.ndarray) -> Texture:
     Returns:
         texture (Texture): image as a Kivy Texture
     """    
-    if image.ndim == 2:
-        # Grayscale image
-        buf = image.tobytes()
-        w, h = image.shape
-        image_texture = Texture.create(
-            size=(h, w), colorfmt="luminance"
-        )
-        image_texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
+    height, width = image.shape[0], image.shape[1]
+    colorfmt = 'luminance' if image.ndim == 2 else 'rgb'
+    bufferfmt = 'ubyte'
     
-    elif image.ndim == 3:
-        # RGB image
-        buf = image.tobytes()
-        w, h, c = image.shape
+    # Create a new Kivy Texture
+    image_texture = Texture.create(
+        size=(height, width), colorfmt= colorfmt, bufferfmt= bufferfmt
+    )
 
-        image_texture = Texture.create(
-            size=(h, w), colorfmt="rgb"
-        )
-        image_texture.blit_buffer(buf, colorfmt="rgb", bufferfmt="ubyte")
+    # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
+    image_texture.flip_vertical()
+    
+    # Upload data to texture
+    buf = image.tobytes()
+    image_texture.blit_buffer(buf, colorfmt= colorfmt, bufferfmt= bufferfmt)
 
     return image_texture
 
@@ -423,7 +420,7 @@ class DualColorCalibration(BoxLayout):
         self.ids.rotation.text = f"Rotation (rad): {rotation:.3f}"
         
         # Compute minor to main calibration matrix
-        minorToMainMat = dualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[1]/2)
+        minorToMainMat = dualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[0]/2)
 
         # Apply transformation
         #   Use warpAffine() here instead of warpPerspective for a little faster computation.
@@ -636,7 +633,7 @@ class RecordButtons(BoxLayout):
             self.updatethread.start()
             
             # Start dual color overlay
-            app.checkDualColorMode()
+            app.updateDualColorOverlay()
             
         else:
             self.liveviewbutton.state = 'normal'
@@ -722,7 +719,7 @@ class RecordButtons(BoxLayout):
             self.recordthread.start()
 
             # Start dual color overlay
-            app.checkDualColorMode()
+            app.updateDualColorOverlay()
 
         else:
             self.recordbutton.state = 'normal'
@@ -1641,14 +1638,21 @@ class MacroscopeApp(App):
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
         # Check turning on or off dual color mode
-        self.checkDualColorMode()
+        self.updateDualColorOverlay()
     
 
-    def checkDualColorMode(self):
+    def updateDualColorOverlay(self, isRedraw: bool = True):
+
         dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
         mainside = self.config.get('DualColor', 'mainside')
+        
+        # If in dual color mode then draw the overlay
         if dualcolormode:
-            self.root.ids.middlecolumn.ids.imageoverlay.redrawDualColorOverlay(mainside)
+            # Only redraw if nescessary
+            if isRedraw:
+                self.root.ids.middlecolumn.ids.imageoverlay.redrawDualColorOverlay(mainside)
+                
+        # If not in the dual color mode then clear the overlay
         else:
             self.root.ids.middlecolumn.ids.imageoverlay.clearDualColorOverlay()
 
@@ -1806,18 +1810,91 @@ class MacroscopeApp(App):
     def on_image(self, *args) -> None:
         """On im age change callback. Update image texture and GUI overlay
         """
-        # Check if need to create or change the texture size
-        if self.texture is None:
-            self.create_texture(*self.image.shape)
+        # 
+        # Pre process image
+        # 
+        image = np.copy(self.image)
+        image = np.flip(image, axis= 0)
 
-        elif self.image.shape[::-1] != self.texture.size:
-            self.create_texture(*self.image.shape)
+        dualcolorMode = self.config.getboolean('DualColor', 'dualcolormode')
+        dualcolorViewMode = self.config.get('DualColor', 'viewmode')
+
+        if dualcolorMode and dualcolorViewMode == 'Merged':
+
+            # Split image into main and minor side
+            mainSide = self.config.get('DualColor', 'mainside')
+
+            h, w = image.shape
+            mainSideImage = None
+            minorSideImage = None
+
+            if mainSide == 'Left':
+                mainSideImage = image[:,:w//2]
+                minorSideImage = image[:,w//2:]
+
+            elif mainSide == 'Right':
+                mainSideImage = image[:,w//2:]
+                minorSideImage = image[:,:w//2]
+            
+            # Compute minor to main calibration matrix
+            translation_x = self.config.getfloat('DualColor', 'translation_x')
+            translation_y = self.config.getfloat('DualColor', 'translation_y')
+            rotation = self.config.getfloat('DualColor', 'rotation')
+            
+            minorToMainMat = macro.DualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[0]/2)
+
+            # Apply transformation
+            #   Use warpAffine() here instead of warpPerspective for a little faster computation.
+            #   It also takes 2x3 mat, so we cut the last row out accordingly.
+            translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
+
+            # Combine main and minor side
+            combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= np.uint8)
+            combinedImage[:,:,0] = mainSideImage
+            combinedImage[:,:,1] = translatedMinorSideImage
+
+            image = combinedImage
+        
+
+        # 
+        # Upload image to texture
+        # 
+        
+        imageHeight, imageWidth = image.shape[0], image.shape[1]
+        imageColorFormat = 'rgb' if image.ndim == 3 else 'luminance'
+        # Force unsign byte format
+        imageDataFormat = 'ubyte'
+        # 
+        updateGUIFlag = False
+
+        # Check if need to recreate texture
+        if self.texture is None \
+            or self.texture.width != imageWidth or self.texture.height != imageHeight \
+            or self.texture.colorfmt != imageColorFormat \
+            or self.texture.bufferfmt != imageDataFormat:
+            
+            # Recreate texture
+            self.texture = Texture.create(
+                size= (imageWidth, imageHeight),
+                colorfmt= imageColorFormat
+            )
+
+            # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
+            self.texture.flip_vertical()
+
+            # Set flag update GUI
+            updateGUIFlag = True
         
         # Upload image data to texture
-        self.im_to_texture()
+        buf = image.tobytes()
+        self.texture.blit_buffer(buf, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
+
+        # 
+        # Update GUI
+        # 
 
         # Update GUI overlay
-        self.checkDualColorMode()
+        self.updateDualColorOverlay(isRedraw= updateGUIFlag)
     
 
     # ask for confirmation of closing
@@ -1846,19 +1923,6 @@ class MacroscopeApp(App):
         self.stop()
         # close the window
         self.root_window.close()
-
-
-    def create_texture(self, w, h):
-        """create the initial texture."""
-        self.texture = Texture.create(
-            size=(h, w), colorfmt="luminance"
-        )
-
-
-    def im_to_texture(self):
-        """helper function to create kivy textures from image arrays."""
-        buf = self.image.tobytes()
-        self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
     
     
     def update_coordinates(self, dt= None, isAsync= True) -> None:

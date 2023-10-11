@@ -193,6 +193,14 @@
         "options": ["Left", "Right"]
     },
     {
+        "type": "options",
+        "title": "Viewing mode",
+        "desc": "Viewing mode of the dual color. \nSplitted: view the image as it is taken, where each channel are splitted on left and right.\nMerged: merge both channels into one image. Requires dual color calibration.",
+        "section": "DualColor",
+        "key": "viewmode",
+        "options": ["Splitted", "Merged"]
+    },
+    {
         "type": "numeric",
         "title": "Translation X",
         "desc": "Translation from minor to main in X axis",
