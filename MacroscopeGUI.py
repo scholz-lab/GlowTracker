@@ -1007,7 +1007,7 @@ class ImageOverlay(BoxLayout):
         """        
         if self.hasDrawDualColorOverlay:
             # Redraw the dual color overlay
-            mainSide = App.get_running_app().config.get('DualColor','mainside')
+            mainSide = App.get_running_app().config.get('DualColor', 'mainside')
             self.redrawDualColorOverlay(mainSide)
 
 
@@ -1035,56 +1035,86 @@ class ImageOverlay(BoxLayout):
         app: MacroscopeApp = App.get_running_app()
         previewImage: PreviewImage = app.root.ids.middlecolumn.previewimage
 
-        # Set the overlay size as the image size
-        normImageSize = previewImage.get_norm_image_size()
-        self.size = normImageSize
+        viewMode = app.config.get('DualColor', 'viewmode')
 
-        # Set the overlay position to match the image position exactly.
-        #   Note, this is a local position.
-        imageWidgetSize = previewImage.size
-        self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
-        self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
+        if viewMode == 'Splitted':
 
-        # 
-        # Red line at the middle
-        # 
-        pos_center_local = self.to_local(self.center_x, self.center_y)
-        p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
-        p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
-        self.canvas.add(Color(1., 0., 0., 0.5))
-        self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
+            # Set the overlay size as the image size
+            normImageSize = previewImage.get_norm_image_size()
+            self.size = normImageSize
 
-        # 
-        # Label on the main side
-        # 
-        if self.label is None:
-            # Create a Label and add it as a child
-            self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
+            # Set the overlay position to match the image position exactly.
+            #   Note, this is a local position.
+            imageWidgetSize = previewImage.size
+            self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
+            self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
+
+            # 
+            # Red line at the middle
+            # 
+            pos_center_local = self.to_local(self.center_x, self.center_y)
+            p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
+            p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
+            self.canvas.add(Color(1., 0., 0., 0.5))
+            self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
+
+            # 
+            # Label on the main side
+            # 
+            if self.label is None:
+                # Create a Label and add it as a child
+                self.label = Label(text= '', markup= True)        
+                self.add_widget(self.label)
+            else:
+                # In this case, the self.canvas.clear() has been called so we have to redraw the label.
+                #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
+                #   so we will mimick this by re-adding it again.
+                self.remove_widget(self.label)
+                self.add_widget(self.label)
+
+            # Set Label position
+            topPadding = 7
+            leftPadding = 0
+            wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
+            
+            if mainSide == 'Left':
+                leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
+
+            elif mainSide == 'Right':
+                leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+
+            # left, top, right, bottom
+            self.label.text = '[color=8e0045]Main[/color]'
             self.label.text_size = self.size
             self.label.valign = 'top'
             self.label.halign = 'left'
-            self.add_widget(self.label)
-        else:
-            # In this case, the self.canvas.clear() has been called so we have to redraw the label.
-            #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
-            #   so we will mimick this by re-adding it again.
-            self.remove_widget(self.label)
-            self.label.text_size = self.size
-            self.add_widget(self.label)
-
-        # Set Label position
-        topPadding = 7
-        leftPadding = 0
-        wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
+            self.label.padding= [ leftPadding, topPadding, 0, 0 ]
         
-        if mainSide == 'Left':
-            leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
+        elif viewMode == 'Merged':
 
-        elif mainSide == 'Right':
-            leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+            # 
+            # Label on the header
+            # 
+            if self.label is None:
+                # Create a Label and add it as a child
+                self.label = Label(text= '', markup= True)
+                self.add_widget(self.label)
+                
+            else:
+                # In this case, the self.canvas.clear() has been called so we have to redraw the label.
+                #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
+                #   so we will mimick this by re-adding it again.
+                self.remove_widget(self.label)
+                self.add_widget(self.label)
+            
+            topPadding = 7
 
-        # left, top, right, bottom
-        self.label.padding= [ leftPadding, topPadding, 0, 0 ]
+            # left, top, right, bottom
+            self.label.text = '[color=8e0045]Dual Color: Merged[/color]'
+            self.label.text_size = self.size
+            self.label.valign = 'top'
+            self.label.halign = 'center'
+            self.label.padding= [ 0, topPadding, 0, 0 ]
         
 
     def clearDualColorOverlay(self):
