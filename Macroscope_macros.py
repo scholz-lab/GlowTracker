@@ -432,7 +432,7 @@ def createTranslationMatrix(translation_x: float, translation_y: float) -> np.fl
         translationMat (np.float32): A 3x3 translation matrix
     """    
 
-    translationMat = np.float32([
+    translationMat = np.array([
         [1, 0, translation_x], 
         [0, 1, translation_y],
         [0, 0, 1]
@@ -479,7 +479,7 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
     cos = math.cos(rotation)
     sin = math.sin(rotation)
 
-    matrix = np.zeros([
+    matrix = np.array([
         [cos,   -sin,   translation_x],
         [sin,   cos,    translation_y],
         [0,     0,      1],
