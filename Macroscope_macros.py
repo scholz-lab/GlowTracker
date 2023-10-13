@@ -421,6 +421,50 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     return croppedImage
 
 
+def createTranslationMatrix(translation_x: float, translation_y: float) -> np.float32:
+    """Create 2D translation matrix.
+
+    Args:
+        translation_x (float): translation in X axis
+        translation_y (float): translation in Y axis
+
+    Returns:
+        translationMat (np.float32): A 3x3 translation matrix
+    """    
+
+    translationMat = np.float32([
+        [1, 0, translation_x], 
+        [0, 1, translation_y],
+        [0, 0, 1]
+    ], np.float32)
+
+    return translationMat
+
+
+def createScaleAndRotationMatrix(scale: float, rotation: float, center_rot_x: float, center_rot_y: float) -> np.ndarray:
+    """Create 2D scale-and-rotation matrix around a specified center of rotation.
+
+    Args:
+        scale (float): scaling
+        rotation (float): rotation angle in radian
+        center_rot_x (float): center of rotation in X axis
+        center_rot_y (float): center of rotation in Y axis
+
+    Returns:
+        matrix (np.ndarray): A 3x3 transformation matrix.
+    """    
+    cos = scale * math.cos(rotation)
+    sin = scale * math.sin(rotation)
+
+    matrix = np.array([
+        [ cos,    -sin,      (1-cos) * center_rot_x + sin * center_rot_y ],
+        [ sin,     cos,      (1-cos) * center_rot_y - sin * center_rot_x ],
+        [ 0,        0,       1]
+    ], np.float32)
+
+    return matrix
+
+
 def createRigidTransformationMat(translation_x: float, translation_y: float, rotation: float) -> np.ndarray:
     """Create the rigid transformation matrix. Assume center of rotation at origin.
 
@@ -432,31 +476,16 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
     Returns:
         mat (np.ndarray): the transformation matrix
     """    
+    cos = math.cos(rotation)
+    sin = math.sin(rotation)
+
+    matrix = np.zeros([
+        [cos,   -sin,   translation_x],
+        [sin,   cos,    translation_y],
+        [0,     0,      1],
+    ], np.float32)
     
-    # 
-    matrix = np.zeros((3, 3))
-    matrix[0, 0] = math.cos(rotation)
-    matrix[0, 1] = -math.sin(rotation)
-    matrix[0, 2] = translation_x
-    matrix[1, 0] = math.sin(rotation)
-    matrix[1, 1] = math.cos(rotation)
-    matrix[1, 2] = translation_y
-    matrix[2, 2] = 1
     return matrix
-
-
-def createScaleAndRotationMatrix(scale: float, theta: float, center_x: float, center_y: float) -> np.ndarray:
-    
-    alpha = scale * math.cos(theta)
-    beta = scale * math.sin(theta)
-
-    mat = np.array([
-        [ alpha,    -beta,      (1-alpha) * center_x + beta * center_y ],
-        [ beta,     alpha,      (1-alpha) * center_y - beta * center_x ],
-        [ 0,        0,          1]
-    ])
-
-    return mat
 
 
 class DualColorImageCalibrator:
@@ -505,22 +534,6 @@ class DualColorImageCalibrator:
         self.mainSideImage = clahe.apply(self.mainSideImage)
         self.minorSideImage = clahe.apply(self.minorSideImage)
 
-        # Normalize min max of both to full range 0, 255
-        def normalizeMinMaxToRange( img: np.ndarray, newMin: float = 0, newMax: float = 1 ) -> None:
-            imgMin, imgMax = img.min(), img.max()
-            img = img.astype(np.float32)
-            img = (img - imgMin) * (newMax - newMin)/(imgMax - imgMin)
-            return img.astype(np.uint8)
-        
-        # self.mainSideImage = normalizeMinMaxToRange(self.mainSideImage, 0, 255)
-        # self.minorSideImage = normalizeMinMaxToRange(self.minorSideImage, 0, 255)
-
-        # # Invert minor to same color as main
-        # self.minorSideImage = 255 - self.minorSideImage
-
-        # # Match histogram from minorImage to majorImage
-        # self.minorSideImage = match_histograms(self.minorSideImage, self.mainSideImage).astype(np.uint8)
-
         return self.mainSideImage, self.minorSideImage
     
 
@@ -530,7 +543,7 @@ class DualColorImageCalibrator:
         Returns:
             translation_x (float): translation x
             translation_y (float): translation y
-            rotation (float): rotation
+            rotation (float): rotation in radian
         """        
 
         # Create an ITK image from the numpy array
@@ -590,19 +603,10 @@ class DualColorImageCalibrator:
             transformationMatrix (np.ndarray): transformation matrix from minor to main
         """        
         # Compute the rotation matrix.
-        rotationMat = createScaleAndRotationMatrix(
-            scale= 1,
-            theta= rotation,
-            center_x= center_x,
-            center_y= center_y
-        )
+        rotationMat = createScaleAndRotationMatrix(1, rotation, center_x, center_y)
 
         # Compute the translation matrix
-        translationMat = np.float32([
-            [1, 0, translation_x], 
-            [0, 1, translation_y],
-            [0, 0, 1]
-        ])
+        translationMat = createTranslationMatrix(translation_x, translation_y)
 
         # Compute transformation matrix
         transformationMat = translationMat @ rotationMat

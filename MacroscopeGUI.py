@@ -323,7 +323,9 @@ class CameraAndStageCalibration(BoxLayout):
             return
         
         # stop camera if already running
-        app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
         
         # get config values
         stepsize = app.config.getfloat('Calibration', 'step_size')
@@ -362,6 +364,9 @@ class CameraAndStageCalibration(BoxLayout):
         # save configs
         app.config.write()
 
+        # Resume the camera to previous state
+        liveViewButton.state = prevLiveViewButtonState
+
 
 class DualColorCalibration(BoxLayout):
 
@@ -379,9 +384,12 @@ class DualColorCalibration(BoxLayout):
         if camera is None or stage is None:
             return
         
+        # stop camera if already running
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
+        
         # Take a dual color image for calibration
-        #   Stop camera if already running
-        app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
         isSuccess, dualColorImage = basler.single_take(camera)
 
         if not isSuccess:
@@ -434,6 +442,9 @@ class DualColorCalibration(BoxLayout):
 
         # Update the composite display image
         self.ids.calibratedimage.texture = im_to_texture(combinedImage)
+
+        # Resume the camera to previous state
+        liveViewButton.state = prevLiveViewButtonState
 
 
 # Stage controls
