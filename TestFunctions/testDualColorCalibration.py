@@ -264,15 +264,15 @@ def dualColorImageProcessing(dualColorImg: np.ndarray, mainSide: str = 'Right', 
     mainImg = equalizeHistogram(mainImg, isLocalMode= True)
     minorImg = equalizeHistogram(minorImg, isLocalMode= True)
 
-    # Normalize both to full range 0, 1
-    mainImg = normalizeMinMaxToZeroOne(mainImg)
-    minorImg = normalizeMinMaxToZeroOne(minorImg)
+    # # Normalize both to full range 0, 1
+    # mainImg = normalizeMinMaxToZeroOne(mainImg)
+    # minorImg = normalizeMinMaxToZeroOne(minorImg)
 
-    # Invert minor to same color as main
-    minorImg = 1.0 - minorImg
+    # # Invert minor to same color as main
+    # minorImg = 1.0 - minorImg
 
-    # Match histogram from minorImage to majorImage
-    minorImg = match_histograms(minorImg, mainImg)
+    # # Match histogram from minorImage to majorImage
+    # minorImg = match_histograms(minorImg, mainImg)
 
     return mainImg, minorImg
 

@@ -80,7 +80,7 @@ def im_to_texture(image: np.ndarray) -> Texture:
     
     # Create a new Kivy Texture
     image_texture = Texture.create(
-        size=(height, width), colorfmt= colorfmt, bufferfmt= bufferfmt
+        size=(width, height), colorfmt= colorfmt, bufferfmt= bufferfmt
     )
 
     # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
@@ -331,13 +331,12 @@ class CameraAndStageCalibration(BoxLayout):
         stepsize = app.config.getfloat('Calibration', 'step_size')
         stepunits = app.config.get('Calibration', 'step_units')
 
-        # run the calibration
+        # Take calibration images
         img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
-        self.ids.fixedimage.texture = im_to_texture(img1)
-        self.ids.movingimage.texture = im_to_texture(img2)
         
-        # Dual color case
-        if app.config.getboolean('DualColor', 'dualcolormode'):
+        # If in dual color mode then crop only relavent region
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        if dualColorMode:
             h, w = img1.shape
             mainSide = app.config.get('DualColor', 'mainside')
 
@@ -348,6 +347,10 @@ class CameraAndStageCalibration(BoxLayout):
             elif mainSide == 'Right':
                 img1 = img1[:,w//2:]
                 img2 = img2[:,w//2:]
+
+        # Update display calibration images
+        self.ids.fixedimage.texture = im_to_texture(img1)
+        self.ids.movingimage.texture = im_to_texture(img2)
             
         # Compute stage scale and rotation from the shift
         pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
@@ -1678,6 +1681,7 @@ class MacroscopeApp(App):
         self.bind_keys()
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
+        # TODO: update device settings, i.e. stage limit
         # Check turning on or off dual color mode
         self.updateDualColorOverlay()
     
