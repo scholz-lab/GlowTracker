@@ -687,7 +687,7 @@ MainWindow:
     spacing: 20
 
     GridLayout:
-        cols: 2
+        cols: 3
         spacing: 20
 
         BoxLayout:
@@ -701,10 +701,18 @@ MainWindow:
         BoxLayout:
             orientation: 'vertical'
             Label:
-                text: 'Moving'
+                text: 'Moving X'
                 size_hint_y: 0.1
             Image:
-                id: movingimage
+                id: movingimagex
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Moving Y'
+                size_hint_y: 0.1
+            Image:
+                id: movingimagey
     
     BoxLayout:
         size_hint_y: .08

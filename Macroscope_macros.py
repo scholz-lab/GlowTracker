@@ -17,6 +17,7 @@ from tifffile import imsave, TiffWriter
 from zaber_motion import Library, Units
 from zaber_motion.ascii import connection
 import Basler_control as basler
+import Zaber_control as zaber
 from typing import Tuple
 import itk
 import cv2
@@ -75,49 +76,6 @@ def genImageToStageMatrix(scale: float, rotation: float) -> Tuple[np.ndarray, np
 
     return imageToStageMat * scale, imageToStageMat
 
-
-def takeCalibrationImages(stage, camera, stepsize, stepunits):
-    """take two image between a defined move of the camera."""
-    # take one image
-    _, img1 = basler.single_take(camera)
-    # move stage
-    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
-    # take another one
-    _, img2 = basler.single_take(camera)
-    # undo stage motion
-    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
-    return img1, img2
-
-
-def computeStageScaleAndRotation(im1: np.ndarray, im2: np.ndarray, stage_step: float) -> Tuple[float, float]:
-    """Compute stage rotation and scale from the correlation between two images moved by a known stage distance.
-
-    Args:
-        im1 (np.ndarray): first image
-        im2 (np.ndarray): second image, moved by stage step size
-        stage_step (float): stage step size
-
-    Returns:
-        scale (float): ratio between distance in image space and in stage space
-        theta (float): rotation angle from image space to stage space
-    """    
-    #   Calculate the shift using FFT correlation
-    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
-    
-    # Vector of change in the stage space. Measured by phase cross correlation
-    vec_stage_space = -np.array([shift[1], shift[0]], np.float32)
-    vec_stage_space_len = np.linalg.norm(vec_stage_space)
-    
-    # Vector of change expected from the setting
-    vec_image_space = np.array([-stage_step, -stage_step], np.float32)
-    vec_image_space_len = np.linalg.norm(vec_image_space)
-
-    # Assume both vectors have the same origin, compute rotation and scaling difference
-    theta = np.arccos( np.dot(vec_stage_space, vec_image_space) / (vec_stage_space_len * vec_image_space_len) )
-    scale = vec_image_space_len / vec_stage_space_len
-    
-    return scale, theta
-        
 
 #%% Autofocus using z axis
 def zFocus(stage, camera, stepsize, stepunits, nsteps):
@@ -488,12 +446,200 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
     return matrix
 
 
+def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    
+
+    vec1normalized = vec1 / np.linalg.norm(vec1)
+    vec2normalized = vec2 / np.linalg.norm(vec2)
+
+    
+    # Dot product
+    cosTheta = np.dot(vec1normalized, vec2normalized)
+
+    # Cross product
+    sinTheta = np.cross(vec1normalized, vec2normalized)
+    
+    # Compute angle
+    theta = math.atan2(sinTheta, cosTheta)
+
+    return theta
+
+
+class CameraAndStageCalibrator:
+
+    origImage: np.ndarray
+    basisXImage: np.ndarray
+    basisYImage: np.ndarray
+    stepsize: float
+    stepunit: str
+
+    def __init__(self) -> None:
+        pass
+
+
+    def takeCalibrationImage(self, camera: pylon.InstantCamera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Take images for camera&stage transformation matrix calibration.
+
+        Args:
+            camera (pylon.InstantCamera): pylon camera to take images with
+            stage (zaber.Stage): zaber stage class to move the camera with
+            stepsize (float): movement step size in each stage basis axes
+            stepunits (str): stage movement step unit
+            dualColorMode (bool): is in dual color mode. Defaults to False.
+            dualColorModeMainSide (str): if in dual color mode, which side is the main side.Defaults to 'Right'.
+
+        Returns:
+            - None: if taking images is not successful
+            - Tuple(basisImageOrig, basisImageX, basisYImage): if taking images is successful
+        """        
+
+        self.stepsize = stepsize
+        self.stepunits = stepunits
+
+        isSuccessImageOrig, self.basisOrigImage = basler.single_take(camera)
+
+        # Move along stage's X axis
+        stage.move_rel((stepsize, 0, 0), stepunits, wait_until_idle = True)
+        isSuccessImageX, self.basisXImage = basler.single_take(camera)
+
+        # Move along stage's Y axis
+        stage.move_rel((-stepsize, 0, 0), stepunits, wait_until_idle = True)
+        stage.move_rel((0, stepsize, 0), stepunits, wait_until_idle = True)
+        isSuccessImageY, self.basisYImage = basler.single_take(camera)
+
+        # Move back to origin
+        stage.move_rel((-stepsize, stepsize, 0), stepunits, wait_until_idle = True)
+
+        # If taking image is not successful then return None
+        if not (isSuccessImageOrig and isSuccessImageX and isSuccessImageY):
+            return None, None, None
+        
+        # If in dual color mode then crop only relavent region
+        if dualColorMode:
+            h, w = self.basisXImage.shape
+
+            if dualColorModeMainSide == 'Left':
+                self.basisOrigImage = self.basisOrigImage[:,:w//2]
+                self.basisXImage = self.basisXImage[:,:w//2]
+                self.basisYImage = self.basisYImage[:,:w//2]
+
+            elif dualColorModeMainSide == 'Right':
+                self.basisOrigImage = self.basisOrigImage[:,w//2:]
+                self.basisXImage = self.basisXImage[:,w//2:]
+                self.basisYImage = self.basisYImage[:,w//2:]
+        
+        return self.basisOrigImage, self.basisXImage, self.basisYImage
+    
+
+    def calibrateCameraToStageTransform(self) -> np.ndarray:
+
+        # Estimate camera basis X 
+        basisXPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+    
+        camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
+        camBasisXLen = np.linalg.norm(camBasisXVec)
+
+        # Estimate camera basis Y
+        basisYPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+    
+        camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
+        camBasisYLen = np.linalg.norm(camBasisYVec)
+
+
+        # Compute angle between the two basis 
+        angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
+        signAngleBetweenXYBasis = int(np.sign(angleBetweenXYBasis))
+
+        absAngleBetweenXYBasis = abs(angleBetweenXYBasis)
+
+        # Compensate the angle between if it's not 90 deg by rotation basis X, Y outward/inward
+        #   with relative to normal vector +Z.
+        absDiffAngle = abs(math.pi/2 - absAngleBetweenXYBasis)
+        diffAngleHalf = absDiffAngle / 2
+        basisXCompensatedAngle = 0
+        basisYCompensatedAngle = 0
+        
+        if absAngleBetweenXYBasis < math.pi/2:
+        
+            basisXCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
+            basisYCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
+
+        elif absAngleBetweenXYBasis > math.pi/2:
+
+            basisXCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
+            basisYCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
+            
+
+        # Rotate the basis by the compensation amount
+        def rotateVecAboutOrig(vec: np.ndarray, rotation: float) -> np.ndarray:
+            rotationMatrix = createScaleAndRotationMatrix(1, rotation, 0, 0)[:2,:2]
+            return rotationMatrix @ vec
+        
+        newCamBasisXVec = rotateVecAboutOrig(camBasisXVec, basisXCompensatedAngle)
+        newCamBasisYVec = rotateVecAboutOrig(camBasisYVec, basisYCompensatedAngle)
+
+        import matplotlib.pyplot as plt
+
+        plt.figure()
+        origin = np.zeros(shape=(2,6), dtype= np.float32)
+        X = np.array([
+            self.stepsize,
+            0,
+            camBasisXVec[0],
+            camBasisYVec[0],
+            newCamBasisXVec[0],
+            newCamBasisYVec[0],
+        ])
+
+        Y = np.array([
+            0,
+            self.stepsize,
+            camBasisXVec[1],
+            camBasisYVec[1],
+            newCamBasisXVec[1],
+            newCamBasisYVec[1],
+        ])
+
+        plt.quiver(*origin, X, Y, color= ['r', 'tab:pink', 'g', 'tab:olive', 'b', 'tab:cyan'], scale= 1.0)
+        plt.show()
+
+        camBasisXVec = newCamBasisXVec
+        camBasisYVec = newCamBasisYVec
+
+        # Compute change of basis matrix
+        camToStageMat = np.array([
+            [camBasisXVec[0], camBasisYVec[0]], 
+            [camBasisXVec[1], camBasisYVec[1]], 
+        ])
+
+        # Compute the unscaled version
+        unscaledCamBasisXVec = camBasisXVec / camBasisXLen
+        unscaledCamBasisYVec = camBasisYVec / camBasisYLen
+
+        unscaledCamToStageMat = np.array([
+            [unscaledCamBasisXVec[0], unscaledCamBasisYVec[0]], 
+            [unscaledCamBasisXVec[1], unscaledCamBasisYVec[1]], 
+        ])
+
+        # Compute pixelsize
+        pixelSize_X = self.stepsize / camBasisXLen
+        pixelSize_Y = self.stepsize / camBasisYLen
+        #   Average between the two
+        pixelsize = (pixelSize_X + pixelSize_Y) / 2
+
+        return camToStageMat, unscaledCamToStageMat, pixelsize
+
+
 class DualColorImageCalibrator:
     
     mainSide: str
     dualColorImage: np.ndarray
     mainSideImage: np.ndarray
     minorSideImage: np.ndarray
+    
+    def __init__(self) -> None:
+        pass
+
     
     def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str, cropWidth: int, cropHeight: int) -> None:
         """Crop dual color image into main and minor side. Then apply filties for better visibility.

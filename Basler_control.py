@@ -89,7 +89,7 @@ def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.nda
         try:
             grabResult: pylon.GrabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
             if grabResult.GrabSucceeded():
-                img = np.flip( grabResult.Array, axis= 0 )
+                img = grabResult.Array
                 retrieveTimestamp = time.perf_counter()
                 conversion_factor = 1e6  # for conversion in ms
                 timestamp = round(grabResult.TimeStamp/conversion_factor, 1)

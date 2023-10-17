@@ -65,7 +65,7 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
 
-def im_to_texture(image: np.ndarray) -> Texture:
+def imageToTexture(image: np.ndarray) -> Texture:
     """A helper function to create kivy textures from numpy arrays.
 
     Args:
@@ -330,39 +330,37 @@ class CameraAndStageCalibration(BoxLayout):
         # get config values
         stepsize = app.config.getfloat('Calibration', 'step_size')
         stepunits = app.config.get('Calibration', 'step_units')
+        dualcolormode = app.config.get('DualColor', 'dualcolormode')
+        mainside = app.config.get('DualColor', 'mainside')
 
         # Take calibration images
-        img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
+        cameraAndStageCalibrator = macro.CameraAndStageCalibrator()
+        basisImageOrig, basisImageX, basisImageY = cameraAndStageCalibrator.takeCalibrationImage(
+            camera,
+            stage,
+            stepsize,
+            stepunits,
+            dualcolormode,
+            mainside 
+        )
         
-        # If in dual color mode then crop only relavent region
-        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-        if dualColorMode:
-            h, w = img1.shape
-            mainSide = app.config.get('DualColor', 'mainside')
-
-            if mainSide == 'Left':
-                img1 = img1[:,:w//2]
-                img2 = img2[:,:w//2]
-
-            elif mainSide == 'Right':
-                img1 = img1[:,w//2:]
-                img2 = img2[:,w//2:]
-
         # Update display calibration images
-        self.ids.fixedimage.texture = im_to_texture(img1)
-        self.ids.movingimage.texture = im_to_texture(img2)
+        self.ids.fixedimage.texture = imageToTexture(basisImageOrig)
+        self.ids.movingimagex.texture = imageToTexture(basisImageX)
+        self.ids.movingimagey.texture = imageToTexture(basisImageY)
             
         # Compute stage scale and rotation from the shift
-        pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
-        app.config.set('Camera', 'pixelsize', pxsize)
-        app.config.set('Camera', 'rotation', rotation)
+        app.imageToStageMat, app.imageToStageRotMat, camToStageScale = cameraAndStageCalibrator.calibrateCameraToStageTransform()
+        # pxSizeX, rotation = macro.computeStageScaleAndRotation(basisImageOrig, basisImageX, stepsize)
+        app.config.set('Camera', 'pixelsize', 1 / camToStageScale)
+        # app.config.set('Camera', 'rotation', rotation)
         
-        # update calibration matrix
-        app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
+        # # update calibration matrix
+        # app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxSizeX, rotation)
 
         # update labels shown
-        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {pxsize:.2f}'
-        self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
+        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {1 / camToStageScale:.2f}'
+        # self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
 
         # save configs
         app.config.write()
@@ -398,8 +396,6 @@ class DualColorCalibration(BoxLayout):
         if not isSuccess:
             return
 
-        dualColorImage = np.flip(dualColorImage, axis= 0)
-
         mainSide = app.config.get('DualColor', 'mainside')
         
         # Instantiate a dual color calibrator
@@ -414,8 +410,8 @@ class DualColorCalibration(BoxLayout):
         )
         
         # Update display image
-        self.ids.mainsideimage.texture = im_to_texture(mainSideImage)
-        self.ids.minorsideimage.texture = im_to_texture(minorSideImage)
+        self.ids.mainsideimage.texture = imageToTexture(mainSideImage)
+        self.ids.minorsideimage.texture = imageToTexture(minorSideImage)
 
         # Calibrate the transformation
         translation_x, translation_y, rotation = dualColorImageCalibrator.calibrateMinorToMainTransformationMatrix()
@@ -444,7 +440,7 @@ class DualColorCalibration(BoxLayout):
         combinedImage[:,:,1] = translatedMinorSideImage
 
         # Update the composite display image
-        self.ids.calibratedimage.texture = im_to_texture(combinedImage)
+        self.ids.calibratedimage.texture = imageToTexture(combinedImage)
 
         # Resume the camera to previous state
         liveViewButton.state = prevLiveViewButtonState
@@ -524,7 +520,7 @@ class AutoFocus(BoxLayout):
             if i == focal_plane:
                 tmp.label.color = 'red'
                 tmp.label.text = f'Focus: Image {i}'
-            tmp.image.texture = im_to_texture(imstack[i])
+            tmp.image.texture = imageToTexture(imstack[i])
             self.imagewidgets.append(tmp)
             self.ids.multipleimages.add_widget(tmp)
 
@@ -621,13 +617,13 @@ class RecordButtons(BoxLayout):
             # Call capture an image
             isSuccess, img = basler.single_take(app.camera)
             if isSuccess:
-                basler.save_image(img, path, snap_filename, isFlipY= True)
+                basler.save_image(img, path, snap_filename)
                 
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
             img = app.lastframe
-            basler.save_image(img, path, snap_filename, isFlipY= True)
+            basler.save_image(img, path, snap_filename)
                 
 
     def startPreview(self) -> None:
@@ -1859,7 +1855,6 @@ class MacroscopeApp(App):
         # Pre process image
         # 
         image = np.copy(self.image)
-        image = np.flip(image, axis= 0)
 
         dualcolorMode = self.config.getboolean('DualColor', 'dualcolormode')
         dualcolorViewMode = self.config.get('DualColor', 'viewmode')
