@@ -447,22 +447,40 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
 
 
 def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
-    
+    """Compute angle between the two vector 
 
+    Args:
+        vec1 (np.ndarray): vector of starting angle
+        vec2 (np.ndarray): vector of ending angle
+
+    Returns:
+        angle (float): angle between the two vectors in radian
+    """
     vec1normalized = vec1 / np.linalg.norm(vec1)
     vec2normalized = vec2 / np.linalg.norm(vec2)
 
-    
-    # Dot product
+    # Sin(theta)
     cosTheta = np.dot(vec1normalized, vec2normalized)
-
-    # Cross product
+    # Cos(theta)
     sinTheta = np.cross(vec1normalized, vec2normalized)
-    
     # Compute angle
     theta = math.atan2(sinTheta, cosTheta)
 
     return theta
+
+# Rotate the basis by the compensation amount
+def rotatePointAboutOrig(point: np.ndarray, rotation: float) -> np.ndarray:
+    """Rotate a point about origin with a given angle.
+
+    Args:
+        point (np.ndarray): point in x,y plane
+        rotation (float): rotation angle in deg
+
+    Returns:
+        point (np.ndarray): the rotated point
+    """    
+    rotationMatrix = createScaleAndRotationMatrix(1, rotation, 0, 0)[:2,:2]
+    return rotationMatrix @ point
 
 
 class CameraAndStageCalibrator:
@@ -568,15 +586,9 @@ class CameraAndStageCalibrator:
 
             basisXCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
             basisYCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
-            
-
-        # Rotate the basis by the compensation amount
-        def rotateVecAboutOrig(vec: np.ndarray, rotation: float) -> np.ndarray:
-            rotationMatrix = createScaleAndRotationMatrix(1, rotation, 0, 0)[:2,:2]
-            return rotationMatrix @ vec
         
-        newCamBasisXVec = rotateVecAboutOrig(camBasisXVec, basisXCompensatedAngle)
-        newCamBasisYVec = rotateVecAboutOrig(camBasisYVec, basisYCompensatedAngle)
+        newCamBasisXVec = rotatePointAboutOrig(camBasisXVec, basisXCompensatedAngle)
+        newCamBasisYVec = rotatePointAboutOrig(camBasisYVec, basisYCompensatedAngle)
 
         import matplotlib.pyplot as plt
 
@@ -606,26 +618,32 @@ class CameraAndStageCalibrator:
         camBasisXVec = newCamBasisXVec
         camBasisYVec = newCamBasisYVec
 
-        # Compute change of basis matrix
-        camToStageMat = np.array([
+        # Compute change of basis matrix from camera to stage
+        stageToCamMat = np.array([
             [camBasisXVec[0], camBasisYVec[0]], 
             [camBasisXVec[1], camBasisYVec[1]], 
         ])
+        camToStageMat = np.linalg.inv(stageToCamMat)
 
         # Compute the unscaled version
         unscaledCamBasisXVec = camBasisXVec / camBasisXLen
         unscaledCamBasisYVec = camBasisYVec / camBasisYLen
 
-        unscaledCamToStageMat = np.array([
+        unscaledStageToCamMat = np.array([
             [unscaledCamBasisXVec[0], unscaledCamBasisYVec[0]], 
             [unscaledCamBasisXVec[1], unscaledCamBasisYVec[1]], 
         ])
+        unscaledCamToStageMat = np.linalg.inv(unscaledStageToCamMat)
 
         # Compute pixelsize
         pixelSize_X = self.stepsize / camBasisXLen
         pixelSize_Y = self.stepsize / camBasisYLen
         #   Average between the two
         pixelsize = (pixelSize_X + pixelSize_Y) / 2
+
+        # Transform matricies into Y,X coordinate to match Numpy convention
+        camToStageMat = switchXY2x2Mat(camToStageMat)
+        unscaledCamToStageMat = switchXY2x2Mat(unscaledCamToStageMat)
 
         return camToStageMat, unscaledCamToStageMat, pixelsize
 
