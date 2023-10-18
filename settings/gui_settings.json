@@ -116,17 +116,25 @@
     },
     {
         "type": "numeric",
-        "title": "Pixelsize",
-        "desc": "Use calibration to calculate (um/px)",
-        "section": "Camera",
-        "key": "pixelsize"
-    },
-    {
-        "type": "numeric",
         "title": "Rotation",
         "desc": "Rotation of camera relative to stage",
         "section": "Camera",
         "key": "rotation"
+    },
+    {
+        "type": "options",
+        "title": "Image plane normal's direction.",
+        "desc": "Image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix.",
+        "section": "Camera",
+        "key": "imagenormaldir",
+        "options": ["+Z", "-Z"]
+    },
+    {
+        "type": "numeric",
+        "title": "Pixelsize",
+        "desc": "Use calibration to calculate (um/px)",
+        "section": "Camera",
+        "key": "pixelsize"
     },
     {
         "type": "title",

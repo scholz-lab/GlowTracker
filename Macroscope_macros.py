@@ -23,59 +23,6 @@ import itk
 import cv2
 from skimage.exposure import match_histograms
 
-def switchXY2x2Mat(matXY: np.ndarray) -> np.ndarray:
-    """Modified a 2x2 matrix such that the the multiplication operation 
-    is suitable for a 2D vector of order y,x
-
-    Args:
-        matXY (np.ndarray): A 2x2 matrix
-
-    Returns:
-        np.ndarray: A modified 2x2 matrix with flipped order x,y
-    """    
-    if matXY.shape != (2, 2):
-        return
-    
-    A = matXY[0][0]
-    B = matXY[0][1]
-    C = matXY[1][0]
-    D = matXY[1][1]
-
-    matYX = np.array([
-        [D, C],
-        [B, A]
-    ], matXY.dtype)
-
-    return matYX
-
-
-def genImageToStageMatrix(scale: float, rotation: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute trasnformation matrix from image space to stage space using the given rotation angle and scale. Assume only rotation and uniform scaling.
-
-    Args:
-        scale (float): width or height (meter) per pixel
-        rotation (float): rotation angle between the image space and stage space
-
-    Returns:
-        imageToStageMat (np.ndarray): transformation matrix from image space to stage space
-        imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
-    """    
-
-    # Stage to Image. Standard 2D rotation matrix
-    cosval, sinval = math.cos(rotation), math.sin(rotation)
-    stageToImageMat = np.array([
-        [cosval, -sinval],
-        [sinval, cosval]
-    ], np.float32)
-
-    # Stage to Image
-    imageToStageMat = np.linalg.inv( stageToImageMat )
-
-    # switch x,y to y,x
-    imageToStageMat = switchXY2x2Mat(imageToStageMat)
-
-    return imageToStageMat * scale, imageToStageMat
-
 
 #%% Autofocus using z axis
 def zFocus(stage, camera, stepsize, stepunits, nsteps):
@@ -379,6 +326,27 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     return croppedImage
 
 
+def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
+    """Modified a matrix such that the the multiplication operation 
+    is suitable for vectors of order (y,x,..) from (x,y,...) or vice versa.
+
+    Args:
+        matrix (np.ndarray): An NxM matrix of size atleast 2x2
+
+    Returns:
+        matrixXYSwapped: An X,Y swapped version of the matrix
+    """    
+    matrixXYSwapped = np.copy(matrix)
+
+    # Swap 1st and 2nd row
+    matrixXYSwapped[[0, 1], :] = matrixXYSwapped[[1, 0], :]
+
+    # Swap 1st and 2nd column
+    matrixXYSwapped[:, [0, 1]] = matrixXYSwapped[:, [1, 0]]
+    
+    return matrixXYSwapped
+
+
 def createTranslationMatrix(translation_x: float, translation_y: float) -> np.float32:
     """Create 2D translation matrix.
 
@@ -499,10 +467,10 @@ class CameraAndStageCalibrator:
         """Take images for camera&stage transformation matrix calibration.
 
         Args:
-            camera (pylon.InstantCamera): pylon camera to take images with
-            stage (zaber.Stage): zaber stage class to move the camera with
-            stepsize (float): movement step size in each stage basis axes
-            stepunits (str): stage movement step unit
+            camera (pylon.InstantCamera): pylon camera to take images with.
+            stage (zaber.Stage): zaber stage class to move the camera with.
+            stepsize (float): movement step size in each stage basis axes.
+            stepunits (str): stage movement step unit.
             dualColorMode (bool): is in dual color mode. Defaults to False.
             dualColorModeMainSide (str): if in dual color mode, which side is the main side.Defaults to 'Right'.
 
@@ -549,7 +517,14 @@ class CameraAndStageCalibrator:
         return self.basisOrigImage, self.basisXImage, self.basisYImage
     
 
-    def calibrateCameraToStageTransform(self) -> np.ndarray:
+    def calibrateCameraAndStageTransform(self) -> Tuple[float, int, float]:
+        """Estimate the transformation from stage space to image space using phase cross correlation.
+
+        Returns:
+            rotationStageToCam (float): rotation angle from stage
+            imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
+            pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
+        """        
 
         # Estimate camera basis X 
         basisXPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
@@ -562,7 +537,6 @@ class CameraAndStageCalibrator:
     
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
-
 
         # Compute angle between the two basis 
         angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
@@ -618,34 +592,53 @@ class CameraAndStageCalibrator:
         camBasisXVec = newCamBasisXVec
         camBasisYVec = newCamBasisYVec
 
-        # Compute change of basis matrix from camera to stage
-        stageToCamMat = np.array([
-            [camBasisXVec[0], camBasisYVec[0]], 
-            [camBasisXVec[1], camBasisYVec[1]], 
-        ])
-        camToStageMat = np.linalg.inv(stageToCamMat)
-
-        # Compute the unscaled version
-        unscaledCamBasisXVec = camBasisXVec / camBasisXLen
-        unscaledCamBasisYVec = camBasisYVec / camBasisYLen
-
-        unscaledStageToCamMat = np.array([
-            [unscaledCamBasisXVec[0], unscaledCamBasisYVec[0]], 
-            [unscaledCamBasisXVec[1], unscaledCamBasisYVec[1]], 
-        ])
-        unscaledCamToStageMat = np.linalg.inv(unscaledStageToCamMat)
+        # Compute rotation angle from stage to camera
+        normCamBasisXVec = camBasisXVec / camBasisXLen
+        rotationStageToCam = computeAngleBetweenTwo2DVecs( 
+            np.array([1., 0.], np.float32), 
+            normCamBasisXVec
+        )
 
         # Compute pixelsize
         pixelSize_X = self.stepsize / camBasisXLen
         pixelSize_Y = self.stepsize / camBasisYLen
         #   Average between the two
-        pixelsize = (pixelSize_X + pixelSize_Y) / 2
+        pixelSize = (pixelSize_X + pixelSize_Y) / 2
 
-        # Transform matricies into Y,X coordinate to match Numpy convention
-        camToStageMat = switchXY2x2Mat(camToStageMat)
-        unscaledCamToStageMat = switchXY2x2Mat(unscaledCamToStageMat)
+        return rotationStageToCam, signAngleBetweenXYBasis, pixelSize
 
-        return camToStageMat, unscaledCamToStageMat, pixelsize
+    
+    @staticmethod
+    def genImageToStageMatrix(rotation: float, imageNormalDir: int, pixelSize: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute trasnformation matrix from image space to stage space using the given rotation angle, sign of cross product between Camera Space X,Y basis, and pixelsize. Assume only rotation and uniform scaling.
+
+        Args:
+            rotationStageToCam (float): rotation angle from stage
+            imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
+            pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
+
+        Returns:
+            - imageToStageMat (np.ndarray): transformation matrix from image space to stage space
+            - imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
+        """    
+        # Stage to Image. Standard 2D rotation matrix
+        cosval, sinval = math.cos(rotation), math.sin(rotation)
+
+        camBasisXVec = np.array([cosval, sinval])
+        camBasisYVec = rotatePointAboutOrig(camBasisXVec, math.pi/2 * imageNormalDir)
+
+        stageToImageMat = np.array([
+            [camBasisXVec[0], camBasisYVec[0]],
+            [camBasisXVec[1], camBasisYVec[1]]
+        ], np.float32)
+
+        # Stage to Image
+        imageToStageMat = np.linalg.inv( stageToImageMat )
+
+        # switch x,y to y,x
+        imageToStageMat = swapMatXYOrder(imageToStageMat)
+
+        return pixelSize * imageToStageMat, imageToStageMat
 
 
 class DualColorImageCalibrator:

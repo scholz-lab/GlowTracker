@@ -349,18 +349,18 @@ class CameraAndStageCalibration(BoxLayout):
         self.ids.movingimagex.texture = imageToTexture(basisImageX)
         self.ids.movingimagey.texture = imageToTexture(basisImageY)
             
-        # Compute stage scale and rotation from the shift
-        app.imageToStageMat, app.imageToStageRotMat, camToStageScale = cameraAndStageCalibrator.calibrateCameraToStageTransform()
-        # pxSizeX, rotation = macro.computeStageScaleAndRotation(basisImageOrig, basisImageX, stepsize)
-        app.config.set('Camera', 'pixelsize', 1 / camToStageScale)
-        # app.config.set('Camera', 'rotation', rotation)
+        # Estimate camera to stage transformation parameters
+        rotation, imageNormDir, pixelSize = cameraAndStageCalibrator.calibrateCameraAndStageTransform()
+        app.config.set('Camera', 'rotation', rotation)
+        app.config.set('Camera', 'imagenormaldir', '+Z' if imageNormDir == 1 else '-Z')
+        app.config.set('Camera', 'pixelsize', pixelSize)
         
-        # # update calibration matrix
-        # app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxSizeX, rotation)
+        # update calibration matrix
+        app.imageToStageMat, app.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormDir, pixelSize)
 
         # update labels shown
-        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {1 / camToStageScale:.2f}'
-        # self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
+        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {pixelSize:.2f}'
+        self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
 
         # save configs
         app.config.write()
@@ -1610,9 +1610,11 @@ class MacroscopeApp(App):
         self.stopevent = Clock.create_trigger(lambda dt: self.stage.stop(), 0.1)
 
         # Load and gen camera&stage transformation matricies
-        pixelsize = self.config.getfloat('Camera', 'pixelsize')
         rotation = self.config.getfloat('Camera', 'rotation')
-        self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
+        imageNormalDir = self.config.get('Camera', 'imagenormaldir')
+        imageNormalDir = +1 if imageNormalDir == '+Z' else -1
+        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormalDir, pixelsize)
 
         # Load moveImageSpaceMode
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
