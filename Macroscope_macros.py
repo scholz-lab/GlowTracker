@@ -6,6 +6,8 @@ import csv
 import scipy.ndimage as ndi
 import matplotlib as mpl
 import matplotlib.pylab as plt
+plt.set_loglevel('warning')
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from pypylon import pylon
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen
 from skimage.measure import regionprops, label
@@ -18,7 +20,7 @@ from zaber_motion import Library, Units
 from zaber_motion.ascii import connection
 import Basler_control as basler
 import Zaber_control as zaber
-from typing import Tuple
+from typing import Tuple, List
 import itk
 import cv2
 from skimage.exposure import match_histograms
@@ -494,7 +496,7 @@ class CameraAndStageCalibrator:
         isSuccessImageY, self.basisYImage = basler.single_take(camera)
 
         # Move back to origin
-        stage.move_rel((-stepsize, stepsize, 0), stepunits, wait_until_idle = True)
+        stage.move_rel((0, -stepsize, 0), stepunits, wait_until_idle = True)
 
         # If taking image is not successful then return None
         if not (isSuccessImageOrig and isSuccessImageX and isSuccessImageY):
@@ -538,6 +540,11 @@ class CameraAndStageCalibrator:
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
 
+        # Check if any estimated phase shift is nan
+        if np.any(np.isnan(np.hstack((camBasisXVec, camBasisYVec)))):
+            print('Estimated phase shift is nan. Please try again.')
+            return 0, 1, 1
+
         # Compute angle between the two basis 
         angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
         signAngleBetweenXYBasis = int(np.sign(angleBetweenXYBasis))
@@ -561,36 +568,8 @@ class CameraAndStageCalibrator:
             basisXCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
             basisYCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
         
-        newCamBasisXVec = rotatePointAboutOrig(camBasisXVec, basisXCompensatedAngle)
-        newCamBasisYVec = rotatePointAboutOrig(camBasisYVec, basisYCompensatedAngle)
-
-        import matplotlib.pyplot as plt
-
-        plt.figure()
-        origin = np.zeros(shape=(2,6), dtype= np.float32)
-        X = np.array([
-            self.stepsize,
-            0,
-            camBasisXVec[0],
-            camBasisYVec[0],
-            newCamBasisXVec[0],
-            newCamBasisYVec[0],
-        ])
-
-        Y = np.array([
-            0,
-            self.stepsize,
-            camBasisXVec[1],
-            camBasisYVec[1],
-            newCamBasisXVec[1],
-            newCamBasisYVec[1],
-        ])
-
-        plt.quiver(*origin, X, Y, color= ['r', 'tab:pink', 'g', 'tab:olive', 'b', 'tab:cyan'], scale= 1.0)
-        plt.show()
-
-        camBasisXVec = newCamBasisXVec
-        camBasisYVec = newCamBasisYVec
+        camBasisXVec = rotatePointAboutOrig(camBasisXVec, basisXCompensatedAngle)
+        camBasisYVec = rotatePointAboutOrig(camBasisYVec, basisYCompensatedAngle)
 
         # Compute rotation angle from stage to camera
         normCamBasisXVec = camBasisXVec / camBasisXLen
@@ -770,3 +749,43 @@ class DualColorImageCalibrator:
         
         return transformationMat
 
+
+
+def renderBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+
+    # Define the coordinates for the vectors
+    stageX = [1, 0]  # Vector from origin to (1,0)
+    stageY = [0, 1]  # Vector from origin to (0,1)
+    imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
+    imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
+
+    # Create the plot
+    fig = plt.figure(figsize=(6, 6))
+    
+    def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
+        plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
+        plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
+                        ha= 'center', fontsize= 12, color= 'black')
+    
+    drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
+    drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
+    drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
+    drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
+
+    # Set plot limits and labels
+    plt.xlim(-1, 1)
+    plt.ylim(-1, 1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+
+    # Add grid and legend
+    plt.grid(True)
+    plt.legend()
+
+    # Render the plot to a numpy array
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    width, height = fig.get_size_inches() * fig.get_dpi()
+    image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+    return image_array

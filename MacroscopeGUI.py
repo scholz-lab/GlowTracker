@@ -365,6 +365,11 @@ class CameraAndStageCalibration(BoxLayout):
         # save configs
         app.config.write()
 
+        # Show axis figure
+        stageToImageRotMat = np.linalg.inv(app.imageToStageRotMat)
+        plotImage = macro.renderBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
+        self.ids.cameraandstageaxes.texture = imageToTexture(plotImage)
+
         # Resume the camera to previous state
         liveViewButton.state = prevLiveViewButtonState
 

@@ -687,7 +687,7 @@ MainWindow:
     spacing: 20
 
     GridLayout:
-        cols: 3
+        cols: 4
         spacing: 20
 
         BoxLayout:
@@ -713,6 +713,14 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: movingimagey
+        
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Calibrated Camera And Stage Axes'
+                size_hint_y: 0.1
+            Image:
+                id: cameraandstageaxes
     
     BoxLayout:
         size_hint_y: .08
