@@ -1384,7 +1384,8 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             
             # Compute relative distancec in each axis
-            ystep, xstep = macro.getStageDistances([ystep, xstep], app.imageToStageMat)
+            # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
+            ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
             ystep *= scale
             xstep *= scale
 
