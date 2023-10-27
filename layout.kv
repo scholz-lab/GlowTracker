@@ -474,11 +474,12 @@ MainWindow:
     buffer : buffer
     autofocuscheckbox: autofocuscheckbox
     trackingcheckbox: trackingcheckbox
-    RecordButtons:
-        id: recordbuttons
+
+    ImageAcquisitionButtonLayout:
+        id: imageacquisitionbuttonlayout
         size_hint: (2.5, 1)
+
     GridLayout:
-        
         cols: 2
         rows: 3
         MyLabel:
@@ -501,6 +502,7 @@ MainWindow:
         CheckBox:
             id: trackingcheckbox
             on_state: root.trackingButtonCallback() if self.state=='down' else root.stopTracking()
+
     GridLayout:
         cols: 2
         rows: 3
@@ -512,8 +514,8 @@ MainWindow:
             color: '#ffffff'
             text: str(self.value)
 
-### Live view and Record
-<RecordButtons>:
+### LiveView, Record, Snap
+<ImageAcquisitionButtonLayout>:
     orientation: 'horizontal'
     spacing: 30
     padding: [30,10]
@@ -521,7 +523,7 @@ MainWindow:
     liveviewbutton:liveviewbutton
     snapbutton:snapbutton
     
-    ToggleButton:
+    LiveViewButton:
         id: liveviewbutton
         border: 0,0,0,0
         size_hint_x: 0.1
@@ -531,9 +533,9 @@ MainWindow:
         background_normal: 'icons/play_off.png'
         background_down: 'icons/play_on.png'
         background_disabled_normal: 'icons/play_disabled.png'
-        on_state: root.startPreview() if self.state=='down' else root.stopPreview()
         disabled: recordbutton.state =='down'
-    ToggleButton: 
+
+    RecordButton: 
         id: recordbutton
         border: 0,0,0,0
         size_hint_x: 0.1
@@ -542,7 +544,6 @@ MainWindow:
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/record_inactive.png'
         background_down: 'icons/record_active.png'
-        on_state: root.startRecording() if self.state=='down' else root.stopRecording()
     
     Button: 
         id: snapbutton
