@@ -7,7 +7,15 @@ from skimage.io import imsave
 #import cv2
 #from libtiff import TIFF
 from typing import Tuple
+from dataclasses import dataclass
 import numpy as np
+
+@dataclass
+class CameraGrabParameters:
+    bufferSize: int
+    grabStrategy: pylon.GrabStrategy_OneByOne | pylon.GrabStrategy_LatestImageOnly
+    numberOfImagesToGrab: int = -1
+    
 
 #%% Camera initialization
 def camera_init():
@@ -58,14 +66,6 @@ def single_take(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray ]:
     isSuccess, img, _, _ = retrieve_grabbing_result(camera)
     return isSuccess, img
 
-
-def start_grabbing(camera, numberOfImagesToGrab=100, record=False, buffersize=16):
-    """start grabbing with the camera"""
-    camera.MaxNumBuffer = buffersize
-    if record:
-        camera.StartGrabbingMax(numberOfImagesToGrab, pylon.GrabStrategy_OneByOne)
-    else:
-        camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
 
 def stop_grabbing(camera):

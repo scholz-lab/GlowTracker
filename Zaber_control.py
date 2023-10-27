@@ -236,6 +236,7 @@ class Stage:
                     units(str): string units, commonly used
         """
         if self.axis_y is not None:
+            # TODO: Fix handle BADDATA
             self.axis_y.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
     
     # move single axis

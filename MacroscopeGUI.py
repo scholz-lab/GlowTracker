@@ -637,59 +637,117 @@ class RecordButtons(BoxLayout):
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         
-        if camera is not None:
-            # Start grabbing
-            basler.start_grabbing(camera)
-
-            # Update the image
-            fps = camera.ResultingFrameRate()
-            print("Grabbing Framerate:", fps)
-            self.updatethread = Thread(target=self.update, daemon = True)
-            self.updatethread.start()
-            
-            # Start dual color overlay
-            app.updateDualColorOverlay()
-            
-        else:
+        if camera is None:
             self.liveviewbutton.state = 'normal'
+            return
+                    
+        # 
+        # Setup image acquisition thread parameters
+        # 
+
+        def updateCondition() -> bool:
+            return camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down'
+        
+        # Init loop condition
+        acquireCondition = True
+
+        cropY, cropX = self.parent.cropY, self.parent.cropX
+
+        def receiveImageCallback(img: np.ndarray, timestamp: float, retrieveTimestamp: float) -> bool:
+            
+            # Update app image data
+            app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
+            app.timestamp = timestamp
+            app.retrieveTimestamp = retrieveTimestamp
+            self.parent.framecounter.value += 1
+
+            return updateCondition()
+        
+        
+        grabArgs = basler.CameraGrabParameters(
+            bufferSize= 16,
+            numberOfImagesToGrab= -1,
+            grabStrategy= pylon.GrabStrategy_LatestImageOnly
+        )
+
+        # Spawn image acquisition thread
+        self.imageAcquisitionThread = Thread(
+            target= self.imageAcquisition,
+            daemon= True,
+            kwargs= {
+                'acquireCondition' : acquireCondition,
+                'grabArgs' : grabArgs,
+                'receiveImageCallback' : receiveImageCallback,
+            }
+        )
+        self.imageAcquisitionThread.start()
+
+        # Update image overlay
+        app.updateDualColorOverlay()
 
 
     def stopPreview(self):
-        app = App.get_running_app()
-        camera = app.camera
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+
         print('stopping preview')
+
         if camera is not None:
-            Clock.unschedule(self.event)
-            if self.updatethread.is_alive():
-                self.updatethread.join()
+
+            # Unschedule the display event thread
+            Clock.unschedule(self.displayEvent)
+
+            # Stop image acquisition thread
+            if self.imageAcquisitionThread.is_alive():
+                self.imageAcquisitionThread.join()
+                
+            # Stop grabbing
             basler.stop_grabbing(camera)
+
         # reset displayed framecounter
         self.parent.framecounter.value = 0
+        
         # reset scale of image
         app.root.ids.middlecolumn.ids.scalableimage.reset()
 
 
-    def update(self):
-        app = App.get_running_app()
-        camera = app.camera
+    def imageAcquisition(self, acquireCondition: bool, grabArgs: basler.CameraGrabParameters, receiveImageCallback: callable, finishLoopCallback: callable = None ) -> None:
         
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+
+        # Start grabbing images
+        camera.MaxNumBuffer = grabArgs.bufferSize
+        
+        if grabArgs.numberOfImagesToGrab == -1:
+            # Endless grabbing
+            camera.StartGrabbing(grabArgs.grabStrategy)
+        
+        else:
+            # Grab for a specific number of frames
+            camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
+            
+        fps = camera.ResultingFrameRate()
+        print("Grabbing Framerate:", fps)
+
         # schedule a display update
         fps = app.config.getfloat('Camera', 'display_fps')
-        self.event = Clock.schedule_interval(self.display, 1.0 /fps)
+        self.displayEvent = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
-            
-        while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
-            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
-            if isSuccess:
-                #print('dt: ', timestamp-app.timestamp)
-                cropY, cropX = self.parent.cropY, self.parent.cropX
-                
-                app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
-                app.timestamp = timestamp
-                app.retrieveTimestamp = retrieveTimestamp
-                self.parent.framecounter.value += 1
-        return
 
+        while acquireCondition:
+
+            # retrieve an image
+            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
+
+            if isSuccess:
+                # Trigger image callback, which also has a side effect of 
+                #   handling update condition
+                acquireCondition = receiveImageCallback(img, timestamp, retrieveTimestamp)
+        
+        if finishLoopCallback is not None:
+            finishLoopCallback()
+        
 
     def display(self, dt):
         if App.get_running_app().lastframe is not None:
@@ -705,49 +763,130 @@ class RecordButtons(BoxLayout):
     def startRecording(self) -> None:
         """Start the recording process.
         """                
-        app = App.get_running_app()
-        camera = app.camera
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+
+        if camera is None:
+            self.recordbutton.state = 'normal'
+            return
 
         self.parent.framecounter.value = 0
         self.path = app.root.ids.leftcolumn.savefile
 
-        if camera is not None:
-            # stop camera if already running 
-            self.liveviewbutton.state = 'normal'
+        # stop camera if already running 
+        self.liveviewbutton.state = 'normal'
 
-            # open coordinate file
-            self.open_coord_file()
+        # open coordinate file
+        self.open_coord_file()
 
-            # schedule buffer update
-            self.buffertrigger = Clock.create_trigger(self.update_buffer)
+        # schedule buffer update
+        self.buffertrigger = Clock.create_trigger(self.update_buffer)
+        
+        # Image data queue to share between recording and saving
+        self.imageQueue = Queue()
+
+        # Start a thread for saving images
+        self.savingthread = Thread(target=self.imageSavingThread, args= [3,])
+        self.savingthread.start()
+
+        # 
+        # Setup image acquisition thread parameters
+        # 
+
+        nframes, buffersize, cropX, cropY = self.initRecordingParams()
+
+        print(f'Initial id cropX {id(cropX)}')
+
+        # frameCounter = 1
+        frameCounter = int(1)
+
+        print(f'Initial id frameCounter {id(frameCounter)}')
+
+        def updateCondition() -> bool:
+            return camera is not None and frameCounter < nframes and self.recordbutton.state == 'down'
+        
+        # Init loop condition
+        acquireCondition = True
+
+        def receiveImageCallback(img: np.ndarray, timestamp: float, retrieveTimestamp: float) -> bool:
             
-            # Image data queue to share between recording and saving
-            self.imageQueue = Queue()
+            global frameCounter
+            # Update buffer display text
+            # self.update_buffer()
+            self.parent.buffer.value = camera.MaxNumBuffer() - camera.NumQueuedBuffers()
 
-            # Start a thread for saving images
-            self.savingthread = Thread(target=self.imageSavingThread, args= [3,])
-            self.savingthread.start()
+            print(f'In loop id cropX {id(cropX)}')
+            print(f'In loop id frameCounter {id(frameCounter)}')
 
-            # start a thread for grabbing images
-            record_args = self.init_recording()
-            self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
-            self.recordthread.start()
+            # Update app image data
+            app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
 
-            # Start dual color overlay
-            app.updateDualColorOverlay()
+            # write coordinate into file
+            self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
 
-        else:
-            self.recordbutton.state = 'normal'
+            # Put image into the saving queue
+            self.imageQueue.put([
+                np.copy(app.lastframe),
+                self.path, 
+                self.image_filename.format(self.parent.framecounter.value)
+            ])
+
+            # update time and frame counter
+            app.timestamp = timestamp
+            app.retrieveTimestamp = retrieveTimestamp
+            self.parent.framecounter.value += 1
+
+            frameCounter += 1
+
+            return updateCondition()
+        
+
+        def finishLoopCallback():
+            # Send signal to terminate recording workers
+            self.imageQueue.put(None)
+
+            print(f'Recorded {nframes} frames.')
+
+            # Call to recording-stopping procedure
+            self.stopRecording()
+
+
+        grabArgs = basler.CameraGrabParameters(
+            bufferSize= buffersize,
+            numberOfImagesToGrab= nframes,
+            grabStrategy= pylon.GrabStrategy_OneByOne
+        )
+
+        # Spawn image acquisition thread
+        self.imageAcquisitionThread = Thread(
+            target= self.imageAcquisition,
+            daemon= True,
+            kwargs= {
+                'acquireCondition' : acquireCondition,
+                'grabArgs' : grabArgs,
+                'receiveImageCallback' : receiveImageCallback,
+                'finishLoopCallback' : finishLoopCallback,
+            }
+        )
+
+        self.imageAcquisitionThread.start()
+
+        # self.recordthread = Thread(target=self.record, args = record_args, daemon = True)
+        # self.recordthread.start()
+        
+        # Update image overlay
+        app.updateDualColorOverlay()
 
 
     def stopRecording(self):
-        camera = App.get_running_app().camera
+
+        camera: pylon.InstantCamera = App.get_running_app().camera
 
         if camera is None:
             return
         
         # Unschedule self.display() event
-        Clock.unschedule(self.event)
+        Clock.unschedule(self.displayEvent)
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
@@ -757,19 +896,25 @@ class RecordButtons(BoxLayout):
         
         # Tell camera to stop grabbing mode
         basler.stop_grabbing(camera)
+
         # Reset frame counter
         self.parent.framecounter.value = 0
+
         # Call update_buffer() once
-        self.buffertrigger()
+        # self.buffertrigger()
+        self.parent.buffer.value = camera.MaxNumBuffer()- camera.NumQueuedBuffers()
+        
+
         # Reset scale of image
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
+
         # Set button state back to normal
         self.recordbutton.state = 'normal'
         
         print("Finished recording")
 
 
-    def init_recording(self) -> Tuple[ int, int, int, int ]:
+    def initRecordingParams(self) -> Tuple[ int, int, int, int ]:
         """Initialize recording parameters
 
         Returns:
@@ -843,61 +988,6 @@ class RecordButtons(BoxLayout):
         consumerThreadPool.join()
 
         print(f'Finished saving all the images')
-
-    def record(self, nframes: int, buffersize: int, cropX: int, cropY: int) -> None:
-        """Camera recording loop. Start the camera grabbing mode and a loop to repeatedly call retrieving result.
-
-        Args:
-            nframes (int): maximum number of frames to record
-            buffersize (int): number of camera's internal frame buffers
-            cropX (int): cropping position in X
-            cropY (int): cropping position in Y
-        """
-        app = App.get_running_app()
-        camera = app.camera
-        basler.start_grabbing(app.camera, numberOfImagesToGrab=nframes, record=True, buffersize=buffersize)
-
-        # schedule a display update
-        fps = app.config.getfloat('Camera', 'display_fps')
-        self.event = Clock.schedule_interval(self.display, 1.0 /fps)
-        print(f'Displaying at {fps} fps')
-        
-        # grab and write images
-        counter = 0
-        while camera is not None and counter < nframes and self.recordbutton.state == 'down':
-            # get image
-            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
-            # trigger a buffer update
-            self.buffertrigger()
-            if isSuccess:
-                # print('dt: ', timestamp-app.timestamp)
-                # print('(x,y,z): ', app.coords)
-                
-                # Crop the retrieved image and set as the latest frame
-                app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
-                # write coordinate into file
-                self.coordinate_file.write(f"{self.parent.framecounter.value} {timestamp} {app.coords[0]} {app.coords[1]} {app.coords[2]} \n")
-
-                self.imageQueue.put([
-                    np.copy(app.lastframe),
-                    self.path, 
-                    self.image_filename.format(self.parent.framecounter.value)
-                ])
-
-                # update time and frame counter
-                app.timestamp = timestamp
-                app.retrieveTimestamp = retrieveTimestamp
-                self.parent.framecounter.value += 1
-                counter += 1
-        
-        # Send signal to terminate recording workers
-        self.imageQueue.put(None)
-
-        print(f'Finished recordings {counter} frames.')
-        self.buffertrigger()
-        self.recordbutton.state = 'normal'
-        
-        return
 
 
     def open_coord_file(self, *args):
@@ -1227,6 +1317,7 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             # make a capture circle - all of this happens in Image Widget, and record offset from center, then dispatch the centering routine
             #schedule a tracking loop
+            
         else:
             self._popup = WarningPopup(title="Tracking", text='Tracking requires a stage, a camera and the camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
