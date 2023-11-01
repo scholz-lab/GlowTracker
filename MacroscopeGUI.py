@@ -622,11 +622,11 @@ class ImageAcquisitionButton(ToggleButton):
         self.imageAcquisitionThread: Thread | None = None
         self.runtimeControls: RuntimeControls | None = None
         self.updateDisplayImageEvent: ClockEvent | None = None
-        self.image: np.ndarray = np.zeros(0)
+        self.image: np.ndarray = np.zeros((1,1))
         self.imageTimeStamp: float = 0
         self.imageRetrieveTimeStamp: float = 0
-        self.dualColorMainSideImage: np.ndarray = np.zeros(0)
-        self.dualColorMinorSideImage: np.ndarray = np.zeros(0)
+        self.dualColorMainSideImage: np.ndarray = np.zeros((1,1))
+        self.dualColorMinorSideImage: np.ndarray = np.zeros((1,1))
         self.dualColorMinorToMainMat: np.ndarray | None = None
 
     
@@ -676,11 +676,12 @@ class ImageAcquisitionButton(ToggleButton):
         while self.acquisitionCondition():
 
             # retrieve an image
-            isSuccess, self.image, self.imageTimeStamp, self.imageRetrieveTimeStamp = basler.retrieve_grabbing_result(self.camera)
+            isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = basler.retrieve_grabbing_result(self.camera)
 
             if isSuccess:
+
                 # Process the received image
-                self.processImageCallback()
+                self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
 
                 # Trigger image callback
                 self.receiveImageCallback()
@@ -692,12 +693,12 @@ class ImageAcquisitionButton(ToggleButton):
         pass
 
     
-    def processImageCallback(self) -> None:
+    def processImageCallback(self, image: np.ndarray, imageTimeStamp: float, imageRetrieveTimeStamp: float) -> None:
 
         # Crop image
-        h, w = self.image.shape
+        h, w = image.shape
         cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
-        self.image = self.image[ cropY : h - cropY, cropX : w - cropX ]
+        image = image[ cropY : h - cropY, cropX : w - cropX ]
         
         # Process image. For now this is only the case for dual color mode
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
@@ -705,15 +706,16 @@ class ImageAcquisitionButton(ToggleButton):
         dualcolorViewMode = self.app.config.get('DualColor', 'viewmode')
 
         if dualcolorMode:
+            # If in dual color mode then post process the image
 
             # Split image into main and minor side
             if mainSide == 'Left':
-                self.dualColorMainSideImage = self.image[:,:w//2]
-                self.dualColorMinorSideImage = self.image[:,w//2:]
+                self.dualColorMainSideImage = image[:,:w//2]
+                self.dualColorMinorSideImage = image[:,w//2:]
 
             elif mainSide == 'Right':
-                self.dualColorMainSideImage = self.image[:,w//2:]
-                self.dualColorMinorSideImage = self.image[:,:w//2]
+                self.dualColorMainSideImage = image[:,w//2:]
+                self.dualColorMinorSideImage = image[:,:w//2]
             
             # Compute minor to main calibration matrix if first time
             if self.dualColorMinorToMainMat is None:
@@ -736,6 +738,16 @@ class ImageAcquisitionButton(ToggleButton):
                 combinedImage[:,:,1] = self.dualColorMinorSideImage
 
                 self.image = combinedImage
+            
+            else:
+                self.image = image
+        
+        else:
+            # If not in dual color mode then simply pass on
+            self.image = image
+        
+        self.imageTimeStamp = imageTimeStamp
+        self.imageRetrieveTimeStamp = imageRetrieveTimeStamp
     
 
     def receiveImageCallback(self) -> None:
@@ -767,14 +779,13 @@ class LiveViewButton(ImageAcquisitionButton):
         
         self.app: MacroscopeApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
+        self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
         if self.camera is None:
             self.state = 'normal'
             return
         
         # Setup image acquisition thread parameters
-        self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
-
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
             numberOfImagesToGrab= -1,
@@ -848,20 +859,19 @@ class RecordButton(ImageAcquisitionButton):
         
         self.app: MacroscopeApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
+        self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
         if self.camera is None:
             self.state = 'normal'
             return
 
-        self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
-        
+        # stop camera if already running
+        basler.stop_grabbing(self.camera)
         self.runtimeControls.framecounter.value = 0
+
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
-
-        # stop camera if already running
-        basler.stop_grabbing(self.camera)
 
         # open coordinate file
         self.coordinateFile = open(os.path.join(self.saveFilePath, timeStamped("coords.txt")), 'a')
@@ -1065,10 +1075,10 @@ class ImageAcquisitionButtonLayout(BoxLayout):
     recordbutton = ObjectProperty(None, rebind = True)
     liveviewbutton = ObjectProperty(None, rebind = True)
     snapbutton = ObjectProperty(None, rebind = True)
-    image: np.ndarray = np.zeros(0)
+    image: np.ndarray = np.zeros((1,1))
     imageTimeStamp: float = 0
     imageRetrieveTimeStamp: float = 0
-    dualColorMainSideImage: np.ndarray = np.zeros(0)
+    dualColorMainSideImage: np.ndarray = np.zeros((1,1))
 
     def __init__(self,  **kwargs):
         super(ImageAcquisitionButtonLayout, self).__init__(**kwargs)
@@ -1766,7 +1776,6 @@ class ExitApp(BoxLayout):
 # set window size at startup
 
 
-
 # load the layout
 class MacroscopeApp(App):
     # stage configuration properties - these will update when changed in config menu
@@ -1781,7 +1790,7 @@ class MacroscopeApp(App):
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
     frameBuffer = list()
-    
+
 
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
