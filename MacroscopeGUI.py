@@ -3,23 +3,33 @@ import os
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
 
+# 
+# Kivy Imports
+# 
 import kivy
+# Require modern version
 kivy.require('2.0.0')
-
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.config import Config
+# get the free clock (more accurate timing)
+# Config.set('graphics', 'KIVY_CLOCK', 'free')
+# Config.set('modules', 'monitor', '')
 from kivy.cache import Cache
-from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.base import EventLoop
 from kivy.core.window import Window
+from kivy.graphics import Color, Line
+from kivy.graphics.texture import Texture
+from kivy.graphics.transformation import Matrix
+from kivy.factory import Factory
+from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
+from kivy.clock import Clock, ClockEvent
+from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
-from kivy.graphics.texture import Texture
-from kivy.graphics import Color, Line
 from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.scatter import Scatter
 from kivy.uix.tabbedpanel import TabbedPanel
@@ -28,39 +38,42 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
-from kivy.graphics.transformation import Matrix
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar
-from kivy.factory import Factory
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
-from kivy.clock import Clock, ClockEvent
-from threading import Thread
-import _thread as thread
-from functools import partial
-from pathlib import Path
-import numpy as np
+
+# 
+# IO, Utils
+# 
 import datetime
-import os
 import time
+from pathlib import Path
+from threading import Thread
+from multiprocessing.pool import ThreadPool
+from functools import partial
+from queue import Queue
+from overrides import override
+from typing import Tuple
+from io import TextIOWrapper
+
+# 
+# Own classes
+# 
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from pypylon import pylon
+
+# 
+# Math
+# 
+import math
+import numpy as np
 from skimage.io import imsave
 import cv2
-#from pypylon import pylon
-#from pypylon import genicam
-from typing import Tuple
-from multiprocessing.pool import ThreadPool
-from queue import Queue
-import math
-from overrides import override
-from io import TextIOWrapper
-# get the free clock (more accurate timing)
-#Config.set('graphics', 'KIVY_CLOCK', 'free')
-Config.set('modules', 'monitor', '')
+
+
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
     """This creates a timestamped filename so we don't overwrite our good work."""
@@ -609,6 +622,12 @@ class ImageAcquisitionButton(ToggleButton):
         self.imageAcquisitionThread: Thread | None = None
         self.runtimeControls: RuntimeControls | None = None
         self.updateDisplayImageEvent: ClockEvent | None = None
+        self.image: np.ndarray = np.zeros(0)
+        self.imageTimeStamp: float = 0
+        self.imageRetrieveTimeStamp: float = 0
+        self.dualColorMainSideImage: np.ndarray = np.zeros(0)
+        self.dualColorMinorSideImage: np.ndarray = np.zeros(0)
+        self.dualColorMinorToMainMat: np.ndarray | None = None
 
     
     def on_state(self, widget, value):
@@ -624,29 +643,32 @@ class ImageAcquisitionButton(ToggleButton):
 
 
     def stopImageAcquisition(self) -> None:
-        pass
+        # Flag recompute dual color transformation matrix
+        self.dualColorMinorToMainMat = None
+        # Disable tracking button
+        self.runtimeControls.trackingcheckbox.state = 'normal'
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
-        app: MacroscopeApp = App.get_running_app()
-        camera: pylon.InstantCamera = app.camera
+        self.app: MacroscopeApp = App.get_running_app()
+        self.camera: pylon.InstantCamera = self.app.camera
 
         # Start grabbing images
-        camera.MaxNumBuffer = grabArgs.bufferSize
+        self.camera.MaxNumBuffer = grabArgs.bufferSize
         
         if grabArgs.numberOfImagesToGrab == -1:
             # Endless grabbing
-            camera.StartGrabbing(grabArgs.grabStrategy)
+            self.camera.StartGrabbing(grabArgs.grabStrategy)
         
         else:
             # Grab for a specific number of frames
-            camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
+            self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
-        fps = camera.ResultingFrameRate()
+        fps = self.camera.ResultingFrameRate()
         print("Grabbing Framerate:", fps)
 
         # Schedule a display update
-        fps = app.config.getfloat('Camera', 'display_fps')
+        fps = self.app.config.getfloat('Camera', 'display_fps')
         self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
         print(f'Displaying at {fps} fps')
 
@@ -654,11 +676,14 @@ class ImageAcquisitionButton(ToggleButton):
         while self.acquisitionCondition():
 
             # retrieve an image
-            isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
+            isSuccess, self.image, self.imageTimeStamp, self.imageRetrieveTimeStamp = basler.retrieve_grabbing_result(self.camera)
 
             if isSuccess:
+                # Process the received image
+                self.processImageCallback()
+
                 # Trigger image callback
-                self.receiveImageCallback(img, timestamp, retrieveTimestamp)
+                self.receiveImageCallback()
         
         self.finishAcquisitionCallback()
 
@@ -667,17 +692,68 @@ class ImageAcquisitionButton(ToggleButton):
         pass
 
     
-    def receiveImageCallback(self, img: np.ndarray, timestamp: float, retrieveTimestamp: float) -> None:
-        pass
+    def processImageCallback(self) -> None:
+
+        # Crop image
+        h, w = self.image.shape
+        cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
+        self.image = self.image[ cropY : h - cropY, cropX : w - cropX ]
+        
+        # Process image. For now this is only the case for dual color mode
+        dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = self.app.config.get('DualColor', 'mainside')
+        dualcolorViewMode = self.app.config.get('DualColor', 'viewmode')
+
+        if dualcolorMode:
+
+            # Split image into main and minor side
+            if mainSide == 'Left':
+                self.dualColorMainSideImage = self.image[:,:w//2]
+                self.dualColorMinorSideImage = self.image[:,w//2:]
+
+            elif mainSide == 'Right':
+                self.dualColorMainSideImage = self.image[:,w//2:]
+                self.dualColorMinorSideImage = self.image[:,:w//2]
+            
+            # Compute minor to main calibration matrix if first time
+            if self.dualColorMinorToMainMat is None:
+                translation_x = self.app.config.getfloat('DualColor', 'translation_x')
+                translation_y = self.app.config.getfloat('DualColor', 'translation_y')
+                rotation = self.app.config.getfloat('DualColor', 'rotation')
+                
+                self.dualColorMinorToMainMat = macro.DualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, self.dualColorMainSideImage.shape[1]/2, self.dualColorMainSideImage.shape[0]/2)
+
+            # Apply transformation
+            #   Use warpAffine() here instead of warpPerspective for a little faster computation.
+            #   It also takes 2x3 mat, so we cut the last row out accordingly.
+            self.dualColorMinorSideImage = cv2.warpAffine(self.dualColorMinorSideImage, self.dualColorMinorToMainMat[:2,:], (self.dualColorMinorSideImage.shape[1], self.dualColorMinorSideImage.shape[0]))
+
+            if dualcolorViewMode == 'Merged':
+
+                # Combine main and minor side
+                combinedImage = np.zeros(shape= (self.dualColorMainSideImage.shape[0], self.dualColorMainSideImage.shape[1], 3), dtype= np.uint8)
+                combinedImage[:,:,0] = self.dualColorMainSideImage
+                combinedImage[:,:,1] = self.dualColorMinorSideImage
+
+                self.image = combinedImage
+    
+
+    def receiveImageCallback(self) -> None:
+        # Update parent (ImageAcquisitionButtonLayout) images
+        self.parent.image = self.image
+        self.parent.imageTimeStamp = self.imageTimeStamp
+        self.parent.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
+        self.parent.dualColorMainSideImage = self.dualColorMainSideImage
+        # Update display frame value
+        self.runtimeControls.framecounter.value += 1
 
 
     def finishAcquisitionCallback(self) -> None:
         pass
 
 
-    def updateDisplayImage(self, dt):
-        if self.app.lastframe is not None:
-            self.app.image = self.app.lastframe
+    def updateDisplayImage(self, dt) -> None:
+        self.app.image = self.image
 
 
 class LiveViewButton(ImageAcquisitionButton):
@@ -742,22 +818,13 @@ class LiveViewButton(ImageAcquisitionButton):
         
         # reset scale of image
         self.app.root.ids.middlecolumn.ids.scalableimage.reset()
-    
+
+        super().stopImageAcquisition()
+
 
     @override
     def acquisitionCondition(self) -> bool:
         return self.camera is not None and self.camera.IsGrabbing() and self.state == 'down'
-
-    
-    @override
-    def receiveImageCallback(self, img: np.ndarray, timestamp: float, retrieveTimestamp: float) -> None:
-        # Update app image data
-        h, w = img.shape
-        cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
-        self.app.lastframe = img[ cropY : h - cropY, cropX : w - cropX ]
-        self.app.timestamp = timestamp
-        self.app.retrieveTimestamp = retrieveTimestamp
-        self.runtimeControls.framecounter.value += 1
 
 
 class RecordButton(ImageAcquisitionButton):
@@ -770,8 +837,12 @@ class RecordButton(ImageAcquisitionButton):
         self.coordinateFile: TextIOWrapper | None = None
         self.savingthread: Thread | None = None
         self.imageQueue: Queue | None = None
+        self.isDualColorMode: bool = False
+        self.dualColorRecordingMode: str = ''
+        self.imageFilenameFormat: str = ''
+        self.imageFilenameExtension: str = ''
     
-    
+
     @override
     def startImageAcuisition(self) -> None:
         
@@ -786,6 +857,8 @@ class RecordButton(ImageAcquisitionButton):
         
         self.runtimeControls.framecounter.value = 0
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
+        self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
         # stop camera if already running
         basler.stop_grabbing(self.camera)
@@ -802,11 +875,11 @@ class RecordButton(ImageAcquisitionButton):
         self.savingthread.start()
 
         # Setup image acquisition thread parameters
-        self.numberRecordframes, buffersize = self.initRecordingParams()
+        self.initRecordingParams()
         self.frameCounter = 0
 
         grabArgs = basler.CameraGrabParameters(
-            bufferSize= buffersize,
+            bufferSize= self.app.config.getint('Experiment', 'buffersize'),
             numberOfImagesToGrab= self.numberRecordframes,
             grabStrategy= pylon.GrabStrategy_OneByOne
         )
@@ -857,6 +930,8 @@ class RecordButton(ImageAcquisitionButton):
         self.state = 'normal'
         
         print("Finished recording")
+
+        super().stopImageAcquisition()
     
 
     @override
@@ -865,31 +940,48 @@ class RecordButton(ImageAcquisitionButton):
 
     
     @override
-    def receiveImageCallback(self, img: np.ndarray, timestamp: float, retrieveTimestamp: float) -> None:
+    def receiveImageCallback(self) -> None:
 
         # Update buffer display text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
-        # Update app image data
-        h, w = img.shape
-        cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
-        self.app.lastframe = img[ cropY : h - cropY, cropX : w - cropX ]
-
         # write coordinate into file
-        self.coordinateFile.write(f"{self.frameCounter} {timestamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
+        self.coordinateFile.write(f"{self.frameCounter} {self.imageTimeStamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
 
-        # Put image into the saving queue
-        self.imageQueue.put([
-            np.copy(self.app.lastframe),
-            self.saveFilePath,
-            self.image_filename.format(self.frameCounter)
-        ])
+        # Put image(s) into the saving queue
+        if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
+            # Put the full image
+            self.imageQueue.put([
+                np.copy(self.image),
+                self.saveFilePath,
+                self.imageFilenameFormat.format(self.frameCounter)
+            ])
 
-        # update time and frame counter
-        self.app.timestamp = timestamp
-        self.app.retrieveTimestamp = retrieveTimestamp
+        elif self.isDualColorMode and self.dualColorRecordingMode == 'Splitted':
+            # Put the dual color main and minor images
+            mainImageFileName = self.imageFilenameFormat.format(self.frameCounter)
+            minorImageFileName = str(mainImageFileName)
+
+            extensionLen = len(self.imageFilenameExtension)
+
+            mainImageFileName = mainImageFileName[:-(extensionLen+1)] + '-main.' + self.imageFilenameExtension
+            minorImageFileName = minorImageFileName[:-(extensionLen+1)] + '-minor.' + self.imageFilenameExtension
+
+            mainImageFileName = mainImageFileName[:]
+            self.imageQueue.put([
+                np.copy(self.dualColorMainSideImage),
+                self.saveFilePath,
+                mainImageFileName
+            ])
+            self.imageQueue.put([
+                np.copy(self.dualColorMinorSideImage),
+                self.saveFilePath,
+                minorImageFileName
+            ])
+
         self.frameCounter += 1
-        self.runtimeControls.framecounter.value = self.frameCounter
+
+        super().receiveImageCallback()
     
 
     @override
@@ -949,20 +1041,15 @@ class RecordButton(ImageAcquisitionButton):
         print(f'Finished saving all the images')
     
 
-    def initRecordingParams(self) -> Tuple[ int, int ]:
-        """Initialize recording parameters
-
-        Returns:
-            nframes (int): number of frames to grab
-            buffersize (int): number of buffers to allocate, used for grabbing
-        """
+    def initRecordingParams(self):
         # Setup grabbing with recording settings
-        nframes = self.app.config.getint('Experiment', 'nframes')
-        buffersize = self.app.config.getint('Experiment', 'buffersize')
+        self.numberRecordframes = self.app.config.getint('Experiment', 'nframes')
 
+        # Get desired FPS from UI
         fps = self.app.root.ids.leftcolumn.ids.camprops.framerate
         print("Desired recording Framerate:", fps)
 
+        # Get actual FPS from Camera
         fps = basler.set_framerate(self.app.camera, fps)
         print('Actual recording fps: ' + str(fps))
 
@@ -970,15 +1057,18 @@ class RecordButton(ImageAcquisitionButton):
         self.app.root.ids.leftcolumn.update_settings_display()
 
         # precalculate the filename
-        ext = self.app.config.get('Experiment', 'extension')
-        self.image_filename = timeStamped("basler_{}."+f"{ext}")
-        return nframes, buffersize
-
+        self.imageFilenameExtension = self.app.config.get('Experiment', 'extension')
+        self.imageFilenameFormat = timeStamped("basler_{}."+f"{self.imageFilenameExtension}")
+        
 
 class ImageAcquisitionButtonLayout(BoxLayout):
     recordbutton = ObjectProperty(None, rebind = True)
     liveviewbutton = ObjectProperty(None, rebind = True)
     snapbutton = ObjectProperty(None, rebind = True)
+    image: np.ndarray = np.zeros(0)
+    imageTimeStamp: float = 0
+    imageRetrieveTimeStamp: float = 0
+    dualColorMainSideImage: np.ndarray = np.zeros(0)
 
     def __init__(self,  **kwargs):
         super(ImageAcquisitionButtonLayout, self).__init__(**kwargs)
@@ -1003,8 +1093,7 @@ class ImageAcquisitionButtonLayout(BoxLayout):
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
-            img = app.lastframe
-            basler.save_image(img, path, snap_filename)
+            basler.save_image(self.image, path, snap_filename)
                 
 
 class ScalableImage(ScatterLayout):
@@ -1057,7 +1146,7 @@ class PreviewImage(Image):
                 #offset if the image is not fitting inside the widget
                 cx, cy = self.center_x, self.center_y  #, relative = True)
                 ox, oy = cx - texture_w / 2., cy - texture_h/ 2
-                h, w = image.shape
+                h, w = image.shape[0], image.shape[1]
 
                 imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
                 if 0 <= imy < h and 0 <= imx < w:
@@ -1070,7 +1159,7 @@ class PreviewImage(Image):
         """define the capture circle and draw it."""
         wx, wy = pos#self.to_widget(pos[0], pos[1])#, relative = True)
         image = App.get_running_app().image
-        h, w = image.shape
+        h, w = image.shape[0], image.shape[1]
         # paint a circle and make the coordinates available
         radius = App.get_running_app().config.getfloat('Tracking', 'capture_radius')
         # make the circle into pixel units
@@ -1243,8 +1332,9 @@ class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
     autofocuscheckbox = ObjectProperty(rebind=True)
     trackingcheckbox = ObjectProperty(rebind=True)
-    cropX = ObjectProperty(0, rebind=True)
-    cropY = ObjectProperty(0, rebind=True)
+    imageacquisition: ImageAcquisitionButtonLayout = ObjectProperty(rebind=True)
+    cropX = NumericProperty(0, rebind=True)
+    cropY = NumericProperty(0, rebind=True)
     
 
     def __init__(self,  **kwargs):
@@ -1412,7 +1502,9 @@ class RuntimeControls(BoxLayout):
         mainSide = app.config.get('DualColor', 'mainside')
         
         self.trackingevent = True
-        app.prevframe = None
+        image: np.ndarray | None = None
+        retrieveTimestamp: float = 0
+        prevImage: np.ndarray | None = None
         scale = 1.0
 
         estimated_next_timestamp: float | None = None
@@ -1427,8 +1519,8 @@ class RuntimeControls(BoxLayout):
             wait_time = 0
             if estimated_next_timestamp is not None:
                 
-                img2_retrieveTimestamp = app.retrieveTimestamp
-                diff_estimated_time = estimated_next_timestamp - img2_retrieveTimestamp
+                retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
+                diff_estimated_time = estimated_next_timestamp - retrieveTimestamp
 
                 # If the estimated time is approximately close to the image timestamp
                 # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
@@ -1437,14 +1529,14 @@ class RuntimeControls(BoxLayout):
                 else:
                     # If the estimated time is less than the current time
                     # then it is also ok to use the current image
-                    if estimated_next_timestamp < img2_retrieveTimestamp:
+                    if estimated_next_timestamp < retrieveTimestamp:
                         pass
                     # If the estimated time is more than the current image timestamp
                     # then compute the estimated next cycle time and wait
                     else:
                         current_time = time.perf_counter()
 
-                        diff_time_factor = (current_time - img2_retrieveTimestamp) / camera_spf
+                        diff_time_factor = (current_time - retrieveTimestamp) / camera_spf
                         fractional_part, integer_part = math.modf(diff_time_factor)
 
                         wait_time = camera_spf * ( 1.0 - fractional_part )
@@ -1455,34 +1547,30 @@ class RuntimeControls(BoxLayout):
                 # first time
                 stage.wait_until_idle()
 
-                img2_retrieveTimestamp = app.retrieveTimestamp
-                estimated_next_timestamp = app.retrieveTimestamp
+                retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
+                estimated_next_timestamp = self.imageacquisition.imageRetrieveTimeStamp
 
             # Get the latest image
-            img2 = app.lastframe
-            img2_retrieveTimestamp = app.retrieveTimestamp
-
             tracking_frame_start_time = time.perf_counter()
 
-            # Crop for dual color
             if dualColorMode:
-                h, w = img2.shape
-                if mainSide == 'Left':
-                    img2 = img2[:,:w//2]
-                elif mainSide == 'Right':
-                    img2 = img2[:,w//2:]
+                image = self.imageacquisition.dualColorMainSideImage
+            else:
+                image = self.imageacquisition.image
+
+            retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
 
             # If prev frame is empty then use the same as current
-            if app.prevframe is None:
-                app.prevframe = img2
+            if prevImage is None:
+                prevImage = image
                 
             # Extract worm position
             if mode=='Diff':
-                ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
+                ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
             elif mode=='Min/Max':
-                ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
-                ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                ystep, xstep = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
@@ -1494,11 +1582,11 @@ class RuntimeControls(BoxLayout):
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
-                app.prevframe = img2
+                prevImage = image
             if abs(ystep) > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
-                app.prevframe = img2
+                prevImage = image
 
             tracking_frame_end_time = time.perf_counter()
 
@@ -1509,7 +1597,7 @@ class RuntimeControls(BoxLayout):
             #   So we are going to just estimate it here.
 
             #   Delay from receing the image in recording and tracking it
-            delay_receive_image_and_tracking_time = tracking_frame_start_time - img2_retrieveTimestamp
+            delay_receive_image_and_tracking_time = tracking_frame_start_time - retrieveTimestamp
 
             #   Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
@@ -1576,6 +1664,7 @@ class RuntimeControls(BoxLayout):
         app = App.get_running_app()
         camera = app.camera
         basler.cam_resetROI(camera)
+
 
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -1689,12 +1778,10 @@ class MacroscopeApp(App):
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
-    lastframe = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
-    timestamp = NumericProperty(0, force_dispatch=True, rebind=True)
     frameBuffer = list()
-    #
+    
 
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
@@ -1839,8 +1926,6 @@ class MacroscopeApp(App):
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
                 self.stage.start_move(direction[axisid], self.unit)
-                    
-            
 
     
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
@@ -1958,59 +2043,14 @@ class MacroscopeApp(App):
 
 
     def on_image(self, *args) -> None:
-        """On im age change callback. Update image texture and GUI overlay
+        """On image change callback. Update image texture and GUI overlay
         """
-        # 
-        # Pre process image
-        # 
-        image = np.copy(self.image)
-
-        dualcolorMode = self.config.getboolean('DualColor', 'dualcolormode')
-        dualcolorViewMode = self.config.get('DualColor', 'viewmode')
-
-        if dualcolorMode and dualcolorViewMode == 'Merged':
-
-            # Split image into main and minor side
-            mainSide = self.config.get('DualColor', 'mainside')
-
-            h, w = image.shape
-            mainSideImage = None
-            minorSideImage = None
-
-            if mainSide == 'Left':
-                mainSideImage = image[:,:w//2]
-                minorSideImage = image[:,w//2:]
-
-            elif mainSide == 'Right':
-                mainSideImage = image[:,w//2:]
-                minorSideImage = image[:,:w//2]
-            
-            # Compute minor to main calibration matrix
-            translation_x = self.config.getfloat('DualColor', 'translation_x')
-            translation_y = self.config.getfloat('DualColor', 'translation_y')
-            rotation = self.config.getfloat('DualColor', 'rotation')
-            
-            minorToMainMat = macro.DualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[0]/2)
-
-            # Apply transformation
-            #   Use warpAffine() here instead of warpPerspective for a little faster computation.
-            #   It also takes 2x3 mat, so we cut the last row out accordingly.
-            translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
-
-            # Combine main and minor side
-            combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= np.uint8)
-            combinedImage[:,:,0] = mainSideImage
-            combinedImage[:,:,1] = translatedMinorSideImage
-
-            image = combinedImage
-        
-
         # 
         # Upload image to texture
         # 
         
-        imageHeight, imageWidth = image.shape[0], image.shape[1]
-        imageColorFormat = 'rgb' if image.ndim == 3 else 'luminance'
+        imageHeight, imageWidth = self.image.shape[0], self.image.shape[1]
+        imageColorFormat = 'rgb' if self.image.ndim == 3 else 'luminance'
         # Force unsign byte format
         imageDataFormat = 'ubyte'
         # 
@@ -2035,8 +2075,8 @@ class MacroscopeApp(App):
             updateGUIFlag = True
         
         # Upload image data to texture
-        buf = image.tobytes()
-        self.texture.blit_buffer(buf, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
+        imageByteBuffer: bytes = self.image.tobytes()
+        self.texture.blit_buffer(imageByteBuffer, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
 
         # 
         # Update GUI

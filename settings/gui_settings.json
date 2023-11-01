@@ -209,6 +209,14 @@
         "options": ["Splitted", "Merged"]
     },
     {
+        "type": "options",
+        "title": "Recording Mode",
+        "desc": "Recording mode when viewing in dual color mode. \nOriginal: Recording the images as it is taken. \nSplitted: Record the images by splitting each into left and right part, when the minor side is transformed to match the main side. Easy for later analysis.",
+        "section": "DualColor",
+        "key": "recordingmode",
+        "options": ["Original", "Splitted"]
+    },
+    {
         "type": "numeric",
         "title": "Translation X",
         "desc": "Translation from minor to main in X axis",
