@@ -291,7 +291,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         yc, xc = ndi.center_of_mass(img1_sm)
     else:
         img1_sm = img1_sm < threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(-img1_sm)
+        yc, xc = ndi.center_of_mass(~img1_sm)
    
     # show intermediate steps for debugging
     if display:
