@@ -345,7 +345,7 @@ class CameraAndStageCalibration(BoxLayout):
         # get config values
         stepsize = app.config.getfloat('Calibration', 'step_size')
         stepunits = app.config.get('Calibration', 'step_units')
-        dualcolormode = app.config.get('DualColor', 'dualcolormode')
+        dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
         mainside = app.config.get('DualColor', 'mainside')
 
         # Take calibration images
