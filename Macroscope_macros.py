@@ -1,29 +1,34 @@
-# Macroscope Stage Module
+# 
+# IO, Utils
+# 
+import os
+from multiprocessing.pool import ThreadPool
+from queue import Queue
+from tifffile import imwrite
+from typing import Tuple, List
+from pypylon import pylon
+
+# 
+# Own classes
+# 
+import Basler_control as basler
+import Zaber_control as zaber
+
+# 
+# Math
+# 
 import math
 import numpy as np
-import os
-import csv
 import scipy.ndimage as ndi
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from pypylon import pylon
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen
-from skimage.measure import regionprops, label
 from skimage.transform import downscale_local_mean
-#from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
-from skimage import io
-from tifffile import imsave, TiffWriter
-from zaber_motion import Library, Units
-from zaber_motion.ascii import connection
-import Basler_control as basler
-import Zaber_control as zaber
-from typing import Tuple, List
 import itk
 import cv2
-from skimage.exposure import match_histograms
 
 
 #%% Autofocus using z axis
@@ -308,6 +313,64 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
     # print(yc, xc)
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+
+
+class ImageSaver:
+
+    def __init__(self) -> None:
+        pass
+    
+
+    @staticmethod
+    def startSavingImageInQueueThread(imageQueue: Queue, numMaxThreads: int | None = None) -> None:
+        """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
+
+        Args:
+            imageQueue (Queue): 
+            numMaxThreads (int | None, optional): Maximum number of small threads. Defaults to None.
+        """
+
+        # Create a thread pool
+        consumerThreadPool = ThreadPool(processes= numMaxThreads)
+        
+        # Start spawn image saving workers
+        for i in range(consumerThreadPool._processes):
+            consumerThreadPool.apply_async(
+                func= ImageSaver._imageSavingThreadWorker, 
+                args= (imageQueue,)
+            )
+        
+        # Wait until all workers are done
+        consumerThreadPool.close()
+        consumerThreadPool.join()
+
+        print(f'Finished saving all the images')
+    
+
+    @staticmethod
+    def _imageSavingThreadWorker(imageQueue: Queue):
+
+        # Run until there is no more work
+        while True:
+
+            print('Worker looping')
+
+            # Wait and retrieve an item from the queue
+            queueItem = imageQueue.get(block= True)
+
+            print(f'Worker got {queueItem}')
+            # check for signal of no more work
+            if queueItem is not None:
+                
+                img, imgPath, imgFileName = queueItem
+                # Save the image
+                imwrite(os.path.join(imgPath, imgFileName), img)
+                
+            else:
+                # put back on the queue for other consumers
+                imageQueue.put(None)
+                # shutdown the thread
+                break
 
 
 def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.ndarray:

@@ -881,7 +881,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageQueue = Queue()
 
         # Start a thread for saving images
-        self.savingthread = Thread(target= self.imageSavingThreadManagerThread, args= [3,])
+        self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
         self.savingthread.start()
 
         # Setup image acquisition thread parameters
@@ -1003,52 +1003,6 @@ class RecordButton(ImageAcquisitionButton):
 
         # Call to recording-stopping procedure
         self.stopImageAcquisition()
-    
-
-    def imageSavingThreadManagerThread(self, numMaxThreads: int | None = None) -> None:
-        """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
-
-        Args:
-            numMaxThreads (int | None, optional): Maximum number of small threads. Defaults to None.
-        """
-
-        def imageSavingThreadWorker(queue):
-
-            # run until there is no more work
-            while True:
-
-                # retrieve one item from the queue
-                queueItem = queue.get()
-
-                # check for signal of no more work
-                if queueItem is not None:
-                    
-                    img, imgPath, imgFileName = queueItem
-                    # Save the image
-                    imsave(os.path.join(imgPath, imgFileName), img, check_contrast=False,  plugin="tifffile")
-                    
-                else:
-                    # put back on the queue for other consumers
-                    queue.put(None)
-                    # shutdown the thread
-                    break
-        
-        
-        # Create a thread pool
-        consumerThreadPool = ThreadPool(processes= numMaxThreads)
-        
-        # Start spawn image saving workers
-        for i in range(consumerThreadPool._processes):
-            consumerThreadPool.apply_async(
-                func= imageSavingThreadWorker, 
-                args= (self.imageQueue,)
-            )
-        
-        # Wait until all workers are done
-        consumerThreadPool.close()
-        consumerThreadPool.join()
-
-        print(f'Finished saving all the images')
     
 
     def initRecordingParams(self):

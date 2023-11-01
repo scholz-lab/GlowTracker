@@ -139,7 +139,7 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
     img = im
     if isFlipY:
         img = np.flip(img, axis= 0)
-    imsave(os.path.join(path, fname), img, check_contrast=False,  plugin="tifffile")
+    imsave(os.path.join(path, fname), img, check_contrast=False)
     #cv2.imwrite(os.path.join(path, fname), im)
     #tiff = TIFF.open(os.path.join(path, fname), mode='w')
     #tiff.write_image(im)
