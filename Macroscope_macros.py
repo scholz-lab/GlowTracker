@@ -353,12 +353,9 @@ class ImageSaver:
         # Run until there is no more work
         while True:
 
-            print('Worker looping')
-
             # Wait and retrieve an item from the queue
             queueItem = imageQueue.get(block= True)
 
-            print(f'Worker got {queueItem}')
             # check for signal of no more work
             if queueItem is not None:
                 
@@ -603,9 +600,10 @@ class CameraAndStageCalibrator:
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
 
-        # Check if any estimated phase shift is nan
-        if np.any(np.isnan(np.hstack((camBasisXVec, camBasisYVec)))):
-            print('Estimated phase shift is nan. Please try again.')
+        # Check if any estimated phase shift is nan or zero
+        if np.any(np.isnan(np.hstack((camBasisXVec, camBasisYVec)))) \
+            or np.equal(camBasisXLen, 0) or np.equal(camBasisYLen, 0):
+            print('Estimated phase shift is NaN or 0. Please try again.')
             return 0, 1, 1
 
         # Compute angle between the two basis 

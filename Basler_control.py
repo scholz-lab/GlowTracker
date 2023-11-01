@@ -145,22 +145,40 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
     #tiff.write_image(im)
     #tiff.close()
 
-def cam_setROI(camera, w, h, center=True):
-    """set the ROI for a camera. ox, oy are offsets, w,h are the width and height in pixel, respectively."""
-    if w <= camera.Width.Max and h <= camera.Height.Max:
+def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, center: bool= True) -> Tuple[int, int]:
+    """Set the ROI of a camera.
+
+    Args:
+        camera (pylon.InstantCamera): the camera to set
+        ROI_w (int): ROI width
+        ROI_h (int): ROI height
+        center (bool, optional): If the ROI is at the center of the camera. Defaults to True.
+
+    Returns:
+        height (int): the actual camera ROI width that has been set
+        width (int): the actual camera ROI width that has been set
+    """
+     
+    if ROI_w <= camera.Width.Max and ROI_h <= camera.Height.Max:
         # cam stop
         camera.AcquisitionStop.Execute()
         # grab unlock
         camera.TLParamsLocked = False
-        camera.Width = max(w, camera.Width.Min)
-        camera.Height = max(h, camera.Height.Min)
+        camera.Width = max(ROI_w, camera.Width.Min)
+        camera.Height = max(ROI_h, camera.Height.Min)
         if center:
-            camera.OffsetX = max(int(camera.Width.Max - camera.Width())//2, 4)
-            camera.OffsetY = max(int(camera.Height.Max - camera.Height())//2, 4)
+            # Round offsets to be multiples of 4
+            offsetX = (camera.Width.Max - camera.Width())//2
+            offsetX = int(round(offsetX / 4) * 4)
+            offsetY = (camera.Height.Max - camera.Height())//2
+            offsetY = int(round(offsetY / 4) * 4)
+            camera.OffsetX = max(offsetX, 4)
+            camera.OffsetY = max(offsetY, 4)
         # grab lock
         camera.TLParamsLocked = True
         # cam start
         camera.AcquisitionStart.Execute()
+
     return camera.Height(), camera.Width()
 
 
