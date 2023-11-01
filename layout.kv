@@ -521,9 +521,9 @@ MainWindow:
     orientation: 'horizontal'
     spacing: 30
     padding: [30,10]
-    recordbutton:recordbutton
-    liveviewbutton:liveviewbutton
-    snapbutton:snapbutton
+    recordbutton: recordbutton
+    liveviewbutton: liveviewbutton
+    snapbutton: snapbutton
     
     LiveViewButton:
         id: liveviewbutton
@@ -535,6 +535,7 @@ MainWindow:
         background_normal: 'icons/play_off.png'
         background_down: 'icons/play_on.png'
         background_disabled_normal: 'icons/play_disabled.png'
+        background_disabled_down: 'icons/play_disabled.png'
         disabled: recordbutton.state =='down'
 
     RecordButton: 

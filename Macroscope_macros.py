@@ -811,7 +811,6 @@ class DualColorImageCalibrator:
         return transformationMat
 
 
-
 def renderBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
 
     # Define the coordinates for the vectors
