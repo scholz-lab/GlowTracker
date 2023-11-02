@@ -1,8 +1,10 @@
-title: Macroscopes
+# title: 
 description: A minimal websites presenting the macroscopes we created/worked with in Scholz Lab
 theme: just-the-docs
-
 url: https://scholz-lab.github.io/macroscopes
-
 logo: "custom_assets/images/logo.png"
-favicon_ico: "cutom_assets/images/favicon.png"
+# favicon_ico: "custom_assets/images/favicon.ico"
+
+aux_links:
+  "Macroscope on GitHub":
+    - "https://github.com/scholz-lab/Macroscopes"
