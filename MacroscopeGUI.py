@@ -643,10 +643,28 @@ class ImageAcquisitionButton(ToggleButton):
 
 
     def stopImageAcquisition(self) -> None:
+
+        # Unschedule the display event thread
+        Clock.unschedule(self.updateDisplayImageEvent)
+
+        # Stop grabbing
+        if self.camera is not None:
+            basler.stop_grabbing(self.camera)
+
         # Flag recompute dual color transformation matrix
         self.dualColorMinorToMainMat = None
+        
+        # Reset displayed framecounter
+        self.runtimeControls.framecounter.value = 0
+
         # Disable tracking button
         self.runtimeControls.trackingcheckbox.state = 'normal'
+
+        # reset scale of image
+        self.app.root.ids.middlecolumn.ids.scalableimage.reset()
+
+        # Set self button state to normal
+        self.state = 'normal'
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -809,28 +827,9 @@ class LiveViewButton(ImageAcquisitionButton):
     @override
     def stopImageAcquisition(self) -> None:
 
-        print('stopping preview')
-        
-        if self.camera is None:
-            return
-
-        # Unschedule the display event thread
-        Clock.unschedule(self.updateDisplayImageEvent)
-
-        # Stop image acquisition thread
-        if self.imageAcquisitionThread.is_alive():
-            self.imageAcquisitionThread.join()
-                
-        # Stop grabbing
-        basler.stop_grabbing(self.camera)
-
-        # reset displayed framecounter
-        self.runtimeControls.framecounter.value = 0
-        
-        # reset scale of image
-        self.app.root.ids.middlecolumn.ids.scalableimage.reset()
-
         super().stopImageAcquisition()
+
+        print('Stop live view')
 
 
     @override
@@ -852,6 +851,7 @@ class RecordButton(ImageAcquisitionButton):
         self.dualColorRecordingMode: str = ''
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
+        self.prevLiveViewButtonState: str = ''
     
 
     @override
@@ -865,8 +865,12 @@ class RecordButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
 
-        # stop camera if already running
-        basler.stop_grabbing(self.camera)
+        # Stop camera if already running and disable the LiveView button
+        self.prevLiveViewButtonState = self.parent.liveviewbutton.state
+        if self.prevLiveViewButtonState == 'down':
+            self.parent.liveviewbutton.stopImageAcquisition()
+            self.parent.liveviewbutton.disabled = True
+        
         self.runtimeControls.framecounter.value = 0
 
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
@@ -912,11 +916,7 @@ class RecordButton(ImageAcquisitionButton):
     @override
     def stopImageAcquisition(self) -> None:
         
-        if self.camera is None:
-            return
-        
-        # Unschedule the display event thread
-        Clock.unschedule(self.updateDisplayImageEvent)
+        super().stopImageAcquisition()
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
@@ -924,24 +924,14 @@ class RecordButton(ImageAcquisitionButton):
         # Close saving threads
         self.savingthread.join()
         
-        # Tell camera to stop grabbing mode
-        basler.stop_grabbing(self.camera)
-
-        # Reset frame counter
-        self.runtimeControls.framecounter.value = 0
-
         # Update display buffer text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
-        # Reset scale of display image
-        self.app.root.ids.middlecolumn.ids.scalableimage.reset()
+        print("Stop recording")
 
-        # Set button state back to normal
-        self.state = 'normal'
-        
-        print("Finished recording")
-
-        super().stopImageAcquisition()
+        # Set LiveView button state back to enable
+        self.parent.liveviewbutton.disabled = False
+        self.parent.liveviewbutton.state = self.prevLiveViewButtonState
     
 
     @override
