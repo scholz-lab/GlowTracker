@@ -474,11 +474,11 @@ MainWindow:
     buffer : buffer
     autofocuscheckbox: autofocuscheckbox
     trackingcheckbox: trackingcheckbox
-    imageacquisition: imageacquisitionbuttonlayout
+    imageacquisitionmanager: imageacquisitionmanager
 
 
-    ImageAcquisitionButtonLayout:
-        id: imageacquisitionbuttonlayout
+    ImageAcquisitionManager:
+        id: imageacquisitionmanager
         size_hint: (2.5, 1)
 
     GridLayout:
@@ -517,7 +517,7 @@ MainWindow:
             text: str(self.value)
 
 ### LiveView, Record, Snap
-<ImageAcquisitionButtonLayout>:
+<ImageAcquisitionManager>:
     orientation: 'horizontal'
     spacing: 30
     padding: [30,10]

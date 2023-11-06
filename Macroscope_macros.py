@@ -316,6 +316,8 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
 
 class ImageSaver:
+    """An image saver static class that manages multiples small saving threads.
+    """    
 
     def __init__(self) -> None:
         pass
@@ -349,7 +351,13 @@ class ImageSaver:
 
     @staticmethod
     def _imageSavingThreadWorker(imageQueue: Queue):
+        """A private function of image saving worker capabilities. The worker runs indefinitely
+        , comsumes the image data from the queue and save it. Terminates when the data from
+        the image queue is None.
 
+        Args:
+            imageQueue (Queue): _description_
+        """        
         # Run until there is no more work
         while True:
 
@@ -498,7 +506,7 @@ def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
 
     return theta
 
-# Rotate the basis by the compensation amount
+
 def rotatePointAboutOrig(point: np.ndarray, rotation: float) -> np.ndarray:
     """Rotate a point about origin with a given angle.
 
@@ -515,6 +523,7 @@ def rotatePointAboutOrig(point: np.ndarray, rotation: float) -> np.ndarray:
 
 class CameraAndStageCalibrator:
 
+    # Class attributes
     origImage: np.ndarray
     basisXImage: np.ndarray
     basisYImage: np.ndarray
@@ -580,7 +589,7 @@ class CameraAndStageCalibrator:
     
 
     def calibrateCameraAndStageTransform(self) -> Tuple[float, int, float]:
-        """Estimate the transformation from stage space to image space using phase cross correlation.
+        """Estimate the transformation from stage space to image space using phase cross correlation in X and Y bases.
 
         Returns:
             rotationStageToCam (float): rotation angle from stage
@@ -683,6 +692,7 @@ class CameraAndStageCalibrator:
 
 class DualColorImageCalibrator:
     
+    # Class attributes
     mainSide: str
     dualColorImage: np.ndarray
     mainSideImage: np.ndarray
@@ -693,7 +703,8 @@ class DualColorImageCalibrator:
 
     
     def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str, cropWidth: int, cropHeight: int) -> None:
-        """Crop dual color image into main and minor side. Then apply filties for better visibility.
+        """Crop dual color image into main and minor side and apply histrogram equalization 
+        for better visibility.
 
         Args:
             dualColorImage (np.ndarray): Dual color image.
@@ -811,8 +822,15 @@ class DualColorImageCalibrator:
         return transformationMat
 
 
-def renderBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+    """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
 
+    Args:
+        stageToImageMat (np.ndarray): _description_
+
+    Returns:
+        np.ndarray: _description_
+    """    
     # Define the coordinates for the vectors
     stageX = [1, 0]  # Vector from origin to (1,0)
     stageY = [0, 1]  # Vector from origin to (0,1)

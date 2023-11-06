@@ -248,7 +248,7 @@ class LeftColumn(BoxLayout):
 
         if camera is not None and stage is not None:
             # stop grabbing
-            app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionbuttonlayout.ids.liveviewbutton.state = 'normal'
+            app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
             # get config values
             stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
             stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
@@ -266,8 +266,7 @@ class MiddleColumn(BoxLayout, StencilView):
 
 
 class RightColumn(BoxLayout):
-    #
-    #
+
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
 
@@ -296,14 +295,17 @@ class RightColumn(BoxLayout):
 
 
     def show_calibration(self):
+        """Show calibration window popup.
+        """        
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
 
         if camera is not None and stage is not None:
+            # Create the calibration widget
             calibrationTabPanel = CalibrationTabPanel()
             calibrationTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
-
+            # Launch the widget inside a popup window
             self._popup = Popup(title= '', separator_height= 0, content= calibrationTabPanel, size_hint= (0.9, 0.75))
             self._popup.open()
         
@@ -314,22 +316,40 @@ class RightColumn(BoxLayout):
 
 
 class CalibrationTabPanel(TabbedPanel):
-    
+    """Calibration widget that holds CameraAndStageCalibration, and DualColorCalibration
+    """    
+
     def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event for children' tab.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
         self.closeCallback = closeCallback
         self.ids.stagecalibration.setCloseCallback( closeCallback )
         self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
     
 
 class CameraAndStageCalibration(BoxLayout):
-
+    """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
+    """    
     closeCallback = ObjectProperty(None)
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
         self.closeCallback = closeCallback
     
 
     def calibrate(self):
+        """Execute the camera and stage calibration process.
+            1. Take calibration images.
+            2. Estimate camera to stage transformation matrix.
+            3. Display results.
+        """        
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
@@ -338,7 +358,7 @@ class CameraAndStageCalibration(BoxLayout):
             return
         
         # stop camera if already running
-        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionbuttonlayout.ids.liveviewbutton
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
         prevLiveViewButtonState = liveViewButton.state
         liveViewButton.state = 'normal'
         
@@ -382,7 +402,7 @@ class CameraAndStageCalibration(BoxLayout):
 
         # Show axis figure
         stageToImageRotMat = np.linalg.inv(app.imageToStageRotMat)
-        plotImage = macro.renderBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
+        plotImage = macro.renderChangeOfBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
         self.ids.cameraandstageaxes.texture = imageToTexture(plotImage)
 
         # Resume the camera to previous state
@@ -390,14 +410,26 @@ class CameraAndStageCalibration(BoxLayout):
 
 
 class DualColorCalibration(BoxLayout):
-
+    """Dual color calibration widget that handles linking button callbacks and the calibration algorithm class.
+    """    
     closeCallback = ObjectProperty(None)
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """     
         self.closeCallback = closeCallback
     
 
     def calibrate(self) -> None:
+        """Execute the dual color calibration process.
+            1. Take a dual color image.
+            2. Process the dual color image.
+            3. Calibrate main side to minor side transformation matrix.
+            4. Display results.
+        """        
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
@@ -406,7 +438,7 @@ class DualColorCalibration(BoxLayout):
             return
         
         # stop camera if already running
-        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionbuttonlayout.ids.liveviewbutton
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
         prevLiveViewButtonState = liveViewButton.state
         liveViewButton.state = 'normal'
         
@@ -466,60 +498,55 @@ class DualColorCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
-# Stage controls
-class XControls(BoxLayout):
+class StageAxisController(BoxLayout):
+    """Template class for stage axis controller widget.
+    """    
+
+    def __init__(self,  **kwargs):
+        super(StageAxisController, self).__init__(**kwargs)
+
+    def disable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = True
+    
+    def enable_all(self):
+        for id in self.ids:
+            self.ids[id].disabled = False
+
+class XControls(StageAxisController):
+
     def __init__(self,  **kwargs):
         super(XControls, self).__init__(**kwargs)
 
-    def disable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = True
-    
-    def enable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = False
 
+class YControls(StageAxisController):
 
-class YControls(Widget):
     def __init__(self,  **kwargs):
         super(YControls, self).__init__(**kwargs)
 
-    def disable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = True
-    
-    def enable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = False
 
+class ZControls(StageAxisController):
 
-class ZControls(Widget):
     def __init__(self,  **kwargs):
         super(ZControls, self).__init__(**kwargs)
 
-    def disable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = True
 
-    def enable_all(self):
-        for id in self.ids:
-            self.ids[id].disabled = False
-
-
-# load camera settings
 class LoadCameraProperties(BoxLayout):
+    """Camera settings loading widget
+    """    
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
 
-# save location for images and meta data
 class SaveExperiment(GridLayout):
+    """File saving location widget.
+    """    
     save = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
 
-# save location for images and meta data
 class AutoFocus(BoxLayout):
+
     run_autofocus = ObjectProperty(None)
     cancel = ObjectProperty(None)
     # make config editable
@@ -550,8 +577,8 @@ class AutoFocus(BoxLayout):
             self.ids.multipleimages.remove_widget(wg)
 
 
-
 class LabelImage():
+    
     def __init__(self,  **kwargs):
         super(LabelImage, self).__init__(**kwargs)
         self.text = ''
@@ -563,6 +590,8 @@ class MultipleImages(GridLayout):
 
 
 class RecordingSettings(BoxLayout):
+    """Record settings widget
+    """    
     ok = ObjectProperty(None)
     # store recording settings from popups
     nframes = ConfigParserProperty(5, 'Experiment', 'nframes', 'app', val_type=int)
@@ -576,9 +605,9 @@ class RecordingSettings(BoxLayout):
         self.duration = self.nframes/self.framerate
 
 
-# camera properties
 class CameraProperties(GridLayout):
-    # camera properties
+    """Camera properties editor widget
+    """   
     gain = NumericProperty(0)
     exposure = NumericProperty(0)
     framerate = NumericProperty(0)
@@ -614,9 +643,27 @@ class CameraProperties(GridLayout):
 
 
 class ImageAcquisitionButton(ToggleButton):
+    """A skeleton template class for a widget button that have image acquisition behavior.
+    This class outline the common process of image acquisitions:
+        1. Start Acquisition
+        2. Acquisition loop
+        3. Process acquired image callback
+        4. Acquisition callback
+        5. Finishing acquisition loop callback
+        6. Stop Acquisition
+
+        This class is incomplete in itself and the heir need to overrides the provided
+    outline functions, most importantly:
+        - startImageAcuisition()
+        - acquisitionCondition()
+
+    in order to be functionable.
+    """    
     
     def __init__(self, **kwargs):
+
         super().__init__(**kwargs)
+        # Declar class's instance attributes
         self.app: MacroscopeApp | None = None
         self.camera: pylon.InstantCamera | None = None
         self.imageAcquisitionThread: Thread | None = None
@@ -630,19 +677,33 @@ class ImageAcquisitionButton(ToggleButton):
         self.dualColorMinorToMainMat: np.ndarray | None = None
 
     
-    def on_state(self, widget, value):
-        # On state change callback
-        if value == 'down':
+    def on_state(self, widget: Widget, state: str):
+        """On state change callback
+
+        Args:
+            widget (Widget): the kivy widget, in this case is the same as the class instance itself.
+            state (str): the new state
+        """        
+        if state == 'down':
             self.startImageAcuisition()
+            
         else:
             self.stopImageAcquisition()
 
     
     def startImageAcuisition(self) -> None:
+        """The starting image acquisition process. Needs to be overridden. The important steps is to spawn the imageAcquisitionLoopingThread.
+        """        
         pass
 
 
     def stopImageAcquisition(self) -> None:
+        """Stop the image acquisition process. Should be overridden or extended.
+        The important steps are:
+            - Stop the update display event.
+            - Stop camera grabbing.
+            - Stop the acquisition looping thread if not already.
+        """        
 
         # Unschedule the display event thread
         Clock.unschedule(self.updateDisplayImageEvent)
@@ -668,8 +729,15 @@ class ImageAcquisitionButton(ToggleButton):
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
-        self.app: MacroscopeApp = App.get_running_app()
-        self.camera: pylon.InstantCamera = self.app.camera
+        """Image acquisition looping thread. This function should not be call directly 
+        in the main thread but as a new thread instead for better performance.
+        The procedure here is as follows:
+            1. Start camera grabbing.
+            2. Start a update display image event.
+            3. Loop acquire image while the condition is True.
+            4. Callback for each acquired image.
+            5. Finished looping callback.
+        """   
 
         # Start grabbing images
         self.camera.MaxNumBuffer = grabArgs.bufferSize
@@ -708,10 +776,23 @@ class ImageAcquisitionButton(ToggleButton):
 
 
     def acquisitionCondition(self) -> bool:
+        """Check if the acquisition is still True. Needs to be overrided by heir.
+
+        Returns:
+            isStillAcquiring (bool): is the acquisition is still True.
+        """        
         pass
 
     
     def processImageCallback(self, image: np.ndarray, imageTimeStamp: float, imageRetrieveTimeStamp: float) -> None:
+        """Process the acquired image by cropping per settings, and also dual color image 
+        processing if the dual color mode is on.
+
+        Args:
+            image (np.ndarray): the acquired image
+            imageTimeStamp (float): the acquired image's internal clock timestamp
+            imageRetrieveTimeStamp (float): the timestamp when receiving image in the software.
+        """        
 
         # Crop image
         h, w = image.shape
@@ -769,7 +850,12 @@ class ImageAcquisitionButton(ToggleButton):
     
 
     def receiveImageCallback(self) -> None:
-        # Update parent (ImageAcquisitionButtonLayout) images
+        """Callback after processed the image. Use for further updating.
+        Update the parent (ImageAcquisitionManager) current image data.
+        Can be extended.
+        """    
+
+        # Update parent (ImageAcquisitionManager) images
         self.parent.image = self.image
         self.parent.imageTimeStamp = self.imageTimeStamp
         self.parent.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
@@ -779,14 +865,23 @@ class ImageAcquisitionButton(ToggleButton):
 
 
     def finishAcquisitionCallback(self) -> None:
+        """Finished the acquisition looping callback. Needs to be overridden.
+        """        
         pass
 
 
     def updateDisplayImage(self, dt) -> None:
+        """Update the app display image.
+
+        Args:
+            dt (float): addition delta time between each callback.
+        """        
         self.app.image = self.image
 
 
 class LiveViewButton(ImageAcquisitionButton):
+    """A LiveView button that have image acquisition capability.
+    """    
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -794,7 +889,11 @@ class LiveViewButton(ImageAcquisitionButton):
 
     @override
     def startImageAcuisition(self) -> None:
+        """Start the image acquisition process by getting the grabbing parameters, spawn 
+        image acquisition thread, and update the image GUI overlay.
+        """        
         
+        # Update the self-hold reference to the MacroscopeApp object and the pylon camera object for each of access.
         self.app: MacroscopeApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
@@ -834,13 +933,19 @@ class LiveViewButton(ImageAcquisitionButton):
 
     @override
     def acquisitionCondition(self) -> bool:
+
         return self.camera is not None and self.camera.IsGrabbing() and self.state == 'down'
 
 
 class RecordButton(ImageAcquisitionButton):
+    """A Record button that have image acquisition capability.
+    """    
 
     def __init__(self, **kwargs):
+
         super().__init__(**kwargs)
+        
+        # Declare class instance attributes
         self.numberRecordframes: int = 0
         self.frameCounter: int = 0
         self.saveFilePath: str = ''
@@ -856,7 +961,14 @@ class RecordButton(ImageAcquisitionButton):
 
     @override
     def startImageAcuisition(self) -> None:
-        
+        """Start the image acquisition process:
+            - getting the grabbing parameters.
+            - spawn image acquisition thread.
+            - spawn image saving thread.
+            - update the image GUI overlay.
+        """ 
+
+        # Update the self-hold reference to the MacroscopeApp object and the pylon camera object for each of access.
         self.app: MacroscopeApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
@@ -915,7 +1027,13 @@ class RecordButton(ImageAcquisitionButton):
 
     @override
     def stopImageAcquisition(self) -> None:
-        
+        """Extend the stop image acquisition functionality: 
+            - Closing the coordinate file.
+            - Closing the image saving thread.
+            - Update display texts.
+            - Un-disabled (enable if) the LiveView button
+        """        
+
         super().stopImageAcquisition()
 
         # Schedule closing coordinate file a bit later
@@ -936,12 +1054,16 @@ class RecordButton(ImageAcquisitionButton):
 
     @override
     def acquisitionCondition(self) -> bool:
+
         return self.camera is not None and self.frameCounter < self.numberRecordframes and self.state == 'down'
 
     
     @override
     def receiveImageCallback(self) -> None:
-
+        """Extended to further:
+            - Save the coordinate data.
+            - Put the image into an image saving queue.
+        """        
         # Update buffer display text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
@@ -986,6 +1108,8 @@ class RecordButton(ImageAcquisitionButton):
 
     @override
     def finishAcquisitionCallback(self) -> None:
+        """Send stop signal to image saving threads and stop image acquisition.
+        """        
         # Send signal to terminate recording workers
         self.imageQueue.put(None)
 
@@ -996,6 +1120,8 @@ class RecordButton(ImageAcquisitionButton):
     
 
     def initRecordingParams(self):
+        """Initialize the recording arguments
+        """        
         # Setup grabbing with recording settings
         self.numberRecordframes = self.app.config.getint('Experiment', 'nframes')
 
@@ -1015,20 +1141,25 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat = timeStamped("basler_{}."+f"{self.imageFilenameExtension}")
         
 
-class ImageAcquisitionButtonLayout(BoxLayout):
+class ImageAcquisitionManager(BoxLayout):
+    """An ImageAcquisition buttons holder widget. This class acts as a centralized contact
+    point for accessing the acquired images.
+    """    
     recordbutton = ObjectProperty(None, rebind = True)
     liveviewbutton = ObjectProperty(None, rebind = True)
     snapbutton = ObjectProperty(None, rebind = True)
+    # Class' attributes for centralized access of acquired images
     image: np.ndarray = np.zeros((1,1))
     imageTimeStamp: float = 0
     imageRetrieveTimeStamp: float = 0
     dualColorMainSideImage: np.ndarray = np.zeros((1,1))
 
     def __init__(self,  **kwargs):
-        super(ImageAcquisitionButtonLayout, self).__init__(**kwargs)
+        super(ImageAcquisitionManager, self).__init__(**kwargs)
 
     def snap(self):
-        """save a single image to experiment location."""
+        """Callback for saving a single image from the Snap button.
+        """
         app = App.get_running_app()
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
@@ -1153,9 +1284,12 @@ class PreviewImage(Image):
 
 
 class ImageOverlay(BoxLayout):
-
+    """An image overlay class than handles drawing of GUI overlays ontop of the image.
+    """    
+    
     def __init__(self,  **kwargs):
         super(ImageOverlay, self).__init__(**kwargs)
+        # Declare class instance's attributes
         self.hasDrawDualColorOverlay: bool = False
         self.label: Label | None = None
 
@@ -1286,7 +1420,7 @@ class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
     autofocuscheckbox = ObjectProperty(rebind=True)
     trackingcheckbox = ObjectProperty(rebind=True)
-    imageacquisition: ImageAcquisitionButtonLayout = ObjectProperty(rebind=True)
+    imageacquisitionmanager: ImageAcquisitionManager = ObjectProperty(rebind=True)
     cropX = NumericProperty(0, rebind=True)
     cropY = NumericProperty(0, rebind=True)
     
@@ -1473,7 +1607,7 @@ class RuntimeControls(BoxLayout):
             wait_time = 0
             if estimated_next_timestamp is not None:
                 
-                retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
+                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
                 diff_estimated_time = estimated_next_timestamp - retrieveTimestamp
 
                 # If the estimated time is approximately close to the image timestamp
@@ -1501,18 +1635,18 @@ class RuntimeControls(BoxLayout):
                 # first time
                 stage.wait_until_idle()
 
-                retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
-                estimated_next_timestamp = self.imageacquisition.imageRetrieveTimeStamp
+                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
+                estimated_next_timestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
 
             # Get the latest image
             tracking_frame_start_time = time.perf_counter()
 
             if dualColorMode:
-                image = self.imageacquisition.dualColorMainSideImage
+                image = self.imageacquisitionmanager.dualColorMainSideImage
             else:
-                image = self.imageacquisition.image
+                image = self.imageacquisitionmanager.image
 
-            retrieveTimestamp = self.imageacquisition.imageRetrieveTimeStamp
+            retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
 
             # If prev frame is empty then use the same as current
             if prevImage is None:
@@ -1590,8 +1724,8 @@ class RuntimeControls(BoxLayout):
     def set_ROI(self, roiX, roiY):
         app = App.get_running_app()
         camera = app.camera
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionbuttonlayout.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionbuttonlayout.ids.liveviewbutton.state
+        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.recordbutton.state
+        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state
        
         if rec == 'down':
             #basler.stop_grabbing(camera)
