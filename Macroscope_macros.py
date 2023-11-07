@@ -588,13 +588,16 @@ class CameraAndStageCalibrator:
         return self.basisOrigImage, self.basisXImage, self.basisYImage
     
 
-    def calibrateCameraAndStageTransform(self) -> Tuple[float, int, float]:
+    def calibrateCameraAndStageTransform(self) -> None | Tuple[float, int, float]:
         """Estimate the transformation from stage space to image space using phase cross correlation in X and Y bases.
 
         Returns:
-            rotationStageToCam (float): rotation angle from stage
-            imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
-            pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
+            Calibration parameters:
+                - None : if calibration is not successfull.
+                - Tuple[float, float, float] : if calibration is successful
+                    - rotationStageToCam (float): rotation angle from stage
+                    - imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
+                    - pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
         """        
 
         # Estimate camera basis X 
@@ -612,8 +615,7 @@ class CameraAndStageCalibrator:
         # Check if any estimated phase shift is nan or zero
         if np.any(np.isnan(np.hstack((camBasisXVec, camBasisYVec)))) \
             or np.equal(camBasisXLen, 0) or np.equal(camBasisYLen, 0):
-            print('Estimated phase shift is NaN or 0. Please try again.')
-            return 0, 1, 1
+            return None
 
         # Compute angle between the two basis 
         angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
@@ -654,7 +656,7 @@ class CameraAndStageCalibrator:
         #   Average between the two
         pixelSize = (pixelSize_X + pixelSize_Y) / 2
 
-        return rotationStageToCam, signAngleBetweenXYBasis, pixelSize
+        return (rotationStageToCam, signAngleBetweenXYBasis, pixelSize)
 
     
     @staticmethod

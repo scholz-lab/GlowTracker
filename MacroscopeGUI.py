@@ -112,11 +112,11 @@ class WarningPopup(Popup):
     ok_text = StringProperty('OK')
     text = StringProperty('Label')
 
-    def __init__(self, text = 'warning', **kwargs):
+    def __init__(self, text = 'warning', closeTime: float = 2, **kwargs):
         super(WarningPopup, self).__init__(**kwargs)
         self.text = text
-         # call dismiss_popup in 2 seconds
-        Clock.schedule_once(self.dismiss, 2)
+        # call dismiss_popup in closeTime
+        Clock.schedule_once(self.dismiss, closeTime)
 
     def ok(self):
         self.dismiss()
@@ -385,7 +385,17 @@ class CameraAndStageCalibration(BoxLayout):
         self.ids.movingimagey.texture = imageToTexture(basisImageY)
             
         # Estimate camera to stage transformation parameters
-        rotation, imageNormDir, pixelSize = cameraAndStageCalibrator.calibrateCameraAndStageTransform()
+        calibratedParameters = cameraAndStageCalibrator.calibrateCameraAndStageTransform()
+
+        if calibratedParameters is None:
+
+            # Display a popup message say to try again.
+            warningPopup = WarningPopup(title="Calibration Failed", text='Calibration was unsuccessful. Try changing the image and calibrate again.',
+                            size_hint=(0.35, 0.2), closeTime = 6)
+            warningPopup.open()
+            return
+        
+        rotation, imageNormDir, pixelSize = calibratedParameters
         app.config.set('Camera', 'rotation', rotation)
         app.config.set('Camera', 'imagenormaldir', '+Z' if imageNormDir == 1 else '-Z')
         app.config.set('Camera', 'pixelsize', pixelSize)
@@ -487,7 +497,7 @@ class DualColorCalibration(BoxLayout):
         translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
 
         # Combine main and minor side
-        combinedImage = np.zeros(shape= (mainSideImage.shape[1], mainSideImage.shape[0], 3), dtype= np.uint8)
+        combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= np.uint8)
         combinedImage[:,:,0] = mainSideImage
         combinedImage[:,:,1] = translatedMinorSideImage
 
