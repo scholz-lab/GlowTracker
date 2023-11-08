@@ -728,9 +728,6 @@ class ImageAcquisitionButton(ToggleButton):
         # Reset displayed framecounter
         self.runtimeControls.framecounter.value = 0
 
-        # Disable tracking button
-        self.runtimeControls.trackingcheckbox.state = 'normal'
-
         # reset scale of image
         self.app.root.ids.middlecolumn.ids.scalableimage.reset()
 
@@ -1057,9 +1054,20 @@ class RecordButton(ImageAcquisitionButton):
 
         print("Stop recording")
 
-        # Set LiveView button state back to enable
-        self.parent.liveviewbutton.disabled = False
-        self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+        # Set LiveView button state back to enable.
+        #   We need to do it here as a schedule event. Because this current function (stopImageAcquisition)
+        #   is usually called inside a thread, if we call update LiveView button state, it would somehow
+        #   invoke the LiveViewButton.on_state() inside this current thread, which can spawn more thread
+        #   within itself meaning we will have a thread spawning another thread and is not the behavior
+        #   that we want. The most likely reason why this happened is because the call to on_state is happened
+        #   within the same Kivy render timeframe as this thread. By calling it through Clock.schedule_once,
+        #   we essentially schedule the on_state to be call in the next Kivy render timeframe, ensuring that
+        #   it is not invoked from a thread but from the main thread always.
+        def updateLiveViewButton(*args):
+            self.parent.liveviewbutton.disabled = False
+            self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+        
+        Clock.schedule_once( updateLiveViewButton )
     
 
     @override
