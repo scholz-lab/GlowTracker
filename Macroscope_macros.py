@@ -704,15 +704,13 @@ class DualColorImageCalibrator:
         pass
 
     
-    def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str, cropWidth: int, cropHeight: int) -> None:
+    def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str) -> None:
         """Crop dual color image into main and minor side and apply histrogram equalization 
         for better visibility.
 
         Args:
             dualColorImage (np.ndarray): Dual color image.
             mainSide (str): The main side of the dual color.
-            cropWidth (int): Crop width of the main and minor images.
-            cropHeight (int): Crop height of the main and minor images.
 
         Returns:
             mainImg: main side image
@@ -723,7 +721,7 @@ class DualColorImageCalibrator:
         self.dualColorImage = np.copy(dualColorImage)
 
         # Crop into main and minor side
-        fullImg_h, fullImg_w = self.dualColorImage.shape
+        fullImg_w = self.dualColorImage.shape[1]
         if mainSide == 'Right':
             # Main at right side, minor at left
             self.mainSideImage = self.dualColorImage[:,fullImg_w//2:]
@@ -734,10 +732,6 @@ class DualColorImageCalibrator:
             self.mainSideImage = self.dualColorImage[:,:fullImg_w//2]
             self.minorSideImage = self.dualColorImage[:,fullImg_w//2:]
         
-        # Crop center of both images
-        self.mainSideImage = cropCenterImage(self.mainSideImage, cropWidth, cropHeight)
-        self.minorSideImage = cropCenterImage(self.minorSideImage, cropWidth, cropHeight)
-
         # Equalize Histogram
         #   create a CLAHE object (Arguments are optional).
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))

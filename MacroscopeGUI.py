@@ -466,9 +466,7 @@ class DualColorCalibration(BoxLayout):
         # Process the dual color image
         mainSideImage, minorSideImage = dualColorImageCalibrator.processDualColorImage(
             dualColorImage= dualColorImage,
-            mainSide= mainSide,
-            cropWidth= 700,
-            cropHeight= 700
+            mainSide= mainSide
         )
         
         # Update display image
