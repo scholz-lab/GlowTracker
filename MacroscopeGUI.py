@@ -693,13 +693,13 @@ class ImageAcquisitionButton(ToggleButton):
             state (str): the new state
         """        
         if state == 'down':
-            self.startImageAcuisition()
+            self.startImageAcquisition()
             
         else:
             self.stopImageAcquisition()
 
     
-    def startImageAcuisition(self) -> None:
+    def startImageAcquisition(self) -> None:
         """The starting image acquisition process. Needs to be overridden. The important steps is to spawn the imageAcquisitionLoopingThread.
         """        
         pass
@@ -893,7 +893,7 @@ class LiveViewButton(ImageAcquisitionButton):
 
 
     @override
-    def startImageAcuisition(self) -> None:
+    def startImageAcquisition(self) -> None:
         """Start the image acquisition process by getting the grabbing parameters, spawn 
         image acquisition thread, and update the image GUI overlay.
         """        
@@ -965,7 +965,7 @@ class RecordButton(ImageAcquisitionButton):
     
 
     @override
-    def startImageAcuisition(self) -> None:
+    def startImageAcquisition(self) -> None:
         """Start the image acquisition process:
             - getting the grabbing parameters.
             - spawn image acquisition thread.
@@ -986,7 +986,7 @@ class RecordButton(ImageAcquisitionButton):
         self.prevLiveViewButtonState = self.parent.liveviewbutton.state
         if self.prevLiveViewButtonState == 'down':
             self.parent.liveviewbutton.stopImageAcquisition()
-            self.parent.liveviewbutton.disabled = True
+        self.parent.liveviewbutton.disabled = True
         
         self.runtimeControls.framecounter.value = 0
 
@@ -1603,7 +1603,6 @@ class RuntimeControls(BoxLayout):
 
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-        mainSide = app.config.get('DualColor', 'mainside')
         
         self.trackingevent = True
         image: np.ndarray | None = None
