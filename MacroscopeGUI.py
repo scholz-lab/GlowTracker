@@ -54,6 +54,7 @@ from typing import Tuple
 from multiprocessing.pool import ThreadPool
 from queue import Queue
 import math
+import nidaqmx
 
 # get the free clock (more accurate timing)
 #Config.set('graphics', 'KIVY_CLOCK', 'free')
@@ -244,13 +245,22 @@ class RightColumn(BoxLayout):
         #rebind keyboard events
         App.get_running_app().bind_keys()
         self._popup.dismiss()
-    
+
 
     def open_settings(self):
         # Disabled interaction with preview image widget
         App.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
         App.open_settings()
+    
+    def open_macro(self):
+        """change recording settings."""
+        content = MacroSettings(ok=self.dismiss_popup)
+        self._popup = Popup(title="Macro Settings", content=content,
+                            size_hint=(0.5, 0.35))
+        #unbind keyboard events
+        App.get_running_app().unbind_keys()
+        self._popup.open()
 
 
     def show_recording_settings(self):
@@ -287,7 +297,7 @@ class RightColumn(BoxLayout):
         if camera is not None and stage is not None:
             # stop camera if already running
             app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state = 'normal'
-            
+
             # get config values
             stepsize = app.config.getfloat('Calibration', 'step_size')
             stepunits = app.config.get('Calibration', 'step_units')
@@ -296,7 +306,7 @@ class RightColumn(BoxLayout):
             img1, img2 = macro.takeCalibrationImages(stage, camera, stepsize, stepunits)
             self._popup.content.ids.image_one.texture = im_to_texture(img1)
             self._popup.content.ids.image_two.texture = im_to_texture(img2)
-            
+
             # Dual color case
             if app.config.getboolean('DualColor', 'dualcolormode'):
                 h, w = img1.shape
@@ -309,12 +319,12 @@ class RightColumn(BoxLayout):
                 elif mainSide == 'Right':
                     img1 = img1[:,w//2:]
                     img2 = img2[:,w//2:]
-                
+
             # Compute stage scale and rotation from the shift
             pxsize, rotation = macro.computeStageScaleAndRotation(img1, img2, stepsize)
             app.config.set('Camera', 'pixelsize', pxsize)
             app.config.set('Camera', 'rotation', rotation)
-            
+
             # update calibration matrix
             app.imageToStageMat, app.imageToStageRotMat = macro.genImageToStageMatrix(pxsize, rotation)
 
@@ -339,7 +349,7 @@ class XControls(BoxLayout):
     def disable_all(self):
         for id in self.ids:
             self.ids[id].disabled = True
-    
+
     def enable_all(self):
         for id in self.ids:
             self.ids[id].disabled = False
@@ -352,7 +362,7 @@ class YControls(Widget):
     def disable_all(self):
         for id in self.ids:
             self.ids[id].disabled = True
-    
+
     def enable_all(self):
         for id in self.ids:
             self.ids[id].disabled = False
@@ -440,6 +450,15 @@ class RecordingSettings(BoxLayout):
         super(RecordingSettings, self).__init__(**kwargs)
         self.duration = self.nframes/self.framerate
 
+###
+class MacroSettings(BoxLayout):
+    ok = ObjectProperty(None)
+    nidaq_enabled = ConfigParserProperty(False, 'Macros', 'nidaq', 'app', val_type=str)
+
+    def __init__(self,  **kwargs):
+        super(MacroSettings, self).__init__(**kwargs)
+###
+            
 
 # camera properties
 class CameraProperties(GridLayout):
@@ -487,36 +506,38 @@ class RecordButtons(BoxLayout):
     def __init__(self,  **kwargs):
         super(RecordButtons, self).__init__(**kwargs)
 
+        
+
     def snap(self):
         """save a single image to experiment location."""
         app = App.get_running_app()
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
-        
+
         if app.camera is None:
             return
-        
+
         # Get an image appropriately acoording to current viewing mode
         if self.liveviewbutton.state == 'normal':
             # Call capture an image
             isSuccess, img = basler.single_take(app.camera)
             if isSuccess:
                 basler.save_image(img, path, snap_filename, isFlipY= True)
-                
+
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
             img = app.lastframe
             basler.save_image(img, path, snap_filename, isFlipY= True)
-                
+
 
     def startPreview(self) -> None:
         """Start live preview mode by start camera grabbing, create an image update thread, and draw overlay.
-        """        
+        """
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
-        
+
         if camera is not None:
             # Start grabbing
             basler.start_grabbing(camera)
@@ -526,10 +547,10 @@ class RecordButtons(BoxLayout):
             print("Grabbing Framerate:", fps)
             self.updatethread = Thread(target=self.update, daemon = True)
             self.updatethread.start()
-            
+
             # Start dual color overlay
             app.checkDualColorMode()
-            
+
         else:
             self.liveviewbutton.state = 'normal'
 
@@ -552,18 +573,18 @@ class RecordButtons(BoxLayout):
     def update(self):
         app = App.get_running_app()
         camera = app.camera
-        
+
         # schedule a display update
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
-            
+
         while camera is not None and camera.IsGrabbing() and self.liveviewbutton.state == 'down':
             isSuccess, img, timestamp, retrieveTimestamp = basler.retrieve_grabbing_result(camera)
             if isSuccess:
                 #print('dt: ', timestamp-app.timestamp)
                 cropY, cropX = self.parent.cropY, self.parent.cropX
-                
+
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 app.timestamp = timestamp
                 app.retrieveTimestamp = retrieveTimestamp
@@ -574,25 +595,55 @@ class RecordButtons(BoxLayout):
     def display(self, dt):
         if App.get_running_app().lastframe is not None:
             App.get_running_app().image = App.get_running_app().lastframe
-    
+
 
     def update_buffer(self, dt):
         # update buffer display
         camera = App.get_running_app().camera
         self.parent.buffer.value = camera.MaxNumBuffer()- camera.NumQueuedBuffers()
-        
+
+    ### NEW
+    def startNiDaq(self):
+        app = App.get_running_app()
+        nidaq_enabled = app.config.getboolean('Macros', 'nidaq')
+        if nidaq_enabled:
+            devices = nidaqmx.system.System.local().devices
+                
+            if len(devices) > 0:
+                print("NI DAQ device(s) found:")
+                for device in devices:
+                    print(device.name)
+                self.task = nidaqmx.Task()
+                self.task.do_channels.add_do_chan("Dev1/port1/line3")
+
+            else:
+                print("No NI DAQ device found.")
+
+    def closeNiDaq(self):
+        if hasattr(recobj, 'task'):
+            self.task.close()
+    ###
 
     def startRecording(self) -> None:
         """Start the recording process.
-        """                
+        """
         app = App.get_running_app()
         camera = app.camera
 
         self.parent.framecounter.value = 0
         self.path = app.root.ids.leftcolumn.savefile
 
+        ###
+        self.startNiDaq()
+        if hasattr(self, 'task'):
+            print('using nidaq task')
+
+            self.task.start()
+            self.task.write(True)
+        ###
+
         if camera is not None:
-            # stop camera if already running 
+            # stop camera if already running
             self.liveviewbutton.state = 'normal'
 
             # open coordinate file
@@ -600,7 +651,7 @@ class RecordButtons(BoxLayout):
 
             # schedule buffer update
             self.buffertrigger = Clock.create_trigger(self.update_buffer)
-            
+
             # Image data queue to share between recording and saving
             self.imageQueue = Queue()
 
@@ -625,16 +676,22 @@ class RecordButtons(BoxLayout):
 
         if camera is None:
             return
-        
+
         # Unschedule self.display() event
         Clock.unschedule(self.event)
 
+        ###
+        if hasattr(self, 'task'):
+            self.task.write(False)
+            self.task.close()
+        ###
+
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinate_file.close(), 0.5)
-        
+
         # Close saving threads
         self.savingthread.join()
-        
+
         # Tell camera to stop grabbing mode
         basler.stop_grabbing(camera)
         # Reset frame counter
@@ -645,7 +702,7 @@ class RecordButtons(BoxLayout):
         App.get_running_app().root.ids.middlecolumn.ids.scalableimage.reset()
         # Set button state back to normal
         self.recordbutton.state = 'normal'
-        
+
         print("Finished recording")
 
 
@@ -661,7 +718,7 @@ class RecordButtons(BoxLayout):
         app = App.get_running_app()
         # set up grabbing with recording settings here
         fps = app.root.ids.leftcolumn.ids.camprops.framerate
-        
+
         nframes = app.config.getint('Experiment', 'nframes')
         buffersize = app.config.getint('Experiment', 'buffersize')
         # get cropping
@@ -677,8 +734,8 @@ class RecordButtons(BoxLayout):
         ext = app.config.get('Experiment', 'extension')
         self.image_filename = timeStamped("basler_{}."+f"{ext}")
         return nframes, buffersize, cropX, cropY
-    
-    
+
+
     def imageSavingThread(self, numMaxThreads: int | None = None) -> None:
         """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
 
@@ -696,28 +753,28 @@ class RecordButtons(BoxLayout):
 
                 # check for signal of no more work
                 if queueItem is not None:
-                    
+
                     img, imgPath, imgFileName = queueItem
                     # Save the image
                     imsave(os.path.join(imgPath, imgFileName), img, check_contrast=False,  plugin="tifffile")
-                    
+
                 else:
                     # put back on the queue for other consumers
                     queue.put(None)
                     # shutdown the thread
                     break
-        
-        
+
+
         # Create a thread pool
         consumerThreadPool = ThreadPool(processes= numMaxThreads)
-        
+
         # Start spawn image saving workers
         for i in range(consumerThreadPool._processes):
             consumerThreadPool.apply_async(
-                func= imageSavingThreadWorker, 
+                func= imageSavingThreadWorker,
                 args= (self.imageQueue,)
             )
-        
+
         # Wait until all workers are done
         consumerThreadPool.close()
         consumerThreadPool.join()
@@ -741,7 +798,7 @@ class RecordButtons(BoxLayout):
         fps = app.config.getfloat('Camera', 'display_fps')
         self.event = Clock.schedule_interval(self.display, 1.0 /fps)
         print(f'Displaying at {fps} fps')
-        
+
         # grab and write images
         counter = 0
         while camera is not None and counter < nframes and self.recordbutton.state == 'down':
@@ -752,7 +809,7 @@ class RecordButtons(BoxLayout):
             if isSuccess:
                 # print('dt: ', timestamp-app.timestamp)
                 # print('(x,y,z): ', app.coords)
-                
+
                 # Crop the retrieved image and set as the latest frame
                 app.lastframe = img[cropY:img.shape[0]-cropY, cropX:img.shape[1]-cropX]
                 # write coordinate into file
@@ -760,7 +817,7 @@ class RecordButtons(BoxLayout):
 
                 self.imageQueue.put([
                     np.copy(app.lastframe),
-                    self.path, 
+                    self.path,
                     self.image_filename.format(self.parent.framecounter.value)
                 ])
 
@@ -769,14 +826,14 @@ class RecordButtons(BoxLayout):
                 app.retrieveTimestamp = retrieveTimestamp
                 self.parent.framecounter.value += 1
                 counter += 1
-        
+
         # Send signal to terminate recording workers
         self.imageQueue.put(None)
 
         print(f'Finished recordings {counter} frames.')
         self.buffertrigger()
         self.recordbutton.state = 'normal'
-        
+
         return
 
 
@@ -786,11 +843,11 @@ class RecordButtons(BoxLayout):
         self.coordinate_file = open(os.path.join(self.path, timeStamped("coords.txt")), 'a')
         self.coordinate_file.write(f"Frame Time X Y Z \n")
 
-
+      
 class ScalableImage(ScatterLayout):
 
     def on_touch_up(self, touch):
-        
+
         # If the widget is enabled and interaction point is inside its bounding box
         if self.disabled or not self.collide_point(*touch.pos):
             return
@@ -884,7 +941,7 @@ class PreviewImage(Image):
                 self.captureCircle(touch.pos)
                 # Start tracking procedure
                 Clock.schedule_once(lambda dt: rtc.startTracking(), 0)
-                # remove the circle 
+                # remove the circle
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
@@ -899,7 +956,7 @@ class ImageOverlay(BoxLayout):
 
     def on_size(self, *args) -> None:
         """Update the position and size of the rectangle when the widget is resized
-        """        
+        """
         if self.hasDrawDualColorOverlay:
             # Redraw the dual color overlay
             mainSide = App.get_running_app().config.get('DualColor','mainside')
@@ -911,7 +968,7 @@ class ImageOverlay(BoxLayout):
 
         Args:
             mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
-        """        
+        """
         self.clearDualColorOverlay()
         self.drawDualColorOverlay(mainSide)
 
@@ -924,7 +981,7 @@ class ImageOverlay(BoxLayout):
         """
         if self.hasDrawDualColorOverlay:
             return
-        
+
         self.hasDrawDualColorOverlay = True
 
         app: MacroscopeApp = App.get_running_app()
@@ -940,18 +997,18 @@ class ImageOverlay(BoxLayout):
         self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
         self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
 
-        # 
+        #
         # Red line at the middle
-        # 
+        #
         pos_center_local = self.to_local(self.center_x, self.center_y)
         p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
         p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
         self.canvas.add(Color(1., 0., 0., 0.5))
         self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
 
-        # 
+        #
         # Label on the main side
-        # 
+        #
         if self.label is None:
             # Create a Label and add it as a child
             self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
@@ -971,7 +1028,7 @@ class ImageOverlay(BoxLayout):
         topPadding = 7
         leftPadding = 0
         wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
-        
+
         if mainSide == 'Left':
             leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
 
@@ -980,14 +1037,14 @@ class ImageOverlay(BoxLayout):
 
         # left, top, right, bottom
         self.label.padding= [ leftPadding, topPadding, 0, 0 ]
-        
+
 
     def clearDualColorOverlay(self):
         """Clear the canvas and set internal hasDraw flag to false
         """
         self.canvas.clear()
         self.hasDrawDualColorOverlay = False
-    
+
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
@@ -995,7 +1052,7 @@ class RuntimeControls(BoxLayout):
     trackingcheckbox = ObjectProperty(rebind=True)
     cropX = ObjectProperty(0, rebind=True)
     cropY = ObjectProperty(0, rebind=True)
-    
+
 
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
@@ -1105,14 +1162,14 @@ class RuntimeControls(BoxLayout):
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-        
+
         if not dualColorMode:
-            # 
+            #
             # Move stage based on user input - happens here.
-            # 
+            #
             ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
             print('Centering image',xstep, ystep, units)
-            
+
             if xstep > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle=True)
             if ystep > minstep:
@@ -1120,16 +1177,16 @@ class RuntimeControls(BoxLayout):
 
             app.coords =  app.stage.get_position()
             print('updated coords')
-        
-            # 
+
+            #
             # Set smaller FOV for the worm
-            # 
+            #
             roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
             self.set_ROI(roiX, roiY)
-        
-        # 
+
+        #
         # Start the tracking
-        # 
+        #
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
@@ -1137,7 +1194,7 @@ class RuntimeControls(BoxLayout):
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
 
-        # make a tracking thread 
+        # make a tracking thread
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
@@ -1159,7 +1216,7 @@ class RuntimeControls(BoxLayout):
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         mainSide = app.config.get('DualColor', 'mainside')
-        
+
         self.trackingevent = True
         app.prevframe = None
         scale = 1.0
@@ -1175,7 +1232,7 @@ class RuntimeControls(BoxLayout):
             # became inaccurate.
             wait_time = 0
             if estimated_next_timestamp is not None:
-                
+
                 img2_retrieveTimestamp = app.retrieveTimestamp
                 diff_estimated_time = estimated_next_timestamp - img2_retrieveTimestamp
 
@@ -1224,7 +1281,7 @@ class RuntimeControls(BoxLayout):
             # If prev frame is empty then use the same as current
             if app.prevframe is None:
                 app.prevframe = img2
-                
+
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(app.prevframe, img2, capture_radius, binning, area, threshold, dark_bg)
@@ -1232,7 +1289,7 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWorms(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
                 ystep, xstep = macro.extractWormsCMS(img2, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
-            
+
             # Compute relative distancec in each axis
             ystep, xstep = macro.getStageDistances([ystep, xstep], app.imageToStageMat)
             ystep *= scale
@@ -1252,7 +1309,7 @@ class RuntimeControls(BoxLayout):
 
             #   Wait for stage movement to finish to not get motion blur.
             #   This could be done by checking with stage.is_busy().
-            #   However, that function call is very costly (~3 secs) 
+            #   However, that function call is very costly (~3 secs)
             #   and is not good for loop checking.
             #   So we are going to just estimate it here.
 
@@ -1263,16 +1320,16 @@ class RuntimeControls(BoxLayout):
             computation_time = tracking_frame_end_time - tracking_frame_start_time
 
             #   Communication delay from host to stage is 20 ms
-            communication_delay = 20e-3 
+            communication_delay = 20e-3
 
             #   Travel time
-            #       Because x and y axis travel independently, the speed that we have to wait 
+            #       Because x and y axis travel independently, the speed that we have to wait
             #       is the maximum between the two.
             max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
             stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
 
             #   Sums up all the waiting time ingredient
-            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
+            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time
 
             #   Compute the waiting time to reach the next receive image
             fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
@@ -1327,7 +1384,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.recordbutton.state
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.recordbuttons.ids.liveviewbutton.state
-       
+
         if rec == 'down':
             #basler.stop_grabbing(camera)
             rec = 'normal'
@@ -1340,7 +1397,7 @@ class RuntimeControls(BoxLayout):
             # reset camera field of view to smaller size around center
             hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
             disp = 'down'
-            # 
+            #
         print(hc, wc, roiX, roiY)
         # if desired FOV is smaller than allowed by camera, crop in GUI
         if wc > roiX:
@@ -1397,38 +1454,38 @@ class Connections(BoxLayout):
         accel = float( app.config.get('Stage', 'acceleration') )
         accel_unit = app.config.get('Stage', 'acceleration_unit')
         stage = Stage(port, maxspeed, maxspeed_unit, accel, accel_unit)
-        
+
         if stage.connection is None:
             self.stage_connection.state = 'normal'
             App.get_running_app().stage = None
 
         else:
             app.stage: Stage = stage
-            
+
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
-            
+
             def connect_async():
 
                 # home stage - do this in a thread, it is slow, ~2 sec
                 app.stage.on_connect(homing,  move_start, startloc, limits)
-                
+
                 # Call update_coordinates once.
                 #   We have to specify not to run 'update_coordinates' in async mode because it's going to
                 #   be run inside a thread.
-                app.update_coordinates(isAsync= False)  
+                app.update_coordinates(isAsync= False)
 
-            
+
             thread_connect_async = Thread(target= connect_async)
             thread_connect_async.daemon = True
             thread_connect_async.start()
-            
+
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
-            
+
 
     def disconnectStage(self):
         print('disconnecting Stage')
@@ -1503,7 +1560,7 @@ class MacroscopeApp(App):
 
         return layout
 
-    
+
     def build_config(self, config):
         """
         Set the default values for the configs sections.
@@ -1563,7 +1620,7 @@ class MacroscopeApp(App):
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
         # Check turning on or off dual color mode
         self.checkDualColorMode()
-    
+
 
     def checkDualColorMode(self):
         dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
@@ -1592,7 +1649,7 @@ class MacroscopeApp(App):
 
         if self.stopevent is not None:
             Clock.unschedule(self.stopevent)
-            
+
         #scale velocity
         v = self.vhigh*value/32767
         if v < self.vlow*0.01:
@@ -1606,23 +1663,23 @@ class MacroscopeApp(App):
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
                 self.stage.start_move(direction[axisid], self.unit)
-                    
-            
 
-    
+
+
+
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
         """Manage keyboard input for stage and focus"""
-        
+
         if self.stage is None:
             return
-        
+
         print(key, scancode, codepoint, modifier)
 
         if 'shift' in modifier:
             v = self.vlow
         else:
             v = self.vhigh
-        
+
         direction = {
             273: (0,v,0),  # up arrow
             274: (0,-v,0),   # down arrow
@@ -1631,10 +1688,10 @@ class MacroscopeApp(App):
             280: (0,0,-v),  # page up
             281: (0,0,v)    # page down
         }
-        
+
         if key not in direction.keys():
             return
-        
+
         # Stage movement mode
         if self.moveImageSpaceMode:
             move_img_space = direction[key]
@@ -1645,11 +1702,11 @@ class MacroscopeApp(App):
 
             # Convert back to a 3D tuple
             translation_vec_stage_space = ( translation_vec_stage_space[1], translation_vec_stage_space[0], move_img_space[2] )
-            
+
             self.stage.start_move(translation_vec_stage_space, self.unit)
-        
+
         else:
-            # Move 
+            # Move
             self.stage.start_move(direction[key], self.unit)
 
 
@@ -1657,18 +1714,18 @@ class MacroscopeApp(App):
         """Handle keyup callbacks. This is usually only for stopping axis movement"""
         if self.stage is None:
             return
-        
+
         # Stopping axis depending on the movement mode
         if self.moveImageSpaceMode:
-            
+
             # TODO: Improve this feature so that we can move in image space simultaneously
             #   in both X,Y axis. Will require additive velocity movement handling.
             if key in [273, 274, 275, 276, 280, 281]:
                 self.stage.stop(stopAxis= AxisEnum.ALL)
                 self.coords = self.stage.get_position()
-        
+
         else:
-        
+
             # Movement key up
             #   Call the coresponding axis to stop and update te stage position
             if key == 275 or key == 276:
@@ -1708,7 +1765,7 @@ class MacroscopeApp(App):
         """if config changes, update certain things."""
         if config is not self.config:
             return
-        
+
         print('changed config!', section, key)
 
         token = (section, key)
@@ -1717,10 +1774,10 @@ class MacroscopeApp(App):
             pixelsize = self.config.getfloat('Camera', 'pixelsize')
             rotation= self.config.getfloat('Camera', 'rotation')
             self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
-        
+
         elif token == ('Experiment', 'exppath'):
             self.root.ids.leftcolumn.ids.saveloc.text = value
-        
+
         elif token == ('Stage', 'move_image_space_mode'):
             # Token is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
             self.moveImageSpaceMode = bool(int(value))
@@ -1735,13 +1792,13 @@ class MacroscopeApp(App):
 
         elif self.image.shape[::-1] != self.texture.size:
             self.create_texture(*self.image.shape)
-        
+
         # Upload image data to texture
         self.im_to_texture()
 
         # Update GUI overlay
         self.checkDualColorMode()
-    
+
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
@@ -1782,8 +1839,8 @@ class MacroscopeApp(App):
         """helper function to create kivy textures from image arrays."""
         buf = self.image.tobytes()
         self.texture.blit_buffer(buf, colorfmt="luminance", bufferfmt="ubyte")
-    
-    
+
+
     def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
@@ -1794,7 +1851,7 @@ class MacroscopeApp(App):
 def reset():
     # Cleaner for the events in memory
     if not EventLoop.event_listeners:
-        
+
         Window = Window.core_select_lib('window', Window.window_impl, True)
         Cache.print_usage()
         for cat in Cache._categories:
@@ -1805,7 +1862,7 @@ if __name__ == '__main__':
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')
-    Config.set('graphics', 'top', '0') 
-    Config.set('graphics', 'left', '0') 
+    Config.set('graphics', 'top', '0')
+    Config.set('graphics', 'left', '0')
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below

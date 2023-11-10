@@ -572,8 +572,10 @@ MainWindow:
         text: 'GUI'
         on_release: root.open_settings()
     MyButton:
+        id:macro
         size_hint: (1, 0.1)
         text: 'Macro'
+        on_release: root.open_macro()
     MyButton: 
         id:recording
         size_hint: (1, 0.1)
@@ -660,6 +662,33 @@ MainWindow:
         # Button:
         #     text: "Confirm"
         #     on_release: root.update(frames.text)
+<MacroSettings>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    
+    GridLayout:
+        cols : 2
+        MyLabel:
+            text: 'Ni DAQ output on record'
+            color: '#ffffff'
+        TextInput:
+            id: nidaq
+            text: root.nidaq_enabled
+            multiline: False
+            on_text_validate: root.nidaq_enabled = self.text
+        #Switch:
+        #    id: nidaq
+        #    active: bool(root.nidaq_enabled)
+            # Arranging a callback to the switch
+        #    on_active:  root.nidaq_enabled = 'True'
+    
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        Button:
+            text: "OK"
+            on_release: root.ok()
 
 <AutoCalibration>:
     size: root.size
