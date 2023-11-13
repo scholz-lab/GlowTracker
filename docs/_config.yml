@@ -1,10 +1,10 @@
 # title: 
 description: A minimal websites presenting the macroscopes we created/worked with in Scholz Lab
 theme: just-the-docs
-url: https://scholz-lab.github.io/macroscopes
+url: https://scholz-lab.github.io/glowtracker
 logo: "custom_assets/images/logo.png"
 # favicon_ico: "custom_assets/images/favicon.ico"
 
 aux_links:
   "Macroscope on GitHub":
-    - "https://github.com/scholz-lab/Macroscopes"
+    - "https://github.com/scholz-lab/GlowTracker"
