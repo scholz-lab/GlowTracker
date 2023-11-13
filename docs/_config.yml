@@ -6,5 +6,5 @@ logo: "custom_assets/images/macroscope_logo.png"
 # favicon_ico: "custom_assets/images/favicon.ico"
 
 aux_links:
-  "Macroscope on GitHub":
+  "GlowTracker on GitHub":
     - "https://github.com/scholz-lab/GlowTracker"
