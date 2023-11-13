@@ -43,5 +43,11 @@ TODO: Insert GUI
 
 
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
-
+(this step is only required in the dual-color configuration.)
+To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
+1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in bboth channels.
+2. To open the calibration dialog, click on ![alt_text](../custom_assets/images/buttons/ten.png) Calibrate. Navigate the tab to the section called [TODO: Check name, add calibration screen shot]
+3. Click 'Calibrate'. The result will be shown as an overlay.
+   
 ## Set recording file path <a name="set-recording-file-path"></a>
+To pick where your image files and recording data will be stored, select a location using the file dialog in ![alt_text](../custom_assets/images/buttons/six.png). 
