@@ -20,20 +20,27 @@ After you have finished constructing your macroscope, connect the camera and sta
   <img src="../custom_assets/images/gui_annotation.png" alt="macroscope" width="100%"/>
   <a name="gui-image"></a>
 </p>
+TODO: Explain the GUI roughly in groups.
 
 ## Connect to the stage <a name="connect-to-the-stage"></a>
 If you have never connected to the Zaber stage before, install and open [Zaber Launcher](https://software.zaber.com/zaber-launcher/download). 
 In there you can find the connection port name to your stage, usually `COM3` for Windows or `/dev/ttyUSB0` for Linux, and you can also update your stage firmware to the latest version. 
 Afterward, close the Zaber Launcher and open up the GlowTracker. 
-Open the GUI setting ![alt_text](../custom_assets/images/buttons/ten.png), put your connection port name in the section `Stage`, field `Stage serial port`. 
+Open the GUI setting ![](../custom_assets/images/buttons/ten.png), put your connection port name in the section `Stage`, field `Stage serial port`. 
 Close the setting file and click the connect to stage button (TODO: point to the button), if the button turns green then you have successfully connected the stage.
 
 You can now control the stage movement by the stage control buttons ([GUI image](#gui-image): Group 2) or the arrow keys on your keyboard. The left ⇦, right ⇨ keys control stage X axis, ⇧ ⇩ controls stage Y axis, and Page Up, Page Down, raises and lowers the stage. 
 Press these in combination with the Shift key to move at a slower speed.
 
 ## Connect to the camera <a name="connect-to-the-camera"></a>
+If you have never connected to the Basler camera before, install and open the [pylon Viewver](https://www.baslerweb.com/en/software/pylon/pylon-viewer/). In there you can test the connection to your camera, specifies your settings such as exposure time and gain, then export your camera setting file as `.pfs`. 
+Open the GUI setting ![](../custom_assets/images/buttons/ten.png), put your connection port name in the section `Camera`, field `Default camera settings`.
+Close the setting file and click the connect to camera button (TODO: point to the button), if the button turns green then you have successfully connected the camera.
+You can view from the camera by pressing the live view button (TODO: link to button).
 
 ## Calibrate the camera and stage relationship <a name="calibrate-the-camera-and-stage-relationship"></a>
+TODO: Insert GUI
+
 
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
 
