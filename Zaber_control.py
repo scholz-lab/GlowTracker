@@ -208,25 +208,36 @@ class Stage:
         
         pos_len = len(position) 
         
-        if pos_len >= 1 and self.axis_x is not None and position[0] != 0:
-            self.axis_x.move_absolute(position[0], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        try:
+            if pos_len >= 1 and self.axis_x is not None and position[0] != 0:
+                self.axis_x.move_absolute(position[0], LITERALS_TO_UNITS.get(unit), wait_until_idle)
 
-        if pos_len >= 2 and self.axis_y is not None and position[1] != 0:
-            self.axis_y.move_absolute(position[1], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+            if pos_len >= 2 and self.axis_y is not None and position[1] != 0:
+                self.axis_y.move_absolute(position[1], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+            
+            if pos_len == 3 and self.axis_z is not None and position[2] != 0:
+                self.axis_z.move_absolute(position[2], LITERALS_TO_UNITS.get(unit), wait_until_idle)
         
-        if pos_len == 3 and self.axis_z is not None and position[2] != 0:
-            self.axis_z.move_absolute(position[2], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        except MotionLibException as e:
+            print(e)
 
             
     # move single axis
-    def move_x(self, step, unit = 'um', wait_until_idle = False):
+    def move_x(self, step: float, unit: str = 'um', wait_until_idle: bool = False):
         """Move to a given relative location
-        Parameters: 
-                    step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
-                    units(str): string units, commonly used
-        """
-        if self.axis_x is not None:
-            self.axis_x.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+
+        Args:
+            step (float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
+            unit (str, optional): Unit of the step. Defaults to 'um'.
+            wait_until_idle (bool, optional): is wait until finished moving. Defaults to False.
+        """        
+        try:
+            if self.axis_x is not None:
+                self.axis_x.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+
+        except MotionLibException as e:
+            print(e)
+    
     
     # move single axis
     def move_y(self, step, unit = 'um', wait_until_idle = False):
@@ -235,8 +246,13 @@ class Stage:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         """
-        if self.axis_y is not None:
-            self.axis_y.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        try:
+            if self.axis_y is not None:
+                self.axis_y.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        
+        except MotionLibException as e:
+            print(e)
+    
     
     # move single axis
     def move_z(self, step, unit = 'um', wait_until_idle = False):
@@ -245,8 +261,12 @@ class Stage:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         """
-        if self.axis_z is not None:
-            self.axis_z.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        try:
+            if self.axis_z is not None:
+                self.axis_z.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+        
+        except MotionLibException as e:
+            print(e)
 
 
     # define generic movement function 

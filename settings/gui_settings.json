@@ -116,17 +116,25 @@
     },
     {
         "type": "numeric",
-        "title": "Pixelsize",
-        "desc": "Use calibration to calculate (um/px)",
-        "section": "Camera",
-        "key": "pixelsize"
-    },
-    {
-        "type": "numeric",
         "title": "Rotation",
         "desc": "Rotation of camera relative to stage",
         "section": "Camera",
         "key": "rotation"
+    },
+    {
+        "type": "options",
+        "title": "Image plane normal's direction.",
+        "desc": "Image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix.",
+        "section": "Camera",
+        "key": "imagenormaldir",
+        "options": ["+Z", "-Z"]
+    },
+    {
+        "type": "numeric",
+        "title": "Pixelsize",
+        "desc": "Use calibration to calculate (um/px)",
+        "section": "Camera",
+        "key": "pixelsize"
     },
     {
         "type": "title",
@@ -191,6 +199,43 @@
         "section": "DualColor",
         "key": "mainside",
         "options": ["Left", "Right"]
+    },
+    {
+        "type": "options",
+        "title": "Viewing mode",
+        "desc": "Viewing mode of the dual color. \nSplitted: view the image as it is taken, where each channel are splitted on left and right.\nMerged: merge both channels into one image. Requires dual color calibration.",
+        "section": "DualColor",
+        "key": "viewmode",
+        "options": ["Splitted", "Merged"]
+    },
+    {
+        "type": "options",
+        "title": "Recording Mode",
+        "desc": "Recording mode when viewing in dual color mode. \nOriginal: Recording the images as it is taken. \nSplitted: Record the images by splitting each into left and right part, when the minor side is transformed to match the main side. Easy for later analysis.",
+        "section": "DualColor",
+        "key": "recordingmode",
+        "options": ["Original", "Splitted"]
+    },
+    {
+        "type": "numeric",
+        "title": "Translation X",
+        "desc": "Translation from minor to main in X axis",
+        "section": "DualColor",
+        "key": "translation_x"
+    },
+    {
+        "type": "numeric",
+        "title": "Translation Y",
+        "desc": "Translation from minor to main in Y axis",
+        "section": "DualColor",
+        "key": "translation_y"
+    },
+    {
+        "type": "numeric",
+        "title": "Rotation",
+        "desc": "Rotation from minor to main",
+        "section": "DualColor",
+        "key": "rotation"
     },
     {
         "type": "title",
