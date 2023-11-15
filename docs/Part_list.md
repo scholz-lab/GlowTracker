@@ -35,8 +35,3 @@ title: List of parts
 
 
 
-
-| Parts | Description | Quantity | Price | Vendor|  Link | Right-aligned |
-| :---         |     :---:      |          ---: |               ---: |
-| git status   | git status     | git status    | 
-| git diff     | git diff       | git diff      |
