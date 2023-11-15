@@ -7,6 +7,9 @@ from queue import Queue
 from tifffile import imwrite
 from typing import Tuple, List
 from pypylon import pylon
+from skimage.measure import regionprops_table
+from skimage import measure
+import pandas as pd
 
 # 
 # Own classes
@@ -276,22 +279,18 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     # print(xmin, xmax, ymin, ymax)
     img1_sm = img1[ymin:ymax, xmin:xmax]
         
-    # reduce image size
-    img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
-
-    h,w = img1_sm.shape
-    # reduced image size
-    # print('image shape after binning',h,w)
-
-    # get cms
-    h,w = img1_sm.shape
     ## threshold object cms
     if dark_bg:
+        img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
+        h,w = img1_sm.shape
+        
         img1_sm = img1_sm > threshold_yen(img1_sm)
         yc, xc = ndi.center_of_mass(img1_sm)
     else:
-        img1_sm = img1_sm < threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(~img1_sm)
+        mask, resize_factor = create_mask(img1_sm)
+        h, w = mask.shape
+        xc, yc = find_CMS(mask, resize_factor, (h//2, w//2))
+
    
     # show intermediate steps for debugging
     if display:
@@ -312,7 +311,119 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.colorbar()
 
     # print(yc, xc)
-    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+    if dark_bg:
+        return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+    else:
+        return (yc-h//2), (xc-w//2)
+
+
+def create_mask(img, verbose=False):
+    '''
+    The pipeline is as follows:
+    1. Blur the image prior to resizing (it helps to avoid aliasing effect)
+    2. Resize the image
+    3. Blur the image again to remove high frequency noise
+    4. Perform adaptive thresholding to binarize the image
+    5. Erode the image to remove small white spots 
+    6. Dilate the image to fill in the holes and roughly get back the original size
+
+    Parameters
+    ----------
+    img : np.array
+        Image to be processed
+    verbose : bool
+        Whether to show/plot the intermediate results
+    
+    Returns
+    -------
+    img : np.array
+        Corresponding binary mask
+    resize_factor : float
+        Factor by which the image was resized
+    '''
+
+    # Compute resize_factor such that the width of image is 150 
+    # pixels and the height is scaled accordingly (for speeding up
+    # the computations and having more consistent filter parameters)
+    if verbose:
+        plt.imshow(img, cmap='gray')
+        plt.title('Original image')
+        plt.show()
+    resize_factor = 150 / img.shape[1]
+    img = cv2.GaussianBlur(img, (7, 7), 3)
+    img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+    if verbose:
+        plt.imshow(img, cmap='gray')
+        plt.title('Resized image')
+        plt.show()
+    
+    # blur the image to remove high frequency noise/content
+    img = cv2.GaussianBlur(img, (5, 5), 0)
+    if verbose:
+        plt.imshow(img, cmap='gray')
+        plt.title('Blurred image')
+        plt.show()
+
+    # perform adaptive thresholding to binarize the image
+    img = cv2.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 21, 10)
+    if verbose:
+        plt.imshow(img, cmap='gray')
+        plt.title('Binarized image')
+        plt.show()
+
+    # erode the image to remove small white spots and followed
+    # by that dilate the image
+    img = cv2.erode(img, None, iterations=1)
+    img = cv2.dilate(img, None, iterations=1)
+    if verbose:
+        plt.imshow(img, cmap='gray')
+        plt.title('Eroded and dilated image')
+        plt.show()
+
+    return img, resize_factor
+
+
+def find_CMS(mask, resize_factor, middle_point, K=5):
+    '''
+    Find the local center of mass (CMS) of different regions in the mask where
+    the mask has non-zero values. Then the non-zero regions are sorted by their
+    area and only a subset of the biggest regions are kept. Finally, the coordinate
+    of the CMS of the region closest to the previous center is returned.
+
+    Parameters
+    ----------
+    mask : np.array
+        Binary mask
+    resize_factor : float
+        Factor by which the image was resized
+    middle_point : tuple
+        Coordinate of the middle point of the previous CMS
+        (we assume that by changing the position of stage
+        the CMS is always at the center or close to it)
+    K : int
+        Number of regions to keep
+        
+    Returns
+    -------
+    cms_x_center
+        x coordinate of the CMS
+    cms_y_center
+        y coordinate of the CMS
+    '''
+    labels = measure.label(mask)
+    props = pd.DataFrame(regionprops_table(labels, properties=('centroid', 'area')))
+    props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
+    
+    props['x'] = props['x'] / resize_factor # rescale the coordinates
+    props['y'] = props['y'] / resize_factor # rescale the coordinates
+    
+    # keep only the K biggest regions
+    props = props.sort_values(by='area', ascending=False).head(K)
+    props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
+    
+    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
+    
+    return (cms_x_center, cms_y_center)
 
 
 class ImageSaver:
