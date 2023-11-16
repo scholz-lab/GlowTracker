@@ -350,7 +350,7 @@ def create_mask(img, verbose=False):
         plt.title('Original image')
         plt.show()
     resize_factor = 200 / img.shape[1]
-    img = cv2.GaussianBlur(img, (7, 7), 3)
+    img = cv2.GaussianBlur(img, (7, 7), 0)
     img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
     if verbose:
         plt.imshow(img, cmap='gray')
@@ -358,7 +358,7 @@ def create_mask(img, verbose=False):
         plt.show()
     
     # blur the image to remove high frequency noise/content
-    img = cv2.GaussianBlur(img, (5, 5), 0)
+    img = cv2.GaussianBlur(img, (7, 7), 3)
     if verbose:
         plt.imshow(img, cmap='gray')
         plt.title('Blurred image')
@@ -373,7 +373,7 @@ def create_mask(img, verbose=False):
 
     # erode the image to remove small white spots and followed
     # by that dilate the image
-    img = cv2.erode(img, None, iterations=1)
+    img = cv2.erode(img, np.ones((3,3)), iterations=2)
     img = cv2.dilate(img, None, iterations=1)
     if verbose:
         plt.imshow(img, cmap='gray')
