@@ -289,7 +289,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     else:
         mask, resize_factor = create_mask(img1_sm)
         h, w = mask.shape
-        xc, yc = find_CMS(mask, resize_factor, (h//2, w//2))
+        xc, yc = find_CMS(mask, resize_factor)
 
    
     # show intermediate steps for debugging
@@ -314,7 +314,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     if dark_bg:
         return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
     else:
-        return (yc-h//2), (xc-w//2)
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
 
 
 def create_mask(img, verbose=False):
@@ -342,14 +342,14 @@ def create_mask(img, verbose=False):
         Factor by which the image was resized
     '''
 
-    # Compute resize_factor such that the width of image is 150 
+    # Compute resize_factor such that the width of image is 200 
     # pixels and the height is scaled accordingly (for speeding up
     # the computations and having more consistent filter parameters)
     if verbose:
         plt.imshow(img, cmap='gray')
         plt.title('Original image')
         plt.show()
-    resize_factor = 150 / img.shape[1]
+    resize_factor = 200 / img.shape[1]
     img = cv2.GaussianBlur(img, (7, 7), 3)
     img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
     if verbose:
@@ -383,7 +383,7 @@ def create_mask(img, verbose=False):
     return img, resize_factor
 
 
-def find_CMS(mask, resize_factor, middle_point, K=5):
+def find_CMS(mask, resize_factor, K=5):
     '''
     Find the local center of mass (CMS) of different regions in the mask where
     the mask has non-zero values. Then the non-zero regions are sorted by their
@@ -414,11 +414,13 @@ def find_CMS(mask, resize_factor, middle_point, K=5):
     props = pd.DataFrame(regionprops_table(labels, properties=('centroid', 'area')))
     props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
     
-    props['x'] = props['x'] / resize_factor # rescale the coordinates
-    props['y'] = props['y'] / resize_factor # rescale the coordinates
+    props['x'] = props['x'] 
+    props['y'] = props['y']
     
     # keep only the K biggest regions
     props = props.sort_values(by='area', ascending=False).head(K)
+
+    middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
     props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
     
     cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
