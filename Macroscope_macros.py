@@ -365,7 +365,7 @@ def create_mask(img, verbose=False):
         plt.show()
 
     # perform adaptive thresholding to binarize the image
-    img = cv2.adaptiveThreshold(img, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 21, 10)
+    img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10)
     if verbose:
         plt.imshow(img, cmap='gray')
         plt.title('Binarized image')
