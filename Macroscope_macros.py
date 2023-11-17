@@ -1,121 +1,35 @@
-# Macroscope Stage Module
+# 
+# IO, Utils
+# 
+import os
+from multiprocessing.pool import ThreadPool
+from queue import Queue
+from tifffile import imwrite
+from typing import Tuple, List
+from pypylon import pylon
+
+# 
+# Own classes
+# 
+import Basler_control as basler
+import Zaber_control as zaber
+
+# 
+# Math
+# 
 import math
 import numpy as np
-import os
-import csv
 import scipy.ndimage as ndi
 import matplotlib as mpl
 import matplotlib.pylab as plt
-from pypylon import pylon
+plt.set_loglevel('warning')
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from skimage.filters import threshold_otsu, threshold_li, threshold_yen
-from skimage.measure import regionprops, label
 from skimage.transform import downscale_local_mean
-#from skimage.feature import register_translation as phase_cross_correlation
 from skimage.registration import phase_cross_correlation
-from skimage import io
-from tifffile import imsave, TiffWriter
-from zaber_motion import Library, Units
-from zaber_motion.ascii import connection
-import Basler_control as basler
-from typing import Tuple
+import itk
+import cv2
 
-
-def switchXYMat(matXY: np.ndarray) -> np.ndarray:
-    """Modified a 2x2 matrix such that the the multiplication operation 
-    is suitable for a 2D vector of order y,x
-
-    Args:
-        matXY (np.ndarray): A 2x2 matrix
-
-    Returns:
-        np.ndarray: A modified 2x2 matrix with flipped order x,y
-    """    
-    if matXY.shape != (2, 2):
-        return
-    
-    A = matXY[0][0]
-    B = matXY[0][1]
-    C = matXY[1][0]
-    D = matXY[1][1]
-
-    matYX = np.array([
-        [D, C],
-        [B, A]
-    ], matXY.dtype)
-
-    return matYX
-
-
-def genImageToStageMatrix(scale: float, rotation: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Compute trasnformation matrix from image space to stage space using the given rotation angle and scale. Assume only rotation and uniform scaling.
-
-    Args:
-        scale (float): width or height (meter) per pixel
-        rotation (float): rotation angle between the image space and stage space
-
-    Returns:
-        imageToStageMat (np.ndarray): transformation matrix from image space to stage space
-        imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
-    """    
-
-    # Stage to Image. Standard 2D rotation matrix
-    cosval, sinval = math.cos(rotation), math.sin(rotation)
-    stageToImageMat = np.array([
-        [cosval, -sinval],
-        [sinval, cosval]
-    ], np.float32)
-
-    # Stage to Image
-    imageToStageMat = np.linalg.inv( stageToImageMat )
-
-    # switch x,y to y,x
-    imageToStageMat = switchXYMat(imageToStageMat)
-
-    return imageToStageMat * scale, imageToStageMat
-
-
-def takeCalibrationImages(stage, camera, stepsize, stepunits):
-    """take two image between a defined move of the camera."""
-    # take one image
-    _, img1 = basler.single_take(camera)
-    # move stage
-    stage.move_rel((stepsize,stepsize,0), stepunits, wait_until_idle = True)
-    # take another one
-    _, img2 = basler.single_take(camera)
-    # undo stage motion
-    stage.move_rel((-stepsize,-stepsize,0), stepunits, wait_until_idle = True)
-    return img1, img2
-
-
-def computeStageScaleAndRotation(im1: np.ndarray, im2: np.ndarray, stage_step: float) -> Tuple[float, float]:
-    """Compute stage rotation and scale from the correlation between two images moved by a known stage distance.
-
-    Args:
-        im1 (np.ndarray): first image
-        im2 (np.ndarray): second image, moved by stage step size
-        stage_step (float): stage step size
-
-    Returns:
-        scale (float): ratio between distance in image space and in stage space
-        theta (float): rotation angle from image space to stage space
-    """    
-    #   Calculate the shift using FFT correlation
-    shift = phase_cross_correlation(im1, im2, upsample_factor=1, space='real', return_error=0, overlap_ratio=0.5)    
-    
-    # Vector of change in the stage space. Measured by phase cross correlation
-    vec_stage_space = -np.array([shift[1], shift[0]], np.float32)
-    vec_stage_space_len = np.linalg.norm(vec_stage_space)
-    
-    # Vector of change expected from the setting
-    vec_image_space = np.array([-stage_step, -stage_step], np.float32)
-    vec_image_space_len = np.linalg.norm(vec_image_space)
-
-    # Assume both vectors have the same origin, compute rotation and scaling difference
-    theta = np.arccos( np.dot(vec_stage_space, vec_image_space) / (vec_stage_space_len * vec_image_space_len) )
-    scale = vec_image_space_len / vec_stage_space_len
-    
-    return scale, theta
-        
 
 #%% Autofocus using z axis
 def zFocus(stage, camera, stepsize, stepunits, nsteps):
@@ -377,7 +291,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         yc, xc = ndi.center_of_mass(img1_sm)
     else:
         img1_sm = img1_sm < threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(-img1_sm)
+        yc, xc = ndi.center_of_mass(~img1_sm)
    
     # show intermediate steps for debugging
     if display:
@@ -399,3 +313,553 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
     # print(yc, xc)
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+
+
+class ImageSaver:
+    """An image saver static class that manages multiples small saving threads.
+    """    
+
+    def __init__(self) -> None:
+        pass
+    
+
+    @staticmethod
+    def startSavingImageInQueueThread(imageQueue: Queue, numMaxThreads: int | None = None) -> None:
+        """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
+
+        Args:
+            imageQueue (Queue): 
+            numMaxThreads (int | None, optional): Maximum number of small threads. Defaults to None.
+        """
+
+        # Create a thread pool
+        consumerThreadPool = ThreadPool(processes= numMaxThreads)
+        
+        # Start spawn image saving workers
+        for i in range(consumerThreadPool._processes):
+            consumerThreadPool.apply_async(
+                func= ImageSaver._imageSavingThreadWorker, 
+                args= (imageQueue,)
+            )
+        
+        # Wait until all workers are done
+        consumerThreadPool.close()
+        consumerThreadPool.join()
+
+        print(f'Finished saving all the images')
+    
+
+    @staticmethod
+    def _imageSavingThreadWorker(imageQueue: Queue):
+        """A private function of image saving worker capabilities. The worker runs indefinitely
+        , comsumes the image data from the queue and save it. Terminates when the data from
+        the image queue is None.
+
+        Args:
+            imageQueue (Queue): _description_
+        """        
+        # Run until there is no more work
+        while True:
+
+            # Wait and retrieve an item from the queue
+            queueItem = imageQueue.get(block= True)
+
+            # check for signal of no more work
+            if queueItem is not None:
+                
+                img, imgPath, imgFileName = queueItem
+                # Save the image
+                imwrite(os.path.join(imgPath, imgFileName), img)
+                
+            else:
+                # put back on the queue for other consumers
+                imageQueue.put(None)
+                # shutdown the thread
+                break
+
+
+def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.ndarray:
+    """Crop the image at the center.
+
+    Args:
+        image (np.ndarray): image
+        cropWidth (int): width of the cropped image
+        cropHeight (int): height of the cropped image
+
+    Returns:
+        croppedImage (np.ndarray): the center cropped image
+    """    
+    y, x = image.shape
+    startx = x//2-(cropWidth//2)
+    starty = y//2-(cropHeight//2)    
+    croppedImage = image[ starty:starty+cropHeight, startx:startx+cropWidth ]
+    return croppedImage
+
+
+def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
+    """Modified a matrix such that the the multiplication operation 
+    is suitable for vectors of order (y,x,..) from (x,y,...) or vice versa.
+
+    Args:
+        matrix (np.ndarray): An NxM matrix of size atleast 2x2
+
+    Returns:
+        matrixXYSwapped: An X,Y swapped version of the matrix
+    """    
+    matrixXYSwapped = np.copy(matrix)
+
+    # Swap 1st and 2nd row
+    matrixXYSwapped[[0, 1], :] = matrixXYSwapped[[1, 0], :]
+
+    # Swap 1st and 2nd column
+    matrixXYSwapped[:, [0, 1]] = matrixXYSwapped[:, [1, 0]]
+    
+    return matrixXYSwapped
+
+
+def createTranslationMatrix(translation_x: float, translation_y: float) -> np.float32:
+    """Create 2D translation matrix.
+
+    Args:
+        translation_x (float): translation in X axis
+        translation_y (float): translation in Y axis
+
+    Returns:
+        translationMat (np.float32): A 3x3 translation matrix
+    """    
+
+    translationMat = np.array([
+        [1, 0, translation_x], 
+        [0, 1, translation_y],
+        [0, 0, 1]
+    ], np.float32)
+
+    return translationMat
+
+
+def createScaleAndRotationMatrix(scale: float, rotation: float, center_rot_x: float, center_rot_y: float) -> np.ndarray:
+    """Create 2D scale-and-rotation matrix around a specified center of rotation.
+
+    Args:
+        scale (float): scaling
+        rotation (float): rotation angle in radian
+        center_rot_x (float): center of rotation in X axis
+        center_rot_y (float): center of rotation in Y axis
+
+    Returns:
+        matrix (np.ndarray): A 3x3 transformation matrix.
+    """    
+    cos = scale * math.cos(rotation)
+    sin = scale * math.sin(rotation)
+
+    matrix = np.array([
+        [ cos,    -sin,      (1-cos) * center_rot_x + sin * center_rot_y ],
+        [ sin,     cos,      (1-cos) * center_rot_y - sin * center_rot_x ],
+        [ 0,        0,       1]
+    ], np.float32)
+
+    return matrix
+
+
+def createRigidTransformationMat(translation_x: float, translation_y: float, rotation: float) -> np.ndarray:
+    """Create the rigid transformation matrix. Assume center of rotation at origin.
+
+    Args:
+        translation_x (float): translation in x
+        translation_y (float): translation in y
+        rotation (radian) (float): rotation angle around origin
+
+    Returns:
+        mat (np.ndarray): the transformation matrix
+    """    
+    cos = math.cos(rotation)
+    sin = math.sin(rotation)
+
+    matrix = np.array([
+        [cos,   -sin,   translation_x],
+        [sin,   cos,    translation_y],
+        [0,     0,      1],
+    ], np.float32)
+    
+    return matrix
+
+
+def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """Compute angle between the two vector 
+
+    Args:
+        vec1 (np.ndarray): vector of starting angle
+        vec2 (np.ndarray): vector of ending angle
+
+    Returns:
+        angle (float): angle between the two vectors in radian
+    """
+    vec1normalized = vec1 / np.linalg.norm(vec1)
+    vec2normalized = vec2 / np.linalg.norm(vec2)
+
+    # Sin(theta)
+    cosTheta = np.dot(vec1normalized, vec2normalized)
+    # Cos(theta)
+    sinTheta = np.cross(vec1normalized, vec2normalized)
+    # Compute angle
+    theta = math.atan2(sinTheta, cosTheta)
+
+    return theta
+
+
+def rotatePointAboutOrig(point: np.ndarray, rotation: float) -> np.ndarray:
+    """Rotate a point about origin with a given angle.
+
+    Args:
+        point (np.ndarray): point in x,y plane
+        rotation (float): rotation angle in deg
+
+    Returns:
+        point (np.ndarray): the rotated point
+    """    
+    rotationMatrix = createScaleAndRotationMatrix(1, rotation, 0, 0)[:2,:2]
+    return rotationMatrix @ point
+
+
+class CameraAndStageCalibrator:
+
+    # Class attributes
+    origImage: np.ndarray
+    basisXImage: np.ndarray
+    basisYImage: np.ndarray
+    stepsize: float
+    stepunit: str
+
+    def __init__(self) -> None:
+        pass
+
+
+    def takeCalibrationImage(self, camera: pylon.InstantCamera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Take images for camera&stage transformation matrix calibration.
+
+        Args:
+            camera (pylon.InstantCamera): pylon camera to take images with.
+            stage (zaber.Stage): zaber stage class to move the camera with.
+            stepsize (float): movement step size in each stage basis axes.
+            stepunits (str): stage movement step unit.
+            dualColorMode (bool): is in dual color mode. Defaults to False.
+            dualColorModeMainSide (str): if in dual color mode, which side is the main side.Defaults to 'Right'.
+
+        Returns:
+            - None: if taking images is not successful
+            - Tuple(basisImageOrig, basisImageX, basisYImage): if taking images is successful
+        """        
+
+        self.stepsize = stepsize
+        self.stepunits = stepunits
+
+        isSuccessImageOrig, self.basisOrigImage = basler.single_take(camera)
+
+        # Move along stage's X axis
+        stage.move_rel((stepsize, 0, 0), stepunits, wait_until_idle = True)
+        isSuccessImageX, self.basisXImage = basler.single_take(camera)
+
+        # Move along stage's Y axis
+        stage.move_rel((-stepsize, 0, 0), stepunits, wait_until_idle = True)
+        stage.move_rel((0, stepsize, 0), stepunits, wait_until_idle = True)
+        isSuccessImageY, self.basisYImage = basler.single_take(camera)
+
+        # Move back to origin
+        stage.move_rel((0, -stepsize, 0), stepunits, wait_until_idle = True)
+
+        # If taking image is not successful then return None
+        if not (isSuccessImageOrig and isSuccessImageX and isSuccessImageY):
+            return None, None, None
+        
+        # If in dual color mode then crop only relavent region
+        if dualColorMode:
+            h, w = self.basisXImage.shape
+
+            if dualColorModeMainSide == 'Left':
+                self.basisOrigImage = self.basisOrigImage[:,:w//2]
+                self.basisXImage = self.basisXImage[:,:w//2]
+                self.basisYImage = self.basisYImage[:,:w//2]
+
+            elif dualColorModeMainSide == 'Right':
+                self.basisOrigImage = self.basisOrigImage[:,w//2:]
+                self.basisXImage = self.basisXImage[:,w//2:]
+                self.basisYImage = self.basisYImage[:,w//2:]
+        
+        return self.basisOrigImage, self.basisXImage, self.basisYImage
+    
+
+    def calibrateCameraAndStageTransform(self) -> None | Tuple[float, int, float]:
+        """Estimate the transformation from stage space to image space using phase cross correlation in X and Y bases.
+
+        Returns:
+            Calibration parameters:
+                - None : if calibration is not successfull.
+                - Tuple[float, float, float] : if calibration is successful
+                    - rotationStageToCam (float): rotation angle from stage
+                    - imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
+                    - pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
+        """        
+
+        # Estimate camera basis X 
+        basisXPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+    
+        camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
+        camBasisXLen = np.linalg.norm(camBasisXVec)
+
+        # Estimate camera basis Y
+        basisYPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+    
+        camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
+        camBasisYLen = np.linalg.norm(camBasisYVec)
+
+        # Check if any estimated phase shift is nan or zero
+        if np.any(np.isnan(np.hstack((camBasisXVec, camBasisYVec)))) \
+            or np.equal(camBasisXLen, 0) or np.equal(camBasisYLen, 0):
+            return None
+
+        # Compute angle between the two basis 
+        angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
+        signAngleBetweenXYBasis = int(np.sign(angleBetweenXYBasis))
+
+        absAngleBetweenXYBasis = abs(angleBetweenXYBasis)
+
+        # Compensate the angle between if it's not 90 deg by rotation basis X, Y outward/inward
+        #   with relative to normal vector +Z.
+        absDiffAngle = abs(math.pi/2 - absAngleBetweenXYBasis)
+        diffAngleHalf = absDiffAngle / 2
+        basisXCompensatedAngle = 0
+        basisYCompensatedAngle = 0
+        
+        if absAngleBetweenXYBasis < math.pi/2:
+        
+            basisXCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
+            basisYCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
+
+        elif absAngleBetweenXYBasis > math.pi/2:
+
+            basisXCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
+            basisYCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
+        
+        camBasisXVec = rotatePointAboutOrig(camBasisXVec, basisXCompensatedAngle)
+        camBasisYVec = rotatePointAboutOrig(camBasisYVec, basisYCompensatedAngle)
+
+        # Compute rotation angle from stage to camera
+        normCamBasisXVec = camBasisXVec / camBasisXLen
+        rotationStageToCam = computeAngleBetweenTwo2DVecs( 
+            np.array([1., 0.], np.float32), 
+            normCamBasisXVec
+        )
+
+        # Compute pixelsize
+        pixelSize_X = self.stepsize / camBasisXLen
+        pixelSize_Y = self.stepsize / camBasisYLen
+        #   Average between the two
+        pixelSize = (pixelSize_X + pixelSize_Y) / 2
+
+        return (rotationStageToCam, signAngleBetweenXYBasis, pixelSize)
+
+    
+    @staticmethod
+    def genImageToStageMatrix(rotation: float, imageNormalDir: int, pixelSize: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute trasnformation matrix from image space to stage space using the given rotation angle, sign of cross product between Camera Space X,Y basis, and pixelsize. Assume only rotation and uniform scaling.
+
+        Args:
+            rotationStageToCam (float): rotation angle from stage
+            imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
+            pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
+
+        Returns:
+            - imageToStageMat (np.ndarray): transformation matrix from image space to stage space
+            - imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
+        """    
+        # Stage to Image. Standard 2D rotation matrix
+        cosval, sinval = math.cos(rotation), math.sin(rotation)
+
+        camBasisXVec = np.array([cosval, sinval])
+        camBasisYVec = rotatePointAboutOrig(camBasisXVec, math.pi/2 * imageNormalDir)
+
+        stageToImageMat = np.array([
+            [camBasisXVec[0], camBasisYVec[0]],
+            [camBasisXVec[1], camBasisYVec[1]]
+        ], np.float32)
+
+        # Stage to Image
+        imageToStageMat = np.linalg.inv( stageToImageMat )
+
+        # switch x,y to y,x
+        imageToStageMat = swapMatXYOrder(imageToStageMat)
+
+        return pixelSize * imageToStageMat, imageToStageMat
+
+
+class DualColorImageCalibrator:
+    
+    # Class attributes
+    mainSide: str
+    dualColorImage: np.ndarray
+    mainSideImage: np.ndarray
+    minorSideImage: np.ndarray
+    
+    def __init__(self) -> None:
+        pass
+
+    
+    def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str) -> None:
+        """Crop dual color image into main and minor side and apply histrogram equalization 
+        for better visibility.
+
+        Args:
+            dualColorImage (np.ndarray): Dual color image.
+            mainSide (str): The main side of the dual color.
+
+        Returns:
+            mainImg: main side image
+            minorImg: minor side image
+        """
+
+        # Copy the dual color image
+        self.dualColorImage = np.copy(dualColorImage)
+
+        # Crop into main and minor side
+        fullImg_w = self.dualColorImage.shape[1]
+        if mainSide == 'Right':
+            # Main at right side, minor at left
+            self.mainSideImage = self.dualColorImage[:,fullImg_w//2:]
+            self.minorSideImage = self.dualColorImage[:,:fullImg_w//2]
+
+        elif mainSide == 'Left':
+            # Main at right side, minor at left
+            self.mainSideImage = self.dualColorImage[:,:fullImg_w//2]
+            self.minorSideImage = self.dualColorImage[:,fullImg_w//2:]
+        
+        # Equalize Histogram
+        #   create a CLAHE object (Arguments are optional).
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        self.mainSideImage = clahe.apply(self.mainSideImage)
+        self.minorSideImage = clahe.apply(self.minorSideImage)
+
+        return self.mainSideImage, self.minorSideImage
+    
+
+    def calibrateMinorToMainTransformationMatrix(self) -> Tuple[float, float, float]:
+        """Estimate transformation from minor side to main side. Only account for translation and rotation.
+
+        Returns:
+            translation_x (float): translation x
+            translation_y (float): translation y
+            rotation (float): rotation in radian
+        """        
+
+        # Create an ITK image from the numpy array
+        mainSideImageITK = itk.GetImageFromArray(self.mainSideImage)
+        minorSideImageITK = itk.GetImageFromArray(self.minorSideImage)
+        
+        # Create registration parameter object
+        parameter_object = itk.ParameterObject.New()
+        #   Set regid estimation parameters
+        rigid_parameter_map = parameter_object.GetDefaultParameterMap('rigid')
+        rigid_parameter_map['AutomaticScalesEstimation'] = ['false']
+        rigid_parameter_map['WriteResultImage'] = ['false']
+        rigid_parameter_map.erase('ResultImageFormat')
+        rigid_parameter_map['NumberOfResolutions'] = ['7']
+
+        parameter_object.AddParameterMap(rigid_parameter_map)
+
+        # Execute image registration process
+        result_image, result_transform_parameters = itk.elastix_registration_method(
+            mainSideImageITK, minorSideImageITK,
+            parameter_object= parameter_object,
+            log_to_console= False
+        )
+        
+        # Get transformation matrix result
+        result_parameter_map = result_transform_parameters.GetParameterMap(0)
+        rotation, translation_x, translation_y = ( float(x) for x in result_parameter_map['TransformParameters'] )
+
+        mainToMinorTransformationMatrix = createRigidTransformationMat(translation_x, translation_y, rotation)
+
+        # Compute the inverse transform, from minor to main
+        minorToMainTransformationMatrix = np.linalg.inv( mainToMinorTransformationMatrix )
+
+        # Extract translation and rotation parameter back
+        translation_x = minorToMainTransformationMatrix[0,2]
+        translation_y = minorToMainTransformationMatrix[1,2]
+
+        cosTheta = minorToMainTransformationMatrix[0,0]
+        sinTheta = minorToMainTransformationMatrix[1,0]
+        theta = math.atan2( sinTheta, cosTheta )
+
+        return translation_x, translation_y, theta
+    
+
+    @staticmethod
+    def genMinorToMainMatrix(translation_x: float, translation_y: float, rotation: float, center_x: float, center_y: float):
+        """Create a rigid transformation matrix (scale = 1) from minor to main side. 
+
+        Args:
+            translation_x (float): translation in X axis
+            translation_y (float): translation in Y axis
+            rotation (radian) (float): rotation angle in radian about center
+            center_x (float): center of rotation in X
+            center_y (float): center of rotation in Y
+
+        Returns:
+            transformationMatrix (np.ndarray): transformation matrix from minor to main
+        """        
+        # Compute the rotation matrix.
+        rotationMat = createScaleAndRotationMatrix(1, rotation, center_x, center_y)
+
+        # Compute the translation matrix
+        translationMat = createTranslationMatrix(translation_x, translation_y)
+
+        # Compute transformation matrix
+        transformationMat = translationMat @ rotationMat
+        
+        return transformationMat
+
+
+def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+    """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
+
+    Args:
+        stageToImageMat (np.ndarray): _description_
+
+    Returns:
+        np.ndarray: _description_
+    """    
+    # Define the coordinates for the vectors
+    stageX = [1, 0]  # Vector from origin to (1,0)
+    stageY = [0, 1]  # Vector from origin to (0,1)
+    imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
+    imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
+
+    # Create the plot
+    fig = plt.figure(figsize=(6, 6))
+    
+    def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
+        plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
+        plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
+                        ha= 'center', fontsize= 12, color= 'black')
+    
+    drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
+    drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
+    drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
+    drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
+
+    # Set plot limits and labels
+    plt.xlim(-1, 1)
+    plt.ylim(-1, 1)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+
+    # Add grid and legend
+    plt.grid(True)
+    plt.legend()
+
+    # Render the plot to a numpy array
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    width, height = fig.get_size_inches() * fig.get_dpi()
+    image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+    return image_array
