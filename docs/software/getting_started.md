@@ -39,13 +39,16 @@ Close the setting file and click the connect to camera button (TODO: point to th
 You can view from the camera by pressing the live view button (TODO: link to button).
 
 ## Calibrate the camera and stage relationship <a name="calibrate-the-camera-and-stage-relationship"></a>
-TODO: Insert GUI
+Calibration is essential to translate motion of the object of interest in the image to the compensatory motion of the stage, that centers the object. To calibrate this relationship, open the calibrate
 
-
+1. Select a sample that shows a lot of structure, for example a ruler or a grid. 
+2. To open the calibration dialog, click on ![alt_text](../custom_assets/images/buttons/ten.png) Calibrate. Navigate the tab to the section called [TODO: Check name, add calibration screen shot]
+3. Click 'Calibrate'. The resulting pixel size and rotation of the camera will be shown.
+   
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
 (this step is only required in the dual-color configuration.)
 To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
-1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in bboth channels.
+1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
 2. To open the calibration dialog, click on ![alt_text](../custom_assets/images/buttons/ten.png) Calibrate. Navigate the tab to the section called [TODO: Check name, add calibration screen shot]
 3. Click 'Calibrate'. The result will be shown as an overlay.
    
