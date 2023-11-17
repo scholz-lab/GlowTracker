@@ -1,0 +1,7 @@
+.inline-image{
+    display: inline-block;
+    max-height: 1.4em;      // 1.4 times of the font height
+    vertical-align: middle;         // center align with slight adjusted offset
+    transform: translateY(-10%);
+    border-radius: 50%;     // Crop the image into a circle
+}
