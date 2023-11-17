@@ -980,7 +980,34 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
+        self.daqTask: dnidaqmx.Task | None = None
     
+
+    ### NEW
+    def startNiDaq(self):
+
+        nidaq_enabled = self.app.config.getboolean('Macros', 'nidaq')
+
+        if nidaq_enabled:
+
+            devices = nidaqmx.system.System.local().devices
+
+            if len(devices) > 0:
+                print("NI DAQ device(s) found:")
+                for device in devices:
+                    print(device.name)
+
+                self.daqTask = nidaqmx.Task()
+                self.daqTask.do_channels.add_do_chan("Dev1/port1/line3")
+
+            else:
+                print("No NI DAQ device found.")
+
+    def closeNiDaq(self):
+        if self.daqTask is not None:
+            self.daqTask.close()
+            self.daqTask = None
+    ###
 
     @override
     def startImageAcquisition(self) -> None:
@@ -1018,6 +1045,15 @@ class RecordButton(ImageAcquisitionButton):
 
         # Image data queue to share between recording and saving
         self.imageQueue = Queue()
+
+        ###
+        self.startNiDaq()
+        if self.daqTask is not None:
+            print('using nidaq task')
+
+            self.daqTask.start()
+            self.daqTask.write(True)
+        ###
 
         # Start a thread for saving images
         self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
@@ -1061,6 +1097,13 @@ class RecordButton(ImageAcquisitionButton):
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
+
+        ###
+        # Stop nidaq task
+        if self.daqTask is not None:
+            self.task.write(False)
+            self.closeNiDaq()
+        ###
         
         # Close saving threads
         self.savingthread.join()
@@ -1215,7 +1258,7 @@ class ImageAcquisitionManager(BoxLayout):
             # If currently in live view mode
             #   then save the current image
             basler.save_image(self.image, path, snap_filename)
-                
+
 
 class ScalableImage(ScatterLayout):
 
@@ -2048,8 +2091,6 @@ class MacroscopeApp(App):
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
                 self.stage.start_move(direction[axisid], self.unit)
-
-
 
 
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
