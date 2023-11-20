@@ -678,18 +678,17 @@ MainWindow:
         Switch:
             id: nidaq
             active: root.nidaq_enabled
-            state: 1 if nidaq.active else 0 #app.config.get('Macros', 'nidaq')
-            on_active: root.nidaq_enabled = self.state #root.PID_an_aus(self, self.active)
+            state: 1 if nidaq.active else 0
+            on_active: root.nidaq_enabled = self.state
 
-            #root.nidaq_enabled = self.state
-            #text: root.nidaq_enabled
-            #multiline: False
-            #on_text_validate: root.nidaq_enabled = self.text
-        #Switch:
-        #    id: nidaq
-        #    active: bool(root.nidaq_enabled)
-            # Arranging a callback to the switch
-        #    on_active:  root.nidaq_enabled = 'True'
+        MyLabel:
+            text: 'Ni DAQ channel'
+            color: '#ffffff'
+        TextInput:
+            id: nidaqchannel
+            text: root.nidaq_channel
+            multiline: False
+            on_text_validate: root.nidaq_channel = self.text
     
     BoxLayout:
         size_hint_y: None

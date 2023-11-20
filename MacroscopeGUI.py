@@ -625,6 +625,7 @@ class RecordingSettings(BoxLayout):
 class MacroSettings(BoxLayout):
     ok = ObjectProperty(None)
     nidaq_enabled = ConfigParserProperty(0, 'Macros', 'nidaq', 'app', val_type=int)
+    nidaq_channel = ConfigParserProperty('Dev1/port1/line3', 'Macros', 'nidaqchannel', 'app', val_type=str)
 
     def __init__(self,  **kwargs):
         super(MacroSettings, self).__init__(**kwargs)
@@ -987,6 +988,7 @@ class RecordButton(ImageAcquisitionButton):
     def startNiDaq(self):
 
         nidaq_enabled = self.app.config.getboolean('Macros', 'nidaq')
+        nidaq_channel = self.app.config.get('Macros', 'nidaqchannel')
 
         if nidaq_enabled:
 
@@ -998,7 +1000,7 @@ class RecordButton(ImageAcquisitionButton):
                     print(device.name)
 
                 self.daqTask = nidaqmx.Task()
-                self.daqTask.do_channels.add_do_chan("Dev1/port1/line3")
+                self.daqTask.do_channels.add_do_chan(nidaq_channel)
 
             else:
                 print("No NI DAQ device found.")
