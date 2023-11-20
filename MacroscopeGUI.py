@@ -624,7 +624,7 @@ class RecordingSettings(BoxLayout):
 ###
 class MacroSettings(BoxLayout):
     ok = ObjectProperty(None)
-    nidaq_enabled = ConfigParserProperty('normal', 'Macros', 'nidaq', 'app', val_type=str)
+    nidaq_enabled = ConfigParserProperty(0, 'Macros', 'nidaq', 'app', val_type=int)
 
     def __init__(self,  **kwargs):
         super(MacroSettings, self).__init__(**kwargs)

@@ -677,7 +677,8 @@ MainWindow:
             color: '#ffffff'
         Switch:
             id: nidaq
-            state: root.nidaq_enabled #app.config.get('Macros', 'nidaq')
+            active: root.nidaq_enabled
+            state: 1 if nidaq.active else 0 #app.config.get('Macros', 'nidaq')
             on_active: root.nidaq_enabled = self.state #root.PID_an_aus(self, self.active)
 
             #root.nidaq_enabled = self.state
