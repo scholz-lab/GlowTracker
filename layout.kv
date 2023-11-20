@@ -675,11 +675,15 @@ MainWindow:
         MyLabel:
             text: 'Ni DAQ output on record'
             color: '#ffffff'
-        TextInput:
+        Switch:
             id: nidaq
-            text: root.nidaq_enabled
-            multiline: False
-            on_text_validate: root.nidaq_enabled = self.text
+            state: root.nidaq_enabled #app.config.get('Macros', 'nidaq')
+            on_active: root.nidaq_enabled = self.state #root.PID_an_aus(self, self.active)
+
+            #root.nidaq_enabled = self.state
+            #text: root.nidaq_enabled
+            #multiline: False
+            #on_text_validate: root.nidaq_enabled = self.text
         #Switch:
         #    id: nidaq
         #    active: bool(root.nidaq_enabled)
