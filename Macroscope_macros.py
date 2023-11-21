@@ -279,17 +279,9 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     # print(xmin, xmax, ymin, ymax)
     img1_sm = img1[ymin:ymax, xmin:xmax]
         
-    ## threshold object cms
-    if dark_bg:
-        img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
-        h,w = img1_sm.shape
-        
-        img1_sm = img1_sm > threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(img1_sm)
-    else:
-        mask, resize_factor = create_mask(img1_sm)
-        h, w = mask.shape
-        xc, yc = find_CMS(mask, resize_factor)
+    mask, resize_factor = create_mask(img1_sm, dark_bg)
+    h, w = mask.shape
+    xc, yc = find_CMS(mask, resize_factor)
 
    
     # show intermediate steps for debugging
@@ -317,7 +309,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
 
 
-def create_mask(img, verbose=False):
+def create_mask(img, dark_bg):
     '''
     The pipeline is as follows:
     1. Blur the image prior to resizing (it helps to avoid aliasing effect)
@@ -331,8 +323,6 @@ def create_mask(img, verbose=False):
     ----------
     img : np.array
         Image to be processed
-    verbose : bool
-        Whether to show/plot the intermediate results
     
     Returns
     -------
@@ -345,40 +335,37 @@ def create_mask(img, verbose=False):
     # Compute resize_factor such that the width of image is 200 
     # pixels and the height is scaled accordingly (for speeding up
     # the computations and having more consistent filter parameters)
-    if verbose:
-        plt.imshow(img, cmap='gray')
-        plt.title('Original image')
-        plt.show()
     resize_factor = 200 / img.shape[1]
-    img = cv2.GaussianBlur(img, (7, 7), 0)
-    img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
-    if verbose:
-        plt.imshow(img, cmap='gray')
-        plt.title('Resized image')
-        plt.show()
-    
+
+    if dark_bg:
+        img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+        
+        # gamma correction
+        gamma = np.log(np.mean(img))/np.log(128)
+        img = img**(1/gamma)
+    else:
+        img = cv2.GaussianBlur(img, (7, 7), 0)
+        img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
-    if verbose:
-        plt.imshow(img, cmap='gray')
-        plt.title('Blurred image')
-        plt.show()
 
-    # perform adaptive thresholding to binarize the image
-    img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10)
-    if verbose:
-        plt.imshow(img, cmap='gray')
-        plt.title('Binarized image')
-        plt.show()
+    # perform thresholding to binarize the image
+    if dark_bg:
+        threshold = threshold_yen(img)
+        img = (img > threshold) * 255
+        img = img.astype(np.uint8)
+    else:
+        img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10)
 
     # erode the image to remove small white spots and followed
     # by that dilate the image
-    img = cv2.erode(img, np.ones((3,3)), iterations=2)
-    img = cv2.dilate(img, None, iterations=1)
-    if verbose:
-        plt.imshow(img, cmap='gray')
-        plt.title('Eroded and dilated image')
-        plt.show()
+    if dark_bg:
+        img = cv2.erode(img, np.ones((5,5)), iterations=1)
+        img = cv2.dilate(img, np.ones((5,5)), iterations=1)
+    else:
+        img = cv2.erode(img, None, iterations=2)
+        img = cv2.dilate(img, None, iterations=1)
 
     return img, resize_factor
 
