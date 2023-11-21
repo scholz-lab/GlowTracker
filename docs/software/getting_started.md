@@ -17,8 +17,6 @@ After you have finished constructing your macroscope, connect the camera and sta
 
 ## Opening up the GUI <a name="opening-the-gui"></a>
 
-TODO: Explain how to run the program after installing (with pip?)
-
 <p align="center">
   <img src="../custom_assets/images/gui_annotation.png" alt="macroscope" width="100%"/>
   <a name="gui-image"></a>
@@ -43,7 +41,7 @@ You can view from the camera by pressing the live view button.
 ## Calibrate the camera and stage relationship <a name="calibrate-the-camera-and-stage-relationship"></a>
 Calibration is essential to translate motion of the object of interest in the image to the compensatory motion of the stage, that centers the object.
 
-1. Select a sample that shows a lot of structure, for example a ruler, or a drop of fluorescent pigment on a plate. 
+1. Select a sample that shows a lot of structure, for example a ruler, or a drop of fluorescent pigment on a plate.
 2. Open the **Calibrate** window ![](../custom_assets/images/buttons/ten.png){: .inline-image}. Navigate to the tab **Camera & Stage Calibration** [TODO: add calibration screen shot].
 3. Click **Calibrate**. The resulting pixel size and rotation of the camera will be shown, along with a plot display the camera space and stage space.
    
@@ -51,8 +49,30 @@ Calibration is essential to translate motion of the object of interest in the im
 (this step is only required in the dual-color configuration.)
 To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
 1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
-2. To open the calibration dialog, click on ![](../custom_assets/images/buttons/ten.png){: .inline-image} Calibrate. Navigate the tab to the section called [TODO: Check name, add calibration screen shot]
-3. Click 'Calibrate'. The result will be shown as an overlay.
+    <table class="custom-table">
+      <tr>
+        <td>
+          <figure class="center-figure">
+            <img src="../custom_assets/images/5 - calibration/dual color calibration/1 - fluorescent strip.jpg" alt="Centered Image">
+            <figcaption>Fluorescent stripes on a slide</figcaption>
+          </figure>
+        </td>
+        <td>
+          <figure class="center-figure">
+            <img src="../custom_assets/images/5 - calibration/dual color calibration/2 - viewing strip.jpg" alt="Centered Image">
+            <figcaption>Placing the slide on the center of objective</figcaption>
+          </figure>
+        </td>
+      </tr>
+    </table>
+
+2. Open the calibration dialog by cliking on **Calibrate** ![](../custom_assets/images/buttons/ten.png){: .inline-image}. Navigate the tab to the section called **Dual Color Calibration**.
+
+3. Click **Calibrate**. The calibration result will be shown in the overlay.
+    <figure class="center-figure">
+      <img src="../custom_assets/images/5 - calibration/dual color calibration/3 - dual color calibration.png" alt="Calibration result" width= "70%">
+      <figcaption>Calibration result</figcaption>
+    </figure>
    
 ## Set recording file path <a name="set-recording-file-path"></a>
 To pick where your image files and recording data will be stored, select a location using the file dialog in ![](../custom_assets/images/buttons/six.png){: .inline-image}. 
