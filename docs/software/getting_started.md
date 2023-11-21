@@ -42,7 +42,7 @@ You can view from the camera by pressing the live view button.
 Calibration is essential to translate motion of the object of interest in the image to the compensatory motion of the stage, that centers the object.
 
 1. Select a sample that shows a lot of structure, for example a ruler, or a drop of fluorescent pigment on a slide.
-    <table class="custom-table">
+    <table class="equal-column-table">
       <tr>
         <td>
           <figure class="center-figure">
@@ -77,7 +77,7 @@ Calibration is essential to translate motion of the object of interest in the im
 (this step is only required in the dual-color configuration.)
 To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
 1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
-    <table class="custom-table">
+    <table class="equal-column-table">
       <tr>
         <td>
           <figure class="center-figure">
