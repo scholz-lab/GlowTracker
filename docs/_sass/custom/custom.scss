@@ -1,3 +1,37 @@
+// Small inline image such as icon, button
+.inline-image{
+    display: inline-block;
+    max-height: 1.4em;      // 1.4 times of the font height
+    vertical-align: middle;         // center align with slight adjusted offset
+    transform: translateY(-10%);
+    border-radius: 50%;     // Crop the image into a circle
+}
+
+// Center-align image with description
+.center-figure {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.center-figure img {
+    // width: 50%;
+    height: auto;
+    display: block;
+}
+
+.center-figure figcaption {
+    margin-top: 10px;
+    font-style: italic;
+}
+
+// Table of equal column width
+.equal-column-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
 .side-bar {
     z-index: 0;
     display: flex;
