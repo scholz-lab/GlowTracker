@@ -301,12 +301,8 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.title('img1_reduced')
         plt.plot(xc, yc, 'ro')
         plt.colorbar()
-
-    # print(yc, xc)
-    if dark_bg:
-        return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
-    else:
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+    
+    return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
 
 
 def create_mask(img, dark_bg):
