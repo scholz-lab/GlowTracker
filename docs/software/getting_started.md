@@ -41,9 +41,37 @@ You can view from the camera by pressing the live view button.
 ## Calibrate the camera and stage relationship <a name="calibrate-the-camera-and-stage-relationship"></a>
 Calibration is essential to translate motion of the object of interest in the image to the compensatory motion of the stage, that centers the object.
 
-1. Select a sample that shows a lot of structure, for example a ruler, or a drop of fluorescent pigment on a plate.
-2. Open the **Calibrate** window ![](../custom_assets/images/buttons/ten.png){: .inline-image}. Navigate to the tab **Camera & Stage Calibration** [TODO: add calibration screen shot].
+1. Select a sample that shows a lot of structure, for example a ruler, or a drop of fluorescent pigment on a slide.
+    <table class="custom-table">
+      <tr>
+        <td>
+          <figure class="center-figure">
+            <img src="../custom_assets/images/5 - calibration/camera and stage calibration/1 - fluorescent drop on slide.jpg" alt="Fluorescent drop">
+            <figcaption>Fluorescent drop on a slide</figcaption>
+          </figure>
+        </td>
+        <td>
+          <figure class="center-figure">
+            <img src="../custom_assets/images/5 - calibration/camera and stage calibration/1 - viewing on macroscope.jpg" alt="Viewing fluorescent drop">
+            <figcaption>Placing the slide on the center of objective</figcaption>
+          </figure>
+        </td>
+      </tr>
+    </table>
+2. Open the **Calibrate** window ![](../custom_assets/images/buttons/ten.png){: .inline-image}. Navigate to the tab **Camera & Stage Calibration**.
+
 3. Click **Calibrate**. The resulting pixel size and rotation of the camera will be shown, along with a plot display the camera space and stage space.
+    <figure class="center-figure">
+      <img src="../custom_assets/images/5 - calibration/camera and stage calibration/2.png" alt="Calibration result" width="70%">
+      <figcaption>Camera and Stage calibration result.</figcaption>
+    </figure>
+
+4. You can test if the calibration is correct by turning on the **Move in image space mode** option in the **Settings** ![](../custom_assets/images/buttons/ten.png){: .inline-image} under **Stage** section. After turning it on, when you move the stage using the arrow keys ⇦⇨⇧⇩, the resulting image should also moved accordingly and intuitively, e.g. moving up ⇧ should move the image up, and moving to the right ⇨ should also move image to the right.
+
+    <figure class="center-figure">
+      <img src="../custom_assets/images/5 - calibration/camera and stage calibration/3.png" alt="Calibration result" width="70%">
+      <figcaption>Turn on the Move in image space mode setting</figcaption>
+    </figure>
    
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
 (this step is only required in the dual-color configuration.)
@@ -53,13 +81,13 @@ To calibrate the relationship between the two color channels, which will later a
       <tr>
         <td>
           <figure class="center-figure">
-            <img src="../custom_assets/images/5 - calibration/dual color calibration/1 - fluorescent strip.jpg" alt="Centered Image">
+            <img src="../custom_assets/images/5 - calibration/dual color calibration/1 - fluorescent strip.jpg" alt="Fluorescent stripes">
             <figcaption>Fluorescent stripes on a slide</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="../custom_assets/images/5 - calibration/dual color calibration/2 - viewing strip.jpg" alt="Centered Image">
+            <img src="../custom_assets/images/5 - calibration/dual color calibration/2 - viewing strip.jpg" alt="View fluorescent stripes">
             <figcaption>Placing the slide on the center of objective</figcaption>
           </figure>
         </td>
@@ -71,7 +99,7 @@ To calibrate the relationship between the two color channels, which will later a
 3. Click **Calibrate**. The calibration result will be shown in the overlay.
     <figure class="center-figure">
       <img src="../custom_assets/images/5 - calibration/dual color calibration/3 - dual color calibration.png" alt="Calibration result" width= "70%">
-      <figcaption>Calibration result</figcaption>
+      <figcaption>Dual-color calibration result</figcaption>
     </figure>
    
 ## Set recording file path <a name="set-recording-file-path"></a>
