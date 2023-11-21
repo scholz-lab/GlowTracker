@@ -32,3 +32,23 @@
     table-layout: fixed;
     border-collapse: collapse;
 }
+.side-bar {
+    z-index: 0;
+    display: flex;
+    flex-wrap: wrap;
+    background-color: $sidebar-color;
+  
+    @include mq(md) {
+      flex-flow: column nowrap;
+      position: fixed;
+      width: $nav-width-md;
+      height: 100%;
+      border-right: $border $border-color;
+      align-items: flex-end;
+    }
+  
+    @include mq(lg) {
+      width: calc((100% - #{$nav-width + $content-width}) / 2 + #{$nav-width});
+      min-width: $nav-width;
+    }
+  }
