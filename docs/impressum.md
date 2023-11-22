@@ -6,8 +6,8 @@ nav_order: 10
 
 # Team
 
-<a href="scholz-lab.com">
-    <img src="custom_assets/images/lab_logo.png" alt="logo" width="45%" align=RIGHT>
+<a href="http://scholz-lab.com/">
+    <img src="custom_assets/images/lab_logo.png" alt="http://scholz-lab.com/" width="45%" align=RIGHT>
 </a>
 
 ## Developers
