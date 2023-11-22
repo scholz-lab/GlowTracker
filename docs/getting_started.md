@@ -1,8 +1,7 @@
 ---
 title: 3.2 Getting Started
 layout: default
-parent: 3. Software
-# nav_order: -1
+# nav_order: 8
 ---
 
 # Getting Started
