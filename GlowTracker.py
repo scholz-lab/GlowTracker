@@ -1897,6 +1897,11 @@ class MacroscopeApp(App):
 
 
     def build(self):
+        # Set app name
+        self.title = 'GlowTracker'
+        # Set app icon
+        self.icon = 'icons/glowtracker_gray_logo.png'
+        # Load app layout
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
@@ -1930,7 +1935,7 @@ class MacroscopeApp(App):
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
-        settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+        settings.add_json_panel('GlowTracker', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
 
 
@@ -2191,7 +2196,7 @@ class MacroscopeApp(App):
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
-        self._popup = Popup(title="Exit Macroscope GUI", content=content,
+        self._popup = Popup(title="Exit GlowTracker", content=content,
                             size_hint=(0.5, 0.2))
         self._popup.open()
         return True
