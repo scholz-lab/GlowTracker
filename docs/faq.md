@@ -24,20 +24,20 @@ The stage's movement speed can be set at **Settings** > **Stage** > **Stage spee
     </figure>
 then reconnect the stage by clicking the **Stage** button to turn red ![](custom_assets\images\buttons\connection_off.png){: .inline-image} and then click again to turn green ![](custom_assets\images\buttons\connection_on.png){: .inline-image}, all the X, Y, and Z stages will the move to its zero position.
 
-2. After homing the stage, or if you have already homed the stage, set the stage limit to your desired distance by going to **Settings** > **Stage** > **Stage Limit**
+2. After homing the stage, or if the stage was already homed, set the stage limit to your desired distance by going to **Settings** > **Stage** > **Stage Limit**
 
     <figure class="center-figure">
         <img src="custom_assets/images/stage limit.png" alt="Stage limit" width="80%">
     </figure>
 the numbers are in X, Y, and Z order. Afterward, close the settings, and reconnect the stage again by clicking the **Stage** button off ![](custom_assets\images\buttons\connection_off.png){: .inline-image} and on ![](custom_assets\images\buttons\connection_on.png){: .inline-image}.
 
-It is *very important* that you set the stage Z limit such that your objective lens does not go too far down and collide with your plate or subject and broke it (we have learned this the hard way).
+It is *very important* that you set the stage Z limit such that your objective lens does not go too far down and collide with your plate or subject and breaks it (we have learned this the hard way).
 
 
-## Q: The stage move unintuitively.
-1. Make sure to calibrate the camera and stage relationship by clicking the **Calibrate** button, then **Camera & Stage Calibration** tab. This estimates the similarity transformation between the two. See the estimated result plot and decide if it's accurate to your setup or not. If not, try chaning the object to something with clearer structure.
+## Q: The stage moves unintuitively.
+1. Make sure to calibrate the camera and stage relationship by clicking the **Calibrate** button, then **Camera & Stage Calibration** tab. This estimates the similarity transformation between the two. See the estimated result plot and decide if it's accurate to your setup or not. If not, try changing the object to something with clearer structure in the field of view.
 
-2. After calibrated the transformation, turn on the move in image space mode option in **Settings** > **Stage** > **Move in image space mode**.
+2. After calibrating the transformation, turn on the' move in image space mode' option in **Settings** > **Stage** > **Move in image space mode**.
     <figure class="center-figure">
         <img src="custom_assets/images/5 - calibration/camera and stage calibration/3.png" alt="Stage limit" width="80%">
     </figure>
@@ -47,11 +47,11 @@ It is *very important* that you set the stage Z limit such that your objective l
 Here are a couple of things to try:
 - Increase camera exposure
 - Increase camera gain
-- Lower up or down the stage
+- Lower up or raise the stage
 
 ## Q: The dual-color calibration is not perfectly align.
 Depending on your optics configuration, it can be quite hard to have a similar-structure image showing up on both side of the dual color image, which is important for the calibration algorithm. 
-Try finding a fluorescent object that show patterns on both side. 
+Try finding a fluorescent object that shows patterns on both side. 
 Sometimes we found that calibrating on the animal itself can also give a great result.
 But if all else fails or you want a perfect pixel alignment, you can manually adjust the translation and rotation parameters in the **Settings** > **DualColor** > **Translation X**, **Translation Y**, and **Rotation**.
 
