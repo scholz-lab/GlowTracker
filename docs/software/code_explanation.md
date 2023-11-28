@@ -20,12 +20,28 @@ nav_order: 2
 
 ### Resizing
 <p align="justify">
-    The initial step involves resizing the image to a smaller dimension, a crucial measure aimed at reducing computational load. This optimization significantly accelerates the tracking algorithm, enabling a higher frame rate. Depending on the resizing method employed —such as the <code>cv2.resize()</code> for a basic resizing technique— there might be a necessity to apply a blur to the image before resizing. This blurring process aims to mitigate the potential <i>aliasing effect</i> that could arise during downsampling. Further details on the aliasing effect can be found <a href="https://en.wikipedia.org/wiki/Aliasing">here</a>.
+    The initial step involves resizing the image to a smaller dimension, a crucial measure aimed at reducing computational load. This optimization significantly accelerates the tracking algorithm, enabling a higher frame rate. 
+</p>
+
+<figure class="center-figure">
+    <img src="../custom_assets/images/tracking/different_resize_factors.jpg" alt="Same image in different scales">
+    <figcaption>Showing the same image in different scales</figcaption>
+</figure>
+
+<p align="justify">
+    Depending on the resizing method employed —such as the <code>cv2.resize()</code> for a basic resizing technique— there might be a necessity to apply a blur to the image before resizing. This blurring process aims to mitigate the potential <i>aliasing effect</i> that could arise during downsampling. Further details on the aliasing effect can be found <a href="https://en.wikipedia.org/wiki/Aliasing">here</a>.
 </p>
 
 <figure class="center-figure">
     <img src="../custom_assets/images/tracking/resize_impact_plot.png" alt="Comparison of applying different resize factors" width="75%">
-    <figcaption>Comparing computational times while applying different resize factors to an image of dimensions 3000x2000 pixels</figcaption>
+    <figcaption>Comparing computational times while applying different resize factors to two different images of dimensions 3000x2000 and 1028x688 pixels on a 12th Gen Intel Core i7 CPU with 16GB of RAM</figcaption>
+</figure>
+
+It is worth noting that, while working with the dark background recordings, we apply a <i>gamma correction</i> to the image before resizing. This correction aims to enhance the worm's contrast, making it easier to track. 
+
+<figure class="center-figure">
+    <img src="../custom_assets/images/tracking/gamma_correction.png" alt="Gamma correction">
+    <figcaption>Gamma correction</figcaption>
 </figure>
 
 
