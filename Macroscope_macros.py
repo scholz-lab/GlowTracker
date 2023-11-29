@@ -278,34 +278,44 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     # print(xmin, xmax, ymin, ymax)
     img1_sm = img1[ymin:ymax, xmin:xmax]
-        
-    mask, resize_factor = create_mask(img1_sm, dark_bg)
+    
+    if display:
+        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display)
+    else:
+        mask, resize_factor = create_mask(img1_sm, dark_bg, display=display)
+
     h, w = mask.shape
-    xc, yc = find_CMS(mask, resize_factor)
+
+    if display:
+        (xc, yc), annotated_mask = find_CMS(mask, resize_factor, display=display)
+    else:
+        xc, yc = find_CMS(mask, resize_factor, display=display)
 
    
     # show intermediate steps for debugging
     if display:
-        plt.subplot(211)
+        plt.subplot(231)
         plt.imshow(img1)
-        plt.title('img1 original')
-        plt.plot(xc*bin_factor+xmin, yc*bin_factor+ymin, 'ro')
-        plt.plot( (xc*bin_factor + xmin) ,(yc*bin_factor+ymin), 'ro')
+        plt.title('img original')
+        plt.plot(xc/resize_factor+xmin, yc/resize_factor+ymin, 'ro')
+        plt.plot( (xc/resize_factor + xmin) ,(yc/resize_factor+ymin), 'ro')
         rect = mpl.patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='r', facecolor='none')
         # Add the patch to the Axes
         plt.gca().add_patch(rect)
         
-        plt.colorbar()
-        plt.subplot(212)
+        plt.subplot(232)
         plt.imshow(img1_sm)
-        plt.title('img1_reduced')
-        plt.plot(xc, yc, 'ro')
-        plt.colorbar()
+        plt.title('img reduced')
+        plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
+
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, annotated_mask
     
-    return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+    else:
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+    
 
 
-def create_mask(img, dark_bg):
+def create_mask(img, dark_bg, display=False):
     '''
     The pipeline is as follows:
     1. Blur the image prior to resizing (it helps to avoid aliasing effect)
@@ -326,7 +336,10 @@ def create_mask(img, dark_bg):
         Corresponding binary mask
     resize_factor : float
         Factor by which the image was resized
+    intermediate_images : list
+        List of intermediate images for debugging
     '''
+    intermediate_images = []
 
     # Compute resize_factor such that the width of image is 200 
     # pixels and the height is scaled accordingly (for speeding up
@@ -342,6 +355,7 @@ def create_mask(img, dark_bg):
     else:
         img = cv2.GaussianBlur(img, (7, 7), 0)
         img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+    intermediate_images.append(img)
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
@@ -353,6 +367,7 @@ def create_mask(img, dark_bg):
         img = img.astype(np.uint8)
     else:
         img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10)
+    intermediate_images.append(img)
 
     # erode the image to remove small white spots and followed
     # by that dilate the image
@@ -362,11 +377,15 @@ def create_mask(img, dark_bg):
     else:
         img = cv2.erode(img, None, iterations=2)
         img = cv2.dilate(img, None, iterations=1)
+    intermediate_images.append(img)
 
-    return img, resize_factor
+    if display:
+        return img, resize_factor, intermediate_images
+    else:
+        return img, resize_factor
 
 
-def find_CMS(mask, resize_factor, K=5):
+def find_CMS(mask, resize_factor, K=5, display=False):
     '''
     Find the local center of mass (CMS) of different regions in the mask where
     the mask has non-zero values. Then the non-zero regions are sorted by their
@@ -408,7 +427,27 @@ def find_CMS(mask, resize_factor, K=5):
     
     cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
     
-    return (cms_x_center, cms_y_center)
+    if display:
+        annotated_mask = mask.copy()
+        for i in range(len(props['y'])):
+            # Draw circle
+            cv2.circle(annotated_mask, (int(props['x'].iloc[i]), int(props['y'].iloc[i])), 2, (128, 0, 0), -1)
+            
+            # Write their area
+            dist = np.sqrt((props['y'].iloc[i] - (annotated_mask.shape[0] // 2)) ** 2 + 
+                        (props['x'].iloc[i] - (annotated_mask.shape[1] // 2)) ** 2)
+            
+            # Convert distance to string
+            dist_str = f'd={dist:.1f}'
+            
+            # Put text on the image
+            cv2.putText(annotated_mask, dist_str, (int(props['x'].iloc[i]), int(props['y'].iloc[i])),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 0, 0), 1, cv2.LINE_AA)
+    
+    if display:
+        return (cms_x_center, cms_y_center), annotated_mask
+    else:
+        return (cms_x_center, cms_y_center)
 
 
 class ImageSaver:
