@@ -105,5 +105,12 @@ It is worth noting that, while working with the dark background recordings, we a
 
 <figure class="center-figure">
     <img src="../custom_assets/images/tracking/tracking_example.gif" alt="An example showing the performance of tracking">
-    <figcaption>An example showing the performance of tracking</figcaption>
+    <figcaption>An example showing the performance of tracking under a difficult situation</figcaption>
+</figure>
+
+We also show that as far as there is a good contrast between the worm and the background, the tracking algorithm is robust to the lighting conditions.
+
+<figure class="center-figure">
+    <img src="../custom_assets/images/tracking/good_vs_bad_lightening.gif" alt="Tracking performance under good & bad illumination">
+    <figcaption>An example showing the performance of tracking under good and bad illumination</figcaption>
 </figure>
