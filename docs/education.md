@@ -1,7 +1,7 @@
 ---
-title: Education
+title: 5. Education
 layout: default
-nav_order: 6
+nav_order: 5
 ---
 
 # Using the GlowTracker for education

@@ -1,6 +1,7 @@
 ---
-title: List of parts 
+title: 2. List of parts 
 layout: default
+nav_order: 2
 ---
 <p align="center">
     <img src="custom_assets\images\image.png" width="75%">

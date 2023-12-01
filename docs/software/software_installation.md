@@ -1,7 +1,7 @@
 ---
-title: 3.1 Software installation
+title: 4.1 Software installation
 layout: default
-parent: 3. Software
+parent: 4. Software
 nav_order: 1
 ---
 # Software installation

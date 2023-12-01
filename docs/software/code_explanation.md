@@ -1,11 +1,11 @@
 ---
-title: 3.2 Code Explanation
+title: 4.2 How does tracking work?
 layout: default
-parent: 3. Software
+parent: 4. Software
 nav_order: 2
 ---
 
-# Code Explanation
+# How does tracking work?
 
 ## Tracking
 <p align="justify">
