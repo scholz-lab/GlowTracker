@@ -109,34 +109,34 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
     </table>
 
 ### Daisy-chaining the stage
-<!-- <table class="equal-column-table">
-  <tr>
-    <td>
-      <figure class="center-figure">
-        <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" width=100%>
-        <figcaption>1. Daisy chain the stages by connecting the port labelled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
-      </figure>
-    </td>
-    <td>
-      <figure class="center-figure">
-        <img src="custom_assets/images/1 - stage/10.jpg" alt="Stage wiring" width=100%>
-        <figcaption>2. Connect the 'next' port of axis 2 to 'prev' of axis 3. All stages should light up green when the first is connected to the power source.</figcaption>
-      </figure>
-    </td>
-    <td>
-      <figure class="center-figure">
-        <img src="custom_assets/images/1 - stage/11 - connect computer usb line.jpg" alt="USB connection" >
-        <figcaption>3. Connect the first axis to the USB cable by plugging it into the port labelled 'prev'.</figcaption>
-      </figure>
-    </td>
-    <td>
-      <figure class="center-figure">
-        <img src="custom_assets/images/1 - stage/12 - connect power.jpg" alt="After stage assembly">
-        <figcaption>4.  All stages should light up green when the first is connected to the power source.</figcaption>
-      </figure>
-    </td>
-  </tr>
-</table> -->
+<table class="equal-column-table">
+      <tr>
+        <td>
+          <figure class="center-figure">
+            <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" width=100%>
+            <figcaption>1. Daisy chain the stages by connecting the port labelled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
+          </figure>
+        </td>
+        <td>
+          <figure class="center-figure">
+            <img src="custom_assets/images/1 - stage/10.jpg" alt="Stage wiring" width=100%>
+            <figcaption>2. Connect the 'next' port of axis 2 to 'prev' of axis 3. All stages should light up green when the first is connected to the power source.</figcaption>
+          </figure>
+        </td>
+        <td>
+          <figure class="center-figure">
+            <img src="custom_assets/images/1 - stage/11 - connect computer usb line.jpg" alt="USB connection" >
+            <figcaption>3. Connect the first axis to the USB cable by plugging it into the port labelled 'prev'.</figcaption>
+          </figure>
+        </td>
+        <td>
+          <figure class="center-figure">
+            <img src="custom_assets/images/1 - stage/12 - connect power.jpg" alt="After stage assembly">
+            <figcaption>4.  All stages should light up green when the first is connected to the power source.</figcaption>
+          </figure>
+        </td>
+      </tr>
+    </table>
 
 ## Lightpath - hardware only <a name="lightpath"></a>
 
@@ -149,13 +149,13 @@ Note: If you order the lenses we suggest, they come pre-mounted. However, in cas
       <tr>
         <td>
           <figure class="center-figure">
-             <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" width =200%>
+             <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" width=200%>
             <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labelled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" width =70%>
+            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" width=70%>
             <figcaption>When you finish this section you should have the macroscope without filters fully assembled.</figcaption>
           </figure>
         </td>
@@ -217,7 +217,7 @@ In this section we assemble the white light LED. The optics are use to collimate
           <figcaption>8. screw the adjustable element into the lens tube from step 5.</figcaption>
         </figure>
       </td> 
-    </tr>  
+    </tr>
      <tr>
       <td>
         <figure class="center-figure">
