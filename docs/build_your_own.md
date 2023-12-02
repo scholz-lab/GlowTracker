@@ -330,15 +330,12 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
   </table>
 
 ### Finishing up
-
-
 <table class="equal-column-table">
     <tr>
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/cam_2.jpg" alt="white LED" width=100%>
-          <figcaption>1. Connect the camera-lens ensemble to the image splitter using the SM2A53 and SM1A2 - Adapter.
-.</figcaption>
+          <figcaption>1. Connect the camera-lens ensemble to the image splitter using the SM2A53 and SM1A2 - Adapter.</figcaption>
         </figure>
       </td>
       <td>
@@ -352,7 +349,6 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
             <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" width =70%>
             <figcaption>3. Slide the image-splitter and camera assembly into the ERCSB connectors. Secure with the set screws.</figcaption>
           </figure>
-        </td>
       </td>
     </tr>
   </table>
@@ -363,8 +359,7 @@ In this section you will handle a lot of expensive filters and dichroic mirrors.
 The schematic of the filters is shown here:
   <figure class="center-figure">
           <img src="custom_assets/images/light_path_2.png" alt="cube" width=70%>
-          <figcaption>Refer to the schematic to identify which filters are in which of the cubes.
-.</figcaption>
+          <figcaption>Refer to the schematic to identify which filters are in which of the cubes.</figcaption>
         </figure>
 
 ### Filter cube 1 - Excitation light
