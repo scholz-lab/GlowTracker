@@ -201,13 +201,13 @@ In this section we assemble the white light LED. The optics are use to collimate
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/6.jpg" alt="two stages attached to breadboard" width=100%>
+          <img src="custom_assets/images/2 - optics/6.jpg" alt="two stages attached to breadboard">
           <figcaption>6. Identify the slit and the adjustable element (thicker black tube).</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/7.jpg" alt="adjustable element." width=100%>
+          <img src="custom_assets/images/2 - optics/7.jpg" alt="adjustable element.">
           <figcaption>7. Secure the slit inside the adjustable element using aretaining ring.</figcaption>
         </figure>
       </td> 
@@ -357,7 +357,7 @@ In this section you will handle a lot of expensive filters and dichroic mirrors.
 
 The schematic of the filters is shown here:
   <figure class="center-figure">
-          <img src="custom_assets/images/light_path_2.png" alt="cube" >
+          <img src="custom_assets/images/light_path_2.png" alt="cube" width=50% >
           <figcaption>Refer to the schematic to identify which filters are in which of the cubes.</figcaption>
         </figure>
 
