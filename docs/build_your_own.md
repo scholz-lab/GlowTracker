@@ -360,10 +360,70 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
 ## Lightpath - Filters and Dichroics <a name="filters"></a>
 In this section you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If you image quality is not ideal, and you see reflections or double-images, that may be due to a flipped filter.
 
+The schematic of the filters is shown here:
+  <figure class="center-figure">
+          <img src="custom_assets/images/light_path_2.png" alt="cube" width=70%>
+          <figcaption>Refer to the schematic to identify which filters are in which of the cubes.
+.</figcaption>
+        </figure>
+
 ### Filter cube 1 - Excitation light
+All filters will require similar steps. We will show the full process for the first cube. Repeat for Cubes 2 and 3. A video for instructions can be found [here](https://youtu.be/qWIfiwuL-gQ).
+
+For this cube you will need one 488/561 nm dichroic and a dualband excitation filter 59011x.
+<table class="equal-column-table">
+    <tr>
+      <td>
+        <figure class="center-figure">
+          <img src="custom_assets/images/2a-lightpath/10.jpg" alt="cube" width=100%>
+          <figcaption>1. Take out the insert of the bottom cube.
+.</figcaption>
+        </figure>
+      </td>
+       <td>
+        <figure class="center-figure">
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/4.jpg" alt="cube" width=100%>
+          <figcaption>2. Open the mirror insert using the two screws.</figcaption>
+        </figure>
+      </td>
+      <td>
+        <figure class="center-figure">
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" width =73%>
+            <figcaption>3. Carefully insert the dichroic mirror 488/561 nm. The reflective surface should point towards the LED when the insert is slotted back into the cube </figcaption>
+          </figure>
+      </td>
+    </tr>
+    <tr>
+       <td>
+        <figure class="center-figure">
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/3.jpg" alt="cube" width=100%>
+          <figcaption>4. Close the insert back up.</figcaption>
+        </figure>
+      </td>
+      <td>
+        <figure class="center-figure">
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" width =73%>
+            <figcaption>5. Carefully insert the dichroic mirror 488/561 nm. The reflective surface should point towards the LED when the insert is slotted back into the cube </figcaption>
+          </figure>
+      </td>
+         <td>
+        <figure class="center-figure">
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.jpg" alt="cube" width =73%>
+            <figcaption>6. Add the excitation filter to the cube insert. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the lightsplitter. </figcaption>
+          </figure>
+      </td>
+    </tr>
+  </table>
+
 
 ### Filter cube 2 - Image splitter cube with emission filters
+
+ Here you will need one of the two 561nm longpass dichroics, a 618/50 nm bandpass for the red image and a 520/36 bandpass for the green image.
+
+Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cubes placement when you are looking at it in the microscope.
 ### Filter cube 3 - Image splitter cube without emission filters
+This cube combines the red and green image. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
+
 
 ## Adjust field-of-view for dual color imaging <a name="dualview-alignment"></a>
 
