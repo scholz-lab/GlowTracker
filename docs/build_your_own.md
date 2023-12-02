@@ -142,16 +142,16 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
 ## Lightpath - hardware only <a name="lightpath"></a>
 
 ### Hardware 
-    In this section you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
+In this section you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
 
-      Note: If you order the lenses we suggest, they come pre-mounted. However, in case you are using lenses you already have you need to mount them in a short (10 mm) lens tube using a retaining ring. Refer to the lightpath diagram and the photos for correct lens orientation.
+Note: If you order the lenses we suggest, they come pre-mounted. However, in case you are using lenses you already have you need to mount them in a short (10 mm) lens tube using a retaining ring. Refer to the lightpath diagram and the photos for correct lens orientation.
 
 <table class="equal-column-table">
       <tr>
         <td>
           <figure class="center-figure">
              <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" width =200%>
-            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labelled - so be sure not to switch them!.</figcaption>
+            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labelled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
         <td>
@@ -242,15 +242,15 @@ In this section we assemble the white light LED. The optics are use to collimate
   </table>
 
 ### Image-splitter assembly
-    The image splitter is the heart of the microscope. Mechanics matter, as a crooked assembly will lead to issues with the image quality. Before starting, lay out all parts required. Pay attention to the cube orientations and follow the pictures exactly. 
+The image splitter is the heart of the microscope. Mechanics matter, as a crooked assembly will lead to issues with the image quality. Before starting, lay out all parts required. Pay attention to the cube orientations and follow the pictures exactly. 
 
 
 <table class="equal-column-table">
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/cam_2.jpg" alt="adjustable element." width=100%>
-          <figcaption>1. Connect the Kipon adapter to the objective and screw the camera in. Add the SM2A53 - Adapter and SM1A2 - Adapter to the other side of the objective to connect to the image splitter.
+          <img src="custom_assets/images/2a-lightpath/1 - connector on bottom of cube 2.jpg" alt="adjustable element." width=100%>
+          <figcaption>1. Identify one of the 3 DFM1 cubes and attach the cage cube adapter.
 </figcaption>
         </figure>
       </td>
@@ -358,7 +358,7 @@ In this section we assemble the white light LED. The optics are use to collimate
   </table>
 
 ## Lightpath - Filters and Dichroics <a name="filters"></a>
-    Note: In this section you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If you image quality is not ideal, and you see reflections or double-images, that may be due to a flipped filter.
+In this section you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If you image quality is not ideal, and you see reflections or double-images, that may be due to a flipped filter.
 
 ### Filter cube 1 - Excitation light
 
