@@ -113,13 +113,13 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
       <tr>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" width=100%>
+            <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" >
             <figcaption>1. Daisy chain the stages by connecting the port labelled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/10.jpg" alt="Stage wiring" width=100%>
+            <img src="custom_assets/images/1 - stage/10.jpg" alt="Stage wiring" >
             <figcaption>2. Connect the 'next' port of axis 2 to 'prev' of axis 3. All stages should light up green when the first is connected to the power source.</figcaption>
           </figure>
         </td>
@@ -149,13 +149,13 @@ Note: If you order the lenses we suggest, they come pre-mounted. However, in cas
       <tr>
         <td>
           <figure class="center-figure">
-             <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" width=200%>
+             <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" >
             <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labelled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" width=70%>
+            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" >
             <figcaption>When you finish this section you should have the macroscope without filters fully assembled.</figcaption>
           </figure>
         </td>
@@ -169,25 +169,25 @@ In this section we assemble the white light LED. The optics are use to collimate
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/1.jpg" alt="white LED" width=100%>
+          <img src="custom_assets/images/2 - optics/1.jpg" alt="white LED" >
           <figcaption>1. Start with the white LED.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/2.jpg" alt="lens tube added" width=100%>
+          <img src="custom_assets/images/2 - optics/2.jpg" alt="lens tube added" >
           <figcaption>2. Add a lens tube for spacing.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/3.jpg" alt="short focal length lens" widh=100%>
+          <img src="custom_assets/images/2 - optics/3.jpg" alt="short focal length lens">
           <figcaption>3. Add the 16 mm focal length lens. </figcaption>
         </figure>
       </td>
           <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/4 - secure with ring.jpg" alt="retaining ring" width=100%>
+          <img src="custom_assets/images/2 - optics/4 - secure with ring.jpg" alt="retaining ring" >
           <figcaption>4. Secure the lens with a retaining ring. </figcaption>
         </figure>
       </td>
@@ -195,7 +195,7 @@ In this section we assemble the white light LED. The optics are use to collimate
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/5 - put in connector.jpg" alt="Stage attached to breadboard" width=100%>
+          <img src="custom_assets/images/2 - optics/5 - put in connector.jpg" alt="Stage attached to breadboard" >
           <figcaption>5. Add another lens tube as spacer.</figcaption>
         </figure>
       </td>
@@ -208,12 +208,12 @@ In this section we assemble the white light LED. The optics are use to collimate
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2 - optics/7.jpg" alt="adjustable element." width=100%>
-          <figcaption>7. Secure the slit inside the adjustable element using aretaining ring..</figcaption>
+          <figcaption>7. Secure the slit inside the adjustable element using aretaining ring.</figcaption>
         </figure>
       </td> 
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/8.jpg" alt="adapter plate for optics attached" width=63%>
+          <img src="custom_assets/images/2 - optics/8.jpg" alt="adapter plate for optics attached" >
           <figcaption>8. screw the adjustable element into the lens tube from step 5.</figcaption>
         </figure>
       </td> 
@@ -221,19 +221,19 @@ In this section we assemble the white light LED. The optics are use to collimate
      <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/9.jpg" alt="spacer" width=100%>
+          <img src="custom_assets/images/2 - optics/9.jpg" alt="spacer" >
           <figcaption>9. Add a short lens tube as spacer.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/10.jpg" alt="50 mm lens" width=100%>
+          <img src="custom_assets/images/2 - optics/10.jpg" alt="50 mm lens" >
           <figcaption>10. Add the 50mm focal length lens. </figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/14 - complete.jpg" alt="adjustable element." width=100%>
+          <img src="custom_assets/images/2 - optics/14 - complete.jpg" alt="adjustable element." >
           <figcaption>11. The final assemble should look like this.</figcaption>
         </figure>
       </td> 
@@ -248,20 +248,20 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/1 - connector on bottom of cube 2.jpg" alt="adjustable element." width=100%>
+          <img src="custom_assets/images/2a-lightpath/1 - connector on bottom of cube 2.jpg" alt="adjustable element." >
           <figcaption>1. Identify one of the 3 DFM1 cubes and attach the cage cube adapter.
 </figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/2.jpg" alt="lens tube added" width=100%>
+          <img src="custom_assets/images/2a-lightpath/2.jpg" alt="lens tube added" >
           <figcaption>2. Cube after adding connector. Note orientation!</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/3 - connect cube 2 ontop cube 1.jpg" alt="short focal length lens" widh=100%>
+          <img src="custom_assets/images/2a-lightpath/3 - connect cube 2 ontop cube 1.jpg" alt="short focal length lens" >
           <figcaption>3. Connect another DFM1 cube by using the black screws from the connector pack. </figcaption>
         </figure>
       </td>
@@ -269,19 +269,19 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/4.jpg" alt="retaining ring" width=100%>
+          <img src="custom_assets/images/2a-lightpath/4.jpg" alt="retaining ring" >
           <figcaption>4. Close the left holes with two SM1CP2 caps and screw in 4 ER025 cage assembly rods into the top cube. </figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/5.jpg" alt="Stage attached to breadboard" width=100%>
+          <img src="custom_assets/images/2a-lightpath/5.jpg" alt="Stage attached to breadboard" >
           <figcaption>5. Connect the triangular mirror using the set screws. Remove the tiny screws from the ends of the ER025 rods so they fit fully into the holes of the mirror.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/6.jpg" alt="two stages attached to breadboard" width=100%>
+          <img src="custom_assets/images/2a-lightpath/6.jpg" alt="two stages attached to breadboard">
           <figcaption>6. Screw 4 ER05 rods into the right side of the middle cube, again removing the set screws on the other side.</figcaption>
         </figure>
       </td>
@@ -289,19 +289,19 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/7 - insert_cage_connectors.jpg" alt="adjustable element." width=100%>
+          <img src="custom_assets/images/2a-lightpath/7 - insert_cage_connectors.jpg" alt="adjustable element." >
           <figcaption>7. Grab the third DFM1 cube and screw 4 ER025 rods into the bottom. </figcaption>
         </figure>
       </td> 
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/8.jpg" alt="adapter plate for optics attached" width=63%>
+          <img src="custom_assets/images/2a-lightpath/8.jpg" alt="adapter plate for optics attached" >
           <figcaption>8. Secure to the triangular mirror using set screws. Ensure the mirror is securly attached and not crooked.</figcaption>
         </figure>
       </td> 
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/9.jpg" alt="spacer" width=100%>
+          <img src="custom_assets/images/2a-lightpath/9.jpg" alt="spacer" >
           <figcaption>9. Add 4 ER05 rods to the cube-mirror from 8. such that the two halves of the image splitter look as shown.</figcaption>
         </figure>
       </td>
@@ -309,7 +309,7 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
      <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/10.jpg" alt="spacer" width=100%>
+          <img src="custom_assets/images/2a-lightpath/10.jpg" alt="spacer" >
           <figcaption>10. Loosen the set screws in the mirrors and slide the halves together. Tighten the set screws to secure the halves. If all parts are assembled straight, this should not require force!</figcaption>
         </figure>
       </td>
@@ -321,7 +321,7 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/cam_1.jpg" alt="50 mm lens" width=100%>
+          <img src="custom_assets/images/2a-lightpath/cam_1.jpg" alt="50 mm lens" >
           <figcaption>12. Connect the Basler camera to the Yongnuo objective using the Kipon adapter. </figcaption>
         </figure>
       </td>
@@ -333,19 +333,19 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/cam_2.jpg" alt="white LED" width=100%>
+          <img src="custom_assets/images/2a-lightpath/cam_2.jpg" alt="white LED" >
           <figcaption>1. Connect the camera-lens ensemble to the image splitter using the SM2A53 and SM1A2 - Adapter.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/finish.jpg" alt="After stage assembly" width =73%>
+            <img src="custom_assets/images/1 - stage/finish.jpg" alt="After stage assembly" >
             <figcaption>2. Add the ERSCB connectors to the stage plate.</figcaption>
           </figure>
       </td>
       <td>
          <figure class="center-figure">
-            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" width =70%>
+            <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly">
             <figcaption>3. Slide the image-splitter and camera assembly into the ERCSB connectors. Secure with the set screws.</figcaption>
           </figure>
       </td>
@@ -357,7 +357,7 @@ In this section you will handle a lot of expensive filters and dichroic mirrors.
 
 The schematic of the filters is shown here:
   <figure class="center-figure">
-          <img src="custom_assets/images/light_path_2.png" alt="cube" width=70%>
+          <img src="custom_assets/images/light_path_2.png" alt="cube" >
           <figcaption>Refer to the schematic to identify which filters are in which of the cubes.</figcaption>
         </figure>
 
@@ -369,20 +369,20 @@ For this cube you will need one 488/561 nm dichroic and a dualband excitation fi
     <tr>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/10.jpg" alt="cube" width=100%>
+          <img src="custom_assets/images/2a-lightpath/10.jpg" alt="cube" >
           <figcaption>1. Take out the insert of the bottom cube.
 .</figcaption>
         </figure>
       </td>
        <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/4.jpg" alt="cube" width=100%>
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/4.jpg" alt="cube" >
           <figcaption>2. Open the mirror insert using the two screws.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" width =73%>
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" >
             <figcaption>3. Carefully insert the dichroic mirror 488/561 nm. The reflective surface should point towards the LED when the insert is slotted back into the cube </figcaption>
           </figure>
       </td>
@@ -390,19 +390,19 @@ For this cube you will need one 488/561 nm dichroic and a dualband excitation fi
     <tr>
        <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/3.jpg" alt="cube" width=100%>
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/3.jpg" alt="cube" >
           <figcaption>4. Close the insert back up.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" width =73%>
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" >
             <figcaption>5. Carefully insert the dichroic mirror 488/561 nm. The reflective surface should point towards the LED when the insert is slotted back into the cube </figcaption>
           </figure>
       </td>
          <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.jpg" alt="cube" width =73%>
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.jpg" alt="cube" >
             <figcaption>6. Add the excitation filter to the cube insert. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the lightsplitter. </figcaption>
           </figure>
       </td>
