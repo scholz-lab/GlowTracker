@@ -39,13 +39,13 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
       <tr>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/0 - stage all parts.jpg" alt="Stage parts" width=100%>
+            <img src="custom_assets/images/1 - stage/0 - stage all parts.jpg" alt="Stage parts">
             <figcaption>Find these parts. They are required for stage assembly.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/finish.jpg" alt="After stage assembly" width =73%>
+            <img src="custom_assets/images/1 - stage/finish.jpg" alt="After stage assembly">
             <figcaption>This is the result after successful stage assembly.</figcaption>
           </figure>
         </td>
@@ -57,25 +57,25 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
       <tr>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/1.jpg" alt="Breadboard" width=100%>
+            <img src="custom_assets/images/1 - stage/1.jpg" alt="Breadboard">
             <figcaption>1. Screw the four small posts into the bottom of the breadboard.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/2.jpg" alt="with feet" width=90%>
+            <img src="custom_assets/images/1 - stage/2.jpg" alt="with feet">
             <figcaption>2. Fix the base plate to the breadboard using M6 screws.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/4 - connect to power.jpg" alt="stage connected to power" width=100%>
+            <img src="custom_assets/images/1 - stage/4 - connect to power.jpg" alt="stage connected to power">
             <figcaption>3. Connect the stage to power using the power cable. </figcaption>
           </figure>
         </td>
             <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/5 - move for space under.jpg" alt="stage moved aside" width=100%>
+            <img src="custom_assets/images/1 - stage/5 - move for space under.jpg" alt="stage moved aside">
             <figcaption>4. Use the knob to move the stage and expose the screw holes.</figcaption>
           </figure>
         </td>
@@ -83,25 +83,25 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
       <tr>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/3.jpg" alt="Stage attached to breadboard" width=100%>
+            <img src="custom_assets/images/1 - stage/3.jpg" alt="Stage attached to breadboard">
             <figcaption>5. Add first stage axis by screwing into holder.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/6.jpg" alt="two stages attached to breadboard" width=100%>
+            <img src="custom_assets/images/1 - stage/6.jpg" alt="two stages attached to breadboard">
             <figcaption>6. Add the second stage axis by screwing it into the carriage of the first axis.</figcaption>
           </figure>
         </td>
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/7.jpg" alt="three stages attached to breadboard." width=100%>
+            <img src="custom_assets/images/1 - stage/7.jpg" alt="three stages attached to breadboard.">
             <figcaption>7. Add the final stage (vertical) by fixing the bottom end to the carriage of the second axis.</figcaption>
           </figure>
         </td> 
         <td>
           <figure class="center-figure">
-            <img src="custom_assets/images/1 - stage/13 - insert merge plate.jpg" alt="adapter plate for optics attached" width=63%>
+            <img src="custom_assets/images/1 - stage/13 - insert merge plate.jpg" alt="adapter plate for optics attached">
             <figcaption>8.Fix the black adapter plate to the carriage of the vertical stage.</figcaption>
           </figure>
         </td> 
