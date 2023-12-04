@@ -1,5 +1,5 @@
 ---
-title: Dual Color Macroscope
+title: GlowTracker
 layout: home
 theme: just-the-docs
 url: https://scholz-lab.github.io/GlowTracker/
