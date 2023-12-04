@@ -1,8 +1,8 @@
 ---
-title: 2.3 Upgrade Options
+title: 2.4 Upgrade Options
 layout: default
 parent: 2. List of parts
-nav_order: 1
+nav_order: 4
 ---
 
 
