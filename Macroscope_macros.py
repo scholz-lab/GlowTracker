@@ -448,8 +448,9 @@ def find_CMS(mask, K=5, display=False):
             dist_str = f'd={dist:.1f}'
             
             # Put text on the image
+            font_scale = min(*annotated_mask.shape) / 250 # adjust the font size based on the image size
             cv2.putText(annotated_mask, dist_str, (int(props['x'].iloc[i]), int(props['y'].iloc[i])),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (128, 0, 0), 1, cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (128, 0, 0), 1, cv2.LINE_AA)
     
     if display:
         return (cms_x_center, cms_y_center), annotated_mask
