@@ -4,7 +4,7 @@ layout: default
 nav_order: 1
 ---
 
-# Getting Started
+# Getting Started 
 
 After you have finished constructing your macroscope, connect the camera and stage's USBs to your computer.
 1. [Opening up the GUI](#opening-the-gui) 
