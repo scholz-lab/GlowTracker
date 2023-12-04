@@ -280,16 +280,16 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     img1_sm = img1[ymin:ymax, xmin:xmax]
     
     if display:
-        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display)
+        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display, bin_factor=bin_factor)
     else:
         mask, resize_factor = create_mask(img1_sm, dark_bg, display=display)
 
     h, w = mask.shape
 
     if display:
-        (xc, yc), annotated_mask = find_CMS(mask, resize_factor, display=display)
+        (xc, yc), annotated_mask = find_CMS(mask, display=display)
     else:
-        xc, yc = find_CMS(mask, resize_factor, display=display)
+        xc, yc = find_CMS(mask, display=display)
 
    
     # show intermediate steps for debugging
@@ -315,7 +315,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     
 
 
-def create_mask(img, dark_bg, display=False):
+def create_mask(img, dark_bg, display=False, bin_factor=None):
     '''
     The pipeline is as follows:
     1. Blur the image prior to resizing (it helps to avoid aliasing effect)
@@ -329,6 +329,13 @@ def create_mask(img, dark_bg, display=False):
     ----------
     img : np.array
         Image to be processed
+    dark_bg : bool
+        Whether the background is dark or not
+    display : bool
+        Whether to display intermediate images or not (for debugging)
+    bin_factor : int
+        Factor by which the image should be binned. If None, the image is resized
+        such that the width is 200 pixels and the height is scaled accordingly
     
     Returns
     -------
@@ -339,12 +346,14 @@ def create_mask(img, dark_bg, display=False):
     intermediate_images : list
         List of intermediate images for debugging
     '''
-    intermediate_images = []
-
+    intermediate_images = [] # keep track of intermediate images for debugging
+    
     # Compute resize_factor such that the width of image is 200 
-    # pixels and the height is scaled accordingly (for speeding up
-    # the computations and having more consistent filter parameters)
-    resize_factor = 200 / img.shape[1]
+    # pixels and the height is scaled accordingly
+    if bin_factor is None:
+        resize_factor = 200 / img.shape[1]
+    else:
+        resize_factor = 1/bin_factor
 
     if dark_bg:
         img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
@@ -385,7 +394,7 @@ def create_mask(img, dark_bg, display=False):
         return img, resize_factor
 
 
-def find_CMS(mask, resize_factor, K=5, display=False):
+def find_CMS(mask, K=5, display=False):
     '''
     Find the local center of mass (CMS) of different regions in the mask where
     the mask has non-zero values. Then the non-zero regions are sorted by their
@@ -396,8 +405,6 @@ def find_CMS(mask, resize_factor, K=5, display=False):
     ----------
     mask : np.array
         Binary mask
-    resize_factor : float
-        Factor by which the image was resized
     middle_point : tuple
         Coordinate of the middle point of the previous CMS
         (we assume that by changing the position of stage
