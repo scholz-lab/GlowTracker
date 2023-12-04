@@ -1,8 +1,8 @@
 ---
-title: 3.3 Bright field macroscope
+title: 2.3 Bright field macroscope
 layout: default
-parent: 3. List of parts
-nav_order: 4
+parent: 2. List of parts
+nav_order: 3
 ---
 
 
