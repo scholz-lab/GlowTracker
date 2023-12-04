@@ -2,7 +2,7 @@
 title: Dual Color Macroscope
 layout: home
 theme: just-the-docs
-url: scholz-lab.github.io/dual-color-macroscope
+url: https://scholz-lab.github.io/GlowTracker/
 nav_order: 1
 ---
 
