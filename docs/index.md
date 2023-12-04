@@ -12,7 +12,6 @@ GlowTracker is a modular epifluorescence tracking microscope purely from commerc
 <div>
     <img float="left" align ="middle" src="custom_assets/images/GlowTracker_introduction_small.gif" alt="macroscope" width="60%" />
     <img float="left" align ="middle" src="custom_assets/images/macroscope_3d_4_shortstage.png" alt="macroscope" width="35%" />
-  </figcaption>
 </div>
 
 ### (Epifluorescence + Tracking) / affordable = GlowTracker
