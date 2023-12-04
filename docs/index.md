@@ -11,7 +11,7 @@ GlowTracker is a modular epifluorescence tracking microscope purely from commerc
 
 <div>
     <img float="left" align ="middle" src="custom_assets/images/GlowTracker_introduction_small.gif" alt="macroscope" width="60%" />
-    <img float="left" align ="middle" src="custom_assets/images/rendu18_dualcolor_crop.png" alt="macroscope" width="35%" />
+    <img float="left" align ="middle" src="custom_assets/images/macroscope_3d_4_shortstage.png" alt="macroscope" width="35%" />
   </figcaption>
 </div>
 
@@ -21,7 +21,7 @@ Developments in the field now allows for the tracking of animals, organs or cell
 
 
 ### Why is GlowTracker a great choice?
-GlowTracker combines the advantages of epifluorescence imaging, with the advantages of tracking microscopy, to an affordable price. Moreover we provide an easy to use [software](https://scholz-lab.github.io/GlowTracker/software/software.html) that allows researchers to record their experimental sample. Other solutions are often built for specific tasks and contain custom build components or expensive hardware. And although GlowTracker is not limited to commercial parts, it can be built easily by non-experts. Because of its **modular design** GlowTracker enables researchers to  build experimental setups, that are **easy** to build and use and fit the needs of the experiments. In later sections we provide a [detailed manual](https://scholz-lab.github.io/GlowTracker/build_your_own.html) and [comprehensive parts list](https://scholz-lab.github.io/GlowTracker/bill_of_materials.html) that you will need to build and perform the specific experiment. These designs range **from brightfield imaging to two-color imaging**, opening up broader applications. You can find exemplary use cases in our [publication]().
+GlowTracker combines the advantages of epifluorescence imaging, with the advantages of tracking microscopy, to an affordable price. Moreover we provide an easy to use [software](https://scholz-lab.github.io/GlowTracker/software/software.html) that allows researchers to record their experimental sample. Other solutions are often built for specific tasks and contain custom build components or expensive hardware. And although GlowTracker is not limited to commercial parts, it can be built easily by non-experts. Because of its **modular design** GlowTracker enables researchers to  build experimental setups, that are **easy** to build and use and fit the needs of the experiments. In later sections we provide a [detailed manual](https://scholz-lab.github.io/GlowTracker/build_your_own.html) and [comprehensive parts list](https://scholz-lab.github.io/GlowTracker/List%20of%20parts/List_of_parts.html) that you will need to build and perform the specific experiment. These designs range **from brightfield imaging to two-color imaging**, opening up broader applications. You can find exemplary use cases in our [publication]().
 
 
 _Please cite: [Paper citation]()_
