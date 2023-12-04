@@ -3,11 +3,11 @@
 <div style="display: flex; justify-content: center; align-items: center;">
     <table style="width: 80%;">
         <colgroup>
-            <col style="width: 20%;">
+            <col style="width: 30%;">
         </colgroup>
         <tr>
             <td>
-                <img src="images/20220516_083750.jpg" alt="photo macroscope" display="block">
+                <img src="images/macroscope_logo.png" alt="photo macroscope" display="block">
             </td>
             <td style="text-align: left; vertical-align: top;">   
                 GlowTracker is a macroscope tracking application that have a capability of tracking small animal in bright field,  single or dual epi-fluorescence imaging. The application interface provides controls over linear Zaber stage movement and Basler camera properties. Please visit the documentation website on how to build the setup from scratch and how to operate the software at <a href="https://scholz-lab.github.io/GlowTracker/">https://scholz-lab.github.io/GlowTracker/</a> .
