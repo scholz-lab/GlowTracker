@@ -1,7 +1,7 @@
 ---
-title: List of parts 
+title: Bright field macroscope
 layout: default
-has_children: true
+parent: List of parts
 nav_order: 3
 ---
 

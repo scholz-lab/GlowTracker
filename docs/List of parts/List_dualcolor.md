@@ -1,12 +1,12 @@
 ---
-title: List of parts 
+title: Dual color macroscope
 layout: default
-has_children: true
+parent: List of parts
 nav_order: 1
 ---
 
 <p align="center">
-    <img src="custom_assets\images\image.png" width="75%">
+    <img src="..\custom_assets\images\image.png" width="75%">
 </p>
 
 
