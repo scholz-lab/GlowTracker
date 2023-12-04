@@ -2,7 +2,7 @@
 title: 2. List of parts 
 layout: default
 has_children: true
-nav_order: 2
+nav_order: 3
 ---
 
 # List of parts

@@ -1,7 +1,7 @@
 ---
 title: 3. Build your own
 layout: default
-nav_order: 3
+nav_order: 4
 ---
 
 # Build your own GlowTracker
