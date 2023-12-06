@@ -996,6 +996,13 @@ class RecordButton(ImageAcquisitionButton):
 
         # open coordinate file
         self.coordinateFile = open(os.path.join(self.saveFilePath, timeStamped("coords.txt")), 'a')
+
+        # Write camera-stage transformation
+        imageToStageMat_XYCoord = macro.swapMatXYOrder(self.app.imageToStageMat)
+        imageToStageMat_XYCoord_str = np.array2string(imageToStageMat_XYCoord, separator=',').replace('\n','')
+        self.coordinateFile.write(f'ImageToStage Transformation Matrix:\n{imageToStageMat_XYCoord_str}\n')
+
+        # Write recording header
         self.coordinateFile.write(f"Frame Time X Y Z \n")
 
         # Image data queue to share between recording and saving
