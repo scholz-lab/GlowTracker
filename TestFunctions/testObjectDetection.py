@@ -38,19 +38,19 @@ if single:
         t1 = time.time()
         
         plt.subplot(233)
-        plt.imshow(intermediate_images[0])
+        plt.imshow(intermediate_images[0], cmap='gray')
         plt.title('Resized image')
 
         plt.subplot(234)
-        plt.imshow(intermediate_images[1])
+        plt.imshow(intermediate_images[1], cmap='gray')
         plt.title('Thresholded image')
 
         plt.subplot(235)
-        plt.imshow(intermediate_images[2])
+        plt.imshow(intermediate_images[2], cmap='gray')
         plt.title('Eroded & dilated image')
 
         plt.subplot(236)
-        plt.imshow(annotated_mask)
+        plt.imshow(annotated_mask, cmap='gray')
         plt.title('Distances')
 
         plt.tight_layout()

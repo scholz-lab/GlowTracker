@@ -295,7 +295,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     # show intermediate steps for debugging
     if display:
         plt.subplot(231)
-        plt.imshow(img1)
+        plt.imshow(img1, cmap='gray')
         plt.title('img original')
         plt.plot(xc/resize_factor+xmin, yc/resize_factor+ymin, 'ro')
         plt.plot( (xc/resize_factor + xmin) ,(yc/resize_factor+ymin), 'ro')
@@ -304,7 +304,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.gca().add_patch(rect)
         
         plt.subplot(232)
-        plt.imshow(img1_sm)
+        plt.imshow(img1_sm, cmap='gray')
         plt.title('img reduced')
         plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
 
@@ -354,20 +354,32 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
         resize_factor = 200 / img.shape[1]
     else:
         resize_factor = 1/bin_factor
+    
+    # check if the range is not between 0 and 1 
+    # if not then rescale the image
+    if np.max(img) > 1:
+        img = img / 255
 
     if dark_bg:
         img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
         
         # gamma correction
-        gamma = np.log(np.mean(img))/np.log(128)
+        gamma = np.log(np.mean(img))/np.log(0.5)
+        gamma = np.clip(gamma, 0.5, 2)
         img = img**(1/gamma)
     else:
         img = cv2.GaussianBlur(img, (7, 7), 0)
         img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
     intermediate_images.append(img)
+    
+    # rescale the image to [0, 255] so that further steps
+    # including adaptive thresholding works properly
+    img = img * 255
+    img = img.astype(np.uint8)
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
+    
 
     # perform thresholding to binarize the image
     if dark_bg:
@@ -448,7 +460,7 @@ def find_CMS(mask, K=5, display=False):
             dist_str = f'd={dist:.1f}'
             
             # Put text on the image
-            font_scale = min(*annotated_mask.shape) / 250 # adjust the font size based on the image size
+            font_scale = min(*annotated_mask.shape) / 500 # adjust the font size based on the image size
             cv2.putText(annotated_mask, dist_str, (int(props['x'].iloc[i]), int(props['y'].iloc[i])),
                         cv2.FONT_HERSHEY_SIMPLEX, font_scale, (128, 0, 0), 1, cv2.LINE_AA)
     
