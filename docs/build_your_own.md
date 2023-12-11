@@ -22,7 +22,7 @@ nav_order: 4
     </table>
 
 ## Steps for assembling your microscope
-Assuming you have all the parts from the parts list [TODO: link] handy, the assembly should take about 2 h to go from parts to fully functional microscope. 
+Assuming you have all the parts from the parts list [TODO: link] handy, the assembly should take about 2h to go from parts to a fully functional microscope. 
 
 1. [Stage and base](#stage-base)
 2. [Lightpath](#lightpath)
@@ -32,7 +32,7 @@ Assuming you have all the parts from the parts list [TODO: link] handy, the asse
 6. [Install the software](#install-software) 
 
 ### Tools
-You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat head screwriver is useful for adjusting the camera orientation.
+You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat-head screwriver is useful for adjusting the camera orientation.
 
 ## Stage and base <a name="stage-base"></a>
 <table class="equal-column-table">
@@ -84,7 +84,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
         <td>
           <figure class="center-figure">
             <img src="custom_assets/images/1 - stage/3.jpg" alt="Stage attached to breadboard">
-            <figcaption>5. Add first stage axis by screwing into holder.</figcaption>
+            <figcaption>5. Add the first stage axis by screwing it into the holder.</figcaption>
           </figure>
         </td>
         <td>
@@ -114,7 +114,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
         <td>
           <figure class="center-figure">
             <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" >
-            <figcaption>1. Daisy chain the stages by connecting the port labelled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
+            <figcaption>1. Daisy chain the stages by connecting the port labeled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
           </figure>
         </td>
         <td>
@@ -126,7 +126,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
         <td>
           <figure class="center-figure">
             <img src="custom_assets/images/1 - stage/11 - connect computer usb line.jpg" alt="USB connection" >
-            <figcaption>3. Connect the first axis to the USB cable by plugging it into the port labelled 'prev'.</figcaption>
+            <figcaption>3. Connect the first axis to the USB cable by plugging it into the port labeled 'prev'.</figcaption>
           </figure>
         </td>
         <td>
@@ -141,7 +141,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
 ## Lightpath - hardware only <a name="lightpath"></a>
 
 ### Hardware 
-In this section you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
+In this section, you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
 
 Note: If you order the lenses we suggest, they come pre-mounted. However, in case you are using lenses you already have you need to mount them in a short (10 mm) lens tube using a retaining ring. Refer to the lightpath diagram and the photos for correct lens orientation.
 
@@ -150,7 +150,7 @@ Note: If you order the lenses we suggest, they come pre-mounted. However, in cas
         <td>
           <figure class="center-figure">
              <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" >
-            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labelled - so be sure not to switch them!</figcaption>
+            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labeled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
         <td>
@@ -164,7 +164,7 @@ Note: If you order the lenses we suggest, they come pre-mounted. However, in cas
 
 
 ### LED assembly
-In this section we assemble the white light LED. The optics are use to collimate the light and focus a slit onto the focal plane of the sample, restricting illumination to a small area. This will allow us to later separate the two colors onto the camera chip.
+In this section, we assemble the white light LED. The optics are used to collimate the light and focus a slit onto the focal plane of the sample, restricting illumination to a small area. This will allow us to later separate the two colors onto the camera chip.
   <table class="equal-column-table">
     <tr>
       <td>
@@ -196,7 +196,7 @@ In this section we assemble the white light LED. The optics are use to collimate
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2 - optics/5 - put in connector.jpg" alt="Stage attached to breadboard" >
-          <figcaption>5. Add another lens tube as spacer.</figcaption>
+          <figcaption>5. Add another lens tube as a spacer.</figcaption>
         </figure>
       </td>
       <td>
@@ -208,7 +208,7 @@ In this section we assemble the white light LED. The optics are use to collimate
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2 - optics/7.jpg" alt="adjustable element.">
-          <figcaption>7. Secure the slit inside the adjustable element using aretaining ring.</figcaption>
+          <figcaption>7. Secure the slit inside the adjustable element using a retaining ring.</figcaption>
         </figure>
       </td> 
       <td>
@@ -222,7 +222,7 @@ In this section we assemble the white light LED. The optics are use to collimate
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2 - optics/9.jpg" alt="spacer" >
-          <figcaption>9. Add a short lens tube as spacer.</figcaption>
+          <figcaption>9. Add a short lens tube as a spacer.</figcaption>
         </figure>
       </td>
       <td>
@@ -241,7 +241,7 @@ In this section we assemble the white light LED. The optics are use to collimate
   </table>
 
 ### Image-splitter assembly
-The image splitter is the heart of the microscope. Mechanics matter, as a crooked assembly will lead to issues with the image quality. Before starting, lay out all parts required. Pay attention to the cube orientations and follow the pictures exactly. 
+The image splitter is the heart of the microscope. Mechanics matter as a crooked assembly will lead to issues with the image quality. Before starting, lay out all the parts required. Pay attention to the cube orientations and follow the pictures exactly. 
 
 
 <table class="equal-column-table">
@@ -296,7 +296,7 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/8.jpg" alt="adapter plate for optics attached" >
-          <figcaption>8. Secure to the triangular mirror using set screws. Ensure the mirror is securly attached and not crooked.</figcaption>
+          <figcaption>8. Secure to the triangular mirror using set screws. Ensure the mirror is securely attached and not crooked.</figcaption>
         </figure>
       </td> 
       <td>
@@ -353,7 +353,7 @@ The image splitter is the heart of the microscope. Mechanics matter, as a crooke
   </table>
 
 ## Lightpath - Filters and Dichroics <a name="filters"></a>
-In this section you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If you image quality is not ideal, and you see reflections or double-images, that may be due to a flipped filter.
+In this section, you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If your image quality is not ideal, and you see reflections or double images, that may be due to a flipped filter.
 
 The schematic of the filters is shown here:
   <figure class="center-figure">
@@ -364,7 +364,7 @@ The schematic of the filters is shown here:
 ### Filter cube 1 - Excitation light
 All filters will require similar steps. We will show the full process for the first cube. Repeat for Cubes 2 and 3. A video for instructions can be found [here](https://youtu.be/qWIfiwuL-gQ).
 
-For this cube you will need one 488/561 nm dichroic and a dualband excitation filter 59011x.
+For this cube, you will need one 488/561 nm dichroic and a dualband excitation filter 59011x.
 <table class="equal-column-table">
     <tr>
       <td>
@@ -414,9 +414,9 @@ For this cube you will need one 488/561 nm dichroic and a dualband excitation fi
 
  Here you will need one of the two 561nm longpass dichroics, a 618/50 nm bandpass for the red image and a 520/36 bandpass for the green image.
 
-Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cubes placement when you are looking at it in the microscope.
+Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the microscope.
 ### Filter cube 3 - Image splitter cube without emission filters
-This cube combines the red and green image. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
+This cube combines the red and green images. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
 
 
 ## Adjust field-of-view for dual color imaging <a name="dualview-alignment"></a>
