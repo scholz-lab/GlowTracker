@@ -58,7 +58,7 @@ It is worth noting that, while working with the dark background recordings, we a
 
 ### Thresholding 
 <p align="justify">
-    In order to find the center of mass (CMS), it is required to work with a binary image - an image with only two possible values for each pixel. To do so, we apply a threshold to the image, which converts the image to a binary image. Simply said, the thresholding process involves converting the image to grayscale and then setting all pixels with a value above a certain threshold to white (foreground) and all pixels below the threshold to black (background). Depending on the type if recording, whether the background is dark and the worm is bright or vice versa, we apply a different thresholding method. We use the <code>skimage.filters.threshold_yen()</code> method and the <code>cv2.adaptiveThreshold()</code> method to apply the thresholding to the dark background and bright background recordings, respectively.
+    In order to find the center of mass (CMS), it is required to work with a binary image - an image with only two possible values for each pixel. To do so, we apply a threshold to the image, which converts the image to a binary image. Simply said, the thresholding process involves converting the image to grayscale and then setting all pixels with a value above a certain threshold to white (foreground) and all pixels below the threshold to black (background). Depending on the type of recording, whether the background is dark and the worm is bright or vice versa, we apply a different thresholding method. We use the <code>skimage.filters.threshold_yen()</code> method and the <code>cv2.adaptiveThreshold()</code> method to apply the thresholding to the dark background and bright background recordings, respectively.
 </p>
 
 <figure class="center-figure">
@@ -69,7 +69,7 @@ It is worth noting that, while working with the dark background recordings, we a
 
 ### Erosion & Dilation
 <p align="justify">
-    The next step involves applying an erosion and dilation filter to the image (). The erosion filter removes small white spots from the image, whereas the dilation filter fills in small holes in the image. By having erosion followed by dilation, we can remove small white spots while preserving the worm's shape. We can apply them for several iterations based on how much noisy is the image, hoe many objects are in the image, how close the objects are to each other, etc. However, having strict erosions and dilations can lead to the loss of the worm or merging of different objects into one. 
+    The next step involves applying an erosion and dilation filter to the image (). The erosion filter removes small white spots from the image, whereas the dilation filter fills in small holes in the image. By having erosion followed by dilation, we can remove small white spots while preserving the worm's shape. We can apply them for several iterations based on how noisy is the image, how many objects are in the image, how close the objects are to each other, etc. However, having strict erosions and dilations can lead to the loss of the worm or the merging of different objects into one. 
 </p>
 
 <figure class="center-figure">
