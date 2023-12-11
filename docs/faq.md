@@ -8,14 +8,14 @@ nav_order: 7
 
 ## Q: The stage is stalling or slipping.
 Check that the movement is not obstructed by anything. 
-If the LED indicator on some of the stage turn blue, it means that it is in stalled mode. 
-Try unplug and plug in the stage powersource. 
-If the problem still persists it could be that the stage is under too heavy load, try lowering the stage's speed or maximum speed at **Settings** > **Stage** > **Stage speed**, **Stage maxspeed**, or changing the stage physical configuration.
+If the LED indicator on some of the stages turns blue, it means that it is in installed mode. 
+Try unplugging and plugging in the stage power source. 
+If the problem still persists it could be that the stage is under a too heavy load, try lowering the stage's speed or maximum speed at **Settings** > **Stage** > **Stage speed**, **Stage max speed**, or changing the stage physical configuration.
 If all else fails, you might need to use a stronger version of the stage, such as [LSM-150A](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A)
-More stage's trouble shooting instruction can be found here [Troubleshooting X-series motion devices](https://www.zaber.com/manuals/X-LSM-E#m-9-troubleshooting-x-series-motion-devices)
+More stage's troubleshooting instructions can be found here [Troubleshooting X-series motion devices](https://www.zaber.com/manuals/X-LSM-E#m-9-troubleshooting-x-series-motion-devices)
 
-## Q: The stage move too fast or too slow.
-The stage's movement speed can be set at **Settings** > **Stage** > **Stage speed**, there you can set both the normal movement speed and the slow movement speed (use when moving while holding Shift key) as well as their units.
+## Q: The stage moves too fast or too slow.
+The stage's movement speed can be set at **Settings** > **Stage** > **Stage speed**, there you can set both the normal movement speed and the slow movement speed (used when moving while holding Shift key) as well as their units.
 
 ## Q: The stage moves too far or too short.
 1. First, make sure you have homed the stage the first time you are using it by going to **Settings** > **Stage** > **Home stage on startup**
@@ -36,9 +36,9 @@ It is *very important* that you set the stage Z limit such that your objective l
 
 
 ## Q: The stage moves unintuitively.
-1. Make sure to calibrate the camera and stage relationship by clicking the **Calibrate** button, then **Camera & Stage Calibration** tab. This estimates the similarity transformation between the two. See the estimated result plot and decide if it's accurate to your setup or not. If not, try changing the object to something with clearer structure in the field of view.
+1. Make sure to calibrate the camera and stage relationship by clicking the **Calibrate** button, then the **Camera & Stage Calibration** tab. This estimates the similarity transformation between the two. See the estimated result plot and decide if it's accurate to your setup or not. If not, try changing the object to something with a clearer structure in the field of view.
 
-2. After calibrating the transformation, turn on the' move in image space mode' option in **Settings** > **Stage** > **Move in image space mode**.
+2. After calibrating the transformation, turn on the move in image space mode' option in **Settings** > **Stage** > **Move in image space mode**.
     <figure class="center-figure">
         <img src="custom_assets/images/5 - calibration/camera and stage calibration/3.png" alt="Stage limit" width="80%">
     </figure>
@@ -50,12 +50,12 @@ Here are a couple of things to try:
 - Increase camera gain
 - Lower up or raise the stage
 
-## Q: The dual-color calibration is not perfectly align.
-Depending on your optics configuration, it can be quite hard to have a similar-structure image showing up on both side of the dual color image, which is important for the calibration algorithm. 
-Try finding a fluorescent object that shows patterns on both side. 
+## Q: The dual-color calibration is not perfectly aligned.
+Depending on your optics configuration, it can be quite hard to have a similar-structure image showing up on both sides of the dual-color image, which is important for the calibration algorithm. 
+Try finding a fluorescent object that shows patterns on both sides. 
 Sometimes we found that calibrating on the animal itself can also give a great result.
-But if all else fails or you want a perfect pixel alignment, you can manually adjust the translation and rotation parameters in the **Settings** > **DualColor** > **Translation X**, **Translation Y**, and **Rotation**.
+But if all else fails or you want a perfect pixel alignment, you can manually adjust the translation and rotation parameters in **Settings** > **DualColor** > **Translation X**, **Translation Y**, and **Rotation**.
 
 ## Q: The tracking doesn't work.
-TODO: Write this section after implemented tracking diagnostic.
+TODO: Write this section after after implementing the tracking diagnostic.
 
