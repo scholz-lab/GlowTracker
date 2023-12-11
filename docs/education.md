@@ -16,11 +16,11 @@ nav_order: 6
     <img src="custom_assets/images/light_path_1.png" width="50%">
 </p>  
 
-   - **Objective Lens:** Understanding the role of the objective lens in magnification and resolution is crucial. Testing different objectives and learning how to calculate the magnification of a objective-tube lens system.
+   - **Objective Lens:** Understanding the role of the objective lens in magnification and resolution is crucial. Testing different objectives and learning how to calculate the magnification of an objective-tube lens system.
      
    - **Excitation and Emission Filters:** Explain the principles behind selecting appropriate filters for excitation and emission wavelengths. This involves understanding the absorption and emission spectra of fluorophores.
 
-  - **Image aberrations:** Students can experience image aberrations for example vignetting, chromatic aberration, ... and learn how to correct for these.
+  - **Image aberrations:** Students can experience image aberrations for example vignetting, and chromatic aberration, ... and learn how to correct for these.
 
 
 3. **Fluorescence:**
