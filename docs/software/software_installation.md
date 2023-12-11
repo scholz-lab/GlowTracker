@@ -28,15 +28,11 @@ nav_order: 1
 4. Install the **BASLER** package
     1. Install pylon software from BASLER [[Link]](https://www.baslerweb.com/en/software/pylon/)
         - pylon Camera Software Suite
-        - pylon runtime liberary
-    2. Get the pypylon package
-        ```bash
-        pip install pypylon
-        ```
+        - pylon runtime library
 
 5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-6. Once installing is finished, the software can be started by
+6. Once the installation is finished, the software can be started by
     ```bash
     python GlowTracker.py
     ```
