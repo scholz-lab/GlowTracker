@@ -8,7 +8,9 @@ Image acquisition is the process of acquiring images from the camera, until rece
 Tracking is the process of computing the key point position in the image and moving the stage to the according location.
 The interactive widget below depicts the overall process and timeline, from image acquisition to tracking.
 
-In order to determine the performance of the system, we are now interested in two things: how fast can we acquire images (Hz), and how fast can we track the object in the image (Hz). Additionally, we will also look at the ratio between the two, which will give an intuitive understanding of how much is the data is being used for tracking or skipped.
+In order to determine the performance of the system, we are interested in two things: how fast can we acquire images (Hz), and how fast can we track the object in the image (Hz). 
+Additionally, we will also look at the ratio between the two, which will give an intuitive understanding of how much is the data is being used for tracking or skipped.
+
 
 <div>
     <meta name=viewport content="width=device-width,initial-scale=1">  
@@ -43,6 +45,45 @@ In order to determine the performance of the system, we are now interested in tw
 </div>
 
 ## Image acquisition
-In an acquisition loop, the camera sensor receives a frame start trigger signal, the sensor is exposed for a period of time, then the sensor values are read out, internally processed in the camera, and sent to the host. After the host receives the image, it goes through an image processing pipeline one last time, and now is ready to be used in the application.
+In an acquisition loop, the camera sensor receives a frame-start trigger signal, the sensor is exposed for a specified exposure time, then the sensor values are read out, internally processed in the camera, and sent to the host. After the host receives the image, it goes through an image processing pipeline one more time, then it is ready to be used in the application.
+
+There are many factors that decide the acquisition rate. 
+The most important factors that the user can control are exposure time, image size (or region-of-interest ROI), and binning mode. 
+The exposure time determines how long the sensor is exposed to light before being read out. 
+The shorter the exposure time, the higher the acquisition rate. 
+The lower the image size, the higher the acquisition rate.
+The binning mode, for example, if set to an additive mode, can increase the image brightness to compensate for the lower exposure time, but also reduce the effective image resolution.
+Deciding these factors depends on the equipment setup and the animal that is going to be studied.
+For more information on what are the parameters that affect the image acquisition rate, please visit [Basler: Resulting frame rate](https://docs.baslerweb.com/resulting-frame-rate)
 <!-- https://docs.baslerweb.com/resulting-frame-rate -->
 <!-- https://www.baslerweb.com/en/tools/frame-rate-calculator/ -->
+
+With all these affecting parameters in mind, the total time from beginning to receiving a frame-start trigger signal to having a useable image in the application is called a *one-frame time*, and it is noticeably longer than just the exposure time because it also contains the sensor readout time and image processing time.
+Fortunately, we can operate the camera in a [rolling shutter](https://docs.baslerweb.com/electronic-shutter-types#rolling-shutter) mode, which is exposing each row of the sensor consecutively with a small time offset (8 µs in our model) and also simultaneously read the row value out after it is finished. 
+This significantly reduces the waiting time for the sensor readout and effectively increases the acquisition rate to almost equal to the exposure time plus some constants.
+
+The category of time that we will be using to benchmark is the effective image-receiving time, which is the time stamp at a point where the image is finished processing and is ready to be used in the application. The duration between each time stamp is essentially the **image acquisition rate**.
+
+
+## Tracking
+After receiving an image, the application computes the location of interest, tells the stage to move respectively such that the location of interest will be at the center of the image, and then waits until receiving a new image to begin tracking again.
+
+The tracking algorithm is explained in [Code explanation: Tracking]({% link software/code_explanation.md %}#tracking), and the amount of time to compute is denoted as *Compute Tracking* in the timeline widget above.
+The amount of time takes to communicate to the stage and then wait until it is moved to the specified location is called *Communicate to Stage* and *Stage Moving* respectively. 
+Additionally, we will have to wait for the camera to begin a new acquisition cycle.
+This is because if we were to use the latest image that we have in the application, the image could be exposed during the stage movement, resulting in a motion blur. The object may also be in a different position, which when computed, could yield an incorrect tracking position.
+This amount of time depends on the tracking object, the camera, and the stage.
+If the tracking objects move relatively fast in each frame, then the stage moving time increases.
+If the image acquisition time is fast, then the waiting time for an acquisition cycle decreases.
+If the stage movement speed profile is fast (depending on the hardware [configuration](https://www.zaber.com/protocol-manual?protocol=ASCII#topic_setting_motion_accel_ramptime)), then the waiting time for the stage to finish moving decreases.
+
+The category of time that we will be using to benchmark is the effective image-tracking time, which is the time stamp at starting tracking of an image. The duration between each time stamp is the **tracking rate**.
+
+## Benchmark
+<figure class="center-figure">
+    <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="stage connected to power">
+</figure>
+
+<figure class="center-figure">
+    <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.png" alt="stage connected to power">
+</figure>
