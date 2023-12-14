@@ -32,7 +32,7 @@ then reconnect the stage by clicking the **Stage** button to turn red ![](custom
     </figure>
 the numbers are in X, Y, and Z order. Afterward, close the settings, and reconnect the stage again by clicking the **Stage** button off ![](custom_assets\images\buttons\connection_off.png){: .inline-image} and on ![](custom_assets\images\buttons\connection_on.png){: .inline-image}.
 
-It is *very important* that you set the stage Z limit such that your objective lens does not go too far down and collide with your plate or subject and breaks it (we have learned this the hard way).
+It is *very important* that you set the stage Z limit such that your objective lens does not go too far down and collide with your plate or subject and break it (we have learned this the hard way).
 
 
 ## Q: The stage moves unintuitively.
@@ -57,5 +57,5 @@ Sometimes we found that calibrating on the animal itself can also give a great r
 But if all else fails or you want a perfect pixel alignment, you can manually adjust the translation and rotation parameters in **Settings** > **DualColor** > **Translation X**, **Translation Y**, and **Rotation**.
 
 ## Q: The tracking doesn't work.
-TODO: Write this section after after implementing the tracking diagnostic.
+TODO: Write this section after implementing the tracking diagnostic.
 
