@@ -55,12 +55,10 @@ The lower the image size, the higher the acquisition rate.
 The binning mode, for example, if set to an additive mode, can increase the image brightness to compensate for the lower exposure time, but also reduce the effective image resolution.
 Deciding these factors depends on the equipment setup and the animal that is going to be studied.
 For more information on what are the parameters that affect the image acquisition rate, please visit [Basler: Resulting frame rate](https://docs.baslerweb.com/resulting-frame-rate)
-<!-- https://docs.baslerweb.com/resulting-frame-rate -->
-<!-- https://www.baslerweb.com/en/tools/frame-rate-calculator/ -->
 
 With all these affecting parameters in mind, the total time from beginning to receiving a frame-start trigger signal to having a useable image in the application is called a *one-frame time*, and it is noticeably longer than just the exposure time because it also contains the sensor readout time and image processing time.
-Fortunately, we can operate the camera in a [rolling shutter](https://docs.baslerweb.com/electronic-shutter-types#rolling-shutter) mode, which is exposing each row of the sensor consecutively with a small time offset (8 µs in our model) and also simultaneously read the row value out after it is finished. 
-This significantly reduces the waiting time for the sensor readout and effectively increases the acquisition rate to almost equal to the exposure time plus some constants.
+Fortunately, we can operate the camera in a [rolling shutter](https://docs.baslerweb.com/electronic-shutter-types#rolling-shutter) mode, which exposes each row of the sensor consecutively with a small time offset (8 µs in our model) and also simultaneously read the row value out after it is finished. 
+This significantly reduces the waiting time for the sensor readout and effectively increases the acquisition rate to almost equal the exposure time plus some constants.
 
 The category of time that we will be using to benchmark is the effective image-receiving time, which is the time stamp at a point where the image is finished processing and is ready to be used in the application. The duration between each time stamp is essentially the **image acquisition rate**.
 
@@ -80,10 +78,38 @@ If the stage movement speed profile is fast (depending on the hardware [configur
 The category of time that we will be using to benchmark is the effective image-tracking time, which is the time stamp at starting tracking of an image. The duration between each time stamp is the **tracking rate**.
 
 ## Benchmark
-<figure class="center-figure">
-    <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="stage connected to power">
-</figure>
+We have performed benchmarking on the image acquisition rate and tracking rate with varying exposure times. 
+By definition, the image acquisition rate is mainly an inverse of the exposure time with some constant factor. 
+We would like to know how fast our application can track with regard to image acquisition rate. 
+The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 15 GB of RAM, and on a Windows 10 64-bit operating system. The results is shown in the plot below.
 
 <figure class="center-figure">
-    <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.png" alt="stage connected to power">
+    <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="image acquisition vs tracking rate">
 </figure>
+
+Here we can observe that the relationship between the image acquisition rate and tracking rate is almost linearly proportional to each other. 
+This makes sense as the faster we can acquire images, the faster we can track them. 
+However, we notice that there is a spike in the tracking rate where the image acquisition rate is equal to 33.333 Hz, which is a result of setting the exposure time to 30 ms. 
+We have yet to find a definitive answer to this. 
+Our intuition for now is that there may be some acquisition rate that happens to synchronize perfectly with the tracking loop, which helps reduce the synchronization waiting time.
+
+Additionally, we would like to have an intuitive understanding of how fast the application can track compared to how fast it can acquire images. 
+We can do this by dividing the image acquisition rate by the tracking rate. 
+This gives us the ratio between the two called **Frames per track**, depicting how many frames have been acquired for the tracking of a frame to be completed. 
+We then plot this ratio against the image acquisition rate in the plot below.
+
+<figure class="center-figure">
+    <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.png" alt="image_acquisition vs frames per track">
+</figure>
+
+From the above plot, a similar behavior as the previous plot can be observed. 
+The frames-per-track ratio is mostly linearly proportionate to the image acquisition rate. 
+This is because the compute-tracking time and communicate-to-stage time are independent of the image acquisition rate. 
+Meaning no matter how fast we acquire images, we still have to wait for the same fixed amount of time to compute tracking, and so the frames-per-track ratio increases. 
+The peak of tracking rate at 33.33 Hz image acquisition in the previous figure also now becomes a dip in this figure because it means that it has a higher tracking rate than its neighbors. 
+The frames-per-track ratio has a lower bound of 2. 
+This is because if the tracking scheme is so fast that it can be completed within an image acquisition cycle, it would still need to wait for a new acquisition cycle to receive a correct image to use for the next tracking.
+
+## Conclusion
+The performance of the application depends on many variables, the hardware setup, the software, and the studied subject.
+In our experience working with C. elegans and P. pacificus, using the [described setup]({% link Part_list.md %}), we found that the range of exposure time to give a good quality image while still being relative responsive is ranging from 20 ms to 60 ms, which yield the respective acquisition rates from 50 Hz to 16.67 Hz, and tracking rate from 11 Hz to 6.5 Hz, or the frames-per-track ratio of 5 to 2.5 times.
