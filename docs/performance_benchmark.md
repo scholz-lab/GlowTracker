@@ -1,6 +1,8 @@
 ---
-title: Performance benchmark
+title: 4.3 Performance benchmark
 layout: default
+parent: 4. Software
+nav_order: 3
 ---
 # Performance benchmark
 The performance of GlowTracker can be separated into two parts: **Image Acquisition**, and **Tracking**.
@@ -66,7 +68,7 @@ The category of time that we will be using to benchmark is the effective image-r
 ## Tracking
 After receiving an image, the application computes the location of interest, tells the stage to move respectively such that the location of interest will be at the center of the image, and then waits until receiving a new image to begin tracking again.
 
-The tracking algorithm is explained in [Code explanation: Tracking]({% link software/code_explanation.md %}#tracking), and the amount of time to compute is denoted as *Compute Tracking* in the timeline widget above.
+The tracking algorithm is explained in [Code explanation: Tracking]({% link software/tracking_explanation.md %}#tracking), and the amount of time to compute is denoted as *Compute Tracking* in the timeline widget above.
 The amount of time takes to communicate to the stage and then wait until it is moved to the specified location is called *Communicate to Stage* and *Stage Moving* respectively. 
 Additionally, we will have to wait for the camera to begin a new acquisition cycle.
 This is because if we were to use the latest image that we have in the application, the image could be exposed during the stage movement, resulting in a motion blur. The object may also be in a different position, which when computed, could yield an incorrect tracking position.
@@ -112,4 +114,4 @@ This is because if the tracking scheme is so fast that it can be completed withi
 
 ## Conclusion
 The performance of the application depends on many variables, the hardware setup, the software, and the studied subject.
-In our experience working with C. elegans and P. pacificus, using the [described setup]({% link Part_list.md %}), we found that the range of exposure time to give a good quality image while still being relative responsive is ranging from 20 ms to 60 ms, which yield the respective acquisition rates from 50 Hz to 16.67 Hz, and tracking rate from 11 Hz to 6.5 Hz, or the frames-per-track ratio of 5 to 2.5 times.
+In our experience working with C. elegans and P. pacificus, using the described setup, we found that the range of exposure time to give a good quality image while still being relative responsive is ranging from 20 ms to 60 ms, which yield the respective acquisition rates from 50 Hz to 16.67 Hz, and tracking rate from 11 Hz to 6.5 Hz, or the frames-per-track ratio of 5 to 2.5 times.
