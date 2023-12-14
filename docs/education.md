@@ -1,5 +1,5 @@
 ---
-title: Education
+title: 5. Education
 layout: default
 nav_order: 6
 ---
