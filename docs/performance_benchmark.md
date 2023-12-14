@@ -81,7 +81,7 @@ The category of time that we will be using to benchmark is the effective image-t
 We have performed benchmarking on the image acquisition rate and tracking rate with varying exposure times. 
 By definition, the image acquisition rate is mainly an inverse of the exposure time with some constant factor. 
 We would like to know how fast our application can track with regard to image acquisition rate. 
-The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 15 GB of RAM, and on a Windows 10 64-bit operating system. The results is shown in the plot below.
+The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 16 GB of RAM, and on a Windows 10 64-bit operating system. The results is shown in the plot below.
 
 <figure class="center-figure">
     <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="image acquisition vs tracking rate">
