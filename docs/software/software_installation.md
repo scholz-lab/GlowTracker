@@ -8,7 +8,7 @@ nav_order: 1
 
 ### Install the correct environment
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Create environment
+2. Create an environment
     - Using **Mamba** (faster, recommended)
         1. Install Mamba from [[Link]](https://mamba.readthedocs.io/en/latest/installation.html)
         2. Create environment: 
