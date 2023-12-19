@@ -1,2 +1,6 @@
 # VSCode 
 .vscode/
+
+build/
+
+glowtracker.egg-info
