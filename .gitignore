@@ -1,11 +1,2 @@
 # VSCode 
-.vscode/*
-
-# PyCache
-*.pyc
-
-# Recorded images
-record/*
-
-# logs
-*.log
+.vscode/
