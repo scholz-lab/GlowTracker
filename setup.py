@@ -2,8 +2,8 @@ from setuptools import setup
 
 setup(
     name='glowtracker',
-    version='1.0',
-    description='GlowTracker is a macroscope tracking application that have a capability of tracking small animal in bright field, single or dual epi-fluorescence imaging.',
+    version='1.0.0',
+    description='GlowTracker is a macroscope tracking application that has the capability of tracking a small animal in bright field, single or dual epi-fluorescence imaging.',
     url='https://github.com/scholz-lab/GlowTracker',
     author='Monika Scholz',
     author_email='monika.scholz@mpinb.mpg.de',
