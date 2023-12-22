@@ -1,6 +1,7 @@
 # VSCode 
 .vscode/
 
+# Package building related
 build/
-
-glowtracker.egg-info
+dist/
+glowtracker.egg-info/
