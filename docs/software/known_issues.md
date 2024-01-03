@@ -9,7 +9,7 @@ parent: 4. Software
 
 -  While the exposed camera parameters can be changed during live preview, the framerate is fixed to a display framerate. This might be undesired behavior.
 
-To get controls for zaber stage running:
+To get controls for the zaber stage running:
 
 - Install zaber motion package by running one of the following lines (python version must be 3.5 or higher to use Zaber library):
      
