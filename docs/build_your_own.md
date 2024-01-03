@@ -32,7 +32,7 @@ Assuming you have all the parts from the parts list [TODO: link] handy, the asse
 6. [Install the software](#install-software) 
 
 ### Tools
-You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat-head screwriver is useful for adjusting the camera orientation.
+You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat-head screwdriver is useful for adjusting the camera orientation.
 
 ## Stage and base <a name="stage-base"></a>
 <table class="equal-column-table">
@@ -114,7 +114,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
         <td>
           <figure class="center-figure">
             <img src="custom_assets/images/1 - stage/8.jpg" alt="Stage wiring" >
-            <figcaption>1. Daisy chain the stages by connecting the port labeled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
+            <figcaption>1. Daisy chains the stages by connecting the port labeled 'next' of the first axis to the 'prev' port of the second axis.</figcaption>
           </figure>
         </td>
         <td>

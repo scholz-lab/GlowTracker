@@ -62,7 +62,7 @@ With all these affecting parameters in mind, the total time from beginning to re
 Fortunately, we can operate the camera in a [rolling shutter](https://docs.baslerweb.com/electronic-shutter-types#rolling-shutter) mode, which exposes each row of the sensor consecutively with a small time offset (8 µs in our model) and also simultaneously read the row value out after it is finished. 
 This significantly reduces the waiting time for the sensor readout and effectively increases the acquisition rate to almost equal the exposure time plus some constants.
 
-The category of time that we will be using to benchmark is the effective image-receiving time, which is the time stamp at a point where the image is finished processing and is ready to be used in the application. The duration between each time stamp is essentially the **image acquisition rate**.
+The category of time that we will be using to benchmark is the effective image-receiving time, which is the timestamp at a point where the image is finished processing and is ready to be used in the application. The duration between each timestamp is essentially the **image acquisition rate**.
 
 
 ## Tracking
@@ -83,7 +83,7 @@ The category of time that we will be using to benchmark is the effective image-t
 We have performed benchmarking on the image acquisition rate and tracking rate with varying exposure times. 
 By definition, the image acquisition rate is mainly an inverse of the exposure time with some constant factor. 
 We would like to know how fast our application can track with regard to image acquisition rate. 
-The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 16 GB of RAM, and on a Windows 10 64-bit operating system. The results is shown in the plot below.
+The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 16 GB of RAM, and on a Windows 10 64-bit operating system. The results are shown in the plot below.
 
 <figure class="center-figure">
     <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="image acquisition vs tracking rate">
@@ -104,7 +104,7 @@ We then plot this ratio against the image acquisition rate in the plot below.
     <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.png" alt="image_acquisition vs frames per track">
 </figure>
 
-From the above plot, a similar behavior as the previous plot can be observed. 
+From the above plot, a similar behavior to the previous plot can be observed. 
 The frames-per-track ratio is mostly linearly proportionate to the image acquisition rate. 
 This is because the compute-tracking time and communicate-to-stage time are independent of the image acquisition rate. 
 Meaning no matter how fast we acquire images, we still have to wait for the same fixed amount of time to compute tracking, and so the frames-per-track ratio increases. 
@@ -114,4 +114,4 @@ This is because if the tracking scheme is so fast that it can be completed withi
 
 ## Conclusion
 The performance of the application depends on many variables, the hardware setup, the software, and the studied subject.
-In our experience working with C. elegans and P. pacificus, using the described setup, we found that the range of exposure time to give a good quality image while still being relative responsive is ranging from 20 ms to 60 ms, which yield the respective acquisition rates from 50 Hz to 16.67 Hz, and tracking rate from 11 Hz to 6.5 Hz, or the frames-per-track ratio of 5 to 2.5 times.
+In our experience working with C. elegans and P. pacificus, using the described setup, we found that the range of exposure time to give a good quality image while still being relatively responsive is ranging from 20 ms to 60 ms, which yield the respective acquisition rates from 50 Hz to 16.67 Hz, and tracking rate from 11 Hz to 6.5 Hz, or the frames-per-track ratio of 5 to 2.5 times.
