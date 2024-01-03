@@ -10,7 +10,7 @@ nav_order: 7
 Check that the movement is not obstructed by anything. 
 If the LED indicator on some of the stages turns blue, it means that it is in installed mode. 
 Try unplugging and plugging in the stage power source. 
-If the problem still persists it could be that the stage is under a too heavy load, try lowering the stage's speed or maximum speed at **Settings** > **Stage** > **Stage speed**, **Stage max speed**, or changing the stage physical configuration.
+If the problem still persists it could be that the stage is under a too-heavy load, try lowering the stage's speed or maximum speed at **Settings** > **Stage** > **Stage speed**, **Stage max speed**, or changing the stage physical configuration.
 If all else fails, you might need to use a stronger version of the stage, such as [LSM-150A](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A)
 More stage's troubleshooting instructions can be found here [Troubleshooting X-series motion devices](https://www.zaber.com/manuals/X-LSM-E#m-9-troubleshooting-x-series-motion-devices)
 
