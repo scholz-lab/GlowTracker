@@ -7,7 +7,7 @@ nav_order: 3
 
 
 
-|           | Bright field macroscope     | Part number | Description                                                          | Quantity | Price per unit | Vendor   | Link                                                                                                                                                                           |
+|           | Bright field macroscope     | Part number | Description                                                          | Quantity | Price per unit (12/2023) | Vendor   | Link                                                                                                                                                                           |
 | --------- | -------------------------------------- | ----------- | -------------------------------------------------------------------- | -------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Lightpath | White LED                              | 1           | MNWHL4 - 4900 K, 740 mW                                              | 1        | 155.69         | Thorlabs | [https://www.thorlabs.de/MNWHL4](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4)                                                         |
 |           | Camera                                 | 2           | Basler acA3088 - 57 um USB 3.0 Kamera, monochrom                     | 1        | 485            | Edmund   | [https://www.edmundoptics.de/monochrome-camera/37365/](https://www.edmundoptics.de/p/basler-ace-aca3088-57um-usb-30-monochrome-camera/37365/) |
