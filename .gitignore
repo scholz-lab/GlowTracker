@@ -5,3 +5,6 @@
 build/
 dist/
 glowtracker.egg-info/
+
+# Convenience
+*.log
