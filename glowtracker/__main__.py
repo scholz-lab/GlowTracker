@@ -1,4 +1,3 @@
-
 # To support deployment as a module, we need to 
 #   1. Change the CWD to current deployment location
 import os
