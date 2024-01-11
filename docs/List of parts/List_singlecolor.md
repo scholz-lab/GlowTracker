@@ -5,6 +5,7 @@ parent: 2. List of parts
 nav_order: 2
 ---
 
+# List of parts for the single color macroscope
 
 <p align="center">
     <img src="..\custom_assets\images\single color.png" width="75%">

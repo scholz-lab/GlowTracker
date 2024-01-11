@@ -5,6 +5,8 @@ parent: 2. List of parts
 nav_order: 1
 ---
 
+# List of parts for the dual color macroscope
+
 <p align="center">
     <img src="..\custom_assets\images\image.png" width="75%">
 </p>
