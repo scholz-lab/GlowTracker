@@ -1072,6 +1072,9 @@ class RecordButton(ImageAcquisitionButton):
 
         super().stopImageAcquisition()
 
+        if self.camera is None:
+            return
+
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
         
