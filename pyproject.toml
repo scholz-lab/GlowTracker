@@ -62,9 +62,6 @@ keywords = [
 [project.scripts]
 glowtracker = "glowtracker:initApp"
 
-[project.gui-scripts]
-glowtracker = "glowtracker:main"
-
 [project.urls]
 Homepage = "https://github.com/scholz-lab/GlowTracker"
 Issues = "https://github.com/scholz-lab/GlowTracker/issues"
