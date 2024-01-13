@@ -21,13 +21,13 @@ nav_order: 4
       </tr>
     </table>
 
-## Steps for assembling your microscope
-Assuming you have all the parts from the parts list [TODO: link] handy, the assembly should take about 2h to go from parts to a fully functional microscope. 
+## Steps for assembling your macroscope 
+<p align="justify">Assuming you have all the parts from the <a href="https://scholz-lab.github.io/GlowTracker/List%20of%20parts/List_of_parts.html"><i>parts list</i></a> available, you should be able to assemble the macroscope in about two hours and have a fully functional tool.</p>
 
 1. [Stage and base](#stage-base)
 2. [Lightpath](#lightpath)
 3. [Filters](#filters)
-4. [Adjust field-of-view for dual color imaging ](#dual-color-fov) 
+4. [Adjust field-of-view for dual color imaging ](#dualview-alignment) 
 5. [Dual-color calibration (optional).](#dual-color-calibration) 
 6. [Install the software](#install-software) 
 
@@ -141,16 +141,20 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
 ## Lightpath - hardware only <a name="lightpath"></a>
 
 ### Hardware 
-In this section, you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
+<p align="justify">
+  In this section, you will add the lightpath to the stages. We will first assemble the structure and add the filters and dichroics in the next step.
+</p>
 
-Note: If you order the lenses we suggest, they come pre-mounted. However, in case you are using lenses you already have you need to mount them in a short (10 mm) lens tube using a retaining ring. Refer to the lightpath diagram and the photos for correct lens orientation.
+<p align="justify">
+  <i><b>Note:</b> If you order the lenses we suggest, they come pre-mounted. However, in case you are using lenses you already have you need to mount them in a short (10 mm) lens tube using a retaining ring. Refer to the lightpath diagram and the photos for correct lens orientation.</i>
+</p>
 
 <table class="equal-column-table">
       <tr>
         <td>
           <figure class="center-figure">
              <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" >
-            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are *not* labeled - so be sure not to switch them!</figcaption>
+            <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are <b>not</b> labeled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
         <td>
@@ -214,7 +218,7 @@ In this section, we assemble the white light LED. The optics are used to collima
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2 - optics/8.jpg" alt="adapter plate for optics attached" >
-          <figcaption>8. screw the adjustable element into the lens tube from step 5.</figcaption>
+          <figcaption>8. Screw the adjustable element into the lens tube from step 5.</figcaption>
         </figure>
       </td> 
     </tr>
@@ -241,7 +245,9 @@ In this section, we assemble the white light LED. The optics are used to collima
   </table>
 
 ### Image-splitter assembly
-The image splitter is the heart of the microscope. Mechanics matter as a crooked assembly will lead to issues with the image quality. Before starting, lay out all the parts required. Pay attention to the cube orientations and follow the pictures exactly. 
+<p align="justify">
+  The image splitter is the heart of the macroscope. Mechanics matter as a crooked assembly will lead to issues with the image quality. Before starting, lay out all the parts required. Pay attention to the cube orientations and follow the pictures exactly. 
+</p>
 
 
 <table class="equal-column-table">
@@ -249,14 +255,13 @@ The image splitter is the heart of the microscope. Mechanics matter as a crooked
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/1 - connector on bottom of cube 2.jpg" alt="adjustable element." >
-          <figcaption>1. Identify one of the 3 DFM1 cubes and attach the cage cube adapter.
-</figcaption>
+          <figcaption>1. Identify one of the 3 DFM1 cubes and attach the cage cube adapter.</figcaption>
         </figure>
       </td>
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/2.jpg" alt="lens tube added" >
-          <figcaption>2. Cube after adding connector. Note orientation!</figcaption>
+          <figcaption>2. Cube after adding connector. Note <b>orientation</b>!</figcaption>
         </figure>
       </td>
       <td>
@@ -315,7 +320,7 @@ The image splitter is the heart of the microscope. Mechanics matter as a crooked
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens" width=100%>
+          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens">
           <figcaption>11. Add 4 ER rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
         </figure>
       </td>
@@ -353,16 +358,20 @@ The image splitter is the heart of the microscope. Mechanics matter as a crooked
   </table>
 
 ## Lightpath - Filters and Dichroics <a name="filters"></a>
-In this section, you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If your image quality is not ideal, and you see reflections or double images, that may be due to a flipped filter.
+<p align="justify">
+  In this section, you will handle a lot of expensive filters and dichroic mirrors. It is helpful to have optical cleaning supplies handy in case you touch a lens or filter. Always touch optics at the edge, as smudges are hard to remove and will degrade your image quality. Filters and dichroics have a preferred direction, so please pay attention to the orientation you put them in. If your image quality is not ideal, and you see reflections or double images, that may be due to a flipped filter.
+</p>
 
 The schematic of the filters is shown here:
-  <figure class="center-figure">
-          <img src="custom_assets/images/light_path_2.png" alt="cube" width=50% >
-          <figcaption>Refer to the schematic to identify which filters are in which of the cubes.</figcaption>
-        </figure>
+<figure class="center-figure">
+  <img src="custom_assets/images/light_path_2.png" alt="cube" width="75%">
+  <figcaption>Refer to the schematic to identify which filters are in which of the cubes.</figcaption>
+</figure>
 
 ### Filter cube 1 - Excitation light
-All filters will require similar steps. We will show the full process for the first cube. Repeat for Cubes 2 and 3. A video for instructions can be found [here](https://youtu.be/qWIfiwuL-gQ).
+<p align="justify">
+  All filters will require similar steps. We will show the full process for the first cube. Repeat for Cubes 2 and 3. A video for instructions can be found <a href="https://youtu.be/qWIfiwuL-gQ"><i>here</i></a>.
+</p>
 
 For this cube, you will need one 488/561 nm dichroic and a dualband excitation filter 59011x.
 <table class="equal-column-table">
@@ -370,8 +379,7 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/10.jpg" alt="cube" >
-          <figcaption>1. Take out the insert of the bottom cube.
-.</figcaption>
+          <figcaption>1. Take out the insert of the bottom cube.</figcaption>
         </figure>
       </td>
        <td>
@@ -411,15 +419,32 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 
 
 ### Filter cube 2 - Image splitter cube with emission filters
+<p align="justify">
+  Here you will need one of the two 561nm longpass dichroics, a 618/50 nm bandpass for the red image and a 520/36 bandpass for the green image.
+</p>
 
- Here you will need one of the two 561nm longpass dichroics, a 618/50 nm bandpass for the red image and a 520/36 bandpass for the green image.
+<p align="justify">
+  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope.
+</p>
 
-Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the microscope.
 ### Filter cube 3 - Image splitter cube without emission filters
-This cube combines the red and green images. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
-
+<p align="justify">
+  This cube combines the red and green images. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
+</p>
 
 ## Adjust field-of-view for dual color imaging <a name="dualview-alignment"></a>
 
 ## Install the software <a name="install-software"></a>
+<p align="justify">
+  The Macroscope GUI is designed for manual and automated tracking, offering a Kivy app interface for two USB devices. Users are encouraged to adjust camera parameters using BASLER's pylon software to avoid duplicating configuration efforts. GUI functions are primarily in the Kivy file, while device functionality is delegated to specific modules. 
 
+  To work with the GUI, you will need to do the following:
+</p>
+1. Create an environment
+2. Install BASLER package
+3. Install Zaber Launcher <i>(optional)</i>
+4. Start the GUI by <code>python GlowTracker.py</code>
+
+<p align="justify">
+  You can find more detailed instructions in the <a><i>Software installation</i></a> section.
+</p>
