@@ -56,6 +56,7 @@ from queue import Queue
 from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
+from pypylon import pylon
 
 # 
 # Own classes
@@ -63,7 +64,6 @@ from io import TextIOWrapper
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
-from pypylon import pylon
 
 # 
 # Math
@@ -72,7 +72,6 @@ import math
 import numpy as np
 from skimage.io import imsave
 import cv2
-
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
@@ -279,9 +278,10 @@ class RightColumn(BoxLayout):
 
     def open_settings(self):
         # Disabled interaction with preview image widget
-        App.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        app: MacroscopeApp = App.get_running_app()
+        app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
-        App.open_settings()
+        app.open_settings()
 
 
     def show_recording_settings(self):
@@ -776,7 +776,7 @@ class ImageAcquisitionButton(ToggleButton):
 
                 # Trigger image callback
                 self.receiveImageCallback()
-        
+
         self.finishAcquisitionCallback()
 
 
@@ -1048,11 +1048,15 @@ class RecordButton(ImageAcquisitionButton):
 
         super().stopImageAcquisition()
 
+        if self.camera is None:
+            return
+
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
         
         # Close saving threads
-        self.savingthread.join()
+        if self.savingthread:
+            self.savingthread.join()
         
         # Update display buffer text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
@@ -1673,7 +1677,7 @@ class RuntimeControls(BoxLayout):
             # If prev frame is empty then use the same as current
             if prevImage is None:
                 prevImage = image
-                
+
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
@@ -1935,8 +1939,6 @@ class MacroscopeApp(App):
         Set the default values for the configs sections.
         """
         config.read('macroscope.ini')
-        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'um/s', 'stage_limit_x':155})
-        #config.setdefaults('Experiment', {'exppath':155})
 
 
     # use custom settings for our GUI
@@ -2245,7 +2247,7 @@ def reset():
             Cache._objects[cat] = {}
 
 
-if __name__ == '__main__':
+def main():
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')
@@ -2253,3 +2255,7 @@ if __name__ == '__main__':
     Config.set('graphics', 'left', '0') 
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,8 @@
+# PyCache
+*.pyc
+
+# Recorded images
+record/
+
+# logs
+*.log
