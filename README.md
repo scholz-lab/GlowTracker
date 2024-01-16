@@ -45,7 +45,7 @@
 
 6. After finished installation, the software can be started by
     ```bash
-    python -O glowtracker/__main__.py
+    python glowtracker/__main__.py
     ```
 
 ### Device Setup

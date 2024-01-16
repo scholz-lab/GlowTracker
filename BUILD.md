@@ -26,6 +26,9 @@ The resulting packages will be in `dist/`, `glowtracker-[version].tar.gz` and `g
 # Running
 Once the package is installed, the application can be started by
 ```bash
-python -Om glowtracker
+python -m glowtracker
 ```
-The `-O` (capital O) option is to disable verbose debug logging and disable writing performance log file.
+or running the executable wrapper by simply type
+```bash
+glowtracker
+```
