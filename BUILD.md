@@ -1,4 +1,4 @@
-# Build project
+# Building the package
 Before building a package, **Don't forget** to change the version accordingly in the file `pyproject.toml` under section `[project]`. 
 Follow the convention of Major.Minor.Patch.
 Then Execute the build process by

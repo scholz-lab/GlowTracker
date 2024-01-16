@@ -10,9 +10,10 @@ dependencies:
   - pillow=10.0.0
   - pip=23.1.2
   - python=3.10.12
-  - scikit-image=0.21.0
+  - scikit-image=0.22.0
   - scipy=1.11.1
   - zaber-motion=4.2.0
+  - overrides
   - pip:
     - pypylon==2.2.0
     - itk-elastix
