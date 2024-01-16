@@ -56,7 +56,7 @@ nav_order: 7
     Make sure to calibrate the camera and stage relationship by clicking the <b>Calibrate</b> button, then the <b>Camera & Stage Calibration</b> tab. This estimates the similarity transformation between the two. See the estimated result plot and decide if it's accurate to your setup or not. If not, try changing the object to something with a clearer structure in the field of view.
     </li>
     <li>
-    After calibrating the transformation, turn on the move in image space mode' option in <b>Settings</b> > <b>Stage</b> > <b>Move in image space mode</b>.
+    After calibrating the transformation, turn on the move in image space mode' option in <b>Settings</b> > <b>Stage</b> > <b>Move in image space mode</b>.<br/><br/>
     <figure class="center-figure">
         <img src="custom_assets/images/5 - calibration/camera and stage calibration/3.png" alt="Stage limit" width="80%">
     </figure>
