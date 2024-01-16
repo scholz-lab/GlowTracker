@@ -9,9 +9,8 @@ os.chdir(curr_file_dir)
 import sys
 sys.path.insert(0, curr_file_dir)
 
-if not __debug__:
-    # Disable kivy console log
-    os.environ["KIVY_NO_CONSOLELOG"] = "1"
+# Disable kivy console log
+os.environ["KIVY_NO_CONSOLELOG"] = "1"
 
 # Start application
 from GlowTracker import main

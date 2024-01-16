@@ -73,9 +73,6 @@ import numpy as np
 from skimage.io import imsave
 import cv2
 
-if __debug__:
-    print('GlowTracker is running in DEBUG mode')
-
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
     """This creates a timestamped filename so we don't overwrite our good work."""
@@ -766,14 +763,6 @@ class ImageAcquisitionButton(ToggleButton):
         self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
         print(f'Displaying at {fps} fps')
 
-        if __debug__:
-            self.imageAcquisitionPerfLog = open('imageAcquisitionPerfLog.log', 'w')
-            self.imageAcquisitionPerfLog.write(f'ExposureTime, {self.camera.ExposureTime() * 1e-6}\n')
-            self.imageAcquisitionPerfLog.write(f'AcquisitionFrameRate, {self.camera.AcquisitionFrameRate.GetValue()}\n')
-            self.imageAcquisitionPerfLog.write(f'ResultingFrameRate, {self.camera.ResultingFrameRate.GetValue()}\n')
-            self.imageAcquisitionPerfLog.write(f'imageTimeStamp,imageRetrieveTimeStamp,timeProcessImage,AcquisitionTimeStamp\n')
-
-
         # Start image acquisition loop
         while self.acquisitionCondition():
 
@@ -782,24 +771,11 @@ class ImageAcquisitionButton(ToggleButton):
 
             if isSuccess:
 
-                if __debug__:
-                    timeStartProcessingImage = time.perf_counter()
-
                 # Process the received image
                 self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
 
-                if __debug__:
-                    timeEndProcessingImage = time.perf_counter()
-
                 # Trigger image callback
                 self.receiveImageCallback()
-
-                if __debug__:
-                    timeEndAcquisitionLoop = time.perf_counter()
-                    self.imageAcquisitionPerfLog.write(f'{imageTimeStamp}, {imageRetrieveTimeStamp}, {timeEndProcessingImage - timeStartProcessingImage}, {timeEndAcquisitionLoop}\n')
-
-        if __debug__:
-            self.imageAcquisitionPerfLog.close()
 
         self.finishAcquisitionCallback()
 
@@ -1647,10 +1623,6 @@ class RuntimeControls(BoxLayout):
 
         estimated_next_timestamp: float | None = None
 
-        if __debug__:
-            self.trackingPerfLog = open('trackingPerfLog.log', 'w')
-            self.trackingPerfLog.write(f'TrackingAlgTime,TrackingDist,CommunicateToStageTime,Est.StageMovingTime,TrackingFrameTime,TrackingFrameTimeStamp\n')
-
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
 
             # Handling image cycle synchronization.
@@ -1706,9 +1678,6 @@ class RuntimeControls(BoxLayout):
             if prevImage is None:
                 prevImage = image
 
-            if __debug__:
-                startAlgTrackingTime = time.perf_counter()
-                
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
@@ -1722,9 +1691,6 @@ class RuntimeControls(BoxLayout):
             ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
             ystep *= scale
             xstep *= scale
-
-            if __debug__:
-                endAlgTrackingTime = time.perf_counter()
 
             # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
@@ -1774,23 +1740,11 @@ class RuntimeControls(BoxLayout):
 
             estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
 
-            if __debug__:
-                TrackingAlgTime = endAlgTrackingTime - startAlgTrackingTime
-                TrackingDist = max_travel_dist
-                CommunicateToStageTime = tracking_frame_end_time - endAlgTrackingTime
-                EstStageMovingTime = stage_travel_time
-                TrackingFrameTime = tracking_frame_end_time - tracking_frame_start_time
-                TrackingFrameEndTimeStamp = tracking_frame_end_time
-                self.trackingPerfLog.write(f'{TrackingAlgTime},{TrackingDist},{CommunicateToStageTime},{EstStageMovingTime},{TrackingFrameTime},{TrackingFrameEndTimeStamp}\n')
-
             # Wait
             time.sleep(total_waiting_time)
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
-
-        if __debug__:
-            self.trackingPerfLog.close()
 
 
     def set_ROI(self, roiX, roiY):
