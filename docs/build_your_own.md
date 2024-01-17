@@ -404,14 +404,8 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
       </td>
       <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/2.jpg" alt="cube" >
-            <figcaption>5. Carefully insert the dichroic mirror 488/561 nm. The reflective surface should point towards the LED when the insert is slotted back into the cube </figcaption>
-          </figure>
-      </td>
-         <td>
-        <figure class="center-figure">
             <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.jpg" alt="cube" >
-            <figcaption>6. Add the excitation filter to the cube insert. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the lightsplitter. </figcaption>
+            <figcaption>5. Add the excitation filter to the cube insert. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the lightsplitter. </figcaption>
           </figure>
       </td>
     </tr>
