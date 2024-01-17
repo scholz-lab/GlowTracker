@@ -56,10 +56,10 @@ jobs:
           ${{ github.workspace }}
       # Publish to TestPyPI using Trusted Publisher (GitHub)
       # REF: https://docs.pypi.org/trusted-publishers/using-a-publisher/
-      # - name: Publish package to TestPyPI
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     repository-url: https://test.pypi.org/legacy/
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
 
       # Publish to PyPI using Trusted Publisher (GitHub)
       # REF: https://docs.pypi.org/trusted-publishers/using-a-publisher/
