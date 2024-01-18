@@ -1,16 +1,17 @@
-# Publish package to PyPI and TestPyPI
+# Publish glowtracker package to PyPI
 name: Publish GlowTracker
 
 # Tell GitHub when to run the action
 on:
-  # This will run every time a new release is published
+  # This workflow will run automatically if a new release is published
   release:
     types: [published]
-  # This workflow is triggered on push events only for the master branch
+  # NOTE: Triggering the workflow using push to the publish-package branch for testing purposes.
+  # The workflow dispatch button only appears after the workflow is also on the main branch
+  # REF: https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow#running-a-workflow-on-github
   push:
-    branches: [ master ]
-  # This workflow can also be manually started from the Actions tab in GitHub
-  # Used also for manual testing on the publish-package branch
+    branches: [ publish-package ]
+  # This workflow can also be started manually from the Actions tab
   workflow_dispatch:
     branches: [ master, publish-package ]
 
@@ -42,14 +43,6 @@ jobs:
           --sdist
           --wheel
           ${{ github.workspace }}
-      # Publish to TestPyPI using Trusted Publisher (GitHub)
-      # REF: https://docs.pypi.org/trusted-publishers/using-a-publisher/
-      # TODO: Setup trusted publisher in TestPyPI
-      # - name: Publish package to TestPyPI
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     repository-url: https://test.pypi.org/legacy/
-
       # Publish to PyPI using Trusted Publisher (GitHub)
       # REF: https://docs.pypi.org/trusted-publishers/using-a-publisher/
       - name: Publish package to PyPI

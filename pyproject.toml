@@ -24,7 +24,7 @@ glowtracker = [
 
 [project]
 name = "glowtracker"
-version = "1.0.0"
+version = "0.9.1"
 description = "GlowTracker provides a graphical user interface to operate a macroscope. The macroscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
 authors = [
     { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" }
