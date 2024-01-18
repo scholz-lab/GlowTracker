@@ -16,25 +16,18 @@
     </table>
 </div>
 
-
 ## Getting started
-### Install the correct environment
+### Software Setup
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Create environment
-    - Using **Mamba** (faster, recommended)
-        1. Install Mamba from [[Link]](https://mamba.readthedocs.io/en/latest/installation.html)
-        2. Create environment: 
-            ```bash 
-            mamba env update -n macroscope --file StageEnvironment.yml
-            ```
-    - Using **Conda**
-        ```bash 
-        conda env create --file StageEnvironment.yml
-        ```
+2. Use `conda` to create a new python environment named `macroscope`.
+    ```bash
+    conda create -n macroscope 'python>=3.9,<3.12'
+    ```
 
-3. Activate the environment: 
+3. Activate the `macroscope` environment and install the `glowtracker` app using `pip`: 
     ```bash
     conda activate macroscope
+    python -m pip install glowtracker
     ```
 
 4. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
