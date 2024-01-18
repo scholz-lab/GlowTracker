@@ -10,8 +10,9 @@ on:
   push:
     branches: [ master ]
   # This workflow can also be manually started from the Actions tab in GitHub
-  # Used also for manual testing on the dist-package branch
+  # Used also for manual testing on the publish-package branch
   workflow_dispatch:
+    branches: [ master, publish-package ]
 
 # The publish workflow consist currently only on one job
 jobs:
