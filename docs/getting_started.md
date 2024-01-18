@@ -26,7 +26,7 @@ Afterward, close the Zaber Launcher and open up the GlowTracker.
 Open the **Settings** ![](custom_assets/images/buttons/ten.png){: .inline-image} , put your connection port name in the section **Stage**, field **Stage serial port**. 
 Close the settings, then click the **Stage** ![](custom_assets/images/buttons/one.png){: .inline-image}. If the button turns green then you have successfully connected the stage.
 
-You can now control the stage movement by the stage control buttons ([GUI image](#gui-image): Group 2) or the arrow keys on your keyboard. The left ⇦, right ⇨ keys control stage X axis, ⇧ ⇩ controls stage Y axis, and Page Up, Page Down, raise and lower the stage. 
+You can now control the stage movement by the stage control buttons ([GUI image](#gui-image): Group 2) or the arrow keys on your keyboard. The left ⇦, and right ⇨ keys control the stage X axis, ⇧ ⇩ control the stage Y axis, and Page Up, Page Down, raise and lower the stage. 
 Press these in combination with the Shift key to move at a slower speed.
 
 ## Connect to the camera <a name="connect-to-the-camera"></a>
@@ -79,7 +79,7 @@ Press these in combination with the Shift key to move at a slower speed.
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
 (this step is only required in the dual-color configuration.)
 To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
-1. Select a sample that shows either the same structure in both chanels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
+1. Select a sample that shows either the same structure in both channels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
     <table class="equal-column-table">
       <tr>
         <td>
@@ -97,7 +97,7 @@ To calibrate the relationship between the two color channels, which will later a
       </tr>
     </table>
 
-2. Open the calibration dialog by clicking  on **Calibrate** ![](custom_assets/images/buttons/ten.png){: .inline-image}. Navigate the tab to the section called **Dual Color Calibration**.
+2. Open the calibration dialog by clicking on **Calibrate** ![](custom_assets/images/buttons/ten.png){: .inline-image}. Navigate the tab to the section called **Dual Color Calibration**.
 
 3. Click **Calibrate**. The calibration result will be shown in the overlay.
     <figure class="center-figure">

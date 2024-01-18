@@ -321,7 +321,7 @@ In this section, we assemble the white light LED. The optics are used to collima
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens" width=100%>
-          <figcaption>11. Add 4 ER rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
+          <figcaption>11. Add 4 ER025 rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
         </figure>
       </td>
       <td>
