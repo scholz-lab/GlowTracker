@@ -18,7 +18,7 @@ nav_order: 4
 
 ---
 
-| Objective     | f#               | NA =½\*f# | Focal length (mm) | Max FOV width (mm) | Magnification |
+| Objectives     | f#               | NA =½\*f# | Focal length (mm) | Max FOV width (mm) | Magnification |
 | ------------- | ------------- | --------- | ----------------- | ------------------ | ------------- |
 | Yongnuo 50 mm | f/1.8 - f/22  | 0.2778    | 50                | 7.41x4.95          | 1             |
 | EO 16 mm      | f/1.6 - f/16  | 0.3125    | 16                | 2.30x1,59          | 3.1           |
