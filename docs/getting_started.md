@@ -20,19 +20,14 @@ After you have finished constructing your macroscope, connect the camera and sta
 
 
 ## Connect to the stage <a name="connect-to-the-stage"></a>
-<p align="justify">
-  If you have never connected to the Zaber stage before, install and open <a href="https://software.zaber.com/zaber-launcher/download"><i>Zaber Launcher</i></a>. 
-  In there, you can find the connection port name to your stage, usually <code>COM3</code> for Windows or <code>/dev/ttyUSB0</code> for Linux, and you can also update your stage firmware to the latest version. 
-  Afterward, close the Zaber Launcher and open up the GlowTracker. 
-  Open the <b>Settings</b> <img src="custom_assets/images/buttons/ten.png" class="inline-image">, put your connection port name in the section <b>Stage</b>, field <b>Stage serial port</b>. 
-  Close the settings, then click the <b>Stage</b> <img src="custom_assets/images/buttons/one.png" class="inline-image">. If the button turns green then you have successfully connected the stage.
-</p>
+If you have never connected to the Zaber stage before, install and open [Zaber Launcher](https://software.zaber.com/zaber-launcher/download). 
+In there, you can find the connection port name to your stage, usually `COM3` for Windows or `/dev/ttyUSB0` for Linux, and you can also update your stage firmware to the latest version. 
+Afterward, close the Zaber Launcher and open up the GlowTracker. 
+Open the **Settings** ![](custom_assets/images/buttons/ten.png){: .inline-image} , put your connection port name in the section **Stage**, field **Stage serial port**. 
+Close the settings, then click the **Stage** ![](custom_assets/images/buttons/one.png){: .inline-image}. If the button turns green then you have successfully connected the stage.
 
-<p align="justify">
-  You can now control the stage movement by the stage control buttons (<a href="#gui_annotation"><i>GUI image:</i></a> Group 2) or the arrow keys on your keyboard. The left <code>⇦</code>, right <code>⇨</code> keys control stage X axis, <code>⇧</code> <code>⇩</code> controls stage Y axis, and <code>Page Up</code>, <code>Page Down</code>, raise and lower the stage. 
-  Press these in combination with the <code>Shift</code> key to move at a slower speed.
-</p>
-
+You can now control the stage movement by the stage control buttons ([GUI image](#gui-image): Group 2) or the arrow keys on your keyboard. The left ⇦, and right ⇨ keys control the stage X axis, ⇧ ⇩ control the stage Y axis, and Page Up, Page Down, raise and lower the stage. 
+Press these in combination with the Shift key to move at a slower speed.
 
 ## Connect to the camera <a name="connect-to-the-camera"></a>
 <p align="justify">
@@ -82,12 +77,9 @@ After you have finished constructing your macroscope, connect the camera and sta
    
 
 ## Dual-color calibration (optional) <a name="dual-color-calibration"></a>
-<p align="justify">
-  <i>(This step is only required in the dual-color configuration.)</i>
-  To achieve an accurate overlay of the two images, the image-splitter must be calibrated to adjust the relationship between the two color channels.
-</p>
-
-1. <p align="justify">Select a sample that shows either the same structure in both channels (e.g., fluorescent beads, fluorescent tape) or has sufficient bleed-through to appear in both channels.</p>
+(this step is only required in the dual-color configuration.)
+To calibrate the relationship between the two color channels, which will later allow an accurate overlay of the two images, the image-splitter needs to be calibrated. 
+1. Select a sample that shows either the same structure in both channels (e.g., fluorescent beads, fluorescent tape) or that has sufficient bleed-through to appear in both channels.
     <table class="equal-column-table">
       <tr>
         <td>
@@ -105,7 +97,7 @@ After you have finished constructing your macroscope, connect the camera and sta
       </tr>
     </table>
 
-2. <p align="justify">Open the calibration dialog by clicking  on <b>Calibrate</b> <img src="custom_assets/images/buttons/ten.png" class="inline-image">. Navigate the tab to the section called <b>Dual Color Calibration</b>.</p>
+2. Open the calibration dialog by clicking on **Calibrate** ![](custom_assets/images/buttons/ten.png){: .inline-image}. Navigate the tab to the section called **Dual Color Calibration**.
 
 3. Click **Calibrate**. The calibration result will be shown in the overlay.
     <figure class="center-figure">

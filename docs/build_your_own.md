@@ -287,7 +287,7 @@ In this section, we assemble the white light LED. The optics are used to collima
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/6.jpg" alt="two stages attached to breadboard">
-          <figcaption>6. Screw 4 ER05 rods into the right side of the middle cube, again removing the set screws on the other side.</figcaption>
+          <figcaption>6. Screw 4 ER025 rods into the right side of the middle cube, again removing the set screws on the other side.</figcaption>
         </figure>
       </td>
        </tr>
@@ -307,7 +307,7 @@ In this section, we assemble the white light LED. The optics are used to collima
       <td>
         <figure class="center-figure">
           <img src="custom_assets/images/2a-lightpath/9.jpg" alt="spacer" >
-          <figcaption>9. Add 4 ER05 rods to the cube-mirror from 8. such that the two halves of the image splitter look as shown.</figcaption>
+          <figcaption>9. Add 4 ER025 rods to the cube-mirror from 8. such that the two halves of the image splitter look as shown.</figcaption>
         </figure>
       </td>
     </tr>  
@@ -320,8 +320,8 @@ In this section, we assemble the white light LED. The optics are used to collima
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens">
-          <figcaption>11. Add 4 ER rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
+          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens" width=100%>
+          <figcaption>11. Add 4 ER025 rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
         </figure>
       </td>
       <td>
