@@ -28,8 +28,7 @@ nav_order: 4
 2. [Lightpath](#lightpath)
 3. [Filters](#filters)
 4. [Adjust field-of-view for dual color imaging ](#dualview-alignment) 
-5. [Dual-color calibration (optional).](#dual-color-calibration) 
-6. [Install the software](#install-software) 
+5. [Install the software](#install-software) 
 
 ### Tools
 You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat-head screwdriver is useful for adjusting the camera orientation.
@@ -320,7 +319,7 @@ In this section, we assemble the white light LED. The optics are used to collima
       </td>
       <td>
         <figure class="center-figure">
-          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens" width=100%>
+          <img src="custom_assets/images/2a-lightpath/11.jpg" alt="50 mm lens" width="100%">
           <figcaption>11. Add 4 ER025 rods to the closed-off side of the image splitter for mounting to the stage. </figcaption>
         </figure>
       </td>
