@@ -426,6 +426,59 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 </p>
 
 ## Adjust field-of-view for dual color imaging <a name="dualview-alignment"></a>
+<p align="justify">
+To adjust the field-of-view for dual color imaging we first need to align the mirrors such that dual color images are projected onto the camera side by side without overlapping. Before starting, ensure that your GlowTracker settings are ‘dual color’ and the view is set to ‘splitted’. Turn off all environment lights to avoid seeing double images. Follow the below instructions to align both images.
+
+<ol>
+  <li>
+  Positioning of first color channel (here red):
+    <ol type="a">
+    <li>Concentrate on the red channel first, for this block the green channel by removing the image splitter cube (the middle cube)</li>
+    <li>Focus on a sample using the stage, a white paper with small writing or barcode is ideal</li>
+    <li>Focus the slit, by rotating the adjustable element, until its edges come sharp in focus (the sample needs to be in focus too)</li>
+    <li>Loosen the screws of the adapter that holds the camera in place, rotate the camera so that the slit is orientated vertical to the image of the camera</li>
+    <li>Use screws at the mirror mount of the red channel to move the image, so that the highest intensity is in the center of one of the sides.</li>
+    <li>Put back the middle cube</li>
+    </ol>
+  </li>
+  <li>
+  Alignment of second color channel (here green):
+    <ol type="a"> 
+    <li>Block the light of the red channel if possible.</li>
+    <li>Use the screws of the mirror mount of the green channel to first find the edge of the slit, and second position the green image as in 1. e</li>
+    <li>Unblock the red light</li>
+    <li>Adjust the position of the green image so that the structures are approx. at the same position (in the split view) as in the red channel</li>
+    </ol>
+  </li>
+  <li>
+  Test the alignment by using fluorescent samples (e.g. fluorescent tape)
+    <ol type="a">
+    <li>Test if the split view shows images only in the expected wavelength</li>
+    <li>Check alignment on sample with both wavelength (e.g. use yellow fluorescent tape, or overlay red and green fluorescent tape)</li>
+    <li>Adjust alignment if necessary, you can also use the merged view (-> GUI/ Settings)</li>
+    <li>Try to keep the highest intensity in the center of the images</li>
+    </ol>
+  </li>
+  <li>
+  Dual color calibration
+    <ol type="a">
+    <li>Open the calibration menu at the right of the GlowTracker GUI</li>
+    <li>Open the dual color calibration mode and press calibrate</li>
+    <li>If the calibration is not good try to find either a better part of the sample or try to focus both sides, repeat the calibration</li>
+    </ol>
+  </li>
+  <li>
+  Check alignment on biological samples
+  </li>
+</ol>
+
+
+<figure class="center-figure">
+  <img src="custom_assets/images/4 - dual color hardware adjustment/slitalignment_comp.jpg" alt="slit alignment" width="100%">
+  <figcaption>Example process of slit alignment. Numbering refers to steps in instruction.</figcaption>
+</figure>
+Note: You can also manually change the calibration parameters in the settings, this can be helpful if you have problems with automatic calibration.
+</p>
 
 ## Install the software <a name="install-software"></a>
 <p align="justify">
