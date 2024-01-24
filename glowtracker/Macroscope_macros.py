@@ -756,13 +756,13 @@ class CameraAndStageCalibrator:
         """        
 
         # Estimate camera basis X 
-        basisXPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
     
         camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
         camBasisXLen = np.linalg.norm(camBasisXVec)
 
         # Estimate camera basis Y
-        basisYPhaseShift = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
     
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
