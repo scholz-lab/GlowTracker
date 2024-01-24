@@ -14,6 +14,7 @@ dependencies:
   - scipy=1.11.1
   - zaber-motion=4.2.0
   - overrides
+  - pandas
   - pip:
     - pypylon==2.2.0
     - itk-elastix

@@ -7,6 +7,9 @@ from queue import Queue
 from tifffile import imwrite
 from typing import Tuple, List
 from pypylon import pylon
+from skimage.measure import regionprops_table
+from skimage import measure
+import pandas as pd
 
 # 
 # Own classes
@@ -275,44 +278,196 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     # print(xmin, xmax, ymin, ymax)
     img1_sm = img1[ymin:ymax, xmin:xmax]
-        
-    # reduce image size
-    img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
-
-    h,w = img1_sm.shape
-    # reduced image size
-    # print('image shape after binning',h,w)
-
-    # get cms
-    h,w = img1_sm.shape
-    ## threshold object cms
-    if dark_bg:
-        img1_sm = img1_sm > threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(img1_sm)
+    
+    if display:
+        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display, bin_factor=bin_factor)
     else:
-        img1_sm = img1_sm < threshold_yen(img1_sm)
-        yc, xc = ndi.center_of_mass(~img1_sm)
+        mask, resize_factor = create_mask(img1_sm, dark_bg, display=display)
+
+    h, w = mask.shape
+
+    if display:
+        (xc, yc), annotated_mask = find_CMS(mask, display=display)
+    else:
+        xc, yc = find_CMS(mask, display=display)
+
    
     # show intermediate steps for debugging
     if display:
-        plt.subplot(211)
-        plt.imshow(img1)
-        plt.title('img1 original')
-        plt.plot(xc*bin_factor+xmin, yc*bin_factor+ymin, 'ro')
-        plt.plot( (xc*bin_factor + xmin) ,(yc*bin_factor+ymin), 'ro')
+        plt.subplot(231)
+        plt.imshow(img1, cmap='gray')
+        plt.title('img original')
+        plt.plot(xc/resize_factor+xmin, yc/resize_factor+ymin, 'ro')
+        plt.plot( (xc/resize_factor + xmin) ,(yc/resize_factor+ymin), 'ro')
         rect = mpl.patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='r', facecolor='none')
         # Add the patch to the Axes
         plt.gca().add_patch(rect)
         
-        plt.colorbar()
-        plt.subplot(212)
-        plt.imshow(img1_sm)
-        plt.title('img1_reduced')
-        plt.plot(xc, yc, 'ro')
-        plt.colorbar()
+        plt.subplot(232)
+        plt.imshow(img1_sm, cmap='gray')
+        plt.title('img reduced')
+        plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
 
-    # print(yc, xc)
-    return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, annotated_mask
+    
+    else:
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+    
+
+
+def create_mask(img, dark_bg, display=False, bin_factor=None):
+    '''
+    The pipeline is as follows:
+    1. Blur the image prior to resizing (it helps to avoid aliasing effect)
+    2. Resize the image
+    3. Blur the image again to remove high frequency noise
+    4. Perform adaptive thresholding to binarize the image
+    5. Erode the image to remove small white spots 
+    6. Dilate the image to fill in the holes and roughly get back the original size
+
+    Parameters
+    ----------
+    img : np.array
+        Image to be processed
+    dark_bg : bool
+        Whether the background is dark or not
+    display : bool
+        Whether to display intermediate images or not (for debugging)
+    bin_factor : int
+        Factor by which the image should be binned. If None, the image is resized
+        such that the width is 200 pixels and the height is scaled accordingly
+    
+    Returns
+    -------
+    img : np.array
+        Corresponding binary mask
+    resize_factor : float
+        Factor by which the image was resized
+    intermediate_images : list
+        List of intermediate images for debugging
+    '''
+    intermediate_images = [] # keep track of intermediate images for debugging
+    
+    # Compute resize_factor such that the width of image is 200 
+    # pixels and the height is scaled accordingly
+    if bin_factor is None:
+        resize_factor = 200 / img.shape[1]
+    else:
+        resize_factor = 1/bin_factor
+    
+    # check if the range is not between 0 and 1 
+    # if not then rescale the image
+    if np.max(img) > 1:
+        img = img / 255
+
+    if dark_bg:
+        img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+        
+        # gamma correction
+        gamma = np.log(np.mean(img))/np.log(0.5)
+        gamma = np.clip(gamma, 0.5, 2)
+        img = img**(1/gamma)
+    else:
+        img = cv2.GaussianBlur(img, (7, 7), 0)
+        img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+    intermediate_images.append(img)
+    
+    # rescale the image to [0, 255] so that further steps
+    # including adaptive thresholding works properly
+    img = img * 255
+    img = img.astype(np.uint8)
+
+    # blur the image to remove high frequency noise/content
+    img = cv2.GaussianBlur(img, (7, 7), 3)
+    
+
+    # perform thresholding to binarize the image
+    if dark_bg:
+        threshold = threshold_yen(img)
+        img = (img > threshold) * 255
+        img = img.astype(np.uint8)
+    else:
+        img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 21, 10)
+    intermediate_images.append(img)
+
+    # erode the image to remove small white spots and followed
+    # by that dilate the image
+    if dark_bg:
+        img = cv2.erode(img, np.ones((5,5)), iterations=1)
+        img = cv2.dilate(img, np.ones((5,5)), iterations=1)
+    else:
+        img = cv2.erode(img, None, iterations=2)
+        img = cv2.dilate(img, None, iterations=1)
+    intermediate_images.append(img)
+
+    if display:
+        return img, resize_factor, intermediate_images
+    else:
+        return img, resize_factor
+
+
+def find_CMS(mask, K=5, display=False):
+    '''
+    Find the local center of mass (CMS) of different regions in the mask where
+    the mask has non-zero values. Then the non-zero regions are sorted by their
+    area and only a subset of the biggest regions are kept. Finally, the coordinate
+    of the CMS of the region closest to the previous center is returned.
+
+    Parameters
+    ----------
+    mask : np.array
+        Binary mask
+    middle_point : tuple
+        Coordinate of the middle point of the previous CMS
+        (we assume that by changing the position of stage
+        the CMS is always at the center or close to it)
+    K : int
+        Number of regions to keep
+        
+    Returns
+    -------
+    cms_x_center
+        x coordinate of the CMS
+    cms_y_center
+        y coordinate of the CMS
+    '''
+    labels = measure.label(mask)
+    props = pd.DataFrame(regionprops_table(labels, properties=('centroid', 'area')))
+    props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
+    
+    props['x'] = props['x'] 
+    props['y'] = props['y']
+    
+    # keep only the K biggest regions
+    props = props.sort_values(by='area', ascending=False).head(K)
+
+    middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
+    props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
+    
+    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
+    
+    if display:
+        annotated_mask = mask.copy()
+        for i in range(len(props['y'])):
+            # Draw circle
+            cv2.circle(annotated_mask, (int(props['x'].iloc[i]), int(props['y'].iloc[i])), 2, (128, 0, 0), -1)
+            
+            # Write their area
+            dist = np.sqrt((props['y'].iloc[i] - (annotated_mask.shape[0] // 2)) ** 2 + 
+                        (props['x'].iloc[i] - (annotated_mask.shape[1] // 2)) ** 2)
+            
+            # Convert distance to string
+            dist_str = f'd={dist:.1f}'
+            
+            # Put text on the image
+            font_scale = min(*annotated_mask.shape) / 500 # adjust the font size based on the image size
+            cv2.putText(annotated_mask, dist_str, (int(props['x'].iloc[i]), int(props['y'].iloc[i])),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (128, 0, 0), 1, cv2.LINE_AA)
+    
+    if display:
+        return (cms_x_center, cms_y_center), annotated_mask
+    else:
+        return (cms_x_center, cms_y_center)
 
 
 class ImageSaver:
