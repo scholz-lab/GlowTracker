@@ -2,6 +2,7 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
+os.environ["PYLON_CAMEMU"] = "1"
 
 # 
 # Kivy Imports
@@ -218,7 +219,7 @@ class LeftColumn(BoxLayout):
         camera = App.get_running_app().camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
-        self.ids.camprops.framerate = camera.ResultingFrameRate()
+        # self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
     #autofocus popup
@@ -645,7 +646,7 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.AcquisitionFrameRateEnable = True
             camera.AcquisitionFrameRate = float(self.framerate)
-            self.framerate = camera.ResultingFrameRate()
+            # self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
 
@@ -755,8 +756,8 @@ class ImageAcquisitionButton(ToggleButton):
             # Grab for a specific number of frames
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
-        fps = self.camera.ResultingFrameRate()
-        print("Grabbing Framerate:", fps)
+        # fps = self.camera.ResultingFrameRate()
+        # print("Grabbing Framerate:", fps)
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
@@ -907,6 +908,8 @@ class LiveViewButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
         
+        print(f'Using emulated camera of size: {self.camera.Width()}, {self.camera.Height()}')
+
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
@@ -1244,6 +1247,22 @@ class PreviewImage(Image):
         Window.bind(mouse_pos=self.mouse_pos)
 
     def mouse_pos(self, window, pos):
+
+        if not hasattr(self, 'app'):
+            self.app = App.get_running_app()
+        
+        print('-----------vvv----------')
+        # This pos is the "GlowTracker" window space
+        print(f'Got pos: {pos}')
+
+        print(f'Self widget pos: {self.to_local(pos[0], pos[1])}')
+        print(f'Self.parent widget pos: {self.parent.to_local(pos[0], pos[1])}')
+        print(f'Self.parent.parent widget pos: {self.parent.parent.to_local(pos[0], pos[1])}')
+        print(f'Self.parent.parent.parent widget pos: {self.parent.parent.parent.to_local(pos[0], pos[1])}')
+        
+
+        return
+
         pos = self.to_widget(pos[0], pos[1])
         # read mouse hover events and get image value
         if self.collide_point(*pos):
