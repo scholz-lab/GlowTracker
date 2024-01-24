@@ -152,7 +152,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
       <tr>
         <td>
           <figure class="center-figure">
-             <img src="custom_assets/images/2 - optics/all parts.jpg" alt="After lightpath assembly" >
+             <img src="custom_assets/images/2 - optics/all_parts_labeled.jpg" alt="After lightpath assembly" >
             <figcaption>Find these parts. You can lay out the filters on optical paper. Dichroics are <b>not</b> labeled - so be sure not to switch them!</figcaption>
           </figure>
         </td>
