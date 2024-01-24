@@ -25,7 +25,7 @@
         1. Install Mamba from [[Link]](https://mamba.readthedocs.io/en/latest/installation.html)
         2. Create environment: 
             ```bash 
-            mamba env update -n macroscope --file StageEnvironment.yml
+            mamba env update -n macroscope --file glowtracker/StageEnvironment.yml
             ```
     - Using **Conda**
         ```bash 
