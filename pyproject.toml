@@ -46,7 +46,8 @@ dependencies = [
     "scipy>=1.11.1",
     "scikit-image>=0.22.0",
     "itk-elastix",
-    "overrides"
+    "overrides",
+    "pandas"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
