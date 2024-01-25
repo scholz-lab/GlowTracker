@@ -1253,13 +1253,43 @@ class PreviewImage(Image):
         
         print('-----------vvv----------')
         # This pos is the "GlowTracker" window space
+
+        previewImage = self
+        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage
+        stencil = self.app.root.ids.middlecolumn.ids.stencil
+        middleColumn = self.app.root.ids.middlecolumn
+        mainWindow = self.app.root
+
+        image: np.ndarray = self.app.image
+        if image is None:
+            return
+        
+        print(f'Actual Image size: {image.shape}')
+        print(f'Norm image size:{self.norm_image_size}')
+
+        print(f'previewImage size: {previewImage.size}')
+        print(f'scalableImage size: {scalableImage.size}')
+        print(f'stencil size: {stencil.size}')
+        print(f'middleColumn size: {middleColumn.size}')
+        print(f'mainWindow size: {mainWindow.size}')
+
         print(f'Got pos: {pos}')
 
-        print(f'Self widget pos: {self.to_local(pos[0], pos[1])}')
-        print(f'Self.parent widget pos: {self.parent.to_local(pos[0], pos[1])}')
-        print(f'Self.parent.parent widget pos: {self.parent.parent.to_local(pos[0], pos[1])}')
-        print(f'Self.parent.parent.parent widget pos: {self.parent.parent.parent.to_local(pos[0], pos[1])}')
-        
+        print(f'Not relative')
+        print(f'\tmiddleColumn pos: {middleColumn.to_local(pos[0], pos[1], relative= False)}')
+        print(f'\tmiddleColumn pos: {middleColumn.to_widget(pos[0], pos[1], relative= False)}')
+
+        print(f'Relative')
+        # This one is correct when not using display UI scaling!!!
+        # TODO: Get UI scale and compute accordingly
+        print(f'\tmiddleColumn pos: {middleColumn.to_local(pos[0], pos[1], relative= True)}')
+        print(f'\tmiddleColumn pos: {middleColumn.to_widget(pos[0], pos[1], relative= True)}')
+
+
+        # print(f'previewImage.pos: {previewImage.pos}')
+        # print(f'scalableImage.pos: {scalableImage.pos}')
+        # print(f'stencil.pos: {stencil.pos}')
+
 
         return
 
