@@ -31,14 +31,32 @@ if single:
 
         print(f'duration: {t1-t0}, {c}')
     elif mode=='CMS':
-        img1 = imread('/home/monika/Documents/wormies/2022-08-04-macroscope_E002/2022-08-05-01-04-11-basler_5.tiff')
+        img1 = imread(r'C:\Users\shomali\Desktop\recording_3\2023-11-21-16-17-49-basler_1.tiff')
         
         t0 = time.time()
-        c = extractWormsCMS(img1, capture_radius = 1000, bin_factor=5, dark_bg = True, display=TRUE)
+        cy, cx, intermediate_images, annotated_mask = extractWormsCMS(img1, capture_radius = 1000, bin_factor=5, dark_bg = True, display=TRUE)
         t1 = time.time()
+        
+        plt.subplot(233)
+        plt.imshow(intermediate_images[0], cmap='gray')
+        plt.title('Resized image')
+
+        plt.subplot(234)
+        plt.imshow(intermediate_images[1], cmap='gray')
+        plt.title('Thresholded image')
+
+        plt.subplot(235)
+        plt.imshow(intermediate_images[2], cmap='gray')
+        plt.title('Eroded & dilated image')
+
+        plt.subplot(236)
+        plt.imshow(annotated_mask, cmap='gray')
+        plt.title('Distances')
+
+        plt.tight_layout()
         plt.show()
 
-        print(f'duration: {t1-t0}, {c}')
+        print(f'duration: {t1-t0}, {(cx, cy)}')
 
        
     else:

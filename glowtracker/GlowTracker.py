@@ -56,6 +56,7 @@ from queue import Queue
 from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
+from pypylon import pylon
 
 # 
 # Own classes
@@ -63,7 +64,6 @@ from io import TextIOWrapper
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
-from pypylon import pylon
 
 # 
 # Math
@@ -73,6 +73,10 @@ import numpy as np
 from skimage.io import imsave
 import cv2
 
+#
+# Nidaq
+#
+import nidaqmx
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
@@ -279,9 +283,10 @@ class RightColumn(BoxLayout):
 
     def open_settings(self):
         # Disabled interaction with preview image widget
-        App.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        app: MacroscopeApp = App.get_running_app()
+        app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
-        App.open_settings()
+        app.open_settings()
     
     def open_macro(self):
         """change recording settings."""
@@ -795,7 +800,7 @@ class ImageAcquisitionButton(ToggleButton):
 
                 # Trigger image callback
                 self.receiveImageCallback()
-        
+
         self.finishAcquisitionCallback()
 
 
@@ -981,7 +986,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
-        self.daqTask: dnidaqmx.Task | None = None
+        self.daqTask: nidaqmx.Task | None = None
     
 
     ### NEW
@@ -1043,6 +1048,13 @@ class RecordButton(ImageAcquisitionButton):
 
         # open coordinate file
         self.coordinateFile = open(os.path.join(self.saveFilePath, timeStamped("coords.txt")), 'a')
+
+        # Write camera-stage transformation
+        imageToStageMat_XYCoord = macro.swapMatXYOrder(self.app.imageToStageMat)
+        imageToStageMat_XYCoord_str = np.array2string(imageToStageMat_XYCoord, separator=',').replace('\n','')
+        self.coordinateFile.write(f'ImageToStage Transformation Matrix:\n{imageToStageMat_XYCoord_str}\n')
+
+        # Write recording header
         self.coordinateFile.write(f"Frame Time X Y Z \n")
 
         # Image data queue to share between recording and saving
@@ -1097,18 +1109,22 @@ class RecordButton(ImageAcquisitionButton):
 
         super().stopImageAcquisition()
 
+        if self.camera is None:
+            return
+
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
 
         ###
         # Stop nidaq task
         if self.daqTask is not None:
-            self.task.write(False)
+            self.daqTask.write(False)
             self.closeNiDaq()
         ###
         
         # Close saving threads
-        self.savingthread.join()
+        if self.savingthread:
+            self.savingthread.join()
         
         # Update display buffer text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
@@ -1731,7 +1747,7 @@ class RuntimeControls(BoxLayout):
             # If prev frame is empty then use the same as current
             if prevImage is None:
                 prevImage = image
-                
+
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
@@ -1962,6 +1978,11 @@ class MacroscopeApp(App):
 
 
     def build(self):
+        # Set app name
+        self.title = 'GlowTracker'
+        # Set app icon
+        self.icon = 'icons/glowtracker_gray_logo.png'
+        # Load app layout
         layout = Builder.load_file('layout.kv')
         # connect x-close button to action
         Window.bind(on_request_close=self.on_request_close)
@@ -1988,14 +2009,12 @@ class MacroscopeApp(App):
         Set the default values for the configs sections.
         """
         config.read('macroscope.ini')
-        #config.setdefaults('Stage', {'speed': 50, 'speed_unit': 'um/s', 'stage_limit_x':155})
-        #config.setdefaults('Experiment', {'exppath':155})
 
 
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
-        settings.add_json_panel('Macroscope GUI', self.config, 'settings/gui_settings.json')
+        settings.add_json_panel('GlowTracker', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
 
 
@@ -2256,7 +2275,7 @@ class MacroscopeApp(App):
     # ask for confirmation of closing
     def on_request_close(self, *args):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
-        self._popup = Popup(title="Exit Macroscope GUI", content=content,
+        self._popup = Popup(title="Exit GlowTracker", content=content,
                             size_hint=(0.5, 0.2))
         self._popup.open()
         return True
@@ -2298,7 +2317,7 @@ def reset():
             Cache._objects[cat] = {}
 
 
-if __name__ == '__main__':
+def main():
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')
@@ -2306,3 +2325,7 @@ if __name__ == '__main__':
     Config.set('graphics', 'left', '0')
     App = MacroscopeApp()
     App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+
+if __name__ == '__main__':
+    main()

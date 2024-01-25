@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = [
+    "."
+]
+exclude = [
+    "glowtracker.TestFunctions*"
+]
+
+[tool.setuptools.package-data]
+glowtracker = [
+    "layout.kv",
+    "macroscope.ini",
+    "icons/*",
+    "settings/gui_settings.json",
+    "settings/experiment_settings.json"
+]
+
+[project]
+name = "glowtracker"
+version = "1.0.0"
+description = "GlowTracker provides a graphical user interface to operate a macroscope. The macroscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
+authors = [
+    { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" }
+]
+maintainers = [
+    { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" },
+    { name="Takkasila Saichol", email="takkasila.saichol@mpinb.mpg.de" }
+]
+readme = "README.md"
+license = {file = "LICENSE.txt"}
+requires-python = ">=3.8"
+dependencies = [
+    "kivy>=2.2.1",
+    "numpy>=1.25.1",
+    "matplotlib>=3.7.2",
+    "zaber-motion>=4.2.0",
+    "pypylon>=1.9.0",
+    "opencv-python>=4.7.0",
+    "scipy>=1.11.1",
+    "scikit-image>=0.22.0",
+    "itk-elastix",
+    "overrides"
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3"
+]
+keywords = [
+    "python",
+    "research",
+    "macroscope",
+    "tracking",
+    "Zaber",
+    "Basler"
+]
+
+[project.scripts]
+glowtracker = "glowtracker:initApp"
+
+[project.urls]
+Homepage = "https://github.com/scholz-lab/GlowTracker"
+Issues = "https://github.com/scholz-lab/GlowTracker/issues"
+Documentation = "https://scholz-lab.github.io/GlowTracker/"
+Repository = "https://github.com/scholz-lab/GlowTracker.git"

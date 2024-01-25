@@ -1,11 +1,7 @@
 from pypylon import genicam, pylon
-# for saving
-from PIL import Image
 import os
 import time
 from skimage.io import imsave
-#import cv2
-#from libtiff import TIFF
 from typing import Tuple
 from dataclasses import dataclass
 import numpy as np
@@ -132,18 +128,11 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
         fname (str): image file name
         isFlipY (bool, optional): _description_. Defaults to False.
     """    
-    #using PIL - slow
-    #im = Image.fromarray(im)
-    #im.save(os.path.join(path, fname), quality = 100)
-    #using skimage
     img = im
     if isFlipY:
         img = np.flip(img, axis= 0)
     imsave(os.path.join(path, fname), img, check_contrast=False)
-    #cv2.imwrite(os.path.join(path, fname), im)
-    #tiff = TIFF.open(os.path.join(path, fname), mode='w')
-    #tiff.write_image(im)
-    #tiff.close()
+
 
 def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, center: bool= True) -> Tuple[int, int]:
     """Set the ROI of a camera.
