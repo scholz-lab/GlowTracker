@@ -1,4 +1,4 @@
-name: macroscope
+name: macroscope_nidaq
 channels:
   - conda-forge
   - defaults
@@ -15,6 +15,7 @@ dependencies:
   - zaber-motion=4.2.0
   - overrides
   - pandas
+  - nidaqmx-python
   - pip:
     - pypylon==2.2.0
     - itk-elastix
