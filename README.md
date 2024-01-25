@@ -16,26 +16,34 @@
     </table>
 </div>
 
-
 ## Getting started
-### Install the correct environment
+### Software Setup
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Create environment
-    - Using **Mamba** (faster, recommended)
-        1. Install Mamba from [[Link]](https://mamba.readthedocs.io/en/latest/installation.html)
-        2. Create environment: 
-            ```bash 
-            mamba env update -n macroscope --file glowtracker/StageEnvironment.yml
-            ```
-    - Using **Conda**
-        ```bash 
-        conda env create --file StageEnvironment.yml
-        ```
+2. Use `conda` to create a new python environment named `macroscope`.
+    ```bash
+    conda create -n macroscope 'python>=3.10,<3.12'
+    ```
 
-3. Activate the environment: 
+3. Activate the `macroscope` environment 
     ```bash
     conda activate macroscope
     ```
+4. Install the `glowtracker` 
+    - Using `pip` to install from PyPI repository:
+        ```bash
+        python -m pip install glowtracker
+        ```
+    - Or clone and run the package locally.
+        1. Clone the pository
+            ```bash
+            git clone https://github.com/scholz-lab/GlowTracker.git
+            ```
+        2. Update the conda environment to download the dependencies
+            ```bash
+            cd Glowtracker;
+            conda env update --file glowtracker/StageEnvironment.yml --prune
+            ```
+
 
 4. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
     - pylon Camera Software Suite
@@ -43,10 +51,19 @@
 
 5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-6. After finished installation, the software can be started by
-    ```bash
-    python glowtracker/__main__.py
-    ```
+6. After finished installation, the software can be started in serveral ways
+    - If you have installed via pip
+        ```bash
+        python -m glowtracker
+        ```
+        or simply
+        ```bash
+        glowtracker
+        ```
+    - If you have installed by cloning the package and running them locally
+        ```bash
+        python glowtracker/__main__.py
+        ```
 
 ### Device Setup
 #### Stage
