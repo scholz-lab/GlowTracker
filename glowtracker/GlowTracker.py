@@ -25,6 +25,7 @@ from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent
+from kivy.metrics import Metrics
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -1273,25 +1274,40 @@ class PreviewImage(Image):
         print(f'middleColumn size: {middleColumn.size}')
         print(f'mainWindow size: {mainWindow.size}')
 
+
         print(f'Got pos: {pos}')
+        mouse_pos = np.array(pos, np.float32)
+
+        # Scale mouse position upto the display density factor.
+        #   This is usually 1 for normal monitor. 
+        #   But for higher density monitors like in modern laptop
+        #   or smartphone, this factor will be more than 1.
+        #   This is important because it affect the coordinate system down the line.
+        mouse_pos *= Metrics.dp
+
+        pos_in_middleColumn = middleColumn.to_local(mouse_pos[0], mouse_pos[1], relative= True)
+
+        print(f'pos in middle column: {pos_in_middleColumn}')
+
+        pos_in_scalableImage = scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)
+
+        print(f'pos in scalable image: {pos_in_scalableImage}')
 
         print(f'Not relative')
-        print(f'\tmiddleColumn pos: {middleColumn.to_local(pos[0], pos[1], relative= False)}')
-        print(f'\tmiddleColumn pos: {middleColumn.to_widget(pos[0], pos[1], relative= False)}')
+
+        print(f'\tscalableImage pos: {scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= False)}')
+        print(f'\tscalableImage pos: {scalableImage.to_widget(mouse_pos[0], mouse_pos[1], relative= False)}')
 
         print(f'Relative')
-        # This one is correct when not using display UI scaling!!!
-        # TODO: Get UI scale and compute accordingly
-        print(f'\tmiddleColumn pos: {middleColumn.to_local(pos[0], pos[1], relative= True)}')
-        print(f'\tmiddleColumn pos: {middleColumn.to_widget(pos[0], pos[1], relative= True)}')
+        print(f'\tscalableImage pos: {scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)}')
+        print(f'\tscalableImage pos: {scalableImage.to_widget(mouse_pos[0], mouse_pos[1], relative= True)}')
+        
+        print(f'previewImage.pos: {previewImage.pos}')
+        print(f'scalableImage.pos: {scalableImage.pos}')
+        print(f'stencil.pos: {stencil.pos}')
+        print(f'middleColumn.pos: {middleColumn.pos}')
 
-
-        # print(f'previewImage.pos: {previewImage.pos}')
-        # print(f'scalableImage.pos: {scalableImage.pos}')
-        # print(f'stencil.pos: {stencil.pos}')
-
-
-        return
+        return  
 
         pos = self.to_widget(pos[0], pos[1])
         # read mouse hover events and get image value
