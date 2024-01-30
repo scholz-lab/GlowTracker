@@ -1252,30 +1252,11 @@ class PreviewImage(Image):
         if not hasattr(self, 'app'):
             self.app = App.get_running_app()
         
-        print('-----------vvv----------')
-        # This pos is the "GlowTracker" window space
-
-        previewImage = self
-        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage
-        stencil = self.app.root.ids.middlecolumn.ids.stencil
-        middleColumn = self.app.root.ids.middlecolumn
-        mainWindow = self.app.root
-
         image: np.ndarray = self.app.image
-        if image is None:
+
+        if image is None or not self.collide_point(*pos):
             return
         
-        print(f'Actual Image size: {image.shape}')
-        print(f'Norm image size:{self.norm_image_size}')
-
-        print(f'previewImage size: {previewImage.size}')
-        print(f'scalableImage size: {scalableImage.size}')
-        print(f'stencil size: {stencil.size}')
-        print(f'middleColumn size: {middleColumn.size}')
-        print(f'mainWindow size: {mainWindow.size}')
-
-
-        print(f'Got pos: {pos}')
         mouse_pos = np.array(pos, np.float32)
 
         # Scale mouse position upto the display density factor.
@@ -1285,51 +1266,33 @@ class PreviewImage(Image):
         #   This is important because it affect the coordinate system down the line.
         mouse_pos *= Metrics.dp
 
-        pos_in_middleColumn = middleColumn.to_local(mouse_pos[0], mouse_pos[1], relative= True)
+        previewImage = self
+        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage
 
-        print(f'pos in middle column: {pos_in_middleColumn}')
-
+        # Compute relative position in the scalableImage
         pos_in_scalableImage = scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)
 
-        print(f'pos in scalable image: {pos_in_scalableImage}')
+        # Compute relative position in the image
+        padding_x = (previewImage.size[0] - self.norm_image_size[0])/2
+        padding_y = (previewImage.size[1] - self.norm_image_size[1])/2
 
-        print(f'Not relative')
+        pos_in_image = pos_in_scalableImage - np.array([padding_x, padding_y])
 
-        print(f'\tscalableImage pos: {scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= False)}')
-        print(f'\tscalableImage pos: {scalableImage.to_widget(mouse_pos[0], mouse_pos[1], relative= False)}')
+        # Check if within the image bbox
+        if 0 <= pos_in_image[0] <= self.norm_image_size[0] \
+            and 0 <= pos_in_image[1] <= self.norm_image_size[1]:
 
-        print(f'Relative')
-        print(f'\tscalableImage pos: {scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)}')
-        print(f'\tscalableImage pos: {scalableImage.to_widget(mouse_pos[0], mouse_pos[1], relative= True)}')
-        
-        print(f'previewImage.pos: {previewImage.pos}')
-        print(f'scalableImage.pos: {scalableImage.pos}')
-        print(f'stencil.pos: {stencil.pos}')
-        print(f'middleColumn.pos: {middleColumn.pos}')
+            # Compute texture coordinate
+            tex_coord = pos_in_image / self.norm_image_size
+            tex_coord[0] *= image.shape[1]
+            tex_coord[1] *= image.shape[0]
+            tex_coord = np.floor(tex_coord).astype(np.int32)
+
+            # Update info text
+            val = image[ image.shape[0] - tex_coord[1], tex_coord[0]]
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({tex_coord[0]},{tex_coord[1]},{val})'
 
         return  
-
-        pos = self.to_widget(pos[0], pos[1])
-        # read mouse hover events and get image value
-        if self.collide_point(*pos):
-            #print(*pos, self.center_x, self.center_y, self.norm_image_size)
-            # by default the touch coordinates are relative to GUI window
-            #wx, wy = self.to_widget(pos[0], pos[1], relative = True)
-            wx, wy = pos[0], pos[1]
-            image = App.get_running_app().image
-            # get the image we last took
-            if image is not None:
-                texture_w, texture_h = self.norm_image_size
-                #offset if the image is not fitting inside the widget
-                cx, cy = self.center_x, self.center_y  #, relative = True)
-                ox, oy = cx - texture_w / 2., cy - texture_h/ 2
-                h, w = image.shape[0], image.shape[1]
-
-                imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                if 0 <= imy < h and 0 <= imx < w:
-                    val = image[imy, imx]
-                    App.get_running_app().root.ids.middlecolumn.ids.pixelvalue.text = f'({imx},{imy},{val})'
-                    #self.parent.parent.parent.ids.
 
 
     def captureCircle(self, pos):
