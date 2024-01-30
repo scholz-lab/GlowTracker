@@ -2,7 +2,6 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
-os.environ["PYLON_CAMEMU"] = "1"
 
 # 
 # Kivy Imports
@@ -220,7 +219,7 @@ class LeftColumn(BoxLayout):
         camera = App.get_running_app().camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
-        # self.ids.camprops.framerate = camera.ResultingFrameRate()
+        self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
     #autofocus popup
@@ -647,7 +646,7 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.AcquisitionFrameRateEnable = True
             camera.AcquisitionFrameRate = float(self.framerate)
-            # self.framerate = camera.ResultingFrameRate()
+            self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
 
@@ -757,8 +756,8 @@ class ImageAcquisitionButton(ToggleButton):
             # Grab for a specific number of frames
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
-        # fps = self.camera.ResultingFrameRate()
-        # print("Grabbing Framerate:", fps)
+        fps = self.camera.ResultingFrameRate()
+        print("Grabbing Framerate:", fps)
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
@@ -909,8 +908,6 @@ class LiveViewButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
         
-        print(f'Using emulated camera of size: {self.camera.Width()}, {self.camera.Height()}')
-
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
@@ -1552,8 +1549,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if True:
-        # if camera is not None and stage is not None and camera.IsGrabbing():
+        if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
