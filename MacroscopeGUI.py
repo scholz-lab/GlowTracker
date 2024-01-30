@@ -73,6 +73,10 @@ import numpy as np
 from skimage.io import imsave
 import cv2
 
+#
+# nidaq
+#
+import nidaqmx
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
@@ -1103,7 +1107,7 @@ class RecordButton(ImageAcquisitionButton):
         ###
         # Stop nidaq task
         if self.daqTask is not None:
-            self.task.write(False)
+            self.daqTask.write(False)
             self.closeNiDaq()
         ###
         
