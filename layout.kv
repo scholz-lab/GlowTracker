@@ -657,7 +657,7 @@ MainWindow:
         
     BoxLayout:
         size_hint_y: None
-        height: 30
+        height: 10
         Button:
             text: "OK"
             on_release: root.ok()
@@ -676,19 +676,93 @@ MainWindow:
             text: 'Ni DAQ output on record'
             color: '#ffffff'
         Switch:
-            id: nidaq
-            active: root.nidaq_enabled
-            state: 1 if nidaq.active else 0
-            on_active: root.nidaq_enabled = self.state
+            id: nidaq_rec
+            active: root.nidaq_record
+            state: 1 if nidaq_rec.active else 0
+            on_active: root.nidaq_record = self.state
 
         MyLabel:
-            text: 'Ni DAQ channel'
+            text: 'Ni DAQ record channel'
             color: '#ffffff'
         TextInput:
-            id: nidaqchannel
-            text: root.nidaq_channel
+            id: nidaqchannel_rec
+            text: root.nidaq_channel_rec
             multiline: False
-            on_text_validate: root.nidaq_channel = self.text
+            on_text_validate: root.nidaq_channel_rec = self.text
+
+        MyLabel:
+            text: 'Ni DAQ output on frame grab'
+            color: '#ffffff'
+        Switch:
+            id: nidaq_frames
+            active: root.nidaq_frames
+            state: 1 if nidaq_frames.active else 0
+            on_active: root.nidaq_frames = self.state
+
+        MyLabel:
+            text: 'Ni DAQ frames channel'
+            color: '#ffffff'
+        TextInput:
+            id: nidaqchannel_frames
+            text: root.nidaq_channel_frames
+            multiline: False
+            on_text_validate: root.nidaq_channel_frames = self.text
+
+        MyLabel:
+            text: 'Ni DAQ digital stimuls timer'
+            color: '#ffffff'
+        Switch:
+            id: nidaq_stimulus
+            active: root.nidaq_stimulus
+            state: 1 if nidaq_stimulus.active else 0
+            on_active: root.nidaq_stimulus = self.state
+
+        MyLabel:
+            text: 'Ni DAQ timer channel'
+            color: '#ffffff'
+        TextInput:
+            id: nidaqchannel_stim
+            text: root.nidaq_channel_stim
+            multiline: False
+            on_text_validate: root.nidaq_channel_stim = self.text
+        
+        MyLabel:
+            text: 'Prestimulus [sec]'
+            color: '#ffffff'
+        TextInput:
+            id: nidaq_prestim
+            text: str(root.nidaq_prestim)
+            multiline: False
+            on_text_validate: root.nidaq_prestim =  int(self.text)
+
+        MyLabel:
+            text: 'Stimulus [sec]'
+            color: '#ffffff'
+        TextInput:
+            id: nidaq_stim
+            text: str(root.nidaq_stim)
+            multiline: False
+            on_text_validate: root.nidaq_stim =  int(self.text)
+
+        MyLabel:
+            text: 'Poststimulus [sec]'
+            color: '#ffffff'
+        TextInput:
+            id: nidaq_poststim
+            text: str(root.nidaq_poststim)
+            multiline: False
+            on_text_validate: root.nidaq_poststim =  int(self.text)
+
+        MyLabel:
+            text: 'Repeats'
+            color: '#ffffff'
+        TextInput:
+            id: nidaq_stimrepeats
+            text: str(root.nidaq_stimrepeats)
+            multiline: False
+            on_text_validate: root.nidaq_stimrepeats =  int(self.text)
+
+
     
     BoxLayout:
         size_hint_y: None

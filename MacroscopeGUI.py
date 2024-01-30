@@ -291,7 +291,8 @@ class RightColumn(BoxLayout):
         """change recording settings."""
         content = MacroSettings(ok=self.dismiss_popup)
         self._popup = Popup(title="Macro Settings", content=content,
-                            size_hint=(0.5, 0.35))
+                            #size_hint=(0.5, 0.35)
+                            )
         #unbind keyboard events
         App.get_running_app().unbind_keys()
         self._popup.open()
@@ -628,8 +629,19 @@ class RecordingSettings(BoxLayout):
 ###
 class MacroSettings(BoxLayout):
     ok = ObjectProperty(None)
-    nidaq_enabled = ConfigParserProperty(0, 'Macros', 'nidaq', 'app', val_type=int)
-    nidaq_channel = ConfigParserProperty('Dev1/port1/line3', 'Macros', 'nidaqchannel', 'app', val_type=str)
+    nidaq_record = ConfigParserProperty(0, 'Macros', 'nidaq_rec', 'app', val_type=int)
+    nidaq_channel_rec = ConfigParserProperty('Dev1/port1/line3', 'Macros', 'nidaqchannel_rec', 'app', val_type=str)
+
+    nidaq_frames = ConfigParserProperty(0, 'Macros', 'nidaq_frames', 'app', val_type=int)
+    nidaq_channel_frames = ConfigParserProperty('Dev1/port1/line1', 'Macros', 'nidaqchannel_frames', 'app', val_type=str)
+    
+    nidaq_stimulus = ConfigParserProperty(0, 'Macros', 'nidaq_stimulus', 'app', val_type=int)
+    nidaq_channel_stim = ConfigParserProperty('Dev1/port1/line1', 'Macros', 'nidaqchannel_stim', 'app', val_type=str)
+    
+    nidaq_prestim = ConfigParserProperty(120, 'Macros', 'nidaq_prestim', 'app', val_type=int)
+    nidaq_stim = ConfigParserProperty(1, 'Macros', 'nidaq_stim', 'app', val_type=int)
+    nidaq_poststim = ConfigParserProperty(60, 'Macros', 'nidaq_poststim', 'app', val_type=int)
+    nidaq_stimrepeats = ConfigParserProperty(5, 'Macros', 'nidaq_stimrepeats', 'app', val_type=int)
 
     def __init__(self,  **kwargs):
         super(MacroSettings, self).__init__(**kwargs)
@@ -985,16 +997,27 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
-        self.daqTask: dnidaqmx.Task | None = None
+        self.daqTask: nidaqmx.Task | None = None
+        self.stimTask: nidaqmx.Task | None = None
     
 
     ### NEW
     def startNiDaq(self):
+        """Identify and initialise daq tasks
+        """
+        nidaq_record = self.app.config.getboolean('Macros', 'nidaq_rec')
+        nidaq_channel_rec = self.app.config.get('Macros', 'nidaqchannel_rec')
+        
+        nidaq_stim = self.app.config.getboolean('Macros', 'nidaq_stim')
+        nidaq_channel_stim = self.app.config.get('Macros', 'nidaqchannel_stim')
+        nidaq_prestim = self.app.config.get('Macros', 'nidaq_prestim')
+        nidaq_stim = self.app.config.get('Macros', 'nidaq_stim')
+        nidaq_poststim = self.app.config.get('Macros', 'nidaq_poststim')
+        nidaq_stimrepeats = self.app.config.get('Macros', 'nidaq_stimrepeats')
 
-        nidaq_enabled = self.app.config.getboolean('Macros', 'nidaq')
-        nidaq_channel = self.app.config.get('Macros', 'nidaqchannel')
+        
 
-        if nidaq_enabled:
+        if nidaq_record or nidaq_stim:
 
             devices = nidaqmx.system.System.local().devices
 
@@ -1004,15 +1027,22 @@ class RecordButton(ImageAcquisitionButton):
                     print(device.name)
 
                 self.daqTask = nidaqmx.Task()
-                self.daqTask.do_channels.add_do_chan(nidaq_channel)
+                self.stimTask = nidaqmx.Task()
+                if nidaq_record:
+                    self.daqTask.do_channels.add_do_chan(nidaq_channel_rec)
+                if nidaq_stim:
+                    self.nidaq_stimProtocol = np.tile(np.concatenate((np.zeros(nidaq_prestim), np.ones(nidaq_stim), np.zeros(nidaq_posstim))), nidaq_stimrepeats)
+                    self.stimTask.do_channels.add_do_chan(nidaq_channel_stim)
+                    self.stimTask.timing.cfg_samp_clk_timing(1)
 
             else:
                 print("No NI DAQ device found.")
 
     def closeNiDaq(self):
-        if self.daqTask is not None:
-            self.daqTask.close()
-            self.daqTask = None
+        for ch in [self.daqTask, self.stimTask]:
+            if ch is not None:
+                ch.close()
+                ch = None
     ###
 
     @override
@@ -1055,10 +1085,15 @@ class RecordButton(ImageAcquisitionButton):
         ###
         self.startNiDaq()
         if self.daqTask is not None:
-            print('using nidaq task')
+            print('using nidaq task to signal record')
 
             self.daqTask.start()
             self.daqTask.write(True)
+        if self.stimTask is not None:
+            print('using nidaq to signal events for stimulation')
+
+            self.stimTask.start()
+            self.daqTask.write(self.nidaq_stimProtocol)
         ###
 
         # Start a thread for saving images
