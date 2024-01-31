@@ -1,4 +1,4 @@
-name: macroscope_nidaq
+name: macroscope
 channels:
   - conda-forge
   - defaults
