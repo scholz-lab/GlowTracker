@@ -47,7 +47,8 @@ dependencies = [
     "scikit-image>=0.22.0",
     "itk-elastix",
     "overrides",
-    "pandas"
+    "pandas",
+    "nidaqmx"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

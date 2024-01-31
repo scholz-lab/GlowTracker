@@ -57,6 +57,7 @@ from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
 from pypylon import pylon
+import nidaqmx
 
 # 
 # Own classes
