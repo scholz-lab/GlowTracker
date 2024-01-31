@@ -1,11 +1,13 @@
 # VSCode 
-.vscode/*
+.vscode/
 
-# PyCache
-*.pyc
+# Package building related
+build/
+dist/
+glowtracker.egg-info/
 
-# Recorded images
-record/*
+# Python cache
+__pycache__/*
 
-# logs
+# Convenience
 *.log

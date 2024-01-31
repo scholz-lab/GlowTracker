@@ -1,0 +1,49 @@
+# Publish glowtracker package to PyPI
+name: Publish GlowTracker
+
+# Tell GitHub when to run the action
+on:
+  # This workflow will run automatically if a new release is published
+  release:
+    types: [published]
+  # NOTE: Triggering the workflow using push to the publish-package branch for testing purposes.
+  # The workflow dispatch button only appears after the workflow is also on the main branch
+  # REF: https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow#running-a-workflow-on-github
+  push:
+    branches: [ publish-package ]
+  # This workflow can also be started manually from the Actions tab
+  workflow_dispatch:
+    branches: [ master, publish-package ]
+
+# The publish workflow consist currently only on one job
+jobs:
+  publish:
+    # Run the workflow on the latest Ubuntu version
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # NOTE: this permission is mandatory for trusted publishing
+    steps:
+      # Checkout the repository
+      - name: Checkout glowtracker
+        uses: actions/checkout@v3
+      # Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      # Updating pip and installing 'build'.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install --upgrade build
+      # Creating package wheel and a .tar.gz source distribution.
+      - name: Build package
+        run: >-
+          python -m build
+          --sdist
+          --wheel
+          ${{ github.workspace }}
+      # Publish to PyPI using Trusted Publisher (GitHub)
+      # REF: https://docs.pypi.org/trusted-publishers/using-a-publisher/
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

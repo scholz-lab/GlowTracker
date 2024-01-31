@@ -57,6 +57,7 @@ from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
 from pypylon import pylon
+import nidaqmx
 
 # 
 # Own classes
@@ -72,11 +73,6 @@ import math
 import numpy as np
 from skimage.io import imsave
 import cv2
-
-#
-# Nidaq
-#
-import nidaqmx
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
