@@ -19,11 +19,11 @@ MainWindow:
     spacing: 10
     MyLogo:
         size_hint: (0.3, 0.15)
-    MyLabel:
-        id: title
-        text: 'Macroscope GUI'
-        font_size: 42
-        size_hint: (0.6, 0.15)
+    Image:
+        fit_mode: 'contain'
+        source: 'icons/glowtracker_gray_logo.png'
+        border: 0,0,0,0
+        size_hint: (0.5, 0.15)
     MyLabel:
         size_hint: (0.1,0.15)
     LeftColumn:
@@ -423,7 +423,7 @@ MainWindow:
                 size: stencil.size
                 id: previewimage
                 texture: app.texture
-                source: "icons/logoSq.png"
+                source: "icons/scholz-lab_logo.png"
             ImageOverlay:
                 size_hint: (None, None)
                 pos: previewimage.pos
@@ -572,7 +572,7 @@ MainWindow:
         size_hint: (1, 0.1)
     MyButton:
         size_hint: (1, 0.1)
-        text: 'GUI'
+        text: 'Settings'
         on_release: root.open_settings()
     MyButton:
         id:macro
@@ -889,7 +889,7 @@ MainWindow:
     
 <MyLogo@Image>:
     fit_mode: 'contain'
-    source: 'icons/logoSq.png'
+    source: 'icons/scholz-lab_logo.png'
     spacing: -10
     border: 0,0,0,0
     
