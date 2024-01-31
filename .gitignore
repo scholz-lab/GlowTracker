@@ -7,7 +7,7 @@ dist/
 glowtracker.egg-info/
 
 # Python cache
-__pycache__/*
+*.pyc
 
 # Convenience
 *.log
