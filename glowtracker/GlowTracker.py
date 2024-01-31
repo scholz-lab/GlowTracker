@@ -1246,13 +1246,15 @@ class PreviewImage(Image):
         self.mouse_pos_in_tex_coord: np.array = np.zeros((2,))
 
     def mouse_pos(self, window, pos):
-
+        """Calculate relative mouse position to the preview image and update the
+        inspect pixel value text at the bottom right corner of the GUI.
+        """        
         if not hasattr(self, 'app'):
             self.app = App.get_running_app()
         
         image: np.ndarray = self.app.image
-
-        if image is None or not self.collide_point(*pos):
+        
+        if image is None:
             return
         
         mouse_pos = np.array(pos, np.float32)
@@ -1265,10 +1267,13 @@ class PreviewImage(Image):
         mouse_pos *= Metrics.dp
 
         previewImage = self
-        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage
+        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage    # parent of the previewImage
 
         # Compute relative position in the scalableImage
         pos_in_scalableImage = scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)
+
+        if not self.collide_point( pos_in_scalableImage[0], pos_in_scalableImage[1] ):
+            return
 
         # Compute relative position in the image
         padding_x = (previewImage.size[0] - self.norm_image_size[0])/2
@@ -1617,9 +1622,9 @@ class RuntimeControls(BoxLayout):
             self.set_ROI(roiX, roiY)
 
         # Convert from texture coordinates to stage coordinates
-        stageCenteringSteps = macro.getStageDistances(offset_from_center, app.imageToStageMat)
+        stageCenteringSteps = macro.getStageDistances(np.array([offset_from_center[1], offset_from_center[0]]), app.imageToStageMat)
         
-        print('Centering image offset:',stageCenteringSteps[0], stageCenteringSteps[1], units)
+        print('Stage centering image offset:',stageCenteringSteps[0], stageCenteringSteps[1], units)
 
         # Move the stage
         if stageCenteringSteps[0] > minstep:
@@ -1629,6 +1634,8 @@ class RuntimeControls(BoxLayout):
 
         # Update stage coordinate in the app
         app.coords =  app.stage.get_position()
+
+        return
 
         
         # 
