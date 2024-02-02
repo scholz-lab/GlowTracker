@@ -19,5 +19,3 @@ dependencies:
   - pip:
     - pypylon==2.2.0
     - itk-elastix
-    - nidaqmx
-
