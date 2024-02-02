@@ -1622,22 +1622,19 @@ class RuntimeControls(BoxLayout):
             self.set_ROI(roiX, roiY)
 
         # Convert from texture coordinates to stage coordinates
-        stageCenteringSteps = macro.getStageDistances(np.array([offset_from_center[1], offset_from_center[0]]), app.imageToStageMat)
+        ystep, xstep = macro.getStageDistances(np.array([offset_from_center[1], offset_from_center[0]]), app.imageToStageMat)
         
-        print('Stage centering image offset:',stageCenteringSteps[0], stageCenteringSteps[1], units)
+        print('Stage centering image offset:',ystep, xstep, units)
 
         # Move the stage
-        if stageCenteringSteps[0] > minstep:
-            stage.move_x(stageCenteringSteps[0], unit= units, wait_until_idle= True)
-        if stageCenteringSteps[1] > minstep:
-            stage.move_y(stageCenteringSteps[1], unit= units, wait_until_idle= True)
+        if abs(xstep) > minstep:
+            stage.move_x(xstep, unit= units, wait_until_idle= True)
+        if abs(ystep) > minstep:
+            stage.move_y(ystep, unit= units, wait_until_idle= True)
 
         # Update stage coordinate in the app
         app.coords =  app.stage.get_position()
 
-        return
-
-        
         # 
         # Start the tracking
         # 
