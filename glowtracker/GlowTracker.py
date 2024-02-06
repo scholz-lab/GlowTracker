@@ -24,6 +24,7 @@ from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent
+from kivy.metrics import Metrics
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -1235,36 +1236,66 @@ class ScalableImage(ScatterLayout):
 
 # image preview
 class PreviewImage(Image):
-    #previewimage = ObjectProperty(None)
-    circle= ListProperty([0, 0, 0])
-    offset = ListProperty([0, 0])
+    circle = ListProperty([0, 0, 0])
 
     def __init__(self,  **kwargs):
         super(PreviewImage, self).__init__(**kwargs)
         Window.bind(mouse_pos=self.mouse_pos)
 
-    def mouse_pos(self, window, pos):
-        pos = self.to_widget(pos[0], pos[1])
-        # read mouse hover events and get image value
-        if self.collide_point(*pos):
-            #print(*pos, self.center_x, self.center_y, self.norm_image_size)
-            # by default the touch coordinates are relative to GUI window
-            #wx, wy = self.to_widget(pos[0], pos[1], relative = True)
-            wx, wy = pos[0], pos[1]
-            image = App.get_running_app().image
-            # get the image we last took
-            if image is not None:
-                texture_w, texture_h = self.norm_image_size
-                #offset if the image is not fitting inside the widget
-                cx, cy = self.center_x, self.center_y  #, relative = True)
-                ox, oy = cx - texture_w / 2., cy - texture_h/ 2
-                h, w = image.shape[0], image.shape[1]
+        self.mouse_pos_in_image_space: np.array = np.zeros((2,))
+        self.mouse_pos_in_tex_coord: np.array = np.zeros((2,))
 
-                imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-                if 0 <= imy < h and 0 <= imx < w:
-                    val = image[imy, imx]
-                    App.get_running_app().root.ids.middlecolumn.ids.pixelvalue.text = f'({imx},{imy},{val})'
-                    #self.parent.parent.parent.ids.
+    def mouse_pos(self, window, pos):
+        """Calculate relative mouse position to the preview image and update the
+        inspect pixel value text at the bottom right corner of the GUI.
+        """        
+        if not hasattr(self, 'app'):
+            self.app = App.get_running_app()
+        
+        image: np.ndarray = self.app.image
+        
+        if image is None:
+            return
+        
+        mouse_pos = np.array(pos, np.float32)
+
+        # Scale mouse position upto the display density factor.
+        #   This is usually 1 for normal monitor. 
+        #   But for higher density monitors like in modern laptop
+        #   or smartphone, this factor will be more than 1.
+        #   This is important because it affect the coordinate system down the line.
+        mouse_pos *= Metrics.dp
+
+        previewImage = self
+        scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage    # parent of the previewImage
+
+        # Compute relative position in the scalableImage
+        pos_in_scalableImage = scalableImage.to_local(mouse_pos[0], mouse_pos[1], relative= True)
+
+        if not self.collide_point( pos_in_scalableImage[0], pos_in_scalableImage[1] ):
+            return
+
+        # Compute relative position in the image
+        padding_x = (previewImage.size[0] - self.norm_image_size[0])/2
+        padding_y = (previewImage.size[1] - self.norm_image_size[1])/2
+
+        self.mouse_pos_in_image_space = pos_in_scalableImage - np.array([padding_x, padding_y])
+
+        # Check if within the image bbox
+        if 0 <= self.mouse_pos_in_image_space[0] <= self.norm_image_size[0] \
+            and 0 <= self.mouse_pos_in_image_space[1] <= self.norm_image_size[1]:
+
+            # Compute texture coordinate
+            self.mouse_pos_in_tex_coord = self.mouse_pos_in_image_space / self.norm_image_size
+            self.mouse_pos_in_tex_coord[0] *= image.shape[1]
+            self.mouse_pos_in_tex_coord[1] *= image.shape[0]
+            self.mouse_pos_in_tex_coord = np.floor(self.mouse_pos_in_tex_coord).astype(np.int32)
+
+            # Update info text
+            pixelVal = image[image.shape[0] - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]},{self.mouse_pos_in_tex_coord[1]},{pixelVal})'
+
+        return  
 
 
     def captureCircle(self, pos):
@@ -1277,34 +1308,33 @@ class PreviewImage(Image):
         # make the circle into pixel units
         r = radius/w*self.norm_image_size[0]#, radius/h*self.norm_image_size[1]
         self.circle = (*pos, r)
-        # calculate in image units where the click was relative to image center and return that
-        #offset if the image is not fitting inside the widget
-        texture_w, texture_h = self.norm_image_size
-        #offset if the image is not fitting inside the widget
-        cx, cy = self.center_x, self.center_y
-        ox, oy = cx - texture_w / 2., cy - texture_h/ 2
-        imy, imx = int((wy-oy)*h/texture_h), int((wx-ox)*w/texture_w)
-        # offset of click from center of image - origin is left lower corner
-        self.offset = (imy-h//2, imx-w//2)
 
 
     def clearcircle(self):
         self.circle = (0, 0, 0)
 
 
-    # # for reading mouse clicks
     def on_touch_down(self, touch):
-        rtc = App.get_running_app().root.ids.middlecolumn.runtimecontrols
-        # transform to local because of scatter
-        #pos = self.to_widget(touch.pos[0], touch.pos[1])
-        # if a click happens in this widget
-        if self.collide_point(*touch.pos):
-            #if tracking is active and not yet scheduled:
-            if rtc.trackingcheckbox.state == 'down' and not rtc.trackingevent:
+        runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
+        # If a click happens in this widget
+        # and tracking is active and not yet scheduled:
+        if self.collide_point(*touch.pos) \
+            and runtimeControls.trackingcheckbox.state == 'down' \
+            and not runtimeControls.trackingevent:
+
+            # Check if within the image bbox
+            if 0 <= self.mouse_pos_in_image_space[0] <= self.norm_image_size[0] \
+                and 0 <= self.mouse_pos_in_image_space[1] <= self.norm_image_size[1]:
+
+                print('Start tracking process')
                 # Draw a red circle
                 self.captureCircle(touch.pos)
+
+                # Move stage to the starting position
+
                 # Start tracking procedure
-                Clock.schedule_once(lambda dt: rtc.startTracking(), 0)
+                Clock.schedule_once(lambda dt: runtimeControls.startTracking(self.mouse_pos_in_tex_coord), 0)
+                
                 # remove the circle 
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
@@ -1553,36 +1583,58 @@ class RuntimeControls(BoxLayout):
         self.cropY = 0
 
 
-    def startTracking(self) -> None:
-        """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop
-        """
+    def startTracking(self, start_pos_tex_coord: np.array) -> None:
+        """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
+
+        Args:
+            start_pos_tex_coord (np.array): Starting position in the image texture space (full image size). Used to move the stage to center at that position.
+        """        
         app = App.get_running_app()
         stage = app.stage
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
-        if not dualColorMode:
-            # 
-            # Move stage based on user input - happens here.
-            # 
-            ystep, xstep = macro.getStageDistances(app.root.ids.middlecolumn.previewimage.offset, app.imageToStageMat)
-            print('Centering image',xstep, ystep, units)
-            
-            if xstep > minstep:
-                stage.move_x(xstep, unit= units, wait_until_idle= True)
-            if ystep > minstep:
-                stage.move_y(ystep, unit= units, wait_until_idle= True)
+        # 
+        # Move stage by the user pointed starting position
+        # 
 
-            app.coords =  app.stage.get_position()
-            print('updated coords')
+        # Compute the offset from the center
+        imageHeight, imageWidth = app.image.shape[0], app.image.shape[1]
+        offset_from_center = np.zeros(2, np.float32)
+        if dualColorMode:
+            # Get the main side
+            mainSide = app.config.get('DualColor', 'mainside')
         
-            # 
-            # Set smaller FOV for the worm
-            # 
+            # Compute offset from the center of the main side
+            if mainSide == 'Right':
+                offset_from_center = start_pos_tex_coord - np.array([imageWidth*3.0/4, imageHeight/2])
+                
+            elif mainSide == 'Left':
+                offset_from_center = start_pos_tex_coord - np.array([imageWidth*1.0/4, imageHeight/2])
+            
+        else:
+            # In normal mode, compute from the image center
+            offset_from_center = start_pos_tex_coord - np.array([imageWidth/2, imageHeight/2])
+        
+            # Set tracking ROI
             roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
             self.set_ROI(roiX, roiY)
+
+        # Convert from texture coordinates to stage coordinates
+        ystep, xstep = macro.getStageDistances(np.array([offset_from_center[1], offset_from_center[0]]), app.imageToStageMat)
         
+        print('Stage centering image offset:',ystep, xstep, units)
+
+        # Move the stage
+        if abs(xstep) > minstep:
+            stage.move_x(xstep, unit= units, wait_until_idle= True)
+        if abs(ystep) > minstep:
+            stage.move_y(ystep, unit= units, wait_until_idle= True)
+
+        # Update stage coordinate in the app
+        app.coords =  app.stage.get_position()
+
         # 
         # Start the tracking
         # 
