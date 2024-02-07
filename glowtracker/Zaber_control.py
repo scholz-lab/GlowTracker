@@ -50,9 +50,9 @@ class Stage:
         
         # Try connecting to the stage
         self.connection = self.connect_stage(port)
-        print(self.connection)
         
         if self.connection is not None:
+            print(f'Connection to stage: {self.connection}')
             self.assign_axes()
             self.maxspeed = self.set_maxspeed(maxspeed, LITERALS_TO_UNITS.get(maxspeed_unit))
             self.accel = self.set_accel(accel, LITERALS_TO_UNITS.get(accel_unit))
@@ -78,7 +78,7 @@ class Stage:
                 return None
 
         except Exception as e:
-            print(e)
+            print(f'Connect stage error: {e}')
             return None
 
 
