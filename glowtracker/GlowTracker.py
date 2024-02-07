@@ -2,7 +2,8 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
-
+os.environ["PYLON_CAMEMU"] = "1"
+ 
 # 
 # Kivy Imports
 # 
@@ -18,7 +19,7 @@ from kivy.config import Config
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, Rectangle
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -218,7 +219,7 @@ class LeftColumn(BoxLayout):
         camera = App.get_running_app().camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
-        self.ids.camprops.framerate = camera.ResultingFrameRate()
+        # self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
     #autofocus popup
@@ -645,7 +646,7 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.AcquisitionFrameRateEnable = True
             camera.AcquisitionFrameRate = float(self.framerate)
-            self.framerate = camera.ResultingFrameRate()
+            # self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
 
@@ -755,8 +756,8 @@ class ImageAcquisitionButton(ToggleButton):
             # Grab for a specific number of frames
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
-        fps = self.camera.ResultingFrameRate()
-        print("Grabbing Framerate:", fps)
+        # fps = self.camera.ResultingFrameRate()
+        # print("Grabbing Framerate:", fps)
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
@@ -1320,15 +1321,61 @@ class ImageOverlay(BoxLayout):
         self.hasDrawDualColorOverlay: bool = False
         self.label: Label | None = None
 
+        self.app = App.get_running_app()
+
 
     def on_size(self, *args) -> None:
         """Update the position and size of the rectangle when the widget is resized
         """        
         if self.hasDrawDualColorOverlay:
             # Redraw the dual color overlay
-            mainSide = App.get_running_app().config.get('DualColor', 'mainside')
+            mainSide = self.app.config.get('DualColor', 'mainside')
             self.redrawDualColorOverlay(mainSide)
+        
+        # rtc = self.app.root.ids.middlecolumn.runtimecontrols
+        # if rtc.trackingevent:
+        #     #if tracking is active 
+        #     self.redrawTrackingOverlay()
 
+    
+    def redrawTrackingOverlay(self, x, y):
+        """Redraw the tracking info overlay
+        """
+        self.clearTrackingInfoOverlay()
+        self.drawTrackingOverlay(x, y)
+    
+    
+    def drawTrackingOverlay(self, x, y):
+        """Draw the tracking info overlay
+        """
+        print('draw tracking overlay')
+        
+
+        # Get tracking radius
+        radius = self.app.config.getint('Tracking', 'capture_radius')
+        lineWidth = radius * 2
+
+        dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        if dualcolorMode:
+            mainSide = self.app.config.get('DualColor', 'mainside')
+            dualcolorViewMode = self.app.config.get('DualColor', 'viewmode')
+            # TODO later
+
+        else:
+            pos_center_local = self.to_local(self.center_x, self.center_y)
+            # p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
+            # p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
+
+            self.canvas.add(Color(0., 1., 0., 0.5))
+            self.canvas.add(Rectangle(pos= pos_center_local, size= (100, 100)))
+
+
+
+    def clearTrackingInfoOverlay(self):
+        """Clear the tracking info overlay
+        """
+        pass
+    
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
@@ -1351,10 +1398,9 @@ class ImageOverlay(BoxLayout):
         
         self.hasDrawDualColorOverlay = True
 
-        app: MacroscopeApp = App.get_running_app()
-        previewImage: PreviewImage = app.root.ids.middlecolumn.previewimage
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
 
-        viewMode = app.config.get('DualColor', 'viewmode')
+        viewMode = self.app.config.get('DualColor', 'viewmode')
 
         if viewMode == 'Splitted':
 
@@ -1459,6 +1505,9 @@ class RuntimeControls(BoxLayout):
         self.focus_motion = 0
         self.trackingevent = False
         self.coord_updateevent = None
+        # Center of Mass offset in current tracking frame
+        self.cms_offset_x = 0
+        self.cms_offset_y = 0
 
 
     def on_framecounter(self, instance, value):
@@ -1524,7 +1573,8 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None and camera.IsGrabbing():
+        if True:
+        # if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
@@ -1562,7 +1612,8 @@ class RuntimeControls(BoxLayout):
         minstep = app.config.getfloat('Tracking', 'min_step')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
-        if not dualColorMode:
+        if False:
+        # if not dualColorMode:
             # 
             # Move stage based on user input - happens here.
             # 
@@ -1598,8 +1649,19 @@ class RuntimeControls(BoxLayout):
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
+
         # schedule occasional position check of the stage
-        self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+        # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+
+        # self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
+        self.coord_updateevent = Clock.schedule_interval(self.update_tracking_overlay_interval, 1/30)
+    
+
+    def update_tracking_overlay_interval(self, dt) -> None:
+        app = App.get_running_app()
+        
+        if app.config.getboolean('Tracking', 'showtrackingoverlay'):
+            app.root.ids.middlecolumn.ids.imageoverlay.redrawTrackingOverlay(self.cms_offset_x, self.cms_offset_y)
 
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
@@ -1610,7 +1672,8 @@ class RuntimeControls(BoxLayout):
         camera: pylon.InstantCamera = app.camera
 
         # Compute second per frame to determine the lower bound waiting time
-        camera_spf = 1 / camera.ResultingFrameRate()
+        # camera_spf = 1 / camera.ResultingFrameRate()
+        
 
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
@@ -1625,6 +1688,10 @@ class RuntimeControls(BoxLayout):
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
 
+            time.sleep(1/30.0)
+            self.cms_offset_x = 100
+            self.cms_offset_y = 100
+            continue
             # Handling image cycle synchronization.
             # Because the recording and tracking thread are asynchronous
             # and doesn't have the same priority, it could be the case that
@@ -1685,6 +1752,11 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
                 ystep, xstep = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            
+            # If display tracking info overlay
+            #  send cms to the overlay to draw
+            if app.config.getboolean('Tracking', 'showtrackingoverlay'):
+                app.overlay.redrawTrackingOverlay(xstep, -ystep)
             
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
