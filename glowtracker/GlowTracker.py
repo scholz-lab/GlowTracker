@@ -1683,8 +1683,8 @@ class RuntimeControls(BoxLayout):
         # if abs(ystep) > minstep:
         #     stage.move_y(ystep, unit= units, wait_until_idle= True)
 
-        # Update stage coordinate in the app
-        app.coords =  app.stage.get_position()
+        # # Update stage coordinate in the app
+        # app.coords =  app.stage.get_position()
 
         # 
         # Start the tracking
