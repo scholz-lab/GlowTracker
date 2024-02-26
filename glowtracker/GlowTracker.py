@@ -57,6 +57,7 @@ from queue import Queue
 from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
+import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
 
 # 
