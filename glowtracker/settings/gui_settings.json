@@ -276,7 +276,7 @@
     },
     {
         "type": "bool",
-        "title": "Move in image space mode",
+        "title": "Display tracking overlay",
         "desc": "Display the tracking overlay which shows the ROI and the center of mass of the object.",
         "section": "Tracking",
         "key": "showtrackingoverlay"

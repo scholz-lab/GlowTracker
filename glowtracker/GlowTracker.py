@@ -925,10 +925,7 @@ class LiveViewButton(ImageAcquisitionButton):
             }
         )
         self.imageAcquisitionThread.start()
-
-        # Update image overlay
-        self.app.updateImageOverlay()
-
+    
 
     @override
     def stopImageAcquisition(self) -> None:
@@ -1034,9 +1031,6 @@ class RecordButton(ImageAcquisitionButton):
         )
 
         self.imageAcquisitionThread.start()
-
-        # Update image overlay
-        self.app.updateImageOverlay()
 
 
     @override
@@ -1375,29 +1369,47 @@ class ImageOverlay(BoxLayout):
     def on_size(self, *args) -> None:
         """Called everytime the widget is resized. Resize the overlay to match the image and redraw.
         """        
+        self.updateOverlay()
+    
+
+    def updateOverlay(self) -> None:
+        
         # Resize the overlay to match the image
         self.resizeToImage()
 
-        if self.hasDrawDualColorOverlay:
-            # Redraw the dual color overlay
-            mainSide = self.app.config.get('DualColor', 'mainside')
-            self.redrawDualColorOverlay(mainSide)
+        # Clear all the overlay
+        self.clearOverlay()
+
+        dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
         
-        rtc = self.app.root.ids.middlecolumn.runtimecontrols
-        if rtc.isTracking:
-            #if tracking is active 
-            self.redrawTrackingOverlay()
+        if dualcolormode:
+            mainside = self.app.config.get('DualColor', 'mainside')
+            self.drawDualColorOverlay(mainside)
+                
+        # If in the single color mode then redraw the tracking overlay
+        else:
+
+            showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
+            if showtrackingoverlay:
+                rtc = self.app.root.ids.middlecolumn.runtimecontrols
+                if rtc.isTracking:
+                    self.redrawTrackingOverlay(rtc.cms_offset_x, rtc.cms_offset_y)
+
+                else:
+                    self.redrawTrackingOverlay()
 
     
-    def redrawTrackingOverlay(self, x, y):
+    def redrawTrackingOverlay(self, x: float | None = None, y: float | None = None):
         """Redraw the tracking info overlay
         """
+        print('redrawTrackingOverlay')
         self.clearTrackingOverlay()
         self.drawTrackingOverlay(x, y)
     
     
-    def drawTrackingOverlay(self, x, y):
-        """Draw the tracking info overlay
+    def drawTrackingOverlay(self, x: float | None = None, y: float | None = None):
+        """Draw the tracking info overlay.
+            If the coordinates are not provided then draw only the boarder
         """
         # Compute display scaling
         previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
@@ -1407,7 +1419,6 @@ class ImageOverlay(BoxLayout):
 
         # Get tracking radius
         radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
-        length = radius * 2
 
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         if dualcolorMode:
@@ -1434,19 +1445,14 @@ class ImageOverlay(BoxLayout):
 
                 self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
 
-                self.canvas.add(Color(1., 0., 0., 0.5))
-                self.canvas.add(self.trackingBorder)
-            
-            else:
-                # TODO Investigate error at this line
-                self.remove_widget(self.trackingBorder)
-                self.add_widget(self.trackingBorder)
+            self.canvas.add(Color(1., 0., 0., 0.5))
+            self.canvas.add(self.trackingBorder)
 
 
     def clearTrackingOverlay(self):
         """Clear the tracking info overlay
         """
-        self.remove_widget(self.trackingBorder)
+        self.canvas.clear()
         self.trackingBorder = None
     
 
@@ -1553,6 +1559,13 @@ class ImageOverlay(BoxLayout):
         """
         self.canvas.clear()
         self.hasDrawDualColorOverlay = False
+
+    
+    def clearOverlay(self) -> None:
+        """Clear both tracking and dual color overlay.
+        """
+        self.clearTrackingOverlay()
+        self.clearDualColorOverlay()
     
 
 class RuntimeControls(BoxLayout):
@@ -1571,7 +1584,6 @@ class RuntimeControls(BoxLayout):
         self.focus_motion = 0
         self.isTracking = False
         self.coord_updateevent: ClockEvent | None = None
-        self.trackingOverlay_event: ClockEvent | None = None
         # Center of Mass offset in current tracking frame
         self.cms_offset_x = 0
         self.cms_offset_y = 0
@@ -1664,10 +1676,6 @@ class RuntimeControls(BoxLayout):
             Clock.unschedule(self.coord_updateevent)
             self.coord_updateevent = None
         
-        if self.trackingOverlay_event is not None:
-            Clock.unschedule(self.trackingOverlay_event)
-            self.trackingOverlay_event = None
-        
         # reset camera params
         self.reset_ROI()
         self.cropX = 0
@@ -1745,16 +1753,6 @@ class RuntimeControls(BoxLayout):
 
         # schedule occasional position check of the stage
         # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
-
-        # self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
-        self.trackingOverlay_event = Clock.schedule_interval(self.update_tracking_overlay_interval, 1/30)
-    
-
-    def update_tracking_overlay_interval(self, dt) -> None:
-        app = App.get_running_app()
-        
-        if app.config.getboolean('Tracking', 'showtrackingoverlay'):
-            app.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(self.cms_offset_x, self.cms_offset_y)
 
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
@@ -2155,28 +2153,7 @@ class MacroscopeApp(App):
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
         # TODO: update device settings, i.e. stage limit
         # Check turning on or off dual color mode
-        self.updateImageOverlay()
-    
-
-    def updateImageOverlay(self, isRedraw: bool = True):
-
-        imageOverlay: ImageOverlay = self.root.ids.middlecolumn.ids.imageoverlay
-        
-        # Resize the overlay to match the image
-        imageOverlay.resizeToImage()
-
-        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
-        mainside = self.config.get('DualColor', 'mainside')
-        
-        # If in dual color mode then draw the overlay
-        if dualcolormode:
-            # Only redraw if nescessary
-            if isRedraw:
-                imageOverlay.redrawDualColorOverlay(mainside)
-                
-        # If not in the dual color mode then clear the overlay
-        else:
-            imageOverlay.clearDualColorOverlay()
+        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
 
     def stage_stop(self):
@@ -2330,16 +2307,10 @@ class MacroscopeApp(App):
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
         """
-        # 
-        # Upload image to texture
-        # 
-        
         imageHeight, imageWidth = self.image.shape[0], self.image.shape[1]
         imageColorFormat = 'rgb' if self.image.ndim == 3 else 'luminance'
         # Force unsign byte format
         imageDataFormat = 'ubyte'
-        # 
-        updateGUIFlag = False
 
         # Check if need to recreate texture
         if self.texture is None \
@@ -2356,20 +2327,19 @@ class MacroscopeApp(App):
             # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
             self.texture.flip_vertical()
 
-            # Set flag update GUI
-            updateGUIFlag = True
-        
+            # Update overlay
+            self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
         # Upload image data to texture
         imageByteBuffer: bytes = self.image.tobytes()
         self.texture.blit_buffer(imageByteBuffer, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
 
-        # 
-        # Update GUI
-        # 
+        # Update tracking overlay if the option is enabled
+        if self.config.getboolean('Tracking', 'showtrackingoverlay'):
+            # Get tracking cms from runtimecontrol
+            rtc = self.root.ids.middlecolumn.runtimecontrols
+            self.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(rtc.cms_offset_x, rtc.cms_offset_y)
 
-        # Update GUI overlay
-        self.updateImageOverlay(isRedraw= updateGUIFlag)
-    
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
