@@ -19,7 +19,7 @@ from kivy.config import Config
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Point
+from kivy.graphics import Color, Line, Ellipse
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -1347,6 +1347,7 @@ class ImageOverlay(BoxLayout):
         self.label: Label | None = None
 
         self.trackingBorder: Line | None = None
+        self.cmsShape: Ellipse | None = None
 
         self.app = App.get_running_app()
 
@@ -1455,9 +1456,9 @@ class ImageOverlay(BoxLayout):
             # Construct the tracking border draw command
             self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
 
-        # Draw the tracking border as a red rectangle
-        self.canvas.add(Color(1., 0., 0., 0.5))
-        self.canvas.add(self.trackingBorder)
+            # Draw the tracking border as a red rectangle
+            self.canvas.add(Color(1., 0., 0., 0.5))
+            self.canvas.add(self.trackingBorder)
 
         # Draw tracking center of mass if provided
         if cmsOffset_x is not None:
@@ -1482,9 +1483,17 @@ class ImageOverlay(BoxLayout):
 
             cms = center + np.array([cmsOffset_x, cmsOffset_y])
 
-            # Draw the cms as a red dot
-            self.canvas.add(Color(1., 0., 0., 0.5))
-            self.canvas.add(Point( points= [cms[0], cms[1]], pointsize= 5))
+            pointRadius = 8
+
+            if self.cmsShape is None:
+                self.cmsShape = Ellipse(pos= (cms[0] - pointRadius, cms[1] - pointRadius), size=(pointRadius * 2, pointRadius * 2))
+
+                # Draw the cms as a teal dot
+                self.canvas.add(Color(0.435, 0.957, 1.0, 0.75))
+                self.canvas.add(self.cmsShape)
+            
+            else:
+                self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
 
 
     def clearTrackingOverlay(self):
@@ -1492,6 +1501,7 @@ class ImageOverlay(BoxLayout):
         """
         self.canvas.clear()
         self.trackingBorder = None
+        self.cmsShape = None
     
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
