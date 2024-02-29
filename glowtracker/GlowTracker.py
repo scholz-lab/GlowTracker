@@ -19,7 +19,7 @@ from kivy.config import Config
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Rectangle
+from kivy.graphics import Color, Line, Point
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -1286,8 +1286,9 @@ class PreviewImage(Image):
             self.mouse_pos_in_tex_coord[1] *= image.shape[0]
             self.mouse_pos_in_tex_coord = np.floor(self.mouse_pos_in_tex_coord).astype(np.int32)
 
+            # Get the pixel value. Need to flip Y as image coord is top-left.
+            pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            pixelVal = image[image.shape[0] - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]},{self.mouse_pos_in_tex_coord[1]},{pixelVal})'
 
         return  
@@ -1393,23 +1394,23 @@ class ImageOverlay(BoxLayout):
             if showtrackingoverlay:
                 rtc = self.app.root.ids.middlecolumn.runtimecontrols
                 if rtc.isTracking:
-                    self.redrawTrackingOverlay(rtc.cms_offset_x, rtc.cms_offset_y)
+                    self.redrawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y)
 
                 else:
-                    self.redrawTrackingOverlay()
+                        self.redrawTrackingOverlay()
 
     
-    def redrawTrackingOverlay(self, x: float | None = None, y: float | None = None):
+    def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None):
         """Redraw the tracking info overlay
         """
         print('redrawTrackingOverlay')
         self.clearTrackingOverlay()
-        self.drawTrackingOverlay(x, y)
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y)
     
     
-    def drawTrackingOverlay(self, x: float | None = None, y: float | None = None):
+    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None):
         """Draw the tracking info overlay.
-            If the coordinates are not provided then draw only the border
+            If the center of mass offsets are not provided then draw only the border.
         """
         
         # Check if needs to reconstruct the tracking border
@@ -1454,9 +1455,36 @@ class ImageOverlay(BoxLayout):
             # Construct the tracking border draw command
             self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
 
-        # Draw the tracking border
+        # Draw the tracking border as a red rectangle
         self.canvas.add(Color(1., 0., 0., 0.5))
         self.canvas.add(self.trackingBorder)
+
+        # Draw tracking center of mass if provided
+        if cmsOffset_x is not None:
+            
+            center = self.to_local(self.center_x, self.center_y)
+            center = np.array(center)
+
+            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            dualColorViewMode = self.app.config.get('DualColor', 'viewmode')
+
+            # If we are using the dual color and viewing the 'Splitted' mode, 
+            #   then we have to shift the center of tracking border to the left ro right 
+            #   side accordingly.
+            if dualColorMode and dualColorViewMode == 'Splitted':
+                mainSide = self.app.config.get('DualColor', 'mainside')
+                
+                if mainSide == 'Left':
+                    center[0] -= normImageSize[0]/4
+
+                elif mainSide == 'Right':
+                    center[0] += normImageSize[0]/4
+
+            cms = center + np.array([cmsOffset_x, cmsOffset_y])
+
+            # Draw the cms as a red dot
+            self.canvas.add(Color(1., 0., 0., 0.5))
+            self.canvas.add(Point( points= [cms[0], cms[1]], pointsize= 5))
 
 
     def clearTrackingOverlay(self):
@@ -1595,8 +1623,8 @@ class RuntimeControls(BoxLayout):
         self.isTracking = False
         self.coord_updateevent: ClockEvent | None = None
         # Center of Mass offset in current tracking frame
-        self.cms_offset_x = 0
-        self.cms_offset_y = 0
+        self.cmsOffset_x = 0
+        self.cmsOffset_y = 0
 
 
     def on_framecounter(self, instance, value):
@@ -1790,8 +1818,8 @@ class RuntimeControls(BoxLayout):
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
 
             time.sleep(1/30.0)
-            self.cms_offset_x = 100
-            self.cms_offset_y = 100
+            self.cmsOffset_x = 100
+            self.cmsOffset_y = 100
             continue
             # Handling image cycle synchronization.
             # Because the recording and tracking thread are asynchronous
@@ -1855,8 +1883,8 @@ class RuntimeControls(BoxLayout):
                 ystep, xstep = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             
             # Record cms for tracking overlay
-            self.cms_offset_x = xstep
-            self.cms_offset_y = -ystep
+            self.cmsOffset_x = xstep
+            self.cmsOffset_y = -ystep
             
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
@@ -2001,7 +2029,7 @@ class Connections(BoxLayout):
             App.get_running_app().stage = None
 
         else:
-            app.stage: Stage = stage
+            app.stage: Stage = stage # type: ignore
             
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
@@ -2348,7 +2376,7 @@ class MacroscopeApp(App):
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             # Get tracking cms from runtimecontrol
             rtc = self.root.ids.middlecolumn.runtimecontrols
-            self.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(rtc.cms_offset_x, rtc.cms_offset_y)
+            self.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y)
 
 
     # ask for confirmation of closing
@@ -2402,8 +2430,15 @@ def main():
     Config.set('graphics', 'position', 'custom')
     Config.set('graphics', 'top', '0') 
     Config.set('graphics', 'left', '0') 
-    App = MacroscopeApp()
-    App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+    # Last barrier for catching unhandled exception.
+    try:
+        App = MacroscopeApp()
+        App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+    except Exception as e:
+        print(f'Kivy App error: {e}')
+        return None
 
 
 if __name__ == '__main__':
