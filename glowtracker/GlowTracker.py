@@ -1409,44 +1409,54 @@ class ImageOverlay(BoxLayout):
     
     def drawTrackingOverlay(self, x: float | None = None, y: float | None = None):
         """Draw the tracking info overlay.
-            If the coordinates are not provided then draw only the boarder
+            If the coordinates are not provided then draw only the border
         """
-        # Compute display scaling
-        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
-        normImageSize = previewImage.get_norm_image_size()
-        imageSize = previewImage.texture_size
-        displayedScale = normImageSize[0] / imageSize[0]
+        
+        # Check if needs to reconstruct the tracking border
+        if self.trackingBorder is None:
 
-        # Get tracking radius
-        radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
+            # Compute display scaling
+            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+            normImageSize = previewImage.get_norm_image_size()
+            imageSize = previewImage.texture_size
+            displayedScale = normImageSize[0] / imageSize[0]
 
-        dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
-        if dualcolorMode:
-            mainSide = self.app.config.get('DualColor', 'mainside')
-            dualcolorViewMode = self.app.config.get('DualColor', 'viewmode')
-            # TODO later
+            # Get tracking radius
+            radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
+            center = self.to_local(self.center_x, self.center_y)
+            center = np.array(center)
 
-        else:
+            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            dualColorViewMode = self.app.config.get('DualColor', 'viewmode')
 
-            # Check if has already draw the tracking border
-            if self.trackingBorder is None:
-                center = self.to_local(self.center_x, self.center_y)
-                center = np.array(center)
+            # If we are using the dual color and viewing the 'Splitted' mode, 
+            #   then we have to shift the center of tracking border to the left ro right 
+            #   side accordingly.
+            if dualColorMode and dualColorViewMode == 'Splitted':
+                mainSide = self.app.config.get('DualColor', 'mainside')
+                
+                if mainSide == 'Left':
+                    center[0] -= normImageSize[0]/4
 
-                btm_left = center - radius
-                top_right = center + radius
+                elif mainSide == 'Right':
+                    center[0] += normImageSize[0]/4
 
-                trackingBorderPoints = [
-                    btm_left[0], btm_left[1],
-                    btm_left[0], top_right[1],
-                    top_right[0], top_right[1],
-                    top_right[0], btm_left[1]
-                ]
+            btm_left = center - radius
+            top_right = center + radius
 
-                self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
+            trackingBorderPoints = [
+                btm_left[0], btm_left[1],
+                btm_left[0], top_right[1],
+                top_right[0], top_right[1],
+                top_right[0], btm_left[1]
+            ]
 
-            self.canvas.add(Color(1., 0., 0., 0.5))
-            self.canvas.add(self.trackingBorder)
+            # Construct the tracking border draw command
+            self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
+
+        # Draw the tracking border
+        self.canvas.add(Color(1., 0., 0., 0.5))
+        self.canvas.add(self.trackingBorder)
 
 
     def clearTrackingOverlay(self):
