@@ -1376,6 +1376,10 @@ class ImageOverlay(BoxLayout):
 
     def updateOverlay(self) -> None:
         
+        # If the app has just started with a logo then don't draw any overlay
+        if self.app.image is None:
+            return
+        
         # Resize the overlay to match the image
         self.resizeToImage()
 
@@ -1398,7 +1402,7 @@ class ImageOverlay(BoxLayout):
                     self.redrawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y)
 
                 else:
-                        self.redrawTrackingOverlay()
+                    self.redrawTrackingOverlay()
 
     
     def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None):
@@ -1474,6 +1478,9 @@ class ImageOverlay(BoxLayout):
             #   side accordingly.
             if dualColorMode and dualColorViewMode == 'Splitted':
                 mainSide = self.app.config.get('DualColor', 'mainside')
+
+                previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+                normImageSize = previewImage.get_norm_image_size()
                 
                 if mainSide == 'Left':
                     center[0] -= normImageSize[0]/4
@@ -1633,8 +1640,8 @@ class RuntimeControls(BoxLayout):
         self.isTracking = False
         self.coord_updateevent: ClockEvent | None = None
         # Center of Mass offset in current tracking frame
-        self.cmsOffset_x = 0
-        self.cmsOffset_y = 0
+        self.cmsOffset_x: float | None = None
+        self.cmsOffset_y: float | None = None
 
 
     def on_framecounter(self, instance, value):
@@ -1955,6 +1962,8 @@ class RuntimeControls(BoxLayout):
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
+        self.cmsOffset_x = None
+        self.cmsOffset_y = None
 
 
     def set_ROI(self, roiX, roiY):
