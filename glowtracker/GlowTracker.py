@@ -1377,6 +1377,7 @@ class ImageOverlay(BoxLayout):
         self.updateOverlay()
     
 
+    @mainthread
     def updateOverlay(self) -> None:
         
         # If the app has just started with a logo then don't draw any overlay
@@ -1469,37 +1470,36 @@ class ImageOverlay(BoxLayout):
                 self.trackingMaskLayout.pos = btm_left.tolist()
                 self.trackingMaskLayout.size = (top_right - btm_left).tolist()
 
-                self.trackingMaskLayout.canvas.add(Color(1, 0, 1, 0.5))
-                self.trackingMaskLayout.canvas.add(Rectangle(size= self.trackingMaskLayout.size, pos= self.trackingMaskLayout.pos))
-
-                # Add FloatLayout to BoxLayouts
+                # Add base FloatLayout to self
                 self.add_widget(self.trackingMaskLayout)
-            
-            # Recreate texture
-            if self.trackingMask.texture is None:
-                trackingMaskHeight, trackingMaskWidth = trackingMask.shape[0], trackingMask.shape[1]
 
+                # Add the Image widget
+                self.trackingMaskLayout.add_widget(self.trackingMask)
+            
+            if self.trackingMask.texture is None:
+
+                # Create Texture
                 self.trackingMask.texture = Texture.create(
-                    size= (trackingMaskWidth, trackingMaskHeight),
+                    size= (trackingMask.shape[1], trackingMask.shape[0]),
                     colorfmt= 'luminance'
                 )
-
-                # self.trackingMask.fit_mode = 'fill'
-
                 # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
                 self.trackingMask.texture.flip_vertical()
 
-                # Upload image data to texture
-                imageByteBuffer: bytes = trackingMask.tobytes()
-                self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'luminance', bufferfmt= 'ubyte')
+                # Set fit mode to fill so that it up-/down-scale to fit the trackingMask widget perfectly
+                self.trackingMask.fit_mode = 'fill'
 
-                self.trackingMaskLayout.add_widget(self.trackingMask)
+                # Unbind size callback from the parent.Very important!
+                self.trackingMask.size_hint = (None, None)
+                self.trackingMask.opacity = 0.5
 
-                # Add the Image widget
-                self.trackingMask.pos = self.trackingMaskLayout.pos
-                self.trackingMask.size = self.trackingMaskLayout.size
+                self.trackingMask.pos = btm_left.tolist()
+                self.trackingMask.size = (top_right - btm_left).tolist()
 
-                # TODO: Check why tracking mask size is not a complete square
+            # Upload image data to texture
+            imageByteBuffer: bytes = trackingMask.tobytes()
+            self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'luminance', bufferfmt= 'ubyte')
+
 
         # 
         # Check if needs to reconstruct the tracking border
@@ -1561,17 +1561,19 @@ class ImageOverlay(BoxLayout):
     def clearTrackingOverlay(self):
         """Clear the tracking info overlay
         """
-        self.canvas.clear()
         
         if self.trackingMaskLayout is not None:
             self.remove_widget(self.trackingMaskLayout)
+            self.trackingMaskLayout.clear_widgets()
             self.trackingMaskLayout = None
-
+            
         self.trackingMask.texture = None
         self.remove_widget(self.trackingMask)
         
         self.trackingBorder = None
         self.cmsShape = None
+        
+        self.canvas.clear()
     
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
@@ -1800,6 +1802,9 @@ class RuntimeControls(BoxLayout):
         self.cropX = 0
         self.cropY = 0
 
+        # Update overlay
+        App.get_running_app().root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
 
     def startTracking(self, start_pos_tex_coord: np.array) -> None:
         """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
@@ -1962,7 +1967,7 @@ class RuntimeControls(BoxLayout):
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
-                ystep, xstep, annotated_mask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep

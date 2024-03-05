@@ -308,10 +308,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.title('img reduced')
         plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
 
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, annotated_mask
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, mask
     
     else:
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, annotated_mask
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, mask
     
 
 
