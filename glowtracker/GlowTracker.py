@@ -1499,7 +1499,7 @@ class ImageOverlay(BoxLayout):
                 # Create Texture
                 self.trackingMask.texture = Texture.create(
                     size= (trackingMask.shape[1], trackingMask.shape[0]),
-                    colorfmt= 'rgb'
+                    colorfmt= 'rgba'
                 )
                 # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
                 self.trackingMask.texture.flip_vertical()
@@ -1517,12 +1517,13 @@ class ImageOverlay(BoxLayout):
                 self.trackingMask.size = (top_right - btm_left).tolist()
 
             # Convert from grayscale to rgb and move to blue channel
-            trackingMaskColor = np.zeros((trackingMask.shape[0], trackingMask.shape[1], 3), np.uint8)
+            trackingMaskColor = np.zeros((trackingMask.shape[0], trackingMask.shape[1], 4), np.uint8)
             trackingMaskColor[:,:,2] = trackingMask
+            trackingMaskColor[:,:,3][trackingMask>0] = 255  # alpha mask
 
             # Upload image data to texture
             imageByteBuffer: bytes = trackingMaskColor.tobytes()
-            self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'rgb', bufferfmt= 'ubyte')
+            self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'rgba', bufferfmt= 'ubyte')
 
         # 
         # Check if needs to reconstruct the tracking border

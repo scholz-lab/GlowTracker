@@ -444,6 +444,7 @@ def find_CMS(mask, K=5, display=False):
     middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
     props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
     
+    # TODO: Fix error when input image is full brightness causing "single positional indexer is out-of-bounds"
     cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
     
     if display:
