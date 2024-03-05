@@ -311,7 +311,7 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, annotated_mask
     
     else:
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, annotated_mask
     
 
 
