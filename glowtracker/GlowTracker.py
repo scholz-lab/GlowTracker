@@ -1417,15 +1417,18 @@ class ImageOverlay(BoxLayout):
         self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
     
 
-    def computeTrackingOverlayCenterPosition(self) -> np.ndarray:
-        # Update image position
+    def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # Compute display scaling
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+        normImageSize = np.array(previewImage.get_norm_image_size())
+
+        # Compute overlay center position
         center = self.to_local(self.center_x, self.center_y)
         center = np.array(center)
 
         dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         dualColorViewMode = self.app.config.get('DualColor', 'viewmode')
 
-        normImageSize = self.app.root.ids.middlecolumn.previewimage.get_norm_image_size()
         # If we are using the dual color and viewing the 'Splitted' mode, 
         #   then we have to shift the center of tracking border to the left ro right 
         #   side accordingly.
@@ -1438,7 +1441,31 @@ class ImageOverlay(BoxLayout):
             elif mainSide == 'Right':
                 center[0] += normImageSize[0]/4
         
-        return center
+        # Compute the overlay bbox
+        imageSize = previewImage.texture_size
+        displayedScale = normImageSize[0] / imageSize[0]
+        radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
+        btm_left = center - radius
+        top_right = center + radius
+
+        # Compute the bbox of the image in the overlay space
+        image_btm_left = np.copy(center)
+        image_top_right = np.copy(center)
+        if dualColorMode and dualColorViewMode == 'Splitted':
+            image_btm_left[0] -= normImageSize[0]/4
+            image_btm_left[1] -= normImageSize[1]/2
+            image_top_right[0] += normImageSize[0]/4
+            image_top_right[1] += normImageSize[1]/2
+
+        else:
+            image_btm_left -= normImageSize/2
+            image_top_right += normImageSize/2
+
+        # Set the upper bound of the bbox to the image size
+        btm_left = np.fmax(btm_left, image_btm_left)
+        top_right = np.fmin(top_right, image_top_right)
+
+        return center, btm_left, top_right
     
     
     def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
@@ -1451,22 +1478,13 @@ class ImageOverlay(BoxLayout):
         # 
         if trackingMask is not None:
             
-            # Compute display scaling
-            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
-            normImageSize = previewImage.get_norm_image_size()
-            imageSize = previewImage.texture_size
-            displayedScale = normImageSize[0] / imageSize[0]
-            radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
-
-            center = self.computeTrackingOverlayCenterPosition()
-            btm_left = center - radius
-            top_right = center + radius
-
             if self.trackingMaskLayout is None:
-                
+
                 # Create a FloatLayout
                 self.trackingMaskLayout = FloatLayout()
 
+                #   Set the position and size to fit the overlay
+                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
                 self.trackingMaskLayout.pos = btm_left.tolist()
                 self.trackingMaskLayout.size = (top_right - btm_left).tolist()
 
@@ -1493,6 +1511,8 @@ class ImageOverlay(BoxLayout):
                 self.trackingMask.size_hint = (None, None)
                 self.trackingMask.opacity = 0.5
 
+                # Set the position and size to fit the overlay
+                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
                 self.trackingMask.pos = btm_left.tolist()
                 self.trackingMask.size = (top_right - btm_left).tolist()
 
@@ -1504,23 +1524,14 @@ class ImageOverlay(BoxLayout):
             imageByteBuffer: bytes = trackingMaskColor.tobytes()
             self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'rgb', bufferfmt= 'ubyte')
 
-
         # 
         # Check if needs to reconstruct the tracking border
         # 
         if self.trackingBorder is None:
 
-            # Compute display scaling
-            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
-            normImageSize = previewImage.get_norm_image_size()
-            imageSize = previewImage.texture_size
-            displayedScale = normImageSize[0] / imageSize[0]
-            radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
-
-            center = self.computeTrackingOverlayCenterPosition()
-            btm_left = center - radius
-            top_right = center + radius
-
+            # Compute the overlay bbox
+            center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+            
             trackingBorderPoints = [
                 btm_left[0], btm_left[1],
                 btm_left[0], top_right[1],
@@ -1540,7 +1551,8 @@ class ImageOverlay(BoxLayout):
         # 
         if cmsOffset_x is not None:
             
-            center = self.computeTrackingOverlayCenterPosition()
+            # Compute the overlay bbox
+            center, _, _ = self.computeTrackingOverlayBorderBBox()
 
             cms = center + np.array([cmsOffset_x, cmsOffset_y])
 
