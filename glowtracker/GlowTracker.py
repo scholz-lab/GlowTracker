@@ -24,7 +24,7 @@ from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
-from kivy.clock import Clock, ClockEvent
+from kivy.clock import Clock, ClockEvent, mainthread
 from kivy.metrics import Metrics
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
