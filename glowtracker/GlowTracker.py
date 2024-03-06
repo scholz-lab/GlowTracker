@@ -1336,7 +1336,7 @@ class PreviewImage(Image):
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
-class ImageOverlay(BoxLayout):
+class ImageOverlay(FloatLayout):
     """An image overlay class than handles drawing of GUI overlays ontop of the image.
     """    
     
@@ -1620,9 +1620,6 @@ class ImageOverlay(BoxLayout):
 
         if viewMode == 'Splitted':
 
-            # Set the overlay size as the image size
-            normImageSize = previewImage.get_norm_image_size()
-
             # 
             # Red line at the middle
             # 
@@ -1637,7 +1634,11 @@ class ImageOverlay(BoxLayout):
             # 
             if self.label is None:
                 # Create a Label and add it as a child
-                self.label = Label(text= '', markup= True)        
+                self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)  
+                self.label.size_hint = [None, None]
+                self.label.valign = 'top'
+                self.label.halign = 'left'
+                self.label.texture_update()
                 self.add_widget(self.label)
             else:
                 # In this case, the self.canvas.clear() has been called so we have to redraw the label.
@@ -1645,24 +1646,27 @@ class ImageOverlay(BoxLayout):
                 #   so we will mimick this by re-adding it again.
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
-
-            # Set Label position
-            topPadding = 7
-            leftPadding = 0
-            wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
             
+            self.label.size = self.label.texture_size
+
+            # Compute label position
+            normImageSize = previewImage.get_norm_image_size()
+            labelDisplayedSize = np.array(self.label.texture_size) 
+            
+            labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
             if mainSide == 'Left':
-                leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
+                labelOffset_x -= normImageSize[0]/4
 
             elif mainSide == 'Right':
-                leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+                labelOffset_x += normImageSize[0]/4
+            
+            #   Compute position at the top
+            labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
+            #   Further adjust to look prettier
+            labelOffset_y -= labelDisplayedSize[1] * 0.75
 
-            # left, top, right, bottom
-            self.label.text = '[color=8e0045]Main[/color]'
-            self.label.text_size = self.size
-            self.label.valign = 'top'
-            self.label.halign = 'left'
-            self.label.padding= [ leftPadding, topPadding, 0, 0 ]
+            self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
+
         
         elif viewMode == 'Merged':
 
@@ -1671,7 +1675,11 @@ class ImageOverlay(BoxLayout):
             # 
             if self.label is None:
                 # Create a Label and add it as a child
-                self.label = Label(text= '', markup= True)
+                self.label = Label(text= '[color=8e0045]Dual Color: Merged[/color]', markup= True)
+                self.label.size_hint = [None, None]
+                self.label.valign = 'top'
+                self.label.halign = 'left'
+                self.label.texture_update()
                 self.add_widget(self.label)
                 
             else:
@@ -1681,14 +1689,24 @@ class ImageOverlay(BoxLayout):
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
             
-            topPadding = 7
+            labelOffset_y = 7
 
-            # left, top, right, bottom
-            self.label.text = '[color=8e0045]Dual Color: Merged[/color]'
-            self.label.text_size = self.size
-            self.label.valign = 'top'
-            self.label.halign = 'center'
-            self.label.padding= [ 0, topPadding, 0, 0 ]
+            self.label.size = self.label.texture_size
+
+            # Compute label position
+            normImageSize = previewImage.get_norm_image_size()
+            labelDisplayedSize = np.array(self.label.texture_size) 
+            
+            #   Compute center position
+            pos_center_local = self.to_local(self.center_x, self.center_y)
+            labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
+            
+            #   Compute position at the top
+            labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
+            #   Further adjust to look prettier
+            labelOffset_y -= labelDisplayedSize[1] * 0.75
+
+            self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
         
 
     def clearDualColorOverlay(self):
