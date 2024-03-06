@@ -275,6 +275,13 @@
         "title": "Tracking"
     },
     {
+        "type": "bool",
+        "title": "Display tracking overlay",
+        "desc": "Display the tracking overlay which shows the ROI and the center of mass of the object.",
+        "section": "Tracking",
+        "key": "showtrackingoverlay"
+    },
+    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",

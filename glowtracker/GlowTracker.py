@@ -2,7 +2,7 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
-
+ 
 # 
 # Kivy Imports
 # 
@@ -18,12 +18,12 @@ from kivy.config import Config
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, Ellipse, Rectangle
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
-from kivy.clock import Clock, ClockEvent
+from kivy.clock import Clock, ClockEvent, mainthread
 from kivy.metrics import Metrics
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
@@ -924,10 +924,7 @@ class LiveViewButton(ImageAcquisitionButton):
             }
         )
         self.imageAcquisitionThread.start()
-
-        # Update image overlay
-        self.app.updateDualColorOverlay()
-
+    
 
     @override
     def stopImageAcquisition(self) -> None:
@@ -1033,9 +1030,6 @@ class RecordButton(ImageAcquisitionButton):
         )
 
         self.imageAcquisitionThread.start()
-
-        # Update image overlay
-        self.app.updateDualColorOverlay()
 
 
     @override
@@ -1291,8 +1285,9 @@ class PreviewImage(Image):
             self.mouse_pos_in_tex_coord[1] *= image.shape[0]
             self.mouse_pos_in_tex_coord = np.floor(self.mouse_pos_in_tex_coord).astype(np.int32)
 
+            # Get the pixel value. Need to flip Y as image coord is top-left.
+            pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            pixelVal = image[image.shape[0] - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]},{self.mouse_pos_in_tex_coord[1]},{pixelVal})'
 
         return  
@@ -1320,7 +1315,7 @@ class PreviewImage(Image):
         # and tracking is active and not yet scheduled:
         if self.collide_point(*touch.pos) \
             and runtimeControls.trackingcheckbox.state == 'down' \
-            and not runtimeControls.trackingevent:
+            and not runtimeControls.isTracking:
 
             # Check if within the image bbox
             if 0 <= self.mouse_pos_in_image_space[0] <= self.norm_image_size[0] \
@@ -1340,7 +1335,7 @@ class PreviewImage(Image):
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
-class ImageOverlay(BoxLayout):
+class ImageOverlay(FloatLayout):
     """An image overlay class than handles drawing of GUI overlays ontop of the image.
     """    
     
@@ -1350,15 +1345,271 @@ class ImageOverlay(BoxLayout):
         self.hasDrawDualColorOverlay: bool = False
         self.label: Label | None = None
 
+        self.trackingMaskLayout: FloatLayout | None = None
+        self.trackingMask = Image()
 
+        self.trackingBorder: Line | None = None
+        self.cmsShape: Ellipse | None = None
+
+        self.app = App.get_running_app()
+
+
+    def resizeToImage(self) -> None:
+        """Resize and move the overlay to match the display image exactly
+        """
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+
+        # Set the overlay size as the image size
+        normImageSize = previewImage.get_norm_image_size()
+        self.size = normImageSize
+
+        # Set the overlay position to match the image position exactly.
+        #   Note, this is a local position.
+        imageWidgetSize = previewImage.size
+        self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
+        self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
+        
+    
     def on_size(self, *args) -> None:
-        """Update the position and size of the rectangle when the widget is resized
+        """Called everytime the widget is resized. Resize the overlay to match the image and redraw.
         """        
-        if self.hasDrawDualColorOverlay:
-            # Redraw the dual color overlay
-            mainSide = App.get_running_app().config.get('DualColor', 'mainside')
-            self.redrawDualColorOverlay(mainSide)
+        self.updateOverlay()
+    
 
+    @mainthread
+    def updateOverlay(self) -> None:
+        """Clear and redraw the overlay depending on the app config.
+            1. Resize to match the image
+            2. Clear all the overlay
+            3. Redraw all the overlay
+        """
+        
+        # If the app has just started with a logo then don't draw any overlay
+        if self.app.image is None:
+            return
+        
+        # Resize the overlay to match the image
+        self.resizeToImage()
+
+        # Clear all the overlay
+        self.clearOverlay()
+
+        dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        
+        if dualcolormode:
+            mainside = self.app.config.get('DualColor', 'mainside')
+            self.drawDualColorOverlay(mainside)
+                
+        # If in the single color mode then redraw the tracking overlay
+        else:
+
+            showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
+            if showtrackingoverlay:
+                rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
+                if rtc.isTracking:
+                    self.redrawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask)
+
+                else:
+                    self.redrawTrackingOverlay()
+
+    
+    def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
+        """Clear and draw the tracking overlay
+        """
+        print('redrawTrackingOverlay')
+        self.clearTrackingOverlay()
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
+    
+
+    def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute the tracking overlay bounding box in the local widget space.
+
+        Returns:
+            center [np.ndarray]: center of the overlay in the local widget space
+            btm_left [np.ndarray]: btm left corner of the overlay in the local widget space
+            top_right [np.ndarray]: top right corner of the overlay in the local widget space
+        """
+        # Compute display scaling
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+        normImageSize = np.array(previewImage.get_norm_image_size())
+
+        # Compute overlay center position
+        center = self.to_local(self.center_x, self.center_y)
+        center = np.array(center)
+
+        dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        dualColorViewMode = self.app.config.get('DualColor', 'viewmode')
+
+        # If we are using the dual color and viewing the 'Splitted' mode, 
+        #   then we have to shift the center of tracking border to the left ro right 
+        #   side accordingly.
+        if dualColorMode and dualColorViewMode == 'Splitted':
+            mainSide = self.app.config.get('DualColor', 'mainside')
+            
+            if mainSide == 'Left':
+                center[0] -= normImageSize[0]/4
+
+            elif mainSide == 'Right':
+                center[0] += normImageSize[0]/4
+        
+        # Compute the overlay bbox
+        imageSize = previewImage.texture_size
+        displayedScale = normImageSize[0] / imageSize[0]
+        radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
+        btm_left = center - radius
+        top_right = center + radius
+
+        # Compute the bbox of the image in the overlay space
+        image_btm_left = np.copy(center)
+        image_top_right = np.copy(center)
+        if dualColorMode and dualColorViewMode == 'Splitted':
+            image_btm_left[0] -= normImageSize[0]/4
+            image_btm_left[1] -= normImageSize[1]/2
+            image_top_right[0] += normImageSize[0]/4
+            image_top_right[1] += normImageSize[1]/2
+
+        else:
+            image_btm_left -= normImageSize/2
+            image_top_right += normImageSize/2
+
+        # Set the upper bound of the bbox to the image size
+        btm_left = np.fmax(btm_left, image_btm_left)
+        top_right = np.fmin(top_right, image_top_right)
+
+        return center, btm_left, top_right
+    
+    
+    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None) -> None:
+        """Draw the tracking info overlay.
+            1. Draw the tracking mask if provided
+            2. Draw the tracking border
+            3. Draw the tracking center of mass if provided
+
+        Args:
+            cmsOffset_x (float | None, optional): center of mass position as an ofset from the center of the image. Defaults to None.
+            cmsOffset_y (float | None, optional): center of mass position as an ofset from the center of the image. Defaults to None.
+            trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
+        """
+        
+        # 
+        # Check if needs to draw tracking mask
+        # 
+        if trackingMask is not None:
+            
+            if self.trackingMaskLayout is None:
+
+                # Create a FloatLayout
+                self.trackingMaskLayout = FloatLayout()
+
+                #   Set the position and size to fit the overlay
+                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+                self.trackingMaskLayout.pos = btm_left.tolist()
+                self.trackingMaskLayout.size = (top_right - btm_left).tolist()
+
+                # Add base FloatLayout to self
+                self.add_widget(self.trackingMaskLayout)
+
+                # Add the Image widget
+                self.trackingMaskLayout.add_widget(self.trackingMask)
+            
+            if self.trackingMask.texture is None:
+
+                # Create Texture
+                self.trackingMask.texture = Texture.create(
+                    size= (trackingMask.shape[1], trackingMask.shape[0]),
+                    colorfmt= 'rgba'
+                )
+                # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
+                self.trackingMask.texture.flip_vertical()
+
+                # Set fit mode to fill so that it up-/down-scale to fit the trackingMask widget perfectly
+                self.trackingMask.fit_mode = 'fill'
+
+                # Unbind size callback from the parent.Very important!
+                self.trackingMask.size_hint = (None, None)
+                self.trackingMask.opacity = 0.5
+
+                # Set the position and size to fit the overlay
+                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+                self.trackingMask.pos = btm_left.tolist()
+                self.trackingMask.size = (top_right - btm_left).tolist()
+
+            # Convert from grayscale to rgb and move to blue channel
+            trackingMaskColor = np.zeros((trackingMask.shape[0], trackingMask.shape[1], 4), np.uint8)
+            trackingMaskColor[:,:,2] = trackingMask
+            trackingMaskColor[:,:,3][trackingMask>0] = 255  # alpha mask
+
+            # Upload image data to texture
+            imageByteBuffer: bytes = trackingMaskColor.tobytes()
+            self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'rgba', bufferfmt= 'ubyte')
+
+        # 
+        # Check if needs to reconstruct the tracking border
+        # 
+        if self.trackingBorder is None:
+
+            # Compute the overlay bbox
+            center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+            
+            trackingBorderPoints = [
+                btm_left[0], btm_left[1],
+                btm_left[0], top_right[1],
+                top_right[0], top_right[1],
+                top_right[0], btm_left[1]
+            ]
+
+            # Construct the tracking border draw command
+            self.trackingBorder = Line(points= trackingBorderPoints, width= 1, cap= 'none', joint= 'round', close= 'true')
+
+            # Draw the tracking border as a red rectangle
+            self.canvas.add(Color(1., 0., 0., 0.5))
+            self.canvas.add(self.trackingBorder)
+
+        # 
+        # Draw tracking center of mass if provided
+        # 
+        if cmsOffset_x is not None:
+            
+            # Compute the overlay bbox
+            center, _, _ = self.computeTrackingOverlayBorderBBox()
+
+            cms = center + np.array([cmsOffset_x, cmsOffset_y])
+
+            pointRadius = 8
+
+            if self.cmsShape is None:
+                # If the tracking shape is not yet created, create it and draw
+                self.cmsShape = Ellipse(
+                    pos= (cms[0] - pointRadius, cms[1] - pointRadius), 
+                    size=(pointRadius * 2, pointRadius * 2)
+                )
+
+                # Draw the cms as a teal dot
+                self.canvas.add(Color(0.435, 0.957, 1.0, 0.75))
+                self.canvas.add(self.cmsShape)
+            
+            else:
+                # Else just update the position
+                self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
+
+
+    def clearTrackingOverlay(self):
+        """Clear the tracking info overlay
+        """
+        
+        if self.trackingMaskLayout is not None:
+            self.remove_widget(self.trackingMaskLayout)
+            self.trackingMaskLayout.clear_widgets()
+            self.trackingMaskLayout = None
+            
+        self.trackingMask.texture = None
+        self.remove_widget(self.trackingMask)
+        
+        self.trackingBorder = None
+        self.cmsShape = None
+        
+        self.canvas.clear()
+    
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
@@ -1381,22 +1632,11 @@ class ImageOverlay(BoxLayout):
         
         self.hasDrawDualColorOverlay = True
 
-        app: MacroscopeApp = App.get_running_app()
-        previewImage: PreviewImage = app.root.ids.middlecolumn.previewimage
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
 
-        viewMode = app.config.get('DualColor', 'viewmode')
+        viewMode = self.app.config.get('DualColor', 'viewmode')
 
         if viewMode == 'Splitted':
-
-            # Set the overlay size as the image size
-            normImageSize = previewImage.get_norm_image_size()
-            self.size = normImageSize
-
-            # Set the overlay position to match the image position exactly.
-            #   Note, this is a local position.
-            imageWidgetSize = previewImage.size
-            self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
-            self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
 
             # 
             # Red line at the middle
@@ -1412,7 +1652,11 @@ class ImageOverlay(BoxLayout):
             # 
             if self.label is None:
                 # Create a Label and add it as a child
-                self.label = Label(text= '', markup= True)        
+                self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)  
+                self.label.size_hint = [None, None]
+                self.label.valign = 'top'
+                self.label.halign = 'left'
+                self.label.texture_update()
                 self.add_widget(self.label)
             else:
                 # In this case, the self.canvas.clear() has been called so we have to redraw the label.
@@ -1420,24 +1664,27 @@ class ImageOverlay(BoxLayout):
                 #   so we will mimick this by re-adding it again.
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
-
-            # Set Label position
-            topPadding = 7
-            leftPadding = 0
-            wordSize = 33.0     # Word size is used to offset the text such that it is center aligned
             
+            self.label.size = self.label.texture_size
+
+            # Compute label position
+            normImageSize = previewImage.get_norm_image_size()
+            labelDisplayedSize = np.array(self.label.texture_size) 
+            
+            labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
             if mainSide == 'Left':
-                leftPadding = normImageSize[0] * 1.0/4 - wordSize / 2
+                labelOffset_x -= normImageSize[0]/4
 
             elif mainSide == 'Right':
-                leftPadding = normImageSize[0] * 3.0/4 - wordSize / 2
+                labelOffset_x += normImageSize[0]/4
+            
+            #   Compute position at the top
+            labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
+            #   Further adjust to look prettier
+            labelOffset_y -= labelDisplayedSize[1] * 0.75
 
-            # left, top, right, bottom
-            self.label.text = '[color=8e0045]Main[/color]'
-            self.label.text_size = self.size
-            self.label.valign = 'top'
-            self.label.halign = 'left'
-            self.label.padding= [ leftPadding, topPadding, 0, 0 ]
+            self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
+
         
         elif viewMode == 'Merged':
 
@@ -1446,7 +1693,11 @@ class ImageOverlay(BoxLayout):
             # 
             if self.label is None:
                 # Create a Label and add it as a child
-                self.label = Label(text= '', markup= True)
+                self.label = Label(text= '[color=8e0045]Dual Color: Merged[/color]', markup= True)
+                self.label.size_hint = [None, None]
+                self.label.valign = 'top'
+                self.label.halign = 'left'
+                self.label.texture_update()
                 self.add_widget(self.label)
                 
             else:
@@ -1456,14 +1707,22 @@ class ImageOverlay(BoxLayout):
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
             
-            topPadding = 7
+            self.label.size = self.label.texture_size
 
-            # left, top, right, bottom
-            self.label.text = '[color=8e0045]Dual Color: Merged[/color]'
-            self.label.text_size = self.size
-            self.label.valign = 'top'
-            self.label.halign = 'center'
-            self.label.padding= [ 0, topPadding, 0, 0 ]
+            # Compute label position
+            normImageSize = previewImage.get_norm_image_size()
+            labelDisplayedSize = np.array(self.label.texture_size) 
+            
+            #   Compute center position
+            pos_center_local = self.to_local(self.center_x, self.center_y)
+            labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
+            
+            #   Compute position at the top
+            labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
+            #   Further adjust to look prettier
+            labelOffset_y -= labelDisplayedSize[1] * 0.75
+
+            self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
         
 
     def clearDualColorOverlay(self):
@@ -1471,6 +1730,13 @@ class ImageOverlay(BoxLayout):
         """
         self.canvas.clear()
         self.hasDrawDualColorOverlay = False
+
+    
+    def clearOverlay(self) -> None:
+        """Clear both tracking and dual color overlay.
+        """
+        self.clearTrackingOverlay()
+        self.clearDualColorOverlay()
     
 
 class RuntimeControls(BoxLayout):
@@ -1487,8 +1753,12 @@ class RuntimeControls(BoxLayout):
         self.focus_history = []
         self.focusevent = None
         self.focus_motion = 0
-        self.trackingevent = False
-        self.coord_updateevent = None
+        self.isTracking = False
+        self.coord_updateevent: ClockEvent | None = None
+        # Center of Mass offset in current tracking frame
+        self.cmsOffset_x: float | None = None
+        self.cmsOffset_y: float | None = None
+        self.trackingMask: np.ndarray | None = None
 
 
     def on_framecounter(self, instance, value):
@@ -1554,7 +1824,8 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None and camera.IsGrabbing():
+        if True:
+        # if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
@@ -1571,16 +1842,19 @@ class RuntimeControls(BoxLayout):
 
 
     def stopTracking(self):
-        self.trackingevent = False
-        # unschedule a tracking routine
-        #if self.trackthread.is_alive():
+        self.isTracking = False
+
         if self.coord_updateevent is not None:
             Clock.unschedule(self.coord_updateevent)
             self.coord_updateevent = None
+        
         # reset camera params
         self.reset_ROI()
         self.cropX = 0
         self.cropY = 0
+
+        # Update overlay
+        App.get_running_app().root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
 
     def startTracking(self, start_pos_tex_coord: np.array) -> None:
@@ -1650,6 +1924,7 @@ class RuntimeControls(BoxLayout):
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
+
         # schedule occasional position check of the stage
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
@@ -1663,11 +1938,12 @@ class RuntimeControls(BoxLayout):
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
+        
 
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
-        self.trackingevent = True
+        self.isTracking = True
         image: np.ndarray | None = None
         retrieveTimestamp: float = 0
         prevImage: np.ndarray | None = None
@@ -1736,7 +2012,11 @@ class RuntimeControls(BoxLayout):
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
-                ystep, xstep = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+            
+            # Record cms for tracking overlay
+            self.cmsOffset_x = xstep
+            self.cmsOffset_y = -ystep
             
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
@@ -1797,6 +2077,9 @@ class RuntimeControls(BoxLayout):
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
+        self.cmsOffset_x = None
+        self.cmsOffset_y = None
+        self.trackingMask = None
 
 
     def set_ROI(self, roiX, roiY):
@@ -1881,7 +2164,7 @@ class Connections(BoxLayout):
             App.get_running_app().stage = None
 
         else:
-            app.stage: Stage = stage
+            app.stage: Stage = stage # type: ignore
             
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
@@ -2043,23 +2326,7 @@ class MacroscopeApp(App):
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
         # TODO: update device settings, i.e. stage limit
         # Check turning on or off dual color mode
-        self.updateDualColorOverlay()
-    
-
-    def updateDualColorOverlay(self, isRedraw: bool = True):
-
-        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
-        mainside = self.config.get('DualColor', 'mainside')
-        
-        # If in dual color mode then draw the overlay
-        if dualcolormode:
-            # Only redraw if nescessary
-            if isRedraw:
-                self.root.ids.middlecolumn.ids.imageoverlay.redrawDualColorOverlay(mainside)
-                
-        # If not in the dual color mode then clear the overlay
-        else:
-            self.root.ids.middlecolumn.ids.imageoverlay.clearDualColorOverlay()
+        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
 
     def stage_stop(self):
@@ -2213,16 +2480,10 @@ class MacroscopeApp(App):
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
         """
-        # 
-        # Upload image to texture
-        # 
-        
         imageHeight, imageWidth = self.image.shape[0], self.image.shape[1]
         imageColorFormat = 'rgb' if self.image.ndim == 3 else 'luminance'
         # Force unsign byte format
         imageDataFormat = 'ubyte'
-        # 
-        updateGUIFlag = False
 
         # Check if need to recreate texture
         if self.texture is None \
@@ -2239,20 +2500,19 @@ class MacroscopeApp(App):
             # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
             self.texture.flip_vertical()
 
-            # Set flag update GUI
-            updateGUIFlag = True
-        
+            # Update overlay
+            self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
         # Upload image data to texture
         imageByteBuffer: bytes = self.image.tobytes()
         self.texture.blit_buffer(imageByteBuffer, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
 
-        # 
-        # Update GUI
-        # 
+        # Update tracking overlay if the option is enabled
+        if self.config.getboolean('Tracking', 'showtrackingoverlay'):
+            # Get tracking cms from runtimecontrol
+            rtc = self.root.ids.middlecolumn.runtimecontrols
+            self.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask)
 
-        # Update GUI overlay
-        self.updateDualColorOverlay(isRedraw= updateGUIFlag)
-    
 
     # ask for confirmation of closing
     def on_request_close(self, *args):
@@ -2305,8 +2565,15 @@ def main():
     Config.set('graphics', 'position', 'custom')
     Config.set('graphics', 'top', '0') 
     Config.set('graphics', 'left', '0') 
-    App = MacroscopeApp()
-    App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+    # Last barrier for catching unhandled exception.
+    try:
+        App = MacroscopeApp()
+        App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
+
+    except Exception as e:
+        print(f'Kivy App error: {e}')
+        return None
 
 
 if __name__ == '__main__':
