@@ -2,7 +2,6 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
-os.environ["PYLON_CAMEMU"] = "1"
  
 # 
 # Kivy Imports
@@ -220,7 +219,7 @@ class LeftColumn(BoxLayout):
         camera = App.get_running_app().camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
-        # self.ids.camprops.framerate = camera.ResultingFrameRate()
+        self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
     #autofocus popup
@@ -647,7 +646,7 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.AcquisitionFrameRateEnable = True
             camera.AcquisitionFrameRate = float(self.framerate)
-            # self.framerate = camera.ResultingFrameRate()
+            self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
 
@@ -757,8 +756,8 @@ class ImageAcquisitionButton(ToggleButton):
             # Grab for a specific number of frames
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
-        # fps = self.camera.ResultingFrameRate()
-        # print("Grabbing Framerate:", fps)
+        fps = self.camera.ResultingFrameRate()
+        print("Grabbing Framerate:", fps)
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
@@ -1922,7 +1921,7 @@ class RuntimeControls(BoxLayout):
         camera: pylon.InstantCamera = app.camera
 
         # Compute second per frame to determine the lower bound waiting time
-        # camera_spf = 1 / camera.ResultingFrameRate()
+        camera_spf = 1 / camera.ResultingFrameRate()
         
 
         # Dual Color mode settings
