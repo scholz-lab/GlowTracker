@@ -1378,6 +1378,11 @@ class ImageOverlay(FloatLayout):
 
     @mainthread
     def updateOverlay(self) -> None:
+        """Clear and redraw the overlay depending on the app config.
+            1. Resize to match the image
+            2. Clear all the overlay
+            3. Redraw all the overlay
+        """
         
         # If the app has just started with a logo then don't draw any overlay
         if self.app.image is None:
@@ -1409,7 +1414,7 @@ class ImageOverlay(FloatLayout):
 
     
     def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
-        """Redraw the tracking info overlay
+        """Clear and draw the tracking overlay
         """
         print('redrawTrackingOverlay')
         self.clearTrackingOverlay()
@@ -1417,6 +1422,13 @@ class ImageOverlay(FloatLayout):
     
 
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute the tracking overlay bounding box in the local widget space.
+
+        Returns:
+            center [np.ndarray]: center of the overlay in the local widget space
+            btm_left [np.ndarray]: btm left corner of the overlay in the local widget space
+            top_right [np.ndarray]: top right corner of the overlay in the local widget space
+        """
         # Compute display scaling
         previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
         normImageSize = np.array(previewImage.get_norm_image_size())
@@ -1467,11 +1479,18 @@ class ImageOverlay(FloatLayout):
         return center, btm_left, top_right
     
     
-    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
+    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None) -> None:
         """Draw the tracking info overlay.
-            If the center of mass offsets are not provided then draw only the border.
-        """
+            1. Draw the tracking mask if provided
+            2. Draw the tracking border
+            3. Draw the tracking center of mass if provided
 
+        Args:
+            cmsOffset_x (float | None, optional): center of mass position as an ofset from the center of the image. Defaults to None.
+            cmsOffset_y (float | None, optional): center of mass position as an ofset from the center of the image. Defaults to None.
+            trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
+        """
+        
         # 
         # Check if needs to draw tracking mask
         # 
@@ -1688,8 +1707,6 @@ class ImageOverlay(FloatLayout):
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
             
-            labelOffset_y = 7
-
             self.label.size = self.label.texture_size
 
             # Compute label position
@@ -1884,14 +1901,13 @@ class RuntimeControls(BoxLayout):
         print('Stage centering image offset:',ystep, xstep, units)
 
         # Move the stage
-        # DEBUGING TRACKING OVERLAY
-        # if abs(xstep) > minstep:
-        #     stage.move_x(xstep, unit= units, wait_until_idle= True)
-        # if abs(ystep) > minstep:
-        #     stage.move_y(ystep, unit= units, wait_until_idle= True)
+        if abs(xstep) > minstep:
+            stage.move_x(xstep, unit= units, wait_until_idle= True)
+        if abs(ystep) > minstep:
+            stage.move_y(ystep, unit= units, wait_until_idle= True)
 
-        # # Update stage coordinate in the app
-        # app.coords =  app.stage.get_position()
+        # Update stage coordinate in the app
+        app.coords =  app.stage.get_position()
 
         # 
         # Start the tracking
@@ -1910,7 +1926,7 @@ class RuntimeControls(BoxLayout):
         print('started tracking thread')
 
         # schedule occasional position check of the stage
-        # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+        self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
@@ -1937,11 +1953,6 @@ class RuntimeControls(BoxLayout):
 
         while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
 
-            time.sleep(1/30.0)
-            self.cmsOffset_x = 100
-            self.cmsOffset_y = 100
-            self.trackingMask = np.full((capture_radius * 2, capture_radius * 2), 100, np.uint8)
-            continue
             # Handling image cycle synchronization.
             # Because the recording and tracking thread are asynchronous
             # and doesn't have the same priority, it could be the case that
