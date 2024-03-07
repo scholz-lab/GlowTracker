@@ -519,19 +519,21 @@ MainWindow:
                 text: str(self.value)
 
         BoxLayout:
-            orientation: 'horizontal'
+            id: trackingoverlayquickbuttonlayout
+            padding: [dp(5), 0, dp(5), dp(5)]
 
             TrackingOverlayQuickButton:
                 id: trackingoverlayquickbutton
 
-        BoxLayout:
-            id: minibox2
-            canvas:
-                Color:
-                    rgba: 0,1,0,1
-                Rectangle:
-                    pos: self.pos
-                    size: self.size
+        DualColorViewModeQuickButtonLayout:
+            id: dualcolorviewmodequickbuttonlayout
+            # A strong reference to the button so it can be re-added
+            dualcolorviewmodequickbutton: dualcolorviewmodequickbutton.__self__
+            padding: [dp(5), dp(5), dp(5), 0]
+
+            DualColorViewModeQuickButton:
+                id: dualcolorviewmodequickbutton
+
 
 ### LiveView, Record, Snap
 <ImageAcquisitionManager>:

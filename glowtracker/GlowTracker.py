@@ -2117,15 +2117,16 @@ class RuntimeControls(BoxLayout):
 
 class TrackingOverlayQuickButton(ToggleButton):
 
-    normalText = 'Tracking Overlay: Off'
-    downText = 'Tracking Overlay: On'
+    normalText = '[b]Tracking Overlay[/b]: [color=ff0000]Off[/color]'
+    downText = '[b]Tracking Overlay[/b]: [color=00ff00]On[/color]'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.markup = True
         # Bind starting state to be the same as the config
         app = App.get_running_app()
-        showtrackingoverlay = app.config.getboolean("Tracking", "showtrackingoverlay")
+        showtrackingoverlay = app.config.getboolean('Tracking', 'showtrackingoverlay')
 
         if showtrackingoverlay:
             self.state = 'down'
@@ -2134,8 +2135,6 @@ class TrackingOverlayQuickButton(ToggleButton):
             self.state = 'normal'
             self.text = self.normalText
         
-        print('startingState: ', showtrackingoverlay)
-
 
     def on_state(self, button: ToggleButton, state: 'str'):
         
@@ -2151,7 +2150,70 @@ class TrackingOverlayQuickButton(ToggleButton):
             self.text = self.downText
             configValue = '1'
         
-        app.config.set("Tracking", "showtrackingoverlay", configValue)
+        app.config.set('Tracking', 'showtrackingoverlay', configValue)
+        app.config.write()
+
+        # Update overlay
+        #   Prevent at startup
+        if app.root is not None:
+            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
+class DualColorViewModeQuickButtonLayout(BoxLayout):
+    
+    dualcolorviewmodequickbutton = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    
+    def hideButton(self):
+        if self.dualcolorviewmodequickbutton in self.children:
+            self.remove_widget(self.dualcolorviewmodequickbutton)
+
+
+    def showButton(self):
+        if not self.dualcolorviewmodequickbutton in self.children:
+            self.add_widget(self.dualcolorviewmodequickbutton)
+
+    
+class DualColorViewModeQuickButton(ToggleButton):
+
+    normalText = '[b]Dual Color[/b]: Splitted'
+    downText = '[b]Dual Color[/b]: Merged'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.markup = True
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        viewmode = app.config.get('DualColor', 'viewmode')
+
+        if viewmode == 'Splitted':
+            self.state = 'normal'
+            self.text = self.normalText
+
+        elif viewmode == 'Merged':
+            self.state = 'down'
+            self.text = self.downText
+        
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+        configValue = str()
+
+        if state == 'normal':
+            configValue = 'Splitted'
+            self.text = self.normalText
+
+        else:
+            configValue = 'Merged'
+            self.text = self.downText
+        
+        app.config.set('DualColor', 'viewmode', configValue)
         app.config.write()
 
         # Update overlay
@@ -2373,13 +2435,37 @@ class MacroscopeApp(App):
         
         # TODO: update device settings, i.e. stage limit
 
-        # Check turning on or off dual color mode
-        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+        # Update quick buttons
+        self.updateQuickButtons()
 
-        # Update quick-access button settings
+        # Update overlay
+        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+    
+
+    def updateQuickButtons(self):
+        """Update quick-access button settings
+            - Tracking Overlay
+            - Dual Color View Mode
+        """
+        # 
+        #   Tracking Overlay button state
         showtrackingoverlay = self.config.getboolean('Tracking', 'showtrackingoverlay')
         self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
             'down' if showtrackingoverlay else 'normal'
+        
+        #   Dual Color view mode
+        #       Dual Color view mode button layout 
+        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
+        dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
+        if dualcolormode:
+            dualColorViewModeQuickButtonLayout.showButton()
+        else:
+            dualColorViewModeQuickButtonLayout.hideButton()
+
+        #       Dual Color view mode button state
+        viewmode = self.config.get('DualColor', 'viewmode')
+        self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbutton.state = \
+            'down' if viewmode == 'Merged' else 'normal'
 
 
     def stage_stop(self):
