@@ -119,7 +119,7 @@ class Stage:
         Returns:
             maxspeed (float): the device returned maximum speed, indicating the actual value it is set to
         """
-
+        # TODO: Handle error from setting above maximum unit
         if self.connection is None:
             return
 

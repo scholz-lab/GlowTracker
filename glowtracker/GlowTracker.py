@@ -2627,9 +2627,26 @@ class MacroscopeApp(App):
             
             elif key == 'capture_radius':
                 updateOverlayFlag = True
-            
-        # TODO: update device settings, i.e. stage limit
+        
+        elif section == 'Stage':
 
+            if self.stage is not None:
+
+                # Update the stage settings
+                if key == 'stage_limits':
+                    limits = [float(x) for x in value.split(',')]
+                    self.stage.set_rangelimits(limits)
+                
+                if key == 'maxspeed':
+                    maxspeed = float(value)
+                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
+                    self.stage.set_maxspeed(maxspeed, zaber_motion.units.LITERALS_TO_UNITS.get(maxspeed_unit))
+
+                if key == 'acceleration':
+                    acceleration = float(value)
+                    acceleration_unit = self.config.get('Stage', 'acceleration_unit')
+                    self.stage.set_accel(acceleration, zaber_motion.units.LITERALS_TO_UNITS.get(acceleration_unit))
+            
         # Update overlay
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
