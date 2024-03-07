@@ -2132,6 +2132,7 @@ class TrackingOverlayQuickButton(ToggleButton):
         if showtrackingoverlay:
             self.state = 'down'
             self.text = self.downText
+
         else:
             self.state = 'normal'
             self.text = self.normalText
@@ -2165,6 +2166,17 @@ class DualColorViewModeQuickButtonLayout(BoxLayout):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.dualcolorviewmodequickbutton = DualColorViewModeQuickButton()
+
+        app = App.get_running_app()
+        dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
+
+        if dualcolormode:
+            self.showButton()
+
+        else:
+            self.hideButton()
 
     
     def hideButton(self):
@@ -2573,7 +2585,30 @@ class MacroscopeApp(App):
         
         updateOverlayFlag = False
 
-        if section == 'Camera':
+        if section == 'Stage':
+
+            if self.stage is not None:
+
+                # Update the stage settings
+                if key == 'stage_limits':
+                    limits = [float(x) for x in value.split(',')]
+                    self.stage.set_rangelimits(limits)
+                
+                elif key == 'maxspeed':
+                    maxspeed = float(value)
+                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
+                    self.stage.set_maxspeed(maxspeed, zaber_motion.units.LITERALS_TO_UNITS.get(maxspeed_unit))
+
+                elif key == 'acceleration':
+                    acceleration = float(value)
+                    acceleration_unit = self.config.get('Stage', 'acceleration_unit')
+                    self.stage.set_accel(acceleration, zaber_motion.units.LITERALS_TO_UNITS.get(acceleration_unit))
+                
+                elif key == 'move_image_space_mode':
+                    # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
+                    self.moveImageSpaceMode = bool(int(value))
+
+        elif section == 'Camera':
 
             if key in ['pixelsize', 'rotation']:
 
@@ -2585,13 +2620,6 @@ class MacroscopeApp(App):
 
                 self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(pixelsize, imageNormalDir, rotation)
         
-        elif section == 'Experiment' and key == 'exppath':
-            self.root.ids.leftcolumn.ids.saveloc.text = value
-        
-        elif section == 'Stage' and key == 'move_image_space_mode':
-            # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
-            self.moveImageSpaceMode = bool(int(value))
-        
         elif section == 'DualColor':
             
             if key == 'dualcolormode':
@@ -2602,18 +2630,19 @@ class MacroscopeApp(App):
                 dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
                 if dualcolormode:
                     dualColorViewModeQuickButtonLayout.showButton()
+                    
                 else:
                     dualColorViewModeQuickButtonLayout.hideButton()
             
             elif key == 'mainside':
                 updateOverlayFlag = True
             
-            elif key == 'viewMode':
+            elif key == 'viewmode':
                 updateOverlayFlag = True
             
                 # Also update the DualColorViewMode Quick Button
-                self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbutton.state = \
-                    'down' if value == 'Merged' else 'normal'
+                button = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout.dualcolorviewmodequickbutton
+                button.state = 'down' if value == 'Merged' else 'normal'
         
         elif section == 'Tracking':
 
@@ -2628,24 +2657,10 @@ class MacroscopeApp(App):
             elif key == 'capture_radius':
                 updateOverlayFlag = True
         
-        elif section == 'Stage':
+        elif section == 'Experiment':
 
-            if self.stage is not None:
-
-                # Update the stage settings
-                if key == 'stage_limits':
-                    limits = [float(x) for x in value.split(',')]
-                    self.stage.set_rangelimits(limits)
-                
-                if key == 'maxspeed':
-                    maxspeed = float(value)
-                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
-                    self.stage.set_maxspeed(maxspeed, zaber_motion.units.LITERALS_TO_UNITS.get(maxspeed_unit))
-
-                if key == 'acceleration':
-                    acceleration = float(value)
-                    acceleration_unit = self.config.get('Stage', 'acceleration_unit')
-                    self.stage.set_accel(acceleration, zaber_motion.units.LITERALS_TO_UNITS.get(acceleration_unit))
+            if key == 'exppath':
+                self.root.ids.leftcolumn.ids.saveloc.text = value
             
         # Update overlay
         if updateOverlayFlag:
@@ -2690,7 +2705,7 @@ class MacroscopeApp(App):
 
 
     # ask for confirmation of closing
-    def on_request_close(self, *args):
+    def on_request_close(self, *args, **kwargs):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
         self._popup = Popup(title="Exit GlowTracker", content=content,
                             size_hint=(0.5, 0.2))
