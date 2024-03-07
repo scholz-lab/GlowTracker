@@ -505,16 +505,33 @@ MainWindow:
             id: trackingcheckbox
             on_state: root.trackingButtonCallback() if self.state=='down' else root.stopTracking()
 
-    GridLayout:
-        cols: 2
-        rows: 3
-        MyLabel:
-            text: 'Buffer'
-            color: '#ffffff'
-        MyCounter:
-            id: buffer
-            color: '#ffffff'
-            text: str(self.value)
+    BoxLayout:
+        orientation: 'vertical'
+
+        BoxLayout:
+            orientation: 'horizontal'
+            MyLabel:
+                text: 'Buffer'
+                color: '#ffffff'
+            MyCounter:
+                id: buffer
+                color: '#ffffff'
+                text: str(self.value)
+
+        BoxLayout:
+            orientation: 'horizontal'
+
+            TrackingOverlayQuickButton:
+                id: trackingoverlayquickbutton
+
+        BoxLayout:
+            id: minibox2
+            canvas:
+                Color:
+                    rgba: 0,1,0,1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
 
 ### LiveView, Record, Snap
 <ImageAcquisitionManager>:

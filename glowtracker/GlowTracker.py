@@ -2115,6 +2115,50 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         basler.cam_resetROI(camera)
 
+class TrackingOverlayQuickButton(ToggleButton):
+
+    normalText = 'Tracking Overlay: Off'
+    downText = 'Tracking Overlay: On'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        showtrackingoverlay = app.config.getboolean("Tracking", "showtrackingoverlay")
+
+        if showtrackingoverlay:
+            self.state = 'down'
+            self.text = self.downText
+        else:
+            self.state = 'normal'
+            self.text = self.normalText
+        
+        print('startingState: ', showtrackingoverlay)
+
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+        configValue = '0'
+
+        if state == 'normal':
+            self.text = self.normalText
+            configValue = '0'
+
+        else:
+            self.text = self.downText
+            configValue = '1'
+        
+        app.config.set("Tracking", "showtrackingoverlay", configValue)
+        app.config.write()
+
+        # Update overlay
+        #   Prevent at startup
+        if app.root is not None:
+            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
 
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -2323,11 +2367,19 @@ class MacroscopeApp(App):
         self.close_settings()
         self.destroy_settings()
         self.bind_keys()
+        
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
+        
         # TODO: update device settings, i.e. stage limit
+
         # Check turning on or off dual color mode
         self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
+        # Update quick-access button settings
+        showtrackingoverlay = self.config.getboolean('Tracking', 'showtrackingoverlay')
+        self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
+            'down' if showtrackingoverlay else 'normal'
 
 
     def stage_stop(self):
