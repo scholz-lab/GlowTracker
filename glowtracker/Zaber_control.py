@@ -66,6 +66,7 @@ class Stage:
         :param port: COM port to the stage
         :return: connection to the stage including the axes. Close it before closing using the close method
         """
+        print('Trying to connect stage')
         try:
             self.connection = Connection.open_serial_port(port)
             

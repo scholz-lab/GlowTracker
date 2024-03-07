@@ -56,6 +56,7 @@ from queue import Queue
 from overrides import override
 from typing import Tuple
 from io import TextIOWrapper
+import zaber_motion
 from pypylon import pylon
 import nidaqmx
 
