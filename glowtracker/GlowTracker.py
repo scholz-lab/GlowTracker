@@ -1417,7 +1417,6 @@ class ImageOverlay(FloatLayout):
     def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
         """Clear and draw the tracking overlay
         """
-        print('redrawTrackingOverlay')
         self.clearTrackingOverlay()
         self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
     
@@ -2413,17 +2412,19 @@ class MacroscopeApp(App):
         '''
 
         self.config.read('macroscope.ini')
-        s = self.settings_cls()
-        self.build_settings(s)
+        
+        settings = self.settings_cls()
+        self.build_settings(settings)
+        
         self.unbind_keys()
-        #if self.use_kivy_settings:
-        #    s.add_kivy_panel()
-        s.bind(on_close=self.close__destroy_settings,
-               on_config_change=self._on_config_change)
-        return s
+
+        settings.bind(on_close= self.close_destroy_settings,
+               on_config_change= self.on_config_change)
+        
+        return settings
 
 
-    def close__destroy_settings(self, *largs):
+    def close_destroy_settings(self, *largs):
         '''Close the previously opened settings panel.
 
         :return:
@@ -2435,41 +2436,7 @@ class MacroscopeApp(App):
         
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
-        
-        # TODO: update device settings, i.e. stage limit
-
-        # Update quick buttons
-        self.updateQuickButtons()
-
-        # Update overlay
-        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
     
-
-    def updateQuickButtons(self):
-        """Update quick-access button settings
-            - Tracking Overlay
-            - Dual Color View Mode
-        """
-        # 
-        #   Tracking Overlay button state
-        showtrackingoverlay = self.config.getboolean('Tracking', 'showtrackingoverlay')
-        self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
-            'down' if showtrackingoverlay else 'normal'
-        
-        #   Dual Color view mode
-        #       Dual Color view mode button layout 
-        dualcolormode = self.config.getboolean('DualColor', 'dualcolormode')
-        dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
-        if dualcolormode:
-            dualColorViewModeQuickButtonLayout.showButton()
-        else:
-            dualColorViewModeQuickButtonLayout.hideButton()
-
-        #       Dual Color view mode button state
-        viewmode = self.config.get('DualColor', 'viewmode')
-        self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbutton.state = \
-            'down' if viewmode == 'Merged' else 'normal'
-
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
@@ -2599,25 +2566,74 @@ class MacroscopeApp(App):
             self.bind_keys()
 
 
-    def on_config_change(self, config, section, key, value):
-        """if config changes, update certain things."""
+    def on_config_change(self, settingsWidget, config, section: str, key: str, value: str):
+
         if config is not self.config:
             return
         
-        token = (section, key)
-        if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
-            print('updated calibration matrix')
-            pixelsize = self.config.getfloat('Camera', 'pixelsize')
-            rotation= self.config.getfloat('Camera', 'rotation')
-            self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
+        updateOverlayFlag = False
+
+        if section == 'Camera':
+
+            if key in ['pixelsize', 'rotation']:
+
+                print('Updated calibration matrix')
+                pixelsize = self.config.getfloat('Camera', 'pixelsize')
+                imageNormalDir = self.config.get('Camera', 'imagenormaldir')
+                imageNormalDir = 1 if imageNormalDir == '+Z' else -1
+                rotation = self.config.getfloat('Camera', 'rotation')
+
+                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(pixelsize, imageNormalDir, rotation)
         
-        elif token == ('Experiment', 'exppath'):
+        elif section == 'Experiment' and key == 'exppath':
             self.root.ids.leftcolumn.ids.saveloc.text = value
         
-        elif token == ('Stage', 'move_image_space_mode'):
-            # Token is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
+        elif section == 'Stage' and key == 'move_image_space_mode':
+            # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
             self.moveImageSpaceMode = bool(int(value))
+        
+        elif section == 'DualColor':
+            
+            if key == 'dualcolormode':
+                updateOverlayFlag = True
 
+                # Also update the DualColorViewMode Quick Button Layout
+                dualcolormode = bool(int(value))
+                dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
+                if dualcolormode:
+                    dualColorViewModeQuickButtonLayout.showButton()
+                else:
+                    dualColorViewModeQuickButtonLayout.hideButton()
+            
+            elif key == 'mainside':
+                updateOverlayFlag = True
+            
+            elif key == 'viewMode':
+                updateOverlayFlag = True
+            
+                # Also update the DualColorViewMode Quick Button
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbutton.state = \
+                    'down' if value == 'Merged' else 'normal'
+        
+        elif section == 'Tracking':
+
+            if key == 'showtrackingoverlay':
+                updateOverlayFlag = True
+
+                # Also update the TrackingOverlay Quick Button
+                showtrackingoverlay = bool(int(value))
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
+                    'down' if showtrackingoverlay else 'normal'
+            
+            elif key == 'capture_radius':
+                updateOverlayFlag = True
+            
+        # TODO: update device settings, i.e. stage limit
+
+        # Update overlay
+        if updateOverlayFlag:
+            self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+        
 
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
