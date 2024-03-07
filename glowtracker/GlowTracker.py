@@ -2124,6 +2124,8 @@ class TrackingOverlayQuickButton(ToggleButton):
         super().__init__(**kwargs)
 
         self.markup = True
+        self.background_down = self.background_normal
+
         # Bind starting state to be the same as the config
         app = App.get_running_app()
         showtrackingoverlay = app.config.getboolean('Tracking', 'showtrackingoverlay')
@@ -2185,6 +2187,7 @@ class DualColorViewModeQuickButton(ToggleButton):
         super().__init__(**kwargs)
 
         self.markup = True
+        self.background_down = self.background_normal
 
         # Bind starting state to be the same as the config
         app = App.get_running_app()
