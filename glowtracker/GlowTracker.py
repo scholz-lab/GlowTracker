@@ -1417,7 +1417,6 @@ class ImageOverlay(FloatLayout):
     def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
         """Clear and draw the tracking overlay
         """
-        print('redrawTrackingOverlay')
         self.clearTrackingOverlay()
         self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
     
@@ -2115,6 +2114,127 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         basler.cam_resetROI(camera)
 
+class TrackingOverlayQuickButton(ToggleButton):
+
+    normalText = 'Tracking Overlay: [b][color=ff0000]Off[/color][/b]'
+    downText = 'Tracking Overlay: [b][color=00ff00]On[/color][/b]'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.markup = True
+        self.background_down = self.background_normal
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        showtrackingoverlay = app.config.getboolean('Tracking', 'showtrackingoverlay')
+
+        if showtrackingoverlay:
+            self.state = 'down'
+            self.text = self.downText
+
+        else:
+            self.state = 'normal'
+            self.text = self.normalText
+        
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+        configValue = '0'
+
+        if state == 'normal':
+            self.text = self.normalText
+            configValue = '0'
+
+        else:
+            self.text = self.downText
+            configValue = '1'
+        
+        app.config.set('Tracking', 'showtrackingoverlay', configValue)
+        app.config.write()
+
+        # Update overlay
+        #   Prevent at startup
+        if app.root is not None:
+            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
+class DualColorViewModeQuickButtonLayout(BoxLayout):
+    
+    dualcolorviewmodequickbutton = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.dualcolorviewmodequickbutton = DualColorViewModeQuickButton()
+
+        app = App.get_running_app()
+        dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
+
+        if dualcolormode:
+            self.showButton()
+
+        else:
+            self.hideButton()
+
+    
+    def hideButton(self):
+        if self.dualcolorviewmodequickbutton in self.children:
+            self.remove_widget(self.dualcolorviewmodequickbutton)
+
+
+    def showButton(self):
+        if not self.dualcolorviewmodequickbutton in self.children:
+            self.add_widget(self.dualcolorviewmodequickbutton)
+
+    
+class DualColorViewModeQuickButton(ToggleButton):
+
+    normalText = 'Dual Color: [b]Splitted[/b]'
+    downText = 'Dual Color: [b]Merged[/b]'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.markup = True
+        self.background_down = self.background_normal
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        viewmode = app.config.get('DualColor', 'viewmode')
+
+        if viewmode == 'Splitted':
+            self.state = 'normal'
+            self.text = self.normalText
+
+        elif viewmode == 'Merged':
+            self.state = 'down'
+            self.text = self.downText
+        
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+        configValue = str()
+
+        if state == 'normal':
+            configValue = 'Splitted'
+            self.text = self.normalText
+
+        else:
+            configValue = 'Merged'
+            self.text = self.downText
+        
+        app.config.set('DualColor', 'viewmode', configValue)
+        app.config.write()
+
+        # Update overlay
+        #   Prevent at startup
+        if app.root is not None:
+            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
 
 # display if hardware is connected
 class Connections(BoxLayout):
@@ -2304,17 +2424,19 @@ class MacroscopeApp(App):
         '''
 
         self.config.read('macroscope.ini')
-        s = self.settings_cls()
-        self.build_settings(s)
+        
+        settings = self.settings_cls()
+        self.build_settings(settings)
+        
         self.unbind_keys()
-        #if self.use_kivy_settings:
-        #    s.add_kivy_panel()
-        s.bind(on_close=self.close__destroy_settings,
-               on_config_change=self._on_config_change)
-        return s
+
+        settings.bind(on_close= self.close_destroy_settings,
+               on_config_change= self.on_config_change)
+        
+        return settings
 
 
-    def close__destroy_settings(self, *largs):
+    def close_destroy_settings(self, *largs):
         '''Close the previously opened settings panel.
 
         :return:
@@ -2323,12 +2445,10 @@ class MacroscopeApp(App):
         self.close_settings()
         self.destroy_settings()
         self.bind_keys()
+        
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
-        # TODO: update device settings, i.e. stage limit
-        # Check turning on or off dual color mode
-        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
-
+    
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
@@ -2458,25 +2578,94 @@ class MacroscopeApp(App):
             self.bind_keys()
 
 
-    def on_config_change(self, config, section, key, value):
-        """if config changes, update certain things."""
+    def on_config_change(self, settingsWidget, config, section: str, key: str, value: str):
+
         if config is not self.config:
             return
         
-        token = (section, key)
-        if token == ('Camera', 'pixelsize') or token == ('Camera', 'rotation'):
-            print('updated calibration matrix')
-            pixelsize = self.config.getfloat('Camera', 'pixelsize')
-            rotation= self.config.getfloat('Camera', 'rotation')
-            self.imageToStageMat, self.imageToStageRotMat = macro.genImageToStageMatrix(pixelsize, rotation)
-        
-        elif token == ('Experiment', 'exppath'):
-            self.root.ids.leftcolumn.ids.saveloc.text = value
-        
-        elif token == ('Stage', 'move_image_space_mode'):
-            # Token is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
-            self.moveImageSpaceMode = bool(int(value))
+        updateOverlayFlag = False
 
+        if section == 'Stage':
+
+            if self.stage is not None:
+
+                # Update the stage settings
+                if key == 'stage_limits':
+                    limits = [float(x) for x in value.split(',')]
+                    self.stage.set_rangelimits(limits)
+                
+                elif key == 'maxspeed':
+                    maxspeed = float(value)
+                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
+                    self.stage.set_maxspeed(maxspeed, zaber_motion.units.LITERALS_TO_UNITS.get(maxspeed_unit))
+
+                elif key == 'acceleration':
+                    acceleration = float(value)
+                    acceleration_unit = self.config.get('Stage', 'acceleration_unit')
+                    self.stage.set_accel(acceleration, zaber_motion.units.LITERALS_TO_UNITS.get(acceleration_unit))
+                
+                elif key == 'move_image_space_mode':
+                    # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
+                    self.moveImageSpaceMode = bool(int(value))
+
+        elif section == 'Camera':
+
+            if key in ['pixelsize', 'rotation']:
+
+                print('Updated calibration matrix')
+                pixelsize = self.config.getfloat('Camera', 'pixelsize')
+                imageNormalDir = self.config.get('Camera', 'imagenormaldir')
+                imageNormalDir = 1 if imageNormalDir == '+Z' else -1
+                rotation = self.config.getfloat('Camera', 'rotation')
+
+                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(pixelsize, imageNormalDir, rotation)
+        
+        elif section == 'DualColor':
+            
+            if key == 'dualcolormode':
+                updateOverlayFlag = True
+
+                # Also update the DualColorViewMode Quick Button Layout
+                dualcolormode = bool(int(value))
+                dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
+                if dualcolormode:
+                    dualColorViewModeQuickButtonLayout.showButton()
+                    
+                else:
+                    dualColorViewModeQuickButtonLayout.hideButton()
+            
+            elif key == 'mainside':
+                updateOverlayFlag = True
+            
+            elif key == 'viewmode':
+                updateOverlayFlag = True
+            
+                # Also update the DualColorViewMode Quick Button
+                button = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout.dualcolorviewmodequickbutton
+                button.state = 'down' if value == 'Merged' else 'normal'
+        
+        elif section == 'Tracking':
+
+            if key == 'showtrackingoverlay':
+                updateOverlayFlag = True
+
+                # Also update the TrackingOverlay Quick Button
+                showtrackingoverlay = bool(int(value))
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
+                    'down' if showtrackingoverlay else 'normal'
+            
+            elif key == 'capture_radius':
+                updateOverlayFlag = True
+        
+        elif section == 'Experiment':
+
+            if key == 'exppath':
+                self.root.ids.leftcolumn.ids.saveloc.text = value
+            
+        # Update overlay
+        if updateOverlayFlag:
+            self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+        
 
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
@@ -2516,7 +2705,7 @@ class MacroscopeApp(App):
 
 
     # ask for confirmation of closing
-    def on_request_close(self, *args):
+    def on_request_close(self, *args, **kwargs):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
         self._popup = Popup(title="Exit GlowTracker", content=content,
                             size_hint=(0.5, 0.2))
