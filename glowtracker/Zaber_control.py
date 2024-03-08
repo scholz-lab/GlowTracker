@@ -174,7 +174,7 @@ class Stage:
             try:
                 # Set axis acceleration
                 axis.settings.set("accel", accel, units_from_literals(unit))
-                
+
             except CommandFailedException as e:
                 print(f'Setting acceleration error: {e}')
 
@@ -415,21 +415,51 @@ class Stage:
         return pos
 
 
-    def set_rangelimits(self, limits: List[float] = (160,160,155), unit: str = 'mm') -> None:
+    def set_rangelimits(self, limits: List[float] = (160,160,155), unit: str = 'mm') -> List[float]:
         """Sets limit for every device axis separately. necessary to avoid collision with other set-up elements.
 
         Args:
             limits (List[float], optional): Axis range limit. Defaults to (160,160,155).
             unit (str, optional): Axis limit. Defaults to 'mm'.
+
+        Returns:
+            rangelimits List[float]: the device returned maximum ranges, indicating the actual value it is set to. The list is of lenght 2 or 3 depending how many axes there are
         """        
         # set axes limits in millimetres (max. value is ?)
         if self.connection is None:
             return
         
-        self.axis_x.settings.set('limit.max', limits[0], units_from_literals(unit))
-        self.axis_y.settings.set('limit.max', limits[1], units_from_literals(unit))
+        rangelimits: List[float] = [0, 0]
+        
+        # Axis 1
+        try:
+            self.axis_x.settings.set('limit.max', limits[0], units_from_literals(unit))
+
+        except CommandFailedException as e:
+            print(f'Setting stage limit error: {e}')
+
+        rangelimits[0] = self.axis_x.settings.get('limit.max', units_from_literals(unit))
+
+        # Axis 2
+        try:
+            self.axis_y.settings.set('limit.max', limits[1], units_from_literals(unit))
+
+        except CommandFailedException as e:
+            print(f'Setting stage limit error: {e}')
+        
+        rangelimits[1] = self.axis_y.settings.get('limit.max', units_from_literals(unit))
+
+        # Optional, Axis 3
         if self.axis_z is not None:
-            self.axis_z.settings.set('limit.max', limits[2], units_from_literals(unit))
+            try:
+                self.axis_z.settings.set('limit.max', limits[2], units_from_literals(unit))
+
+            except CommandFailedException as e:
+                print(f'Setting stage limit error: {e}')
+                
+            rangelimits.append( self.axis_z.settings.get('limit.max', units_from_literals(unit)) )
+        
+        return rangelimits
 
 
     def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)) -> None:

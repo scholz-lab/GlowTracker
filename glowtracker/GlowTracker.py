@@ -2592,8 +2592,14 @@ class MacroscopeApp(App):
 
                 # Update the stage settings
                 if key == 'stage_limits':
+                    # Set the stage limit
                     limits = [float(x) for x in value.split(',')]
-                    self.stage.set_rangelimits(limits)
+                    limits = self.stage.set_rangelimits(limits)
+                    # Get back the current value and set back to settings in case the input value is invalid
+                    # Round to 2 digis and convert to a str of tuple of char
+                    limits = ','.join([str(round(x,2)) for x in limits])
+                    self.config.set('Stage', 'stage_limits', limits)
+                    updateSettingsWidgetFlag = True
                 
                 elif key == 'maxspeed':
                     # Set the stage maxspeed
@@ -2679,10 +2685,10 @@ class MacroscopeApp(App):
         if updateSettingsWidgetFlag:
             panels = settingsWidget.interface.content.panels
     
+            # For every setting items in the panel
             for panel in panels.values():        
-                children = panel.children
-
-                for child in children:
+                for child in panel.children:
+                    
                     if isinstance(child, SettingItem):                    
                         child.value = panel.get_value(child.section, child.key)
         
