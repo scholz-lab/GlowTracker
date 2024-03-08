@@ -11,7 +11,7 @@ import kivy
 kivy.require('2.0.0')
 from kivy.app import App
 from kivy.lang import Builder
-from kivy.config import Config
+from kivy.config import Config, ConfigParser
 # get the free clock (more accurate timing)
 # Config.set('graphics', 'KIVY_CLOCK', 'free')
 # Config.set('modules', 'monitor', '')
@@ -40,7 +40,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
-from kivy.uix.settings import SettingsWithSidebar
+from kivy.uix.settings import SettingsWithSidebar, SettingItem
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
 
@@ -2578,11 +2578,12 @@ class MacroscopeApp(App):
             self.bind_keys()
 
 
-    def on_config_change(self, settingsWidget, config, section: str, key: str, value: str):
+    def on_config_change(self, settingsWidget: SettingsWithSidebar, config: ConfigParser, section: str, key: str, value: str):
 
         if config is not self.config:
             return
         
+        updateSettingsWidgetFlag = False
         updateOverlayFlag = False
 
         if section == 'Stage':
@@ -2591,18 +2592,36 @@ class MacroscopeApp(App):
 
                 # Update the stage settings
                 if key == 'stage_limits':
+                    # Set the stage limit
                     limits = [float(x) for x in value.split(',')]
-                    self.stage.set_rangelimits(limits)
+                    limits = self.stage.set_rangelimits(limits)
+                    # Get back the current value and set back to settings in case the input value is invalid
+                    # Round to 2 digis and convert to a str of tuple of char
+                    limits = ','.join([str(round(x,2)) for x in limits])
+                    self.config.set('Stage', 'stage_limits', limits)
+                    updateSettingsWidgetFlag = True
                 
                 elif key == 'maxspeed':
+                    # Set the stage maxspeed
                     maxspeed = float(value)
                     maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
-                    self.stage.set_maxspeed(maxspeed, zaber_motion.units.LITERALS_TO_UNITS.get(maxspeed_unit))
-
+                    maxspeed = self.stage.set_maxspeed(maxspeed, maxspeed_unit)
+                    maxspeed = round(maxspeed, 2)
+                    # Get back the current value and set back to settings in case the input value is invalid
+                    self.config.set('Stage', 'maxspeed', maxspeed)
+                    self.config.write()
+                    updateSettingsWidgetFlag = True
+                    
                 elif key == 'acceleration':
+                    # Set the stage acceleration speed
                     acceleration = float(value)
                     acceleration_unit = self.config.get('Stage', 'acceleration_unit')
-                    self.stage.set_accel(acceleration, zaber_motion.units.LITERALS_TO_UNITS.get(acceleration_unit))
+                    acceleration = self.stage.set_accel(acceleration, acceleration_unit)
+                    acceleration = round(acceleration, 2)
+                    # Get back the current value and set back to settings in case the input value is invalid
+                    self.config.set('Stage', 'acceleration', acceleration)
+                    self.config.write()
+                    updateSettingsWidgetFlag = True
                 
                 elif key == 'move_image_space_mode':
                     # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
@@ -2662,6 +2681,17 @@ class MacroscopeApp(App):
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
             
+        # Update setting widget value to reflect the setting file
+        if updateSettingsWidgetFlag:
+            panels = settingsWidget.interface.content.panels
+    
+            # For every setting items in the panel
+            for panel in panels.values():        
+                for child in panel.children:
+                    
+                    if isinstance(child, SettingItem):                    
+                        child.value = panel.get_value(child.section, child.key)
+        
         # Update overlay
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
