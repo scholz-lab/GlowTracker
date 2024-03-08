@@ -2116,8 +2116,8 @@ class RuntimeControls(BoxLayout):
 
 class TrackingOverlayQuickButton(ToggleButton):
 
-    normalText = '[b]Tracking Overlay[/b]: [color=ff0000]Off[/color]'
-    downText = '[b]Tracking Overlay[/b]: [color=00ff00]On[/color]'
+    normalText = 'Tracking Overlay: [b][color=ff0000]Off[/color][/b]'
+    downText = 'Tracking Overlay: [b][color=00ff00]On[/color][/b]'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -2191,8 +2191,8 @@ class DualColorViewModeQuickButtonLayout(BoxLayout):
     
 class DualColorViewModeQuickButton(ToggleButton):
 
-    normalText = '[b]Dual Color[/b]: Splitted'
-    downText = '[b]Dual Color[/b]: Merged'
+    normalText = 'Dual Color: [b]Splitted[/b]'
+    downText = 'Dual Color: [b]Merged[/b]'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
