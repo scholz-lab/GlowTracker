@@ -2,7 +2,7 @@ from pypylon import genicam, pylon
 import os
 import time
 from skimage.io import imsave
-from typing import Tuple
+from typing import Dict, Tuple
 from dataclasses import dataclass
 import numpy as np
 
@@ -198,3 +198,52 @@ def set_framerate(camera, fps):
 def get_shape(camera):
     """return current field of view size."""
     return  camera.Height.GetValue(), camera.Width.GetValue()
+
+
+def readPFSFile(filepath: str) -> Dict[str, str] | None:
+    """Read a camera config file ".pfs" and parse as a dict
+
+    Args:
+        filepath (str): the .pfs file path
+
+    Returns:
+        Dict[str, str] | None: A string dictionary contains
+        the configuration key and value. The value is always parsed
+        as a string, so if it is number or other type, it would need
+        to be converted manully before use. Return None if the reading or
+        parsing is unsuccessfull.
+    """
+    
+    parsedDict = {}
+    
+    try:
+        with open(filepath, 'r') as file:
+            
+            for line in file:
+
+                # Stip unnescessary spaces
+                line = line.strip()
+                
+                # Skip comment
+                if line.startswith('#'):
+                    continue
+
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    key, value = parts
+                    parsedDict[key] = value
+                
+                else:
+                    print(f'Error: Parsing {filepath}. Format is not supported')
+                    return None
+        
+            return parsedDict
+
+    except FileNotFoundError:
+        print(f"Error: File '{filepath}' is not found.")
+        
+    except Exception as e:
+        print(e)
+    
+    return None
+

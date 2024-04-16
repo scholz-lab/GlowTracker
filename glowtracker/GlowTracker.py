@@ -130,7 +130,7 @@ class MainWindow(GridLayout):
 
 class LeftColumn(BoxLayout):
     # file saving and loading
-    loadfile = ObjectProperty(None)
+    cameraConfigFile = ObjectProperty(None)
     savefile = StringProperty("")
     cameraprops = ObjectProperty(None)
     saveloc = ObjectProperty(None)
@@ -138,12 +138,16 @@ class LeftColumn(BoxLayout):
 
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
+
+        # Camera config value
+        self.cameraConfig: dict = []
+        
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
         self.savefile = App.get_running_app().config.get("Experiment", "exppath")
         self.path_validate()
-        self.loadfile = App.get_running_app().config.get('Camera', 'default_settings')
+        self.cameraConfigFile = App.get_running_app().config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
 
@@ -174,7 +178,7 @@ class LeftColumn(BoxLayout):
     # popup camera file selector
     def show_load(self):
         content = LoadCameraProperties(load=self.load, cancel=self.dismiss_popup)
-        content.ids.filechooser2.path = self.loadfile
+        content.ids.filechooser2.path = self.cameraConfigFile
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
          #unbind keyboard events
@@ -194,7 +198,7 @@ class LeftColumn(BoxLayout):
 
 
     def load(self, path, filename):
-        self.loadfile = os.path.join(path, filename[0])
+        self.cameraConfigFile = os.path.join(path, filename[0])
         self.apply_cam_settings()
         self.dismiss_popup()
 
@@ -206,11 +210,22 @@ class LeftColumn(BoxLayout):
         self.dismiss_popup()
 
 
-    def apply_cam_settings(self):
+    def apply_cam_settings(self) -> None:
+        """Read and apply the camera config file to the camera.
+        """
         camera = App.get_running_app().camera
+
         if camera is not None:
+
             print('Updating camera settings')
-            basler.update_props(camera, propfile=self.loadfile)
+
+            # Set the camera config as specified in the file
+            basler.update_props(camera, propfile= self.cameraConfigFile)
+
+            # Read and store the camera config separately for later use
+            self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
+
+            # Update display values on the GUI
             self.update_settings_display()
 
 
@@ -1824,8 +1839,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if True:
-        # if camera is not None and stage is not None and camera.IsGrabbing():
+        if camera is not None and stage is not None and camera.IsGrabbing():
              # get config values
             # find an animal and center it once by moving the stage
             self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
@@ -1839,23 +1853,7 @@ class RuntimeControls(BoxLayout):
                             size_hint=(0.5, 0.25))
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
-
-
-    def stopTracking(self):
-        self.isTracking = False
-
-        if self.coord_updateevent is not None:
-            Clock.unschedule(self.coord_updateevent)
-            self.coord_updateevent = None
-        
-        # reset camera params
-        self.reset_ROI()
-        self.cropX = 0
-        self.cropY = 0
-
-        # Update overlay
-        App.get_running_app().root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
-
+    
 
     def startTracking(self, start_pos_tex_coord: np.array) -> None:
         """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
@@ -1928,6 +1926,33 @@ class RuntimeControls(BoxLayout):
         # schedule occasional position check of the stage
         self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
+
+    def set_ROI(self, roiX, roiY):
+        app = App.get_running_app()
+        camera = app.camera
+        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.recordbutton.state
+        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state
+       
+        if rec == 'down':
+            #basler.stop_grabbing(camera)
+            rec = 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            rec = 'down'
+        elif disp == 'down':
+            #basler.stop_grabbing(camera)
+            disp= 'normal'
+            # reset camera field of view to smaller size around center
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            disp = 'down'
+            # 
+        print(hc, wc, roiX, roiY)
+        # if desired FOV is smaller than allowed by camera, crop in GUI
+        if wc > roiX:
+            self.cropX = int((wc-roiX)//2)
+        if hc > roiY:
+            self.cropY = int((hc-roiY)//2)
+    
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
         """Tracking function to be running inside a thread
@@ -2082,37 +2107,47 @@ class RuntimeControls(BoxLayout):
         self.trackingMask = None
 
 
-    def set_ROI(self, roiX, roiY):
-        app = App.get_running_app()
-        camera = app.camera
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state
-       
-        if rec == 'down':
-            #basler.stop_grabbing(camera)
-            rec = 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
-            rec = 'down'
-        elif disp == 'down':
-            #basler.stop_grabbing(camera)
-            disp= 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
-            disp = 'down'
-            # 
-        print(hc, wc, roiX, roiY)
-        # if desired FOV is smaller than allowed by camera, crop in GUI
-        if wc > roiX:
-            self.cropX = int((wc-roiX)//2)
-        if hc > roiY:
-            self.cropY = int((hc-roiY)//2)
+    def stopTracking(self):
+        """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
+        """
+        app: MacroscopeApp = App.get_running_app()
+        camera: pylon.InstantCamera = app.camera
+        
+        self.isTracking = False
+        self.cropX = 0
+        self.cropY = 0
 
+        if self.coord_updateevent is not None:
+            Clock.unschedule(self.coord_updateevent)
+            self.coord_updateevent = None
 
-    def reset_ROI(self):
-        app = App.get_running_app()
-        camera = app.camera
-        basler.cam_resetROI(camera)
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        # If in single color mode
+        if not dualColorMode:
+
+            # Reset the camera params back: Width, Height, OffsetX, OffsetY, center flag
+            cameraConfig: dict = app.root.ids.leftcolumn.cameraConfig
+
+            # cam stop
+            camera.AcquisitionStop.Execute()
+            # grab unlock
+            camera.TLParamsLocked = False
+
+            camera.Width = int(cameraConfig['Width'])
+            camera.Height = int(cameraConfig['Height'])
+            camera.OffsetX = int(cameraConfig['OffsetX'])
+            camera.OffsetY = int(cameraConfig['OffsetY'])
+            camera.CenterX = bool(cameraConfig['CenterX'])
+            camera.CenterY = bool(cameraConfig['CenterY'])
+
+            # grab lock
+            camera.TLParamsLocked = True
+            # cam start
+            camera.AcquisitionStart.Execute()
+
+        # Update overlay
+        app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
 
 class TrackingOverlayQuickButton(ToggleButton):
 
