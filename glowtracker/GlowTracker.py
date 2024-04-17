@@ -1937,13 +1937,13 @@ class RuntimeControls(BoxLayout):
             #basler.stop_grabbing(camera)
             rec = 'normal'
             # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, isCenter = True)
             rec = 'down'
         elif disp == 'down':
             #basler.stop_grabbing(camera)
             disp= 'normal'
             # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, center = True)
+            hc, wc = basler.cam_setROI(camera, roiX, roiY, isCenter = True)
             disp = 'down'
             # 
         print(hc, wc, roiX, roiY)
@@ -2112,6 +2112,9 @@ class RuntimeControls(BoxLayout):
         """
         app: MacroscopeApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
+
+        if camera is None:
+            return
         
         self.isTracking = False
         self.cropX = 0
@@ -2135,10 +2138,10 @@ class RuntimeControls(BoxLayout):
 
             camera.Width = int(cameraConfig['Width'])
             camera.Height = int(cameraConfig['Height'])
+            camera.CenterX = bool(int(cameraConfig['CenterX']))
+            camera.CenterY = bool(int(cameraConfig['CenterY']))
             camera.OffsetX = int(cameraConfig['OffsetX'])
             camera.OffsetY = int(cameraConfig['OffsetY'])
-            camera.CenterX = bool(cameraConfig['CenterX'])
-            camera.CenterY = bool(cameraConfig['CenterY'])
 
             # grab lock
             camera.TLParamsLocked = True
