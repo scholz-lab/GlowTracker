@@ -232,7 +232,7 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
             
             for line in file:
 
-                # Stip unnescessary spaces
+                # Strip unnescessary spaces
                 line = line.strip()
                 
                 # Skip comment
