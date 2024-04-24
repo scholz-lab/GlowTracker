@@ -1,11 +1,17 @@
 import asyncio
-from zaber_motion import Library, Units, MotionLibException, MovementFailedException
-from zaber_motion.units import LITERALS_TO_UNITS, units_from_literals
+from zaber_motion import Library, Units, MotionLibException, MovementFailedException, CommandFailedException
+from zaber_motion.units import units_from_literals
 from zaber_motion.ascii import Connection, Axis, Device
 from dataclasses import dataclass
 import math
 from typing import List, Tuple, TypeAlias
 from enum import Enum
+
+# Default settings
+DEFAULT_MAXSPEED = 20.0
+DEFAULT_MAXSPEED_UNIT = 'mm/s'
+DEFAULT_ACCEL = 60.0
+DEFAULT_ACCEL_UNIT = 'mm/s^2'
 
 # Declare common type
 Vec3: TypeAlias = Tuple[float, float, float]
@@ -28,16 +34,16 @@ class AxisEnum(Enum):
 
 
 class Stage:
-    def __init__(self, port:str , maxspeed: float = 20, maxspeed_unit: str = 'mm/s',
-                 accel: float = 60, accel_unit: str = 'mm/s^2'):
+    def __init__(self, port:str , maxspeed: float = DEFAULT_MAXSPEED, maxspeed_unit: str = DEFAULT_MAXSPEED_UNIT,
+                 accel: float = DEFAULT_ACCEL, accel_unit: str = DEFAULT_ACCEL_UNIT):
         """Initialize a wrapper around the stage set stage parameters.
 
         Args:
             port (str): connection port
             maxspeed (float, optional): maximum axes' speed. Defaults to 20.
-            maxspeed_unit (str, optional): maximum axes' speed unit. Defaults to 'mm/s'.
-            accel (float, optional): axes' acceleration. Defaults to 60.
-            accel_unit (str, optional): axes' acceleration unit. Defaults to 'mm/s^2'.
+            maxspeed_unit (str, optional): maximum axes' speed unit. Defaults to DEFAULT_MAXSPEED_UNIT.
+            accel (float, optional): axes' acceleration. Defaults to DEFAULT_ACCEL.
+            accel_unit (str, optional): axes' acceleration unit. Defaults to DEFAULT_ACCEL_UNIT.
         """                
         
         # Define class properties
@@ -50,12 +56,12 @@ class Stage:
         
         # Try connecting to the stage
         self.connection = self.connect_stage(port)
-        print(self.connection)
         
         if self.connection is not None:
+            print(f'Connection to stage: {self.connection}')
             self.assign_axes()
-            self.maxspeed = self.set_maxspeed(maxspeed, LITERALS_TO_UNITS.get(maxspeed_unit))
-            self.accel = self.set_accel(accel, LITERALS_TO_UNITS.get(accel_unit))
+            self.maxspeed = self.set_maxspeed(maxspeed, units_from_literals(maxspeed_unit))
+            self.accel = self.set_accel(accel, units_from_literals(accel_unit))
         
         self.state = StageState()
             
@@ -79,7 +85,7 @@ class Stage:
                 return None
 
         except Exception as e:
-            print(e)
+            print(f'Connect stage error: {e}')
             return None
 
 
@@ -110,17 +116,16 @@ class Stage:
             self.no_axes = 3
 
 
-    def set_maxspeed(self, maxspeed: float = 20.0, unit: Units = Units.VELOCITY_MILLIMETRES_PER_SECOND) -> float:
+    def set_maxspeed(self, maxspeed: float = DEFAULT_MAXSPEED, unit: str = DEFAULT_MAXSPEED_UNIT) -> float:
         """Set maximum speed to every axes.
 
         Args:
-            speed (float, optional): maximum speed. Defaults to 20.0.
-            unit (Units, optional): unit of the maximum speed. Defaults to Units.VELOCITY_MILLIMETRES_PER_SECOND.
+            speed (float, optional): maximum speed. Defaults to DEFAULT_MAXSPEED.
+            unit (str, optional): unit of the maximum speed. Defaults to DEFAULT_MAXSPEED_UNIT.
 
         Returns:
             maxspeed (float): the device returned maximum speed, indicating the actual value it is set to
         """
-
         if self.connection is None:
             return
 
@@ -133,21 +138,25 @@ class Stage:
         
         for axis in axes:
             # Set axis max speed
-            axis.settings.set("maxspeed", maxspeed, unit)
+            try:
+                axis.settings.set("maxspeed", maxspeed, units_from_literals(unit))
+
+            except CommandFailedException as e:
+                print(f'Setting maxspeed error: {e}')
 
             # Retrieve actual axis max speed
             self.maxspeed = axis.settings.get("maxspeed", unit)
-            print(f'Maximum speed: {self.maxspeed}[{units_from_literals(unit)}]')
+            print(f'Maximum speed: {self.maxspeed}[{unit}]')
             
         return self.maxspeed
     
 
-    def set_accel(self, accel: float = 60, unit: Units = Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED) -> float:
+    def set_accel(self, accel: float = DEFAULT_ACCEL, unit: str = DEFAULT_ACCEL_UNIT) -> float:
         """Set acceleration to every axes.
 
         Args:
-            accel (float, optional): acceleration. Defaults to 60.0.
-            unit (Units, optional): unit of the acceleration. Defaults to Units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED.
+            accel (float, optional): acceleration. Defaults to DEFAULT_ACCEL.
+            unit (str, optional): unit of the acceleration. Defaults to DEFAULT_ACCEL_UNIT.
 
         Returns:
             accel (float): the device returned acceleration, indicating the actual value it is set to
@@ -163,12 +172,16 @@ class Stage:
             axes = [self.axis_x, self.axis_y, self.axis_z]
         
         for axis in axes:
-            # Set axis acceleration
-            axis.settings.set("accel", accel, unit)
+            try:
+                # Set axis acceleration
+                axis.settings.set("accel", accel, units_from_literals(unit))
+
+            except CommandFailedException as e:
+                print(f'Setting acceleration error: {e}')
 
             # Retrieve actual axis acceleration 
-            self.accel = axis.settings.get("accel", unit)
-            print(f'Acceleration: {self.accel}[{units_from_literals(unit)}]')
+            self.accel = axis.settings.get("accel", units_from_literals(unit))
+            print(f'Acceleration: {self.accel}[{unit}]')
 
         return self.accel
 
@@ -211,13 +224,13 @@ class Stage:
         
         try:
             if pos_len >= 1 and self.axis_x is not None and position[0] != 0:
-                self.axis_x.move_absolute(position[0], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_x.move_absolute(position[0], units_from_literals(unit), wait_until_idle)
 
             if pos_len >= 2 and self.axis_y is not None and position[1] != 0:
-                self.axis_y.move_absolute(position[1], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_y.move_absolute(position[1], units_from_literals(unit), wait_until_idle)
             
             if pos_len == 3 and self.axis_z is not None and position[2] != 0:
-                self.axis_z.move_absolute(position[2], LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_z.move_absolute(position[2], units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -234,7 +247,7 @@ class Stage:
         """        
         try:
             if self.axis_x is not None:
-                self.axis_x.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_x.move_relative(step, units_from_literals(unit), wait_until_idle)
 
         except MotionLibException as e:
             print(e)
@@ -249,7 +262,7 @@ class Stage:
         """
         try:
             if self.axis_y is not None:
-                self.axis_y.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_y.move_relative(step, units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -264,7 +277,7 @@ class Stage:
         """
         try:
             if self.axis_z is not None:
-                self.axis_z.move_relative(step, LITERALS_TO_UNITS.get(unit), wait_until_idle)
+                self.axis_z.move_relative(step, units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -305,15 +318,15 @@ class Stage:
             # Move each axis simultaneously
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
                 self.state.isMoving_x = True
-                self.axis_x.move_velocity(velocity[0], LITERALS_TO_UNITS.get(unit))
+                self.axis_x.move_velocity(velocity[0], units_from_literals(unit))
             
             if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
                 self.state.isMoving_y = True
-                self.axis_y.move_velocity(velocity[1], LITERALS_TO_UNITS.get(unit))
+                self.axis_y.move_velocity(velocity[1], units_from_literals(unit))
 
             if self.axis_z is not None and not self.state.isMoving_z and velocity[2] != 0:
                 self.state.isMoving_z = True
-                self.axis_z.move_velocity(velocity[2], LITERALS_TO_UNITS.get(unit))
+                self.axis_z.move_velocity(velocity[2], units_from_literals(unit))
         except MovementFailedException as e:
             print(e)
 
@@ -376,10 +389,10 @@ class Stage:
 
                 loop = []
 
-                loop.append(self.axis_x.get_position_async(LITERALS_TO_UNITS.get(unit)))
-                loop.append(self.axis_y.get_position_async(LITERALS_TO_UNITS.get(unit)))
+                loop.append(self.axis_x.get_position_async(units_from_literals(unit)))
+                loop.append(self.axis_y.get_position_async(units_from_literals(unit)))
                 if self.axis_z is not None:
-                    loop.append(self.axis_z.get_position_async(LITERALS_TO_UNITS.get(unit)))
+                    loop.append(self.axis_z.get_position_async(units_from_literals(unit)))
 
                 move_coroutine = asyncio.gather(*loop)
                 event_loop = asyncio.get_event_loop()
@@ -389,10 +402,10 @@ class Stage:
 
                 pos = []
                 
-                pos.append(self.axis_x.get_position(LITERALS_TO_UNITS.get(unit)))
-                pos.append(self.axis_y.get_position(LITERALS_TO_UNITS.get(unit)))
+                pos.append(self.axis_x.get_position(units_from_literals(unit)))
+                pos.append(self.axis_y.get_position(units_from_literals(unit)))
                 if self.axis_z is not None:
-                    pos.append(self.axis_z.get_position(LITERALS_TO_UNITS.get(unit)))
+                    pos.append(self.axis_z.get_position(units_from_literals(unit)))
             
         except MotionLibException as e:
             # Handle exception
@@ -403,21 +416,51 @@ class Stage:
         return pos
 
 
-    def set_rangelimits(self, limits: List[float] = (160,160,155), unit: str = 'mm') -> None:
+    def set_rangelimits(self, limits: List[float] = (160,160,155), unit: str = 'mm') -> List[float]:
         """Sets limit for every device axis separately. necessary to avoid collision with other set-up elements.
 
         Args:
             limits (List[float], optional): Axis range limit. Defaults to (160,160,155).
             unit (str, optional): Axis limit. Defaults to 'mm'.
+
+        Returns:
+            rangelimits List[float]: the device returned maximum ranges, indicating the actual value it is set to. The list is of lenght 2 or 3 depending how many axes there are
         """        
         # set axes limits in millimetres (max. value is ?)
         if self.connection is None:
             return
         
-        self.axis_x.settings.set('limit.max', limits[0], LITERALS_TO_UNITS.get(unit))
-        self.axis_y.settings.set('limit.max', limits[1], LITERALS_TO_UNITS.get(unit))
+        rangelimits: List[float] = [0, 0]
+        
+        # Axis 1
+        try:
+            self.axis_x.settings.set('limit.max', limits[0], units_from_literals(unit))
+
+        except CommandFailedException as e:
+            print(f'Setting stage limit error: {e}')
+
+        rangelimits[0] = self.axis_x.settings.get('limit.max', units_from_literals(unit))
+
+        # Axis 2
+        try:
+            self.axis_y.settings.set('limit.max', limits[1], units_from_literals(unit))
+
+        except CommandFailedException as e:
+            print(f'Setting stage limit error: {e}')
+        
+        rangelimits[1] = self.axis_y.settings.get('limit.max', units_from_literals(unit))
+
+        # Optional, Axis 3
         if self.axis_z is not None:
-            self.axis_z.settings.set('limit.max', limits[2], LITERALS_TO_UNITS.get(unit))
+            try:
+                self.axis_z.settings.set('limit.max', limits[2], units_from_literals(unit))
+
+            except CommandFailedException as e:
+                print(f'Setting stage limit error: {e}')
+                
+            rangelimits.append( self.axis_z.settings.get('limit.max', units_from_literals(unit)) )
+        
+        return rangelimits
 
 
     def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)) -> None:

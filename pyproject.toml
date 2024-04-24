@@ -49,6 +49,7 @@ dependencies = [
     "overrides",
     "pandas",
     "nidaqmx"
+
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

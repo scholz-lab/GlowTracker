@@ -2,7 +2,7 @@ from pypylon import genicam, pylon
 import os
 import time
 from skimage.io import imsave
-from typing import Tuple
+from typing import Dict, Tuple
 from dataclasses import dataclass
 import numpy as np
 
@@ -134,14 +134,14 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
     imsave(os.path.join(path, fname), img, check_contrast=False)
 
 
-def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, center: bool= True) -> Tuple[int, int]:
+def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, isCenter: bool= True) -> Tuple[int, int]:
     """Set the ROI of a camera.
 
     Args:
         camera (pylon.InstantCamera): the camera to set
         ROI_w (int): ROI width
         ROI_h (int): ROI height
-        center (bool, optional): If the ROI is at the center of the camera. Defaults to True.
+        isCenter (bool, optional): If true then compute offset such that the ROI is center of the camera. This does not set the CenterX nor CenterY bool flag of the camera.
 
     Returns:
         height (int): the actual camera ROI width that has been set
@@ -153,16 +153,27 @@ def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, center: bool
         camera.AcquisitionStop.Execute()
         # grab unlock
         camera.TLParamsLocked = False
+
+        prevCameraWidth = camera.Width()
+        prevCameraHeight = camera.Height()
+
         camera.Width = max(ROI_w, camera.Width.Min)
         camera.Height = max(ROI_h, camera.Height.Min)
-        if center:
+
+        if isCenter:
+            
+            # Compute additional offset from the previous offset 
+            offsetX = (prevCameraWidth - camera.Width())//2
+            offsetY = (prevCameraHeight - camera.Height())//2
+
             # Round offsets to be multiples of 4
-            offsetX = (camera.Width.Max - camera.Width())//2
             offsetX = int(round(offsetX / 4) * 4)
-            offsetY = (camera.Height.Max - camera.Height())//2
             offsetY = int(round(offsetY / 4) * 4)
-            camera.OffsetX = max(offsetX, 4)
-            camera.OffsetY = max(offsetY, 4)
+
+            # Add in the additional offset
+            camera.OffsetX = max(camera.OffsetX() + offsetX , 4)
+            camera.OffsetY = max(camera.OffsetY() + offsetY , 4)
+            
         # grab lock
         camera.TLParamsLocked = True
         # cam start
@@ -198,3 +209,52 @@ def set_framerate(camera, fps):
 def get_shape(camera):
     """return current field of view size."""
     return  camera.Height.GetValue(), camera.Width.GetValue()
+
+
+def readPFSFile(filepath: str) -> Dict[str, str] | None:
+    """Read a camera config file ".pfs" and parse as a dict
+
+    Args:
+        filepath (str): the .pfs file path
+
+    Returns:
+        Dict[str, str] | None: A string dictionary contains
+        the configuration key and value. The value is always parsed
+        as a string, so if it is number or other type, it would need
+        to be converted manully before use. Return None if the reading or
+        parsing is unsuccessfull.
+    """
+    
+    parsedDict = {}
+    
+    try:
+        with open(filepath, 'r') as file:
+            
+            for line in file:
+
+                # Strip unnescessary spaces
+                line = line.strip()
+                
+                # Skip comment
+                if line.startswith('#'):
+                    continue
+
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    key, value = parts
+                    parsedDict[key] = value
+                
+                else:
+                    print(f'Error: Parsing {filepath}. Format is not supported')
+                    return None
+        
+            return parsedDict
+
+    except FileNotFoundError:
+        print(f"Error: File '{filepath}' is not found.")
+        
+    except Exception as e:
+        print(e)
+    
+    return None
+
