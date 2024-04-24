@@ -2468,25 +2468,45 @@ class MacroscopeApp(App):
         
         self.unbind_keys()
 
-        settings.bind(on_close= self.close_destroy_settings,
-               on_config_change= self.on_config_change)
+        settings.bind(
+            on_close= self.close_settings,
+            on_config_change= self.on_config_change
+        )
         
         return settings
 
 
-    def close_destroy_settings(self, *largs):
-        '''Close the previously opened settings panel.
+    @override
+    def close_settings(self, *args) -> bool:
+        """Override the `App.close_settings()` to also handle binding interactions back afterward.
 
-        :return:
-            True if the settings has been closed.
-        '''
-        self.close_settings()
-        self.destroy_settings()
+        Returns:
+            hasClosedSettings (bool): Return True if has successfully closed the settings.
+        """
+        # Get window and settings
+        win = self._app_window
+        settings = self._app_settings
+
+        # Safe-guard if no window or settings
+        if win is None \
+            or settings is None \
+            or settings not in win.children:
+            return False
+
+        # Remove the settings widget
+        win.remove_widget(settings)
+
+        # Destroy the settings widget
+        self._app_settings = None
+
+        # Bind back the keys
         self.bind_keys()
         
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
-    
+
+        return True
+        
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
