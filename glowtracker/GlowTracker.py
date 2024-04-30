@@ -2037,7 +2037,11 @@ class RuntimeControls(BoxLayout):
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
-                ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                try:
+                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+
+                except ValueError as e:
+                    ystep, xstep = 0, 0
             
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep
