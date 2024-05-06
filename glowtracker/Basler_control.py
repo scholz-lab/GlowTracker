@@ -129,9 +129,15 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
         isFlipY (bool, optional): _description_. Defaults to False.
     """    
     img = im
+
     if isFlipY:
         img = np.flip(img, axis= 0)
-    imsave(os.path.join(path, fname), img, check_contrast=False)
+
+    try:
+        imsave(os.path.join(path, fname), img, check_contrast=False)
+        
+    except FileNotFoundError as e:
+        print(e)
 
 
 def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, isCenter: bool= True) -> Tuple[int, int]:
