@@ -286,11 +286,18 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
 
     h, w = mask.shape
 
+    result = None
+    try:
+        result = find_CMS(mask, display=display)
+    
+    except ValueError as e:
+        raise e
+    
+    # Unpack return values
     if display:
-        (xc, yc), annotated_mask = find_CMS(mask, display=display)
+        (xc, yc), annotated_mask = result
     else:
-        xc, yc = find_CMS(mask, display=display)
-
+        xc, yc = result
    
     # show intermediate steps for debugging
     if display:
@@ -430,13 +437,20 @@ def find_CMS(mask, K=5, display=False):
         x coordinate of the CMS
     cms_y_center
         y coordinate of the CMS
+    
+    Raise
+    -------
+    ValueError
+        The input image is invalid. Either completely black or white.
     '''
     labels = measure.label(mask)
-    props = pd.DataFrame(regionprops_table(labels, properties=('centroid', 'area')))
+    regionprop = regionprops_table(labels, properties=('centroid', 'area'))
+    props = pd.DataFrame(regionprop)
+
+    if props.empty:
+        raise ValueError("Cannot find any centroid.")
+
     props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
-    
-    props['x'] = props['x'] 
-    props['y'] = props['y']
     
     # keep only the K biggest regions
     props = props.sort_values(by='area', ascending=False).head(K)
@@ -444,8 +458,8 @@ def find_CMS(mask, K=5, display=False):
     middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
     props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
     
-    # TODO: Fix error when input image is full brightness causing "single positional indexer is out-of-bounds"
-    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
+    # keep the closest to the previous center
+    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] 
     
     if display:
         annotated_mask = mask.copy()
