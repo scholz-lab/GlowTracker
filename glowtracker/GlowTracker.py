@@ -1012,17 +1012,6 @@ class RecordButton(ImageAcquisitionButton):
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
-        # open coordinate file
-        self.coordinateFile = open(os.path.join(self.saveFilePath, timeStamped("coords.txt")), 'a')
-
-        # Write camera-stage transformation
-        imageToStageMat_XYCoord = macro.swapMatXYOrder(self.app.imageToStageMat)
-        imageToStageMat_XYCoord_str = np.array2string(imageToStageMat_XYCoord, separator=',').replace('\n','')
-        self.coordinateFile.write(f'ImageToStage Transformation Matrix:\n{imageToStageMat_XYCoord_str}\n')
-
-        # Write recording header
-        self.coordinateFile.write(f"Frame Time X Y Z \n")
-
         # Image data queue to share between recording and saving
         self.imageQueue = Queue()
 
@@ -1040,6 +1029,9 @@ class RecordButton(ImageAcquisitionButton):
             grabStrategy= pylon.GrabStrategy_OneByOne
         )
 
+        # open coordinate file
+        self.coordinateFile = self.initCoordinateFile()
+
         # Spawn image acquisition thread
         self.imageAcquisitionThread = Thread(
             target= self.imageAcquisitionLoopingThread,
@@ -1052,6 +1044,101 @@ class RecordButton(ImageAcquisitionButton):
         self.imageAcquisitionThread.start()
 
 
+    def initCoordinateFile(self) -> TextIOWrapper:
+        """Create a coordinate file and write the relevent recording settings into header.
+
+        Returns:
+            TextIOWrapper: the coordinate file handler
+        """
+        coordinateFile = open(os.path.join(self.saveFilePath, timeStamped("coords.txt")), 'a')
+
+        # Recording
+        coordinateFile.write(f'# Recording\n')
+        #   duration
+        duration = self.app.config.getfloat('Experiment', 'duration')
+        coordinateFile.write(f'duration {duration}\n')
+        #   frames
+        nframes = self.app.config.getint('Experiment', 'nframes')
+        coordinateFile.write(f'nframes {nframes}\n')
+
+        # Camera 
+        coordinateFile.write(f'# Camera\n')
+        #   framerate
+        framerate = self.camera.ResultingFrameRate()
+        coordinateFile.write(f'framerate {framerate}\n')
+        #   camera-stage transformation
+        imageToStageMat_XYCoord = macro.swapMatXYOrder(self.app.imageToStageMat)
+        coordinateFile.write(f'imageToStage {imageToStageMat_XYCoord[0,0]},{imageToStageMat_XYCoord[0,1]},{imageToStageMat_XYCoord[1,0]},{imageToStageMat_XYCoord[1,1]}\n')
+        #   rotation
+        rotation = self.app.config.getfloat('Camera', 'rotation')
+        coordinateFile.write(f'rotation {rotation}\n')
+        #   imagenormaldir
+        imagenormaldir = self.app.config.get('Camera', 'imagenormaldir')
+        coordinateFile.write(f'imagenormaldir {imagenormaldir}\n')
+        #   pixelsize
+        pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+        coordinateFile.write(f'pixelsize {pixelsize}\n')
+
+        #  Dual color
+        coordinateFile.write(f'# Dual color\n')
+        #   dualcolormode
+        dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        coordinateFile.write(f'dualcolormode {dualcolormode}\n')
+        #   mainside
+        mainside = self.app.config.get('DualColor', 'mainside')
+        coordinateFile.write(f'mainside {mainside}\n')
+        #   viewmode
+        viewmode = self.app.config.get('DualColor', 'viewmode')
+        coordinateFile.write(f'viewmode {viewmode}\n')
+        #   recordingmode
+        recordingmode = self.app.config.get('DualColor', 'recordingmode')
+        coordinateFile.write(f'recordingmode {recordingmode}\n')
+        #   translation_x
+        translation_x = self.app.config.getfloat('DualColor', 'translation_x')
+        coordinateFile.write(f'translation_x {translation_x}\n')
+        #   translation_y
+        translation_y = self.app.config.getfloat('DualColor', 'translation_y')
+        coordinateFile.write(f'translation_y {translation_y}\n')
+        #   rotation
+        rotation = self.app.config.getfloat('DualColor', 'rotation')
+        coordinateFile.write(f'rotation {rotation}\n')
+
+        # Tracking
+        coordinateFile.write(f'# Tracking\n')
+        #   roi_x
+        roi_x = self.app.config.getint('Tracking', 'roi_x')
+        coordinateFile.write(f'roi_x {roi_x}\n')
+        #   roi_y
+        roi_y = self.app.config.getint('Tracking', 'roi_y')
+        coordinateFile.write(f'roi_y {roi_y}\n')
+        #   capture_radius
+        capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+        coordinateFile.write(f'capture_radius {capture_radius}\n')
+        #   min_step
+        min_step = self.app.config.getint('Tracking', 'min_step')
+        coordinateFile.write(f'min_step {min_step}\n')
+        #   threshold
+        threshold = self.app.config.getint('Tracking', 'threshold')
+        coordinateFile.write(f'threshold {threshold}\n')
+        #   binning
+        binning = self.app.config.getint('Tracking', 'binning')
+        coordinateFile.write(f'binning {binning}\n')
+        #   dark_bg
+        dark_bg = self.app.config.getboolean('Tracking', 'dark_bg')
+        coordinateFile.write(f'dark_bg {dark_bg}\n')
+        #   mode
+        mode = self.app.config.get('Tracking', 'mode')
+        coordinateFile.write(f'mode {mode}\n')
+        #   area
+        area = self.app.config.getint('Tracking', 'area')
+        coordinateFile.write(f'area {area}\n')
+
+        # Write recording header
+        coordinateFile.write(f"# Frame Time X Y Z \n")
+
+        return coordinateFile
+
+    
     @override
     def stopImageAcquisition(self) -> None:
         """Extend the stop image acquisition functionality: 
