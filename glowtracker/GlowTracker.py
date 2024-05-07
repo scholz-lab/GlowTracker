@@ -303,9 +303,8 @@ class RightColumn(BoxLayout):
 
     def show_recording_settings(self):
         """change recording settings."""
-        content = RecordingSettings(ok=self.dismiss_popup)
-        self._popup = Popup(title="Recording Settings", content=content,
-                            size_hint=(0.5, 0.35))
+        recordingSettings = RecordingSettings(ok= self.dismiss_popup)
+        self._popup = Popup(title= "Recording Settings", content= recordingSettings, size_hint = (0.3, 0.45))
         #unbind keyboard events
         App.get_running_app().unbind_keys()
         self._popup.open()
@@ -621,13 +620,18 @@ class RecordingSettings(BoxLayout):
     # store recording settings from popups
     nframes = ConfigParserProperty(5, 'Experiment', 'nframes', 'app', val_type=int)
     fileformat = ConfigParserProperty('jpg', 'Experiment', 'extension', 'app', val_type=str)
-    framerate = ConfigParserProperty(25, 'Experiment', 'framerate', 'app', val_type=float)
     duration = ConfigParserProperty(5, 'Experiment', 'duration', 'app', val_type=float)
-    buffersize = ConfigParserProperty(1000, 'Experiment', 'buffersize', 'app', val_type=int)
 
     def __init__(self,  **kwargs):
         super(RecordingSettings, self).__init__(**kwargs)
-        self.duration = self.nframes/self.framerate
+        if self.framerate != 0:
+            self.duration = self.nframes/self.framerate
+
+    @property
+    def framerate(self):
+        """An alias property refers to CameraProperties.framerate for ease of use
+        """
+        return App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate
 
 
 class CameraProperties(GridLayout):
@@ -2037,7 +2041,11 @@ class RuntimeControls(BoxLayout):
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
             else:
-                ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                try:
+                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+
+                except ValueError as e:
+                    ystep, xstep = 0, 0
             
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep

@@ -615,68 +615,65 @@ MainWindow:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    
+
+    Label: 
+        text: "    Press Enter after edited Duration or Framerate to update it's counterpart value."
+        text_size: root.width, None
+        size: self.texture_size
+        size_hint: (1, 0.3)
+        valign: 'top'
+        halign: 'left'
+        markup: True
+        font_size: 13
+        padding: [dp(10), dp(0), dp(10), dp(5)]
+
     GridLayout:
-        cols : 3
-        Label: 
-            text: 'Frames'
-        Label: 
-            text: str(root.nframes)
-        TextInput:
-            id: frames
-            text: str(root.nframes)
-            multiline: False
-            on_text_validate: root.nframes = self.text
-            on_text_validate: root.duration = float(self.text)/root.framerate
+        cols : 2
+        padding: [dp(10), dp(5), dp(10), dp(10)]
+        spacing: [0, dp(15)]
+
         Label: 
             text: 'Framerate (1/s)'
-        Label: 
+        Label:
             text: str(root.framerate)
-        TextInput:
-            id: framerate
-            text: str(root.framerate)
-            multiline: False
-            on_text_validate: root.framerate = self.text
-            on_text_validate: root.duration = root.nframes/float(self.text)
+        
         Label: 
             text: 'Duration (sec)'
-        Label: 
-            text: str(root.duration)
         TextInput:
             id: duration
             text: "{:.2f}".format(root.duration)
             multiline: False
+            halign: 'center'
             on_text_validate: root.duration = self.text
             on_text_validate: root.nframes = int(float(self.text)*root.framerate)
+        
+        Label: 
+            text: 'Frames'
+        TextInput:
+            id: frames
+            text: str(root.nframes)
+            multiline: False
+            halign: 'center'
+            on_text_validate: root.nframes = self.text
+            on_text_validate: root.duration = float(self.text)/root.framerate
+
         Label: 
             text: 'Extension'
-        Label: 
-            text: str(root.fileformat)
         TextInput:
             id: fileformat
             text: root.fileformat
             multiline: False
+            halign: 'center'
             on_text_validate: root.fileformat = self.text
-        Label:
-            text: 'buffer'
-        Label:
-            text: str(root.buffersize)
-        TextInput:
-            id: buffersize
-            text: str(root.buffersize)
-            multiline: False
-            on_text_validate: root.buffersize = int(self.text)
+
         
     BoxLayout:
         size_hint_y: None
-        height: 30
+        height: dp(30)
         Button:
             text: "OK"
             on_release: root.ok()
 
-        # Button:
-        #     text: "Confirm"
-        #     on_release: root.update(frames.text)
 
 <CalibrationTabPanel>:
     size: root.size
