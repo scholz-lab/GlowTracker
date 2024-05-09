@@ -59,6 +59,7 @@ from typing import Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
+import platform
 
 # 
 # Own classes
@@ -2487,6 +2488,8 @@ class MacroscopeApp(App):
 
     def __init__(self,  **kwargs):
         super(MacroscopeApp, self).__init__(**kwargs)
+        # Declare config file path
+        self.configFile = self.getDefaultUserConfigFilePath()
         # define settings menu style
         self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion - right now also happens in settings!
@@ -2494,6 +2497,61 @@ class MacroscopeApp(App):
         # hardware
         self.camera = None
         self.stage: Stage = Stage(None)
+    
+
+    def getDefaultUserConfigFilePath(self) -> str:
+        """Get the default glowtracer app config file from the user local machine.
+        The default location depends on the username and the OS. Create a new empty
+        one if it doesn't exist.
+
+        Returns:
+            configFile (str): The default config file path.
+        """
+        configFileDir = 'glowtracker'
+        configFileName = 'glowtracker.ini'
+        directoryPath = ''
+        
+        # Get home directory
+        home_dir = os.path.expanduser('~')
+
+        # Get the platform
+        current_platform = platform.system()
+
+        # Check the platform
+        if current_platform == 'Windows':
+            # Windows. Set to local AppData
+            directoryPath = os.path.join(os.getenv('LOCALAPPDATA'), configFileDir)
+
+        elif current_platform == 'Darwin':
+            # MacOS
+            pass
+
+        elif current_platform == 'Linux':
+            # Linux
+            pass
+
+        else:
+            # Unknown platform. Use the home directory.
+            directoryPath = os.path.join(home_dir, configFileDir)
+
+        # Join the directory path and file name for a complete file path.
+        configFile = os.path.join(directoryPath, configFileName)
+        
+        # If the config file doesn't exist, create a new one
+        if not os.path.exists(configFile):
+
+            try:
+                # Create a directory if not yet exist.
+                os.makedirs(directoryPath, exist_ok= True)
+
+                # Create an empty file
+                with open(configFile, 'x'):
+                    pass
+                
+            except Exception as e:
+                print(e)
+
+        return configFile
 
 
     def build(self):
@@ -2527,7 +2585,7 @@ class MacroscopeApp(App):
         """
         Set the default values for the configs sections.
         """
-        config.read('macroscope.ini')
+        config.read(self.configFile)
 
 
     # use custom settings for our GUI
@@ -2556,7 +2614,7 @@ class MacroscopeApp(App):
         .. versionadded:: 1.8.0
         '''
 
-        self.config.read('macroscope.ini')
+        self.config.read(self.configFile)
         
         settings = self.settings_cls()
         self.build_settings(settings)
