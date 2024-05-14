@@ -2544,6 +2544,7 @@ class MacroscopeApp(App):
                 # Create a directory if not yet exist.
                 os.makedirs(directoryPath, exist_ok= True)
 
+                # TODO: Copy the default values fro macroscope.ini
                 # Create an empty file
                 with open(configFile, 'x'):
                     pass
