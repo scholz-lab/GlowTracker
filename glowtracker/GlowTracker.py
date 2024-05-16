@@ -60,6 +60,7 @@ from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
 import platform
+import shutil
 
 # 
 # Own classes
@@ -2544,10 +2545,8 @@ class MacroscopeApp(App):
                 # Create a directory if not yet exist.
                 os.makedirs(directoryPath, exist_ok= True)
 
-                # TODO: Copy the default values fro macroscope.ini
-                # Create an empty file
-                with open(configFile, 'x'):
-                    pass
+                # Copy the template file to the target directory
+                shutil.copy(configFileName, directoryPath)
                 
             except Exception as e:
                 print(e)

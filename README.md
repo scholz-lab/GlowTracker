@@ -67,10 +67,10 @@
 
 ### Device Setup
 #### Stage
-In `macroscope.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
+In `glowtracker.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
 
 #### Camera
-In `macroscope.ini`, specify the path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtained from the `pylon Viewer` software that you have downloaded.
+In `glowtracker.ini`, specify the path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtained from the `pylon Viewer` software that you have downloaded.
 
 ## GUI overview
 <img alt="annotated GUI" src="glowtracker/images/gui_annotation.png" width="1250">

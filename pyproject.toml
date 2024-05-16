@@ -16,7 +16,7 @@ exclude = [
 [tool.setuptools.package-data]
 glowtracker = [
     "layout.kv",
-    "macroscope.ini",
+    "glowtracker.ini",
     "icons/*",
     "settings/gui_settings.json",
     "settings/experiment_settings.json"
