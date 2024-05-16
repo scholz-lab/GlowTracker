@@ -47,7 +47,9 @@ dependencies = [
     "scikit-image>=0.22.0",
     "itk-elastix",
     "overrides",
-    "pandas"
+    "pandas",
+    "platformdirs",
+    "shutil"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

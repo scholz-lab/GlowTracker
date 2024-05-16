@@ -59,7 +59,7 @@ from typing import Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
-import platform
+import platformdirs 
 import shutil
 
 # 
@@ -2508,50 +2508,26 @@ class MacroscopeApp(App):
         Returns:
             configFile (str): The default config file path.
         """
-        configFileDir = 'glowtracker'
         configFileName = 'glowtracker.ini'
-        directoryPath = ''
-        
-        # Get home directory
-        home_dir = os.path.expanduser('~')
-
-        # Get the platform
-        current_platform = platform.system()
-
-        # Check the platform
-        if current_platform == 'Windows':
-            # Windows. Set to local AppData
-            directoryPath = os.path.join(os.getenv('LOCALAPPDATA'), configFileDir)
-
-        elif current_platform == 'Darwin':
-            # MacOS
-            pass
-
-        elif current_platform == 'Linux':
-            # Linux
-            pass
-
-        else:
-            # Unknown platform. Use the home directory.
-            directoryPath = os.path.join(home_dir, configFileDir)
+        configDir = platformdirs.user_config_dir(appname= 'GlowTracker', appauthor= 'Monika Scholz')
 
         # Join the directory path and file name for a complete file path.
-        configFile = os.path.join(directoryPath, configFileName)
+        configFullPath = os.path.join(configDir, configFileName)
         
-        # If the config file doesn't exist, create a new one
-        if not os.path.exists(configFile):
+        # If the config file doesn't exist, create a new one.
+        if not os.path.exists(configFullPath):
 
             try:
                 # Create a directory if not yet exist.
-                os.makedirs(directoryPath, exist_ok= True)
+                os.makedirs(configDir, exist_ok= True)
 
-                # Copy the template file to the target directory
-                shutil.copy(configFileName, directoryPath)
+                # Copy the template file to the target directory.
+                shutil.copy(configFileName, configDir)
                 
             except Exception as e:
                 print(e)
 
-        return configFile
+        return configFullPath
 
 
     def build(self):
