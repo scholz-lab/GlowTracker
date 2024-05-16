@@ -297,7 +297,7 @@ class RightColumn(BoxLayout):
 
     def open_settings(self):
         # Disabled interaction with preview image widget
-        app: MacroscopeApp = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
         app.open_settings()
@@ -315,7 +315,7 @@ class RightColumn(BoxLayout):
     def show_calibration(self):
         """Show calibration window popup.
         """        
-        app: MacroscopeApp = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
 
@@ -368,7 +368,7 @@ class CameraAndStageCalibration(BoxLayout):
             2. Estimate camera to stage transformation matrix.
             3. Display results.
         """        
-        app: MacroscopeApp = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
 
@@ -458,7 +458,7 @@ class DualColorCalibration(BoxLayout):
             3. Calibrate main side to minor side transformation matrix.
             4. Display results.
         """        
-        app: MacroscopeApp = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
         stage: Stage = app.stage
 
@@ -695,7 +695,7 @@ class ImageAcquisitionButton(ToggleButton):
 
         super().__init__(**kwargs)
         # Declar class's instance attributes
-        self.app: MacroscopeApp | None = None
+        self.app: GlowTrackerApp | None = None
         self.camera: pylon.InstantCamera | None = None
         self.imageAcquisitionThread: Thread | None = None
         self.runtimeControls: RuntimeControls | None = None
@@ -921,8 +921,8 @@ class LiveViewButton(ImageAcquisitionButton):
         image acquisition thread, and update the image GUI overlay.
         """        
         
-        # Update the self-hold reference to the MacroscopeApp object and the pylon camera object for each of access.
-        self.app: MacroscopeApp = App.get_running_app()
+        # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
+        self.app: GlowTrackerApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
@@ -993,8 +993,8 @@ class RecordButton(ImageAcquisitionButton):
             - update the image GUI overlay.
         """ 
 
-        # Update the self-hold reference to the MacroscopeApp object and the pylon camera object for each of access.
-        self.app: MacroscopeApp = App.get_running_app()
+        # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
+        self.app: GlowTrackerApp = App.get_running_app()
         self.camera: pylon.InstantCamera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
@@ -2207,7 +2207,7 @@ class RuntimeControls(BoxLayout):
     def stopTracking(self):
         """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
         """
-        app: MacroscopeApp = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         camera: pylon.InstantCamera = app.camera
 
         if camera is None:
@@ -2472,7 +2472,7 @@ class ExitApp(BoxLayout):
 
 
 # load the layout
-class MacroscopeApp(App):
+class GlowTrackerApp(App):
     # stage configuration properties - these will update when changed in config menu
     vhigh = ConfigParserProperty(20,
                     'Stage', 'vhigh', 'app', val_type=float)
@@ -2488,7 +2488,7 @@ class MacroscopeApp(App):
 
 
     def __init__(self,  **kwargs):
-        super(MacroscopeApp, self).__init__(**kwargs)
+        super(GlowTrackerApp, self).__init__(**kwargs)
         # Declare config file path
         self.configFile = self.getDefaultUserConfigFilePath()
         # define settings menu style
@@ -2975,7 +2975,7 @@ def main():
 
     # Last barrier for catching unhandled exception.
     try:
-        App = MacroscopeApp()
+        App = GlowTrackerApp()
         App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
 
     except Exception as e:
