@@ -19,14 +19,14 @@
 ## Getting started
 ### Software Setup
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Use `conda` to create a new python environment named `macroscope`.
+2. Use `conda` to create a new python environment named `glowtracker`.
     ```bash
-    conda create -n macroscope 'python>=3.10,<3.12'
+    conda create -n glowtracker 'python>=3.10,<3.12'
     ```
 
-3. Activate the `macroscope` environment 
+3. Activate the `glowtracker` environment 
     ```bash
-    conda activate macroscope
+    conda activate glowtracker
     ```
 4. Install the `glowtracker` 
     - Using `pip` to install from PyPI repository:
@@ -67,10 +67,10 @@
 
 ### Device Setup
 #### Stage
-In `macroscope.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
+In `glowtracker.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
 
 #### Camera
-In `macroscope.ini`, specify the path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtained from the `pylon Viewer` software that you have downloaded.
+In `glowtracker.ini`, specify the path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtained from the `pylon Viewer` software that you have downloaded.
 
 ## GUI overview
 <img alt="annotated GUI" src="glowtracker/images/gui_annotation.png" width="1250">

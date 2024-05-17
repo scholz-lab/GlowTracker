@@ -16,7 +16,7 @@ exclude = [
 [tool.setuptools.package-data]
 glowtracker = [
     "layout.kv",
-    "macroscope.ini",
+    "glowtracker.ini",
     "icons/*",
     "settings/gui_settings.json",
     "settings/experiment_settings.json"
@@ -47,7 +47,8 @@ dependencies = [
     "scikit-image>=0.22.0",
     "itk-elastix",
     "overrides",
-    "pandas"
+    "pandas",
+    "platformdirs",
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
@@ -60,6 +61,7 @@ keywords = [
     "python",
     "research",
     "macroscope",
+    "microscope",
     "tracking",
     "Zaber",
     "Basler"
