@@ -15,9 +15,8 @@ dependencies:
   - zaber-motion=4.2.0
   - overrides
   - pandas
-  - platformdirs
-  - shutil
   - pip:
     - pypylon==2.2.0
     - itk-elastix
+    - platformdirs
 

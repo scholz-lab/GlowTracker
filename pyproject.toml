@@ -49,7 +49,6 @@ dependencies = [
     "overrides",
     "pandas",
     "platformdirs",
-    "shutil"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
