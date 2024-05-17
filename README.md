@@ -19,14 +19,14 @@
 ## Getting started
 ### Software Setup
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Use `conda` to create a new python environment named `macroscope`.
+2. Use `conda` to create a new python environment named `glowtracker`.
     ```bash
-    conda create -n macroscope 'python>=3.10,<3.12'
+    conda create -n glowtracker 'python>=3.10,<3.12'
     ```
 
-3. Activate the `macroscope` environment 
+3. Activate the `glowtracker` environment 
     ```bash
-    conda activate macroscope
+    conda activate glowtracker
     ```
 4. Install the `glowtracker` 
     - Using `pip` to install from PyPI repository:

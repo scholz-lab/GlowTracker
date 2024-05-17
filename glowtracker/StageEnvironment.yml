@@ -1,4 +1,4 @@
-name: macroscope
+name: glowtracker
 channels:
   - conda-forge
   - defaults
