@@ -1,10 +1,10 @@
 # title: 
-description: A minimal websites presenting the macroscopes we created/worked with in Scholz Lab
+description: "Explore GlowTracker: the user-friendly, affordable epifluorescence tracking microscope for studying small millimeter-scale organisms, built from off-the-shelf components without the need for specialized fabrication."
 theme: just-the-docs
-url: https://scholz-lab.github.io/macroscopes
-logo: "custom_assets/images/logo.png"
+url: https://scholz-lab.github.io/glowtracker
+logo: "custom_assets/images/macroscope_logo.png"
 # favicon_ico: "custom_assets/images/favicon.ico"
 
 aux_links:
-  "Macroscope on GitHub":
-    - "https://github.com/scholz-lab/Macroscopes"
+  "GlowTracker on GitHub":
+    - "https://github.com/scholz-lab/GlowTracker"
