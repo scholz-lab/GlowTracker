@@ -2501,9 +2501,9 @@ class GlowTrackerApp(App):
     
 
     def getDefaultUserConfigFilePath(self) -> str:
-        """Get the default glowtracer app config file from the user local machine.
-        The default location depends on the username and the OS. Create a new empty
-        one if it doesn't exist.
+        """Get the default glowtrackeer app config file path from the user local machine.
+        The default location depends on the username and the OS. Create a new one by 
+        copying from the default template if it doesn't exist.
 
         Returns:
             configFile (str): The default config file path.
