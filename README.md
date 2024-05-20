@@ -1,6 +1,6 @@
 ## Running the website locally
 1. Install [Ruby](https://www.ruby-lang.org/en/documentation/installation/)
-2. Install __jekyll__
+2. Install __Jekyll__
     ```bash
     gem install bundler jekyll
     ```
