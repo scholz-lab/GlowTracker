@@ -215,14 +215,14 @@ class LeftColumn(BoxLayout):
     def apply_cam_settings(self) -> None:
         """Read and apply the camera config file to the camera.
         """
-        camera = App.get_running_app().camera
+        camera: basler.Camera = App.get_running_app().camera
 
         if camera is not None:
 
             print('Updating camera settings')
 
             # Set the camera config as specified in the file
-            basler.update_props(camera, propfile= self.cameraConfigFile)
+            camera.updateProperties(self.cameraConfigFile)
 
             # Read and store the camera config separately for later use
             self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
@@ -316,7 +316,7 @@ class RightColumn(BoxLayout):
         """Show calibration window popup.
         """        
         app: GlowTrackerApp = App.get_running_app()
-        camera: pylon.InstantCamera = app.camera
+        camera = app.camera
         stage: Stage = app.stage
 
         if camera is not None and stage is not None:
@@ -369,8 +369,8 @@ class CameraAndStageCalibration(BoxLayout):
             3. Display results.
         """        
         app: GlowTrackerApp = App.get_running_app()
-        camera: pylon.InstantCamera = app.camera
-        stage: Stage = app.stage
+        camera = app.camera
+        stage = app.stage
 
         if camera is None or stage is None:
             return
@@ -459,7 +459,7 @@ class DualColorCalibration(BoxLayout):
             4. Display results.
         """        
         app: GlowTrackerApp = App.get_running_app()
-        camera: pylon.InstantCamera = app.camera
+        camera: basler.Camera = app.camera
         stage: Stage = app.stage
 
         if camera is None or stage is None:
@@ -471,7 +471,7 @@ class DualColorCalibration(BoxLayout):
         liveViewButton.state = 'normal'
         
         # Take a dual color image for calibration
-        isSuccess, dualColorImage = basler.single_take(camera)
+        isSuccess, dualColorImage = camera.singleTake()
 
         if not isSuccess:
             return
@@ -696,7 +696,7 @@ class ImageAcquisitionButton(ToggleButton):
         super().__init__(**kwargs)
         # Declar class's instance attributes
         self.app: GlowTrackerApp | None = None
-        self.camera: pylon.InstantCamera | None = None
+        self.camera: basler.Camera | None = None
         self.imageAcquisitionThread: Thread | None = None
         self.runtimeControls: RuntimeControls | None = None
         self.updateDisplayImageEvent: ClockEvent | None = None
@@ -741,7 +741,7 @@ class ImageAcquisitionButton(ToggleButton):
 
         # Stop grabbing
         if self.camera is not None:
-            basler.stop_grabbing(self.camera)
+            self.camera.StopGrabbing()
 
         # Flag recompute dual color transformation matrix
         self.dualColorMinorToMainMat = None
@@ -790,7 +790,7 @@ class ImageAcquisitionButton(ToggleButton):
         while self.acquisitionCondition():
 
             # retrieve an image
-            isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = basler.retrieve_grabbing_result(self.camera)
+            isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
 
             if isSuccess:
 
@@ -923,7 +923,7 @@ class LiveViewButton(ImageAcquisitionButton):
         
         # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
         self.app: GlowTrackerApp = App.get_running_app()
-        self.camera: pylon.InstantCamera = self.app.camera
+        self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
         if self.camera is None:
@@ -995,7 +995,7 @@ class RecordButton(ImageAcquisitionButton):
 
         # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
         self.app: GlowTrackerApp = App.get_running_app()
-        self.camera: pylon.InstantCamera = self.app.camera
+        self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
         if self.camera is None:
@@ -1261,7 +1261,7 @@ class RecordButton(ImageAcquisitionButton):
         print("Desired recording Framerate:", fps)
 
         # Get actual FPS from Camera
-        fps = basler.set_framerate(self.app.camera, fps)
+        fps = self.app.camera.setFramerate(fps)
         print('Actual recording fps: ' + str(fps))
 
         # Update shown display settings, e.g. exposure, fps, gain values
@@ -1291,25 +1291,27 @@ class ImageAcquisitionManager(BoxLayout):
     def snap(self):
         """Callback for saving a single image from the Snap button.
         """
-        app = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
+        camera = app.camera
         ext = app.config.get('Experiment', 'extension')
         path = app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
         
-        if app.camera is None:
+        if camera is None:
             return
         
         # Get an image appropriately acoording to current viewing mode
         if self.liveviewbutton.state == 'normal':
             # Call capture an image
-            isSuccess, img = basler.single_take(app.camera)
+            isSuccess, img = camera.singleTake()
+
             if isSuccess:
-                basler.save_image(img, path, snap_filename)
+                basler.saveImage(img, path, snap_filename)
                 
         elif self.liveviewbutton.state == 'down':
             # If currently in live view mode
             #   then save the current image
-            basler.save_image(self.image, path, snap_filename)
+            basler.saveImage(self.image, path, snap_filename)
                 
 
 class ScalableImage(ScatterLayout):
@@ -2021,7 +2023,7 @@ class RuntimeControls(BoxLayout):
 
 
     def set_ROI(self, roiX, roiY):
-        app = App.get_running_app()
+        app: GlowTrackerApp = App.get_running_app()
         camera = app.camera
         rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.recordbutton.state
         disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state
@@ -2030,15 +2032,16 @@ class RuntimeControls(BoxLayout):
             #basler.stop_grabbing(camera)
             rec = 'normal'
             # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, isCenter = True)
+            hc, wc = camera.setROI(roiX, roiY, isCenter = True)
             rec = 'down'
+
         elif disp == 'down':
             #basler.stop_grabbing(camera)
             disp= 'normal'
             # reset camera field of view to smaller size around center
-            hc, wc = basler.cam_setROI(camera, roiX, roiY, isCenter = True)
+            hc, wc = camera.setROI(roiX, roiY, isCenter = True)
             disp = 'down'
-            # 
+
         print(hc, wc, roiX, roiY)
         # if desired FOV is smaller than allowed by camera, crop in GUI
         if wc > roiX:
@@ -2050,9 +2053,9 @@ class RuntimeControls(BoxLayout):
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
         """Tracking function to be running inside a thread
         """
-        app = App.get_running_app()
-        stage: Stage = app.stage
-        camera: pylon.InstantCamera = app.camera
+        app: GlowTrackerApp = App.get_running_app()
+        stage = app.stage
+        camera = app.camera
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
@@ -2208,7 +2211,7 @@ class RuntimeControls(BoxLayout):
         """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
         """
         app: GlowTrackerApp = App.get_running_app()
-        camera: pylon.InstantCamera = app.camera
+        camera = app.camera
 
         if camera is None:
             return
@@ -2387,14 +2390,16 @@ class Connections(BoxLayout):
 
 
     def connectCamera(self):
-        print('connecting Camera')
+        print('Connecting Camera')
         # connect camera
-        App.get_running_app().camera = basler.camera_init()
-        #
-        if App.get_running_app().camera is None:
+        app = App.get_running_app()
+        app.camera = basler.Camera()
+
+        if app.camera is None:
             self.cam_connection.state = 'normal'
+
         else:
-            # load and apply default pfs
+            # load and apply the camera settings
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
 
 
@@ -2496,7 +2501,7 @@ class GlowTrackerApp(App):
         # bind key presses to stage motion - right now also happens in settings!
         self.bind_keys()
         # hardware
-        self.camera = None
+        self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
     
 
