@@ -959,7 +959,9 @@ class LiveViewButton(ImageAcquisitionButton):
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None and self.camera.IsGrabbing() and self.state == 'down'
+        return self.camera is not None \
+            and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
+            and self.state == 'down'
 
 
 class RecordButton(ImageAcquisitionButton):
@@ -1186,7 +1188,10 @@ class RecordButton(ImageAcquisitionButton):
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None and self.frameCounter < self.numberRecordframes and self.state == 'down'
+        return self.camera is not None \
+            and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
+            and self.frameCounter < self.numberRecordframes \
+            and self.state == 'down'
 
     
     @override
@@ -2024,28 +2029,15 @@ class RuntimeControls(BoxLayout):
 
     def set_ROI(self, roiX, roiY):
         app: GlowTrackerApp = App.get_running_app()
-        camera = app.camera
-        rec = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.recordbutton.state
-        disp = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state
        
-        if rec == 'down':
-            #basler.stop_grabbing(camera)
-            rec = 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = camera.setROI(roiX, roiY, isCenter = True)
-            rec = 'down'
-
-        elif disp == 'down':
-            #basler.stop_grabbing(camera)
-            disp= 'normal'
-            # reset camera field of view to smaller size around center
-            hc, wc = camera.setROI(roiX, roiY, isCenter = True)
-            disp = 'down'
+        hc, wc = app.camera.setROI(roiX, roiY, isCenter = True)
 
         print(hc, wc, roiX, roiY)
+
         # if desired FOV is smaller than allowed by camera, crop in GUI
         if wc > roiX:
             self.cropX = int((wc-roiX)//2)
+
         if hc > roiY:
             self.cropY = int((hc-roiY)//2)
     
@@ -2072,7 +2064,7 @@ class RuntimeControls(BoxLayout):
 
         estimated_next_timestamp: float | None = None
 
-        while camera is not None and camera.IsGrabbing() and self.trackingcheckbox.state == 'down':
+        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
             # Handling image cycle synchronization.
             # Because the recording and tracking thread are asynchronous
@@ -2130,8 +2122,10 @@ class RuntimeControls(BoxLayout):
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
+                
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+
             else:
                 try:
                     ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
@@ -2231,6 +2225,8 @@ class RuntimeControls(BoxLayout):
             # Reset the camera params back: Width, Height, OffsetX, OffsetY, center flag
             cameraConfig: dict = app.root.ids.leftcolumn.cameraConfig
 
+            # Set camera on hold flag
+            camera.setIsOnHold(True)
             # cam stop
             camera.AcquisitionStop.Execute()
             # grab unlock
@@ -2247,6 +2243,8 @@ class RuntimeControls(BoxLayout):
             camera.TLParamsLocked = True
             # cam start
             camera.AcquisitionStart.Execute()
+            # Set camera on hold flag
+            camera.setIsOnHold(False)
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()

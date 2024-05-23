@@ -53,14 +53,13 @@ class Camera(pylon.InstantCamera):
         except genicam.GenericException as exception:
             print(exception)
 
+
     # Getters, Setters
-    @property
-    def isOnHold(self):
+    def isOnHold(self) -> bool:
         return self.__isOnHold__
     
 
-    @isOnHold.setter
-    def isOnHold(self, value):
+    def setIsOnHold(self, value):
         self.__isOnHold__ = value
     
 
@@ -136,6 +135,9 @@ class Camera(pylon.InstantCamera):
         """
         
         if ROI_w <= self.Width.Max and ROI_h <= self.Height.Max:
+
+            # Set camera on hold flag
+            self.setIsOnHold(True)
             # cam stop
             self.AcquisitionStop.Execute()
             # grab unlock
@@ -172,6 +174,8 @@ class Camera(pylon.InstantCamera):
             self.TLParamsLocked = True
             # cam start
             self.AcquisitionStart.Execute()
+            # Set camera on hold flag
+            self.setIsOnHold(False)
 
         return self.Height(), self.Width()
 
