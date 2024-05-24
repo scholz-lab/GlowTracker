@@ -2232,6 +2232,11 @@ class RuntimeControls(BoxLayout):
             # grab unlock
             camera.TLParamsLocked = False
 
+            # The Basler's camera have a feature-persistence feature, where the camera offset and width/height
+            #   are checked against each other all the time so that the sum does not exceed the sensor's limit.
+            #   Relaxing the offsets first allows setting any valid widhth/height.
+            camera.OffsetX = 0
+            camera.OffsetY = 0
             camera.Width = int(cameraConfig['Width'])
             camera.Height = int(cameraConfig['Height'])
             camera.CenterX = bool(int(cameraConfig['CenterX']))
