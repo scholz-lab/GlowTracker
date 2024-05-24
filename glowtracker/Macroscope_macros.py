@@ -35,13 +35,13 @@ import cv2
 
 
 #%% Autofocus using z axis
-def zFocus(stage, camera, stepsize, stepunits, nsteps):
+def zFocus(stage, camera: basler.Camera, stepsize, stepunits, nsteps):
     """take a series of images and move the camera, then calculate focus."""
     stack = []
     zpos = []
     stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
     for i in np.arange(0, nsteps):
-            isSuccess, img = basler.single_take(camera)
+            isSuccess, img = camera.singleTake()
             pos = stage.get_position()
             print(pos)
             if isSuccess and len(pos) > 2:
@@ -704,11 +704,11 @@ class CameraAndStageCalibrator:
         pass
 
 
-    def takeCalibrationImage(self, camera: pylon.InstantCamera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    def takeCalibrationImage(self, camera: basler.Camera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         """Take images for camera&stage transformation matrix calibration.
 
         Args:
-            camera (pylon.InstantCamera): pylon camera to take images with.
+            camera (basler.Camera): pylon camera to take images with.
             stage (zaber.Stage): zaber stage class to move the camera with.
             stepsize (float): movement step size in each stage basis axes.
             stepunits (str): stage movement step unit.
@@ -723,16 +723,16 @@ class CameraAndStageCalibrator:
         self.stepsize = stepsize
         self.stepunits = stepunits
 
-        isSuccessImageOrig, self.basisOrigImage = basler.single_take(camera)
+        isSuccessImageOrig, self.basisOrigImage = camera.singleTake()
 
         # Move along stage's X axis
         stage.move_rel((stepsize, 0, 0), stepunits, wait_until_idle = True)
-        isSuccessImageX, self.basisXImage = basler.single_take(camera)
+        isSuccessImageX, self.basisXImage = camera.singleTake()
 
         # Move along stage's Y axis
         stage.move_rel((-stepsize, 0, 0), stepunits, wait_until_idle = True)
         stage.move_rel((0, stepsize, 0), stepunits, wait_until_idle = True)
-        isSuccessImageY, self.basisYImage = basler.single_take(camera)
+        isSuccessImageY, self.basisYImage = camera.singleTake()
 
         # Move back to origin
         stage.move_rel((0, -stepsize, 0), stepunits, wait_until_idle = True)

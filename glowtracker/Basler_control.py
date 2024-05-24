@@ -13,113 +13,215 @@ class CameraGrabParameters:
     numberOfImagesToGrab: int = -1
     
 
-#%% Camera initialization
-def camera_init():
-    """Initialize a basler camera.
+class Camera(pylon.InstantCamera):
 
-    Returns:
-        camera object (GenICam)
-    """
-    try:
+    def __init__(self):
+
+        # Class variable
+        #   Cannot inject a new variable directly onto the pylon.InstantCamera class
+        #   because they implemented conditions into their getter, setters.
+        #   But they still allow for private property starts with "__" so we create
+        #   a private variable and our getter, setter instead
+
+        #   isOnHold flag use to expres a behavior where the camera is currently
+        #   on image acquisition mode, but is on a pause.
+        self.__isOnHold__ = True
+
         # Create an instant camera object with the camera device found first.
-        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
-        # Register an image event handler that accesses the chunk data.
-        camera.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
-        
-        camera.Open()
-        # Print the model name of the camera.
-        print("Using device ", camera.GetDeviceInfo().GetModelName())
-        return camera
-    except genicam.GenericException as exception:
-        # Error handling.
-        print("An exception occurred.")
-        print(exception)
-        #print(e.GetDescription())
-    return None
+        super().__init__(pylon.TlFactory.GetInstance().CreateFirstDevice())
+
+        try:
+            # Register an image event handler that accesses the chunk data.
+            class ImageEventPrinter(pylon.ImageEventHandler):
+                """A simple dummy class for passing image event
+                """
+
+                def OnImagesSkipped(self, camera, countOfSkippedImages):
+                    print(countOfSkippedImages, " images have been skipped.")
+
+                def OnImageGrabbed(self, camera, grabResult):
+                    return True
+            
+            self.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
+            
+            # Open the connection
+            self.Open()
+            
+            # Print the model name of the camera.
+            print("Using device ", self.GetDeviceInfo().GetModelName())
+
+        except genicam.GenericException as exception:
+            print(exception)
 
 
-def update_props(camera, propfile):
-    """read psf file and alter camera properties.
-        camera: pylon.InstantCamera
-        propfile: path to .pfs file"""
-    try:
-        pylon.FeaturePersistence.Load(propfile, camera.GetNodeMap(), True)
-    except genicam.RuntimeException:
-        print("Camera features could not be loaded.")
+    # Getters, Setters
+    def isOnHold(self) -> bool:
+        return self.__isOnHold__
+    
+
+    def setIsOnHold(self, value):
+        self.__isOnHold__ = value
+    
+
+    # Class functions
+    def updateProperties(self, propfile):
+        """read psf file and alter camera properties.
+            propfile: path to .pfs file"""
+        try:
+            pylon.FeaturePersistence.Load(propfile, self.GetNodeMap(), True)
+
+        except genicam.RuntimeException as e:
+            print(f"Camera features could not be loaded. {e}")
+
+
+    def retrieveGrabbingResult(self) -> Tuple[ bool, np.ndarray, int, int]:
+        """Retrieve a grabbed image from a camera
+
+        Returns:
+            isSuccess (bool): boolean indicate if the retrieving is successful
+            img (np.array): the retrieved image
+            timestamp (int): time stamp when the result is captured by camera internal clock
+            retrieveTimestamp (int): time stamp when the result is received via time.perf_counter() 
+        """
+        if not self.IsGrabbing():
+            return False, None, None, None
+
+        else:
+            try:
+                # Retrieve an image
+                grabResult: pylon.GrabResult = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+
+                if grabResult.GrabSucceeded():
+
+                    img = grabResult.Array
+                    retrieveTimestamp = time.perf_counter()
+                    conversion_factor = 1e6  # for conversion in ms
+                    timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
+                    grabResult.Release()
+
+                    return True, img, timestamp, retrieveTimestamp
+                    
+            except genicam.RuntimeException as e:
+                # Handle a RuntimeException here because
+                #   when closing the app while in a grabbing mode,
+                #   this thread will still trying to access the camera result
+                print(e)
+                return False, None, None, None
        
 
-def single_take(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray ]:
-    """Take and return a single image.
+    def singleTake(self) -> Tuple[ bool, np.ndarray ]:
+        """Take and return a single image.
 
-    Args:
-        camera (pylon.InstantCamera): the camera use for capture
-
-    Returns:
-        isSuccess (bool): is the capturing image successful
-        img (np.ndarray): the resulting image
-    """
-    camera.StartGrabbingMax(1)
-    isSuccess, img, _, _ = retrieve_grabbing_result(camera)
-    return isSuccess, img
+        Returns:
+            isSuccess (bool): is the capturing image successful
+            img (np.ndarray): the resulting image
+        """
+        self.StartGrabbingMax(1)
+        isSuccess, img, _, _ = self.retrieveGrabbingResult()
+        return isSuccess, img
 
 
+    def setROI(self, ROI_w: int, ROI_h: int, isCenter: bool= True) -> Tuple[int, int]:
+        """Set the ROI of a camera.
 
-def stop_grabbing(camera):
-    """start grabbing with the camera"""
-    camera.StopGrabbing()
+        Args:
+            ROI_w (int): ROI width
+            ROI_h (int): ROI height
+            isCenter (bool, optional): If true then compute offset such that the ROI is center of the camera. This does not set the CenterX nor CenterY bool flag of the camera.
 
+        Returns:
+            height (int): the actual camera ROI width that has been set
+            width (int): the actual camera ROI width that has been set
+        """
+        
+        if ROI_w <= self.Width.Max and ROI_h <= self.Height.Max:
 
-def retrieve_grabbing_result(camera: pylon.InstantCamera) -> Tuple[ bool, np.ndarray, int, int]:
-    """Retrieve a grabbed image from a camera
+            # Set camera on hold flag
+            self.setIsOnHold(True)
+            # cam stop
+            self.AcquisitionStop.Execute()
+            # grab unlock
+            self.TLParamsLocked = False
 
-    Args:
-        camera (pylon.InstantCamera): camera to retrieve result
+            prevCameraWidth = self.Width()
+            prevCameraHeight = self.Height()
 
-    Returns:
-        isSuccess (bool): boolean indicate if the retrieving is successful
-        img (np.array): the retrieved image
-        timestamp (int): time stamp when the result is captured by camera internal clock
-        retrieveTimestamp (int): time stamp when the result is received via time.perf_counter() 
-    """
-    if camera.IsGrabbing():
-        try:
-            grabResult: pylon.GrabResult = camera.RetrieveResult(1000, pylon.TimeoutHandling_Return)
-            if grabResult.GrabSucceeded():
-                img = grabResult.Array
-                retrieveTimestamp = time.perf_counter()
-                conversion_factor = 1e6  # for conversion in ms
-                timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
-                grabResult.Release()
-                return True, img, timestamp, retrieveTimestamp
+            self.Width = max(ROI_w, self.Width.Min)
+            self.Height = max(ROI_h, self.Height.Min)
+
+            if isCenter:
                 
-        except genicam.RuntimeException as e:
-            # Handle a RuntimeException here because
-            #   when closing the app while in a grabbing mode,
-            #   this thread will still trying to access the camera result
-            print(e)
-    
-    return False, None, None, None
+                # Compute additional offset from the previous offset 
+                additionalOffsetX = (prevCameraWidth - self.Width())//2
+                additionalOffsetY = (prevCameraHeight - self.Height())//2
+
+                offsetX = self.OffsetX() + additionalOffsetX
+                offsetY = self.OffsetY() + additionalOffsetY
+
+                # Round offsets to be multiples of 4
+                offsetX = int(round(offsetX / 4) * 4)
+                offsetY = int(round(offsetY / 4) * 4)
+
+                # Bound by minimum of 4
+                offsetX = max(offsetX, 4)
+                offsetY = max(offsetY, 4)
+
+                # Set the camera offset
+                self.OffsetX = offsetX
+                self.OffsetY = offsetY
+                
+            # grab lock
+            self.TLParamsLocked = True
+            # cam start
+            self.AcquisitionStart.Execute()
+            # Set camera on hold flag
+            self.setIsOnHold(False)
+
+        return self.Height(), self.Width()
 
 
-class ImageEventPrinter(pylon.ImageEventHandler):
-    def OnImagesSkipped(self, camera, countOfSkippedImages):
-        #print("OnImagesSkipped event for device ", camera.GetDeviceInfo().GetModelName())
-        print(countOfSkippedImages, " images have been skipped.")
-        #print()
+    def resetROI(self) -> Tuple[int, int]:
+        """set the ROI for a camera to full sensor size.
 
-    def OnImageGrabbed(self, camera, grabResult):
-        # print("OnImageGrabbed event for device ", camera.GetDeviceInfo().GetModelName())
+        Returns:
+            width(int): camera sensor width
+            height(int): camera sensor height
+        """
+        # cam stop
+        self.AcquisitionStop.Execute()
+        # grab unlock
+        self.TLParamsLocked = False
 
-        # # Image grabbed successfully?
-        # if grabResult.GrabSucceeded():
-        #     print("SizeX: ", grabResult.GetWidth())
-        #     print("SizeY: ", grabResult.GetHeight())
-        # else:
-        #     print("Error: ", grabResult.GetErrorCode(), grabResult.GetErrorDescription())
-        return True
+        self.OffsetX = 0
+        self.OffsetY = 0
+        self.Width = self.Width.Max
+        self.Height = self.Height.Max
+
+        # grab lock
+        self.TLParamsLocked = True
+        # cam start
+        self.AcquisitionStart.Execute()
+
+        return self.Width.GetValue(), self.Height.GetValue()
 
 
-def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> None:
+    def setFramerate(self, fps: float) -> float:
+        """Change acquisition framerate. Returns real framerate achievable with settings.
+
+        Args:
+            fps (float): desired framerate
+
+        Returns:
+            fps (float): the resulting framerate
+        """
+        
+        self.AcquisitionFrameRateEnable = True
+        self.AcquisitionFrameRate = float(fps)
+        return self.ResultingFrameRate()
+
+
+# Utility functions
+def saveImage(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> None:
     """Save image in path using fname and ext as extension.
 
     Args:
@@ -138,83 +240,6 @@ def save_image(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> N
         
     except FileNotFoundError as e:
         print(e)
-
-
-def cam_setROI(camera: pylon.InstantCamera, ROI_w: int, ROI_h: int, isCenter: bool= True) -> Tuple[int, int]:
-    """Set the ROI of a camera.
-
-    Args:
-        camera (pylon.InstantCamera): the camera to set
-        ROI_w (int): ROI width
-        ROI_h (int): ROI height
-        isCenter (bool, optional): If true then compute offset such that the ROI is center of the camera. This does not set the CenterX nor CenterY bool flag of the camera.
-
-    Returns:
-        height (int): the actual camera ROI width that has been set
-        width (int): the actual camera ROI width that has been set
-    """
-     
-    if ROI_w <= camera.Width.Max and ROI_h <= camera.Height.Max:
-        # cam stop
-        camera.AcquisitionStop.Execute()
-        # grab unlock
-        camera.TLParamsLocked = False
-
-        prevCameraWidth = camera.Width()
-        prevCameraHeight = camera.Height()
-
-        camera.Width = max(ROI_w, camera.Width.Min)
-        camera.Height = max(ROI_h, camera.Height.Min)
-
-        if isCenter:
-            
-            # Compute additional offset from the previous offset 
-            offsetX = (prevCameraWidth - camera.Width())//2
-            offsetY = (prevCameraHeight - camera.Height())//2
-
-            # Round offsets to be multiples of 4
-            offsetX = int(round(offsetX / 4) * 4)
-            offsetY = int(round(offsetY / 4) * 4)
-
-            # Add in the additional offset
-            camera.OffsetX = max(camera.OffsetX() + offsetX , 4)
-            camera.OffsetY = max(camera.OffsetY() + offsetY , 4)
-            
-        # grab lock
-        camera.TLParamsLocked = True
-        # cam start
-        camera.AcquisitionStart.Execute()
-
-    return camera.Height(), camera.Width()
-
-
-def cam_resetROI(camera):
-    """set the ROI for a camera to full sensor size."""
-    # cam stop
-    camera.AcquisitionStop.Execute()
-    # grab unlock
-    camera.TLParamsLocked = False
-    camera.OffsetX = 0
-    camera.OffsetY = 0
-    camera.Width = camera.Width.Max
-    camera.Height = camera.Height.Max
-    # grab lock
-    camera.TLParamsLocked = True
-    # cam start -- do not!
-    camera.AcquisitionStart.Execute()
-    return camera.Height.GetValue(), camera.Width.GetValue()
-
-
-def set_framerate(camera, fps):
-    """change acquisition framerate. Returns real framerate achievable with settings."""
-    camera.AcquisitionFrameRateEnable = True
-    camera.AcquisitionFrameRate = float(fps)
-    return camera.ResultingFrameRate()
-
-
-def get_shape(camera):
-    """return current field of view size."""
-    return  camera.Height.GetValue(), camera.Width.GetValue()
 
 
 def readPFSFile(filepath: str) -> Dict[str, str] | None:
