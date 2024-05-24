@@ -79,5 +79,9 @@ Here are a couple of things to try:
 </p>
 
 ## Q: The tracking doesn't work.
-TODO: Write this section after implementing the tracking diagnostic.
-
+Turn on the tracking overlay feature by clicking the button **Tracking Overlay** button in the lower right corner of the GUI.
+This feature will draw the tracking boarder on top of the displaying image, as well as the thesholded image rendered on top in transparent blue.
+This will help you identify how the tracking algorithm sees the image and give feedback on how much you should adjust your settings such as exposure and gain, or the tracking ROI to cover your subject.
+<figure class="center-figure">
+    <img src="custom_assets/images/tracking_overlay_button.png" alt="tracking overlay button" width="80%">
+</figure>
