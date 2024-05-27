@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pypylon import genicam, pylon
 import os
 import time
@@ -15,22 +16,21 @@ class CameraGrabParameters:
 
 class Camera(pylon.InstantCamera):
 
-    def __init__(self):
+    @classmethod
+    def createAndConnectCamera(cls) -> Camera | None:
+        """Create a Camera class object. Return the object if the connection to the actual camera
+        is successful. Otherwise, return None.
 
-        # Class variable
-        #   Cannot inject a new variable directly onto the pylon.InstantCamera class
-        #   because they implemented conditions into their getter, setters.
-        #   But they still allow for private property starts with "__" so we create
-        #   a private variable and our getter, setter instead
-
-        #   isOnHold flag use to expres a behavior where the camera is currently
-        #   on image acquisition mode, but is on a pause.
-        self.__isOnHold__ = True
-
-        # Create an instant camera object with the camera device found first.
-        super().__init__(pylon.TlFactory.GetInstance().CreateFirstDevice())
+        Returns:
+            camera (Camera|None): Camera(pylon.InstantCamera) class if successful, otherwise None.
+        """
 
         try:
+            # Create an instant camera object with the camera device found first.
+            pylonCameraHandle = pylon.TlFactory.GetInstance().CreateFirstDevice()
+            # Create the Camera class object
+            camera = cls(pylonCameraHandle)
+
             # Register an image event handler that accesses the chunk data.
             class ImageEventPrinter(pylon.ImageEventHandler):
                 """A simple dummy class for passing image event
@@ -42,18 +42,38 @@ class Camera(pylon.InstantCamera):
                 def OnImageGrabbed(self, camera, grabResult):
                     return True
             
-            self.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
+            camera.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
             
             # Open the connection
-            self.Open()
+            camera.Open()
             
             # Print the model name of the camera.
-            print("Using device ", self.GetDeviceInfo().GetModelName())
+            print("Using device ", camera.GetDeviceInfo().GetModelName())
+
+            return camera
 
         except genicam.GenericException as exception:
+            # Cannot connect to the camera
             print(exception)
+            return None
+    
 
+    def __init__(self, *args):
+        # WARNING: Outsider should not use this as a way to create and connect to camera.
+        #   use the method createAndConnectCamera() instead.
+        super().__init__(*args)
 
+        # Class variable
+        #   Cannot inject a new variable directly onto the pylon.InstantCamera class
+        #   because they implemented conditions into their getter, setters.
+        #   But they still allow for private property starts with "__" so we create
+        #   a private variable and our getter, setter instead
+
+        #   isOnHold flag use to expres a behavior where the camera is currently
+        #   on image acquisition mode, but is on a pause.
+        self.__isOnHold__ = True
+
+        
     # Getters, Setters
     def isOnHold(self) -> bool:
         return self.__isOnHold__

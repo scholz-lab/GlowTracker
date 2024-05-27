@@ -2396,7 +2396,7 @@ class Connections(BoxLayout):
         print('Connecting Camera')
         # connect camera
         app = App.get_running_app()
-        app.camera = basler.Camera()
+        app.camera = basler.Camera.createAndConnectCamera()
 
         if app.camera is None:
             self.cam_connection.state = 'normal'
