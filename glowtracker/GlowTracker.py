@@ -1306,17 +1306,16 @@ class ImageAcquisitionManager(BoxLayout):
             return
         
         # Get an image appropriately acoording to current viewing mode
-        if self.liveviewbutton.state == 'normal':
+        if self.recordbutton.state == 'down' or self.liveviewbutton.state == 'down':
+            #   save the current image
+            basler.saveImage(self.image, path, snap_filename)
+
+        else:
             # Call capture an image
             isSuccess, img = camera.singleTake()
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
-                
-        elif self.liveviewbutton.state == 'down':
-            # If currently in live view mode
-            #   then save the current image
-            basler.saveImage(self.image, path, snap_filename)
                 
 
 class ScalableImage(ScatterLayout):
@@ -2556,7 +2555,7 @@ class GlowTrackerApp(App):
 
         # Read config file
         self.config.read(self.configFile)
-        
+
         # Set app name
         self.title = 'GlowTracker'
         # Set app icon

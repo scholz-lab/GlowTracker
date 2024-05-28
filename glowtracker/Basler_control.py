@@ -103,31 +103,32 @@ class Camera(pylon.InstantCamera):
             timestamp (int): time stamp when the result is captured by camera internal clock
             retrieveTimestamp (int): time stamp when the result is received via time.perf_counter() 
         """
-        if not self.IsGrabbing():
-            return False, None, None, None
-
-        else:
+        isSuccess = False
+        img = None
+        timestamp = None
+        retrieveTimestamp = None
+        
+        if self.IsGrabbing():
             try:
                 # Retrieve an image
                 grabResult: pylon.GrabResult = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
 
                 if grabResult.GrabSucceeded():
 
+                    isSuccess = True
                     img = grabResult.Array
                     retrieveTimestamp = time.perf_counter()
                     conversion_factor = 1e6  # for conversion in ms
                     timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
                     grabResult.Release()
 
-                    return True, img, timestamp, retrieveTimestamp
-                    
             except genicam.RuntimeException as e:
                 # Handle a RuntimeException here because
                 #   when closing the app while in a grabbing mode,
                 #   this thread will still trying to access the camera result
                 print(e)
-                return False, None, None, None
-       
+
+        return isSuccess, img, timestamp, retrieveTimestamp
 
     def singleTake(self) -> Tuple[ bool, np.ndarray ]:
         """Take and return a single image.
