@@ -2538,7 +2538,25 @@ class GlowTrackerApp(App):
         return configFullPath
 
 
+    def build_config(self, config):
+        """Set the default values for the configs sections.
+
+        Unfortunately, the caller of this function, which is Kivi.app.App.load_config(),
+        forces the default config '<Workspcae>/glowtracker/glowtracker.ini' on to the config object
+        eventhough we have specifically specified to load the config file from the user default location.
+
+        The next function, which is self.build(), will have to reload it again.
+
+        Thus, we will skip the loading here and pass the responsibility to self.build() to load instead.
+        """
+        pass
+
+
     def build(self):
+
+        # Read config file
+        self.config.read(self.configFile)
+        
         # Set app name
         self.title = 'GlowTracker'
         # Set app icon
@@ -2565,13 +2583,6 @@ class GlowTrackerApp(App):
         return layout
 
     
-    def build_config(self, config):
-        """
-        Set the default values for the configs sections.
-        """
-        config.read(self.configFile)
-
-
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
