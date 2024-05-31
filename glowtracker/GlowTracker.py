@@ -1306,17 +1306,16 @@ class ImageAcquisitionManager(BoxLayout):
             return
         
         # Get an image appropriately acoording to current viewing mode
-        if self.liveviewbutton.state == 'normal':
+        if self.recordbutton.state == 'down' or self.liveviewbutton.state == 'down':
+            #   save the current image
+            basler.saveImage(self.image, path, snap_filename)
+
+        else:
             # Call capture an image
             isSuccess, img = camera.singleTake()
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
-                
-        elif self.liveviewbutton.state == 'down':
-            # If currently in live view mode
-            #   then save the current image
-            basler.saveImage(self.image, path, snap_filename)
                 
 
 class ScalableImage(ScatterLayout):
@@ -2396,7 +2395,7 @@ class Connections(BoxLayout):
         print('Connecting Camera')
         # connect camera
         app = App.get_running_app()
-        app.camera = basler.Camera()
+        app.camera = basler.Camera.createAndConnectCamera()
 
         if app.camera is None:
             self.cam_connection.state = 'normal'
@@ -2538,7 +2537,25 @@ class GlowTrackerApp(App):
         return configFullPath
 
 
+    def build_config(self, config):
+        """Set the default values for the configs sections.
+
+        Unfortunately, the caller of this function, which is Kivi.app.App.load_config(),
+        forces the default config '<Workspcae>/glowtracker/glowtracker.ini' on to the config object
+        eventhough we have specifically specified to load the config file from the user default location.
+
+        The next function, which is self.build(), will have to reload it again.
+
+        Thus, we will skip the loading here and pass the responsibility to self.build() to load instead.
+        """
+        pass
+
+
     def build(self):
+
+        # Read config file
+        self.config.read(self.configFile)
+
         # Set app name
         self.title = 'GlowTracker'
         # Set app icon
@@ -2565,13 +2582,6 @@ class GlowTrackerApp(App):
         return layout
 
     
-    def build_config(self, config):
-        """
-        Set the default values for the configs sections.
-        """
-        config.read(self.configFile)
-
-
     # use custom settings for our GUI
     def build_settings(self, settings):
         """build the settings window"""
