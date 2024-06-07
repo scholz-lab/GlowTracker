@@ -735,12 +735,14 @@ class ImageAcquisitionButton(ToggleButton):
             - Stop camera grabbing.
             - Stop the acquisition looping thread if not already.
         """        
-
+        if self.camera is None:
+            return
+        
         # Unschedule the display event thread
         Clock.unschedule(self.updateDisplayImageEvent)
 
         # Stop grabbing
-        if self.camera is not None:
+        if self.camera.IsGrabbing():
             self.camera.StopGrabbing()
 
         # Flag recompute dual color transformation matrix
@@ -786,6 +788,8 @@ class ImageAcquisitionButton(ToggleButton):
         self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
         print(f'Displaying at {fps} fps')
 
+        returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+
         # Start image acquisition loop
         while self.acquisitionCondition():
 
@@ -793,6 +797,10 @@ class ImageAcquisitionButton(ToggleButton):
             isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
 
             if isSuccess:
+
+                if returnCameraOnHoldFlag:
+                    self.camera.setIsOnHold(False)
+                    returnCameraOnHoldFlag = False
 
                 # Process the received image
                 self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
@@ -1005,8 +1013,11 @@ class RecordButton(ImageAcquisitionButton):
             return
 
         # Stop camera if already running and disable the LiveView button
+        # If the camera is already running it in live view button,
+        #   put the transition "OnHold" flag, and restart camera in Recording mode
         self.prevLiveViewButtonState = self.parent.liveviewbutton.state
         if self.prevLiveViewButtonState == 'down':
+            self.camera.setIsOnHold(True)
             self.parent.liveviewbutton.stopImageAcquisition()
         self.parent.liveviewbutton.disabled = True
         
@@ -1146,16 +1157,23 @@ class RecordButton(ImageAcquisitionButton):
     @override
     def stopImageAcquisition(self) -> None:
         """Extend the stop image acquisition functionality: 
+            - Stop the camera
             - Closing the coordinate file.
             - Closing the image saving thread.
             - Update display texts.
             - Un-disabled (enable if) the LiveView button
         """        
 
-        super().stopImageAcquisition()
-
         if self.camera is None:
             return
+        
+        # If the live view button was previously running, 
+        #   then set the transitioning "OnHold" flag.
+        if self.prevLiveViewButtonState == 'down':
+            self.camera.setIsOnHold(True)
+
+        # Stop the camera and clear values
+        super().stopImageAcquisition()
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
@@ -1203,8 +1221,12 @@ class RecordButton(ImageAcquisitionButton):
         # Update buffer display text
         self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
-        # write coordinate into file
-        self.coordinateFile.write(f"{self.frameCounter} {self.imageTimeStamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
+        # Write coordinate into file.
+        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
+        try:
+            self.coordinateFile.write(f"{self.frameCounter} {self.imageTimeStamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
+        except ValueError as e:
+            print(f'Receieve Image Callback: {e}')
 
         # Put image(s) into the saving queue
         if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
@@ -1238,6 +1260,13 @@ class RecordButton(ImageAcquisitionButton):
             ])
 
         self.frameCounter += 1
+
+        # If this is the last recording frame,
+        #   the camera is going to shut itself off.
+        #   Thus, we have to set the onHold transition flag if we're going to
+        #   resume back in live view mode.
+        if self.prevLiveViewButtonState == 'down' and self.frameCounter == self.numberRecordframes:
+            self.camera.setIsOnHold(True)
 
         super().receiveImageCallback()
     
@@ -2228,6 +2257,8 @@ class RuntimeControls(BoxLayout):
             camera.setIsOnHold(True)
             # cam stop
             camera.AcquisitionStop.Execute()
+            # Wait for camera acquisition to fully stop.
+            time.sleep(2/camera.AcquisitionFrameRate()) # Wait 2 frame
             # grab unlock
             camera.TLParamsLocked = False
 
