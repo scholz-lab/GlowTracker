@@ -2,6 +2,19 @@ from pyparsing import (
     Group, Suppress, Forward, ZeroOrMore, Keyword, ParserElement, StringEnd, ParseException, common
 )
 
+import sys
+sys.path.append('../glowtracker')
+
+from typing import List
+
+from Zaber_control import Stage
+
+from Basler_control import Camera, saveImage
+
+from pypylon import pylon
+
+import time
+
 def createTextParser() -> ParserElement:
 
     # 
@@ -66,7 +79,7 @@ def getMacroScript() -> str:
     return script_text
 
 
-def executeCommandList(commandList) -> None:
+def executeCommandList(commandList: List, stage: Stage, camera: Camera) -> None:
     
     for command in commandList:
         
@@ -76,33 +89,44 @@ def executeCommandList(commandList) -> None:
 
             [x, y, z] = command[1:4]
             print(f'Move absolute for {x, y, z}')
+            stage.move_abs((x, y, z), 'um', wait_until_idle= True)
             
         elif commandName == 'move_rel':
 
             [x, y, z] = command[1:4]
             print(f'Move relative for {x, y, z}')
+            stage.move_rel((x, y, z), 'um', wait_until_idle= True)
             
         elif commandName == 'snap':
             
             print('Snap an image')
+            # Call capture an image
+            isSuccess, img = camera.singleTake()
+
+            if isSuccess:
+                saveImage(img, 'record', 'image1.tiff')
             
         elif commandName == 'record_for':
             
             recordTime = command[1]
             print(f'Record for {recordTime} sec')
+            camera.StartGrabbingMax(int(recordTime), pylon.GrabStrategy_OneByOne)
             
         elif commandName == 'start_recording':
 
             print('Start recording')
+            camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
             
         elif commandName == 'stop_recording':
             
             print('Stop recording')
+            camera.StopGrabbing()
 
         elif commandName == 'wait':
 
             waitTime = command[1]
             print(f'Wait for {waitTime} sec')
+            time.sleep(waitTime)
         
         elif commandName == 'loop':
 
@@ -112,11 +136,26 @@ def executeCommandList(commandList) -> None:
             for i in range(numLoop):
                 
                 print(f'Loop {i}')
-                executeCommandList(subCommandList)
-
+                executeCommandList(subCommandList, stage, camera)
 
 
 if __name__ == '__main__':
+
+    # Connect to stage
+    stage = Stage('COM4')
+    if stage.connection is None:
+        print("Can't connect to a stage")
+        exit
+    else:
+        print('Successfully connnect to a stage')
+
+    # Connect to camera
+    camera = Camera.createAndConnectCamera()
+    if camera is None:
+        print("Can't connect to a camera")
+        exit
+    else:
+        print('Successfully connect to a stage')
 
     macroParser = createTextParser()
 
@@ -134,7 +173,5 @@ if __name__ == '__main__':
     
     print('Parsed command successful.')
 
-    for command in parsedCommands:
-        print(command)
-
-    executeCommandList(parsedCommands)
+    # Execute the commands
+    executeCommandList(parsedCommands, stage, camera)
