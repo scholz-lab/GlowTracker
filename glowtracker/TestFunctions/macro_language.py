@@ -31,11 +31,12 @@ def createTextParser() -> ParserElement:
     empty_arg = Suppress('()')
     intOrVariable_arg = Suppress('(') + intOrVariable + Suppress(')')
     numberOrVariable_arg = Suppress('(') + numberOrVariable + Suppress(')')
-    coord_args = Suppress('(') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(')')
+    coord_arg = Suppress('(') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(')')
+    loop_arg = intOrVariable_arg | ( Suppress('(') + variable_name + Suppress(':') + intOrVariable + Suppress(')') )
 
     # Commands
-    move_abs = Group( Keyword('move_abs') + coord_args )
-    move_rel = Group( Keyword('move_rel') + coord_args )
+    move_abs = Group( Keyword('move_abs') + coord_arg )
+    move_rel = Group( Keyword('move_rel') + coord_arg )
     snap = Group( Keyword('snap') + empty_arg )
     record_for = Group( Keyword('record_for') + numberOrVariable_arg )
     start_recording = Group( Keyword('start_recording') + empty_arg )
@@ -53,12 +54,7 @@ def createTextParser() -> ParserElement:
 
     # Define loop command with nested commands
     loop = Group( 
-        Keyword("loop") 
-        + ( 
-            intOrVariable_arg 
-            | 
-            ( Suppress('(') + variable_name + Suppress(':') + intOrVariable + Suppress(')') ) 
-        )
+        Keyword("loop") + loop_arg
         + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') 
     )
 
