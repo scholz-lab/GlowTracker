@@ -52,7 +52,15 @@ def createTextParser() -> ParserElement:
     command = Forward()
 
     # Define loop command with nested commands
-    loop = Group( Keyword("loop") + intOrVariable_arg + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') )
+    loop = Group( 
+        Keyword("loop") 
+        + ( 
+            intOrVariable_arg 
+            | 
+            ( Suppress('(') + variable_name + Suppress(':') + intOrVariable + Suppress(')') ) 
+        )
+        + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') 
+    )
 
     # Finally define command which included loop
     command <<= (
@@ -86,10 +94,9 @@ def getMacroScript() -> str:
         y = 5
         move_abs(1.1, x, 3.1) # My second loop
         wait(y)
-        loop(3) {
+        loop(i:3) {
             snap()
-            wait(x)
-            wait(y)
+            wait(i)
         }
     }
     stop_recording()
@@ -117,8 +124,6 @@ def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVar
 
     for command in commandList:
 
-        print(command)
-        
         commandName = command[0]
 
         if commandName == 'move_abs':
@@ -167,13 +172,34 @@ def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVar
         elif commandName == 'loop':
 
             # Only support integer value. A float value will be cast and rounded to int. This need to be on the document.
-            numLoop = int(resolveValue(command[1]))
 
-            subCommandList = command[2]
+            numLoop = 0
+            loopVariable: str | None = None
+            subCommandList = []
 
+            # Parse the arguments
+            if len(command) == 3:
+                # One argument loop
+                numLoop = int(resolveValue(command[1]))
+                subCommandList = command[2]
+
+            elif len(command) == 4:
+                # Two argument loop in fashion of a:b
+                numLoop = int(resolveValue(command[2]))
+                # Create a new scope variable
+                loopVariable = command[1]
+                scopeVariableDict[loopVariable] = 0
+
+                subCommandList = command[3]
+
+            # Execute looping sub commands
             for i in range(numLoop):
                 
                 print(f'Loop {i}')
+                # Update loop variable
+                if loopVariable is not None:
+                    scopeVariableDict[loopVariable] = i
+                # Execute sub commands
                 executeCommandList(subCommandList, stage, camera, scopeVariableDict)
         
         elif commandName == 'varaible_assignment':
@@ -214,7 +240,7 @@ if __name__ == '__main__':
 
     except ParseException as pe:
         print(f"Parsing error: {pe}")
-        exit
+        exit(0)
     
     print('Parsed command successful.')
 
