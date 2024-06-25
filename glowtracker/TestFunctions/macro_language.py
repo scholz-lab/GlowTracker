@@ -1,5 +1,6 @@
 from pyparsing import (
-    Group, Suppress, Forward, ZeroOrMore, Keyword, ParserElement, StringEnd, ParseException, common
+    Group, Suppress, Forward, ZeroOrMore, Keyword, ParserElement, StringEnd, ParseException, common,
+    pythonStyleComment, LineEnd
 )
 
 import sys
@@ -34,6 +35,7 @@ def createTextParser() -> ParserElement:
     start_recording = Group( Keyword('start_recording') + empty_arg )
     stop_recording = Group( Keyword('stop_recording') + empty_arg )
     wait = Group( Keyword('wait') + number_arg )
+    comment = pythonStyleComment + LineEnd()
 
     # Forward declaration for nested loops
     command = Forward()
@@ -44,14 +46,14 @@ def createTextParser() -> ParserElement:
     # Finally define command which included loop
     command <<= (
         move_abs | move_rel | snap | record_for | start_recording |
-        stop_recording | wait | loop
+        stop_recording | wait | comment | loop
     )
 
     # Top-level parser
-    parser = ZeroOrMore(command) + StringEnd()
+    parser = ZeroOrMore(command | comment) + StringEnd()
 
     # Ignore space, tabs, return, newline
-    parser.setDefaultWhitespaceChars(' \t\r\n')
+    parser.setDefaultWhitespaceChars(' \t')
 
     return parser
 
@@ -65,8 +67,10 @@ def getMacroScript() -> str:
     record_for(3.5)
     start_recording()
     wait(2.0)
+    # My first loop
     loop(5) {
-        move_abs(1.1, 2.1, 3.1)
+        # My second loop
+        move_abs(1.1, 2.1, 3.1) # My second loop
         wait(1.0)
         loop(3) {
             snap()
