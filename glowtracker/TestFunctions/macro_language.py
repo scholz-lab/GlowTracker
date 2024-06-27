@@ -4,33 +4,19 @@ from pyparsing import (
     infixNotation, opAssoc, ParseResults
 )
 
-import sys
-sys.path.append('../glowtracker')
-
 from typing import List
-
-from Zaber_control import Stage
-
-from Basler_control import Camera, saveImage
-
-from pypylon import pylon
-
-import time
 
 def createTextParser() -> ParserElement:
 
     # 
     # Variable
     # 
-    variable_name = Word(alphas, alphanums)
-    intOrVariable = common.integer | variable_name
-    numberOrVariable = common.number | variable_name
+    variable = Word(alphas, alphanums)
+    numberOrVariable = common.number | variable
 
     # 
     # Math
     # 
-    operand = numberOrVariable
-
     signOp = oneOf("+ -")
     multOp = oneOf("* /")
     plusOp = oneOf("+ -")
@@ -39,7 +25,7 @@ def createTextParser() -> ParserElement:
     modOp = Literal("%")
 
     arithExpr = infixNotation(
-        operand,
+        numberOrVariable,
         [
             (signOp, 1, opAssoc.RIGHT),
             (multOp, 2, opAssoc.LEFT),
@@ -54,10 +40,11 @@ def createTextParser() -> ParserElement:
     # Arguments
     # 
     empty_arg = Suppress('()')
-    intOrVariable_arg = Suppress('(') + intOrVariable + Suppress(')')
-    numberOrVariable_arg = Suppress('(') + numberOrVariable + Suppress(')')
-    coord_arg = Suppress('(') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(')')
-    loop_arg = intOrVariable_arg | ( Suppress('(') + variable_name + Suppress(':') + intOrVariable + Suppress(')') )
+    single_arg = Suppress('(') + arithExpr + Suppress(')')
+    coord_arg = Suppress('(') + arithExpr + Suppress(',') + arithExpr + Suppress(',') + arithExpr + Suppress(')')
+    loop_arg = arithExpr | ( 
+        Suppress('(') + variable + Suppress(':') + arithExpr + Suppress(')') 
+    )
 
     # 
     # Commands
@@ -65,14 +52,14 @@ def createTextParser() -> ParserElement:
     move_abs = Group( Keyword('move_abs') + coord_arg )
     move_rel = Group( Keyword('move_rel') + coord_arg )
     snap = Group( Keyword('snap') + empty_arg )
-    record_for = Group( Keyword('record_for') + numberOrVariable_arg )
+    record_for = Group( Keyword('record_for') + single_arg )
     start_recording = Group( Keyword('start_recording') + empty_arg )
     stop_recording = Group( Keyword('stop_recording') + empty_arg )
-    wait = Group( Keyword('wait') + numberOrVariable_arg )
+    wait = Group( Keyword('wait') + single_arg )
     comment = pythonStyleComment + LineEnd()
 
     varaible_assignment = Group(
-        (variable_name + Suppress('=') + arithExpr).setParseAction(
+        (variable + Suppress('=') + arithExpr).setParseAction(
             lambda t: ['varaible_assignment', t[0], t[1:]]
         )
     )
@@ -121,16 +108,16 @@ def getMacroScript() -> str:
     move_abs(1.0,x, 3.0)
     move_rel(0.5, -0.5, x)
     snap()
-    record_for(3.5)
+    record_for(a + -2)
     start_recording()
     wait(2.0)
     # My first loop
-    loop(5) {
+    loop(5 + 2*2) {
         # My second loop
         y = 5
         move_abs(1.1, x, 3.1) # My second loop
         wait(y)
-        loop(i:3) {
+        loop(i:3+x/2) {
             snap()
             wait(i)
         }
@@ -141,7 +128,7 @@ def getMacroScript() -> str:
     return script_text
 
 
-def executeCommandList(commandList: List, scopeVariableDict: dict | None = None) -> None:
+def executeCommandList(commandList: List | ParseResults, scopeVariableDict: dict | None = None) -> None:
     
     if scopeVariableDict is None:
         scopeVariableDict = {}
@@ -168,7 +155,7 @@ def executeCommandList(commandList: List, scopeVariableDict: dict | None = None)
 
             elif len(expression) == 2:
 
-                op = expression(0)
+                op = expression[0]
                 value = resolveExpression(expression[1])
 
                 # Sign operand
@@ -283,7 +270,7 @@ def executeCommandList(commandList: List, scopeVariableDict: dict | None = None)
                 if loopVariable is not None:
                     scopeVariableDict[loopVariable] = i
                 # Execute sub commands
-                executeCommandList(subCommandList, stage, camera, scopeVariableDict)
+                executeCommandList(subCommandList, scopeVariableDict)
         
         elif commandName == 'varaible_assignment':
 
