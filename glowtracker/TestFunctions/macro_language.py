@@ -1,6 +1,7 @@
 from pyparsing import (
     Group, Suppress, Forward, ZeroOrMore, Keyword, ParserElement, StringEnd, ParseException, common,
-    pythonStyleComment, LineEnd, Word, alphas, alphanums
+    pythonStyleComment, LineEnd, Word, alphas, alphanums, Literal, oneOf, 
+    infixNotation, opAssoc, ParseResults
 )
 
 import sys
@@ -19,22 +20,49 @@ import time
 def createTextParser() -> ParserElement:
 
     # 
-    # Define Syntax
-    # 
-    
     # Variable
+    # 
     variable_name = Word(alphas, alphanums)
     intOrVariable = common.integer | variable_name
     numberOrVariable = common.number | variable_name
 
+    # 
+    # Math
+    # 
+    operand = numberOrVariable
+
+    signOp = oneOf("+ -")
+    multOp = oneOf("* /")
+    plusOp = oneOf("+ -")
+    expOp = Literal("^")
+    factOp = Literal("!")
+    modOp = Literal("%")
+
+    arithExpr = infixNotation(
+        operand,
+        [
+            (signOp, 1, opAssoc.RIGHT),
+            (multOp, 2, opAssoc.LEFT),
+            (plusOp, 2, opAssoc.LEFT),
+            (expOp, 2, opAssoc.RIGHT),
+            (factOp, 1, opAssoc.LEFT),
+            (modOp, 2, opAssoc.LEFT),
+        ],
+    )
+
+
+    # 
     # Arguments
+    # 
     empty_arg = Suppress('()')
     intOrVariable_arg = Suppress('(') + intOrVariable + Suppress(')')
     numberOrVariable_arg = Suppress('(') + numberOrVariable + Suppress(')')
     coord_arg = Suppress('(') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(',') + numberOrVariable + Suppress(')')
     loop_arg = intOrVariable_arg | ( Suppress('(') + variable_name + Suppress(':') + intOrVariable + Suppress(')') )
 
+    # 
     # Commands
+    # 
     move_abs = Group( Keyword('move_abs') + coord_arg )
     move_rel = Group( Keyword('move_rel') + coord_arg )
     snap = Group( Keyword('snap') + empty_arg )
@@ -43,32 +71,44 @@ def createTextParser() -> ParserElement:
     stop_recording = Group( Keyword('stop_recording') + empty_arg )
     wait = Group( Keyword('wait') + numberOrVariable_arg )
     comment = pythonStyleComment + LineEnd()
+
     varaible_assignment = Group(
-        (variable_name + Suppress('=') + numberOrVariable).setParseAction(
-            lambda t: ["varaible_assignment", t[0], t[1]]
+        (variable_name + Suppress('=') + arithExpr).setParseAction(
+            lambda t: ['varaible_assignment', t[0], t[1:]]
         )
     )
 
-    # Forward declaration for nested loops
+    # 
+    # Loop
+    # 
+
+    #   Forward declaration of command list for nested loops
     command = Forward()
 
-    # Define loop command with nested commands
+    #   Define loop command with nested commands
     loop = Group( 
         Keyword("loop") + loop_arg
         + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') 
     )
 
-    # Finally define command which included loop
+    #   Finally define command which included loop
     command <<= (
         move_abs | move_rel | snap | record_for | start_recording |
         stop_recording | wait | comment | loop | varaible_assignment
     )
 
-    # Top-level parser
+    # Create a parser
     parser = ZeroOrMore(command | comment) + StringEnd()
 
+    # 
+    # Configure
+    # 
+    
     # Ignore space, tabs, return, newline
     parser.setDefaultWhitespaceChars(' \t')
+
+    # Enable cache
+    parser.enablePackrat()
 
     return parser
 
@@ -77,6 +117,7 @@ def getMacroScript() -> str:
     # Example script
     script_text = """
     x = 2
+    a = x + 2
     wait(x)
     move_abs(1.0,x, 3.0)
     move_rel(0.5, -0.5, x)
@@ -101,21 +142,79 @@ def getMacroScript() -> str:
     return script_text
 
 
-def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVariableDict: dict | None = None) -> None:
+def executeCommandList(commandList: List, scopeVariableDict: dict | None = None) -> None:
     
     if scopeVariableDict is None:
         scopeVariableDict = {}
-
-    def resolveValue(value: str | int | float) -> int | float:
-        if isinstance(value, str):
-            if value in scopeVariableDict:
-                return scopeVariableDict[value]
-            else:
-                raise Exception(f"The variable '{value}' is undefined.")
-        else:
-            return value
-
     
+    def resolveExpression(expression: str | int | float) -> int | float:
+
+        if isinstance(expression, (int, float)):
+            # Integer or floating point
+            return expression
+        
+        elif isinstance(expression, str):
+            # Variable
+            if expression in scopeVariableDict:
+                return scopeVariableDict[expression]
+            else:
+                raise ValueError(f"The variable '{expression}' is undefined.")
+
+        elif isinstance(expression, (list, ParseResults)):
+            # Arithematic expression
+
+            if len(expression) == 1:
+                # Parenthesis with one variable
+                return resolveExpression(expression[0])
+
+            elif len(expression) == 2:
+
+                op = expression(0)
+                value = resolveExpression(expression[1])
+
+                # Sign operand
+                if op == '+':
+                    return value
+                elif op == '-':
+                    return -value
+                
+                # Factorial
+                elif op == '!':
+                    return value
+                
+                else:
+                    raise ValueError(f"Expression {expression} is invalid.")
+            
+            else:
+
+                left = resolveExpression(expression[0])
+                op = expression[1]
+                right = resolveExpression(expression[2])
+
+                # Plus, Minus
+                if op == '+':
+                    return left + right
+                elif op == '-':
+                    return left - right
+
+                # Multiplication, division
+                elif op == '*':
+                    return left * right                
+                elif op == '/':
+                    return left / right
+                
+                # Modulo
+                elif op == '%':
+                    return left % right
+                    
+                # Exponent
+                elif op == '^':
+                    return left ** right
+                
+        else:
+            raise ValueError(f"Expression {expression} is invalid.")
+    
+
     # Execute the command
 
     for command in commandList:
@@ -124,46 +223,35 @@ def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVar
 
         if commandName == 'move_abs':
 
-            [x, y, z] = list(map(resolveValue, command[1:4]))
+            [x, y, z] = list(map(resolveExpression, command[1:4]))
             print(f'Move absolute for {x, y, z}')
-            stage.move_abs((x, y, z), 'um', wait_until_idle= True)
             
         elif commandName == 'move_rel':
 
-            [x, y, z] = list(map(resolveValue, command[1:4]))
+            [x, y, z] = list(map(resolveExpression, command[1:4]))
             print(f'Move relative for {x, y, z}')
-            stage.move_rel((x, y, z), 'um', wait_until_idle= True)
             
         elif commandName == 'snap':
             
             print('Snap an image')
-            # Call capture an image
-            isSuccess, img = camera.singleTake()
-
-            if isSuccess:
-                saveImage(img, 'record', 'image1.tiff')
             
         elif commandName == 'record_for':
             
-            recordTime = resolveValue(command[1])
+            recordTime = resolveExpression(command[1])
             print(f'Record for {recordTime} sec')
-            camera.StartGrabbingMax(int(recordTime), pylon.GrabStrategy_OneByOne)
             
         elif commandName == 'start_recording':
 
             print('Start recording')
-            camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
             
         elif commandName == 'stop_recording':
             
             print('Stop recording')
-            camera.StopGrabbing()
 
         elif commandName == 'wait':
 
-            waitTime = resolveValue(command[1])
+            waitTime = resolveExpression(command[1])
             print(f'Wait for {waitTime} sec')
-            time.sleep(waitTime)
         
         elif commandName == 'loop':
 
@@ -176,12 +264,12 @@ def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVar
             # Parse the arguments
             if len(command) == 3:
                 # One argument loop
-                numLoop = int(resolveValue(command[1]))
+                numLoop = int(resolveExpression(command[1]))
                 subCommandList = command[2]
 
             elif len(command) == 4:
                 # Two argument loop in fashion of a:b
-                numLoop = int(resolveValue(command[2]))
+                numLoop = int(resolveExpression(command[2]))
                 # Create a new scope variable
                 loopVariable = command[1]
                 scopeVariableDict[loopVariable] = 0
@@ -201,28 +289,13 @@ def executeCommandList(commandList: List, stage: Stage, camera: Camera, scopeVar
         elif commandName == 'varaible_assignment':
 
             variable_name = command[1]
-            variable_value = resolveValue(command[2])
+            variable_value = resolveExpression(command[2])
             print(f'Assign {variable_name} = {variable_value}')
             scopeVariableDict[variable_name] = variable_value
 
 
 if __name__ == '__main__':
 
-    # Connect to stage
-    stage = Stage('COM4')
-    if stage.connection is None:
-        print("Can't connect to a stage")
-        exit
-    else:
-        print('Successfully connnect to a stage')
-
-    # Connect to camera
-    camera = Camera.createAndConnectCamera()
-    if camera is None:
-        print("Can't connect to a camera")
-        exit
-    else:
-        print('Successfully connect to a stage')
 
     macroParser = createTextParser()
 
@@ -238,7 +311,7 @@ if __name__ == '__main__':
         print(f"Parsing error: {pe}")
         exit(0)
     
-    print('Parsed command successful.')
+    print('Parsed command.')
 
     # Execute the commands
-    executeCommandList(parsedCommands, stage, camera)
+    executeCommandList(parsedCommands)
