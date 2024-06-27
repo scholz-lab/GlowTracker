@@ -6,10 +6,36 @@ from pyparsing import (
 
 from typing import List
 
+import time
+
 class MacroScriptExecutor:
+    """Parser and executor for a custom glowtracker macro scripts.
+
+    List of supported commands:
+    - move_abs
+    - move_rel
+    - snap
+    - record_for
+    - start_recording
+    - stop_recording
+    - wait
+
+    Flow control:
+    - loop
+
+    Features:
+    - python style comment using '#'
+    - variable assignment using '='. e.g. 'x = 10'
+    - simple arithmetic e.g. '(x*2 + 10)^2'
+
+
+    Visit the wiki for more details: https://scholz-lab.github.io/GlowTracker/
+
+    """
 
     def __init__(self) -> None:
         self.parser = self._createTextParser()
+        self.functionHandle: dict[callable] = {}
 
 
     def _createTextParser(self) -> ParserElement:
@@ -105,6 +131,32 @@ class MacroScriptExecutor:
         return parser
 
 
+    def registerFunctionHandler(self,
+            move_abs_handle: callable,
+            move_rel_handle: callable,
+            snap_handle: callable,
+            record_for_handle: callable,
+            start_recording_handle: callable,
+            stop_recording_handle: callable
+        ) -> None:
+        """Register function handler from the GlowTracker into the MacroScriptExecutor
+
+        Args:
+            move_abs_handle (callable): move stage by absolute coordinates
+            move_rel_handle (callable): move stage by relative coordinates
+            snap_handle (callable): snap an image
+            record_for_handle (callable): record an image for a certain amount of time
+            start_recording_handle (callable): start camera recording
+            stop_recording_handle (callable): stop camera recording
+        """
+        self.functionHandle['move_abs'] = move_abs_handle
+        self.functionHandle['move_rel'] = move_rel_handle
+        self.functionHandle['snap'] = snap_handle
+        self.functionHandle['record_for'] = record_for_handle
+        self.functionHandle['start_recording'] = start_recording_handle
+        self.functionHandle['stop_recording'] = stop_recording_handle
+    
+
     def executeScript(self, script: str) -> None:
 
         parsedCommands = []
@@ -137,41 +189,27 @@ class MacroScriptExecutor:
 
             commandName = command[0]
 
-            if commandName == 'move_abs':
+            if commandName == 'move_abs' or commandName == 'move_rel':
 
                 x = self._resolveExpression(scopeVariableDict, command[1])
                 y = self._resolveExpression(scopeVariableDict, command[2])
                 z = self._resolveExpression(scopeVariableDict, command[3])
-                print(f'Move absolute for {x, y, z}')
-                
-            elif commandName == 'move_rel':
 
-                x = self._resolveExpression(scopeVariableDict, command[1])
-                y = self._resolveExpression(scopeVariableDict, command[2])
-                z = self._resolveExpression(scopeVariableDict, command[3])
-                print(f'Move relative for {x, y, z}')
+                self.functionHandle[commandName](x, y, z)
                 
-            elif commandName == 'snap':
+            elif commandName == 'snap' or commandName == 'start_recording' or commandName == 'stop_recording':
                 
-                print('Snap an image')
+                self.functionHandle[commandName]()
                 
             elif commandName == 'record_for':
                 
                 recordTime = self._resolveExpression(scopeVariableDict, command[1])
-                print(f'Record for {recordTime} sec')
-                
-            elif commandName == 'start_recording':
-
-                print('Start recording')
-                
-            elif commandName == 'stop_recording':
-                
-                print('Stop recording')
+                self.functionHandle[commandName](recordTime)
 
             elif commandName == 'wait':
 
                 waitTime = self._resolveExpression(scopeVariableDict, command[1])
-                print(f'Wait for {waitTime} sec')
+                time.sleep(waitTime)
             
             elif commandName == 'loop':
 
@@ -199,7 +237,6 @@ class MacroScriptExecutor:
                 # Execute looping sub commands
                 for i in range(numLoop):
                     
-                    print(f'Loop {i}')
                     # Update loop variable
                     if loopVariable is not None:
                         scopeVariableDict[loopVariable] = i
@@ -210,7 +247,6 @@ class MacroScriptExecutor:
 
                 variable_name = command[1]
                 variable_value = self._resolveExpression(scopeVariableDict, command[2])
-                print(f'Assign {variable_name} = {variable_value}')
                 scopeVariableDict[variable_name] = variable_value
 
 
@@ -302,6 +338,7 @@ def getMacroScript() -> str:
         wait(y)
         loop(i:3+x/2) {
             snap()
+            move_abs(1.2, x + i/2, 3.2)
             wait(i)
         }
     }
@@ -316,5 +353,14 @@ if __name__ == '__main__':
     macroScript = getMacroScript()
 
     macroScriptExecutor = MacroScriptExecutor()
+
+    macroScriptExecutor.registerFunctionHandler(
+        move_abs_handle= lambda x, y, z: print(f"move_abs({x}, {y}, {z})"),
+        move_rel_handle= lambda x, y, z: print(f"move_rel({x}, {y}, {z})"),
+        snap_handle= lambda: print("snap()"),
+        record_for_handle= lambda x: print(f"record_for({x})"),
+        start_recording_handle= lambda: print("start_recording()"),
+        stop_recording_handle= lambda: print("stop_recording()")
+    )
 
     macroScriptExecutor.executeScript(macroScript)
