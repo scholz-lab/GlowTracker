@@ -50,7 +50,6 @@ def createTextParser() -> ParserElement:
         ],
     )
 
-
     # 
     # Arguments
     # 
@@ -161,7 +160,7 @@ def executeCommandList(commandList: List, scopeVariableDict: dict | None = None)
                 raise ValueError(f"The variable '{expression}' is undefined.")
 
         elif isinstance(expression, (list, ParseResults)):
-            # Arithematic expression
+            # Arithmetic expression
 
             if len(expression) == 1:
                 # Parenthesis with one variable
