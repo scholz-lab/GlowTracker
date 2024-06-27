@@ -6,97 +6,280 @@ from pyparsing import (
 
 from typing import List
 
-def createTextParser() -> ParserElement:
+class MacroScriptExecutor:
 
-    # 
-    # Variable
-    # 
-    variable = Word(alphas, alphanums)
-    numberOrVariable = common.number | variable
+    def __init__(self) -> None:
+        self.parser = self._createTextParser()
 
-    # 
-    # Math
-    # 
-    signOp = oneOf("+ -")
-    multOp = oneOf("* /")
-    plusOp = oneOf("+ -")
-    expOp = Literal("^")
-    factOp = Literal("!")
-    modOp = Literal("%")
 
-    arithExpr = infixNotation(
-        numberOrVariable,
-        [
-            (signOp, 1, opAssoc.RIGHT),
-            (multOp, 2, opAssoc.LEFT),
-            (plusOp, 2, opAssoc.LEFT),
-            (expOp, 2, opAssoc.RIGHT),
-            (factOp, 1, opAssoc.LEFT),
-            (modOp, 2, opAssoc.LEFT),
-        ],
-    )
+    def _createTextParser(self) -> ParserElement:
 
-    # 
-    # Arguments
-    # 
-    empty_arg = Suppress('()')
-    single_arg = Suppress('(') + arithExpr + Suppress(')')
-    coord_arg = Suppress('(') + arithExpr + Suppress(',') + arithExpr + Suppress(',') + arithExpr + Suppress(')')
-    loop_arg = arithExpr | ( 
-        Suppress('(') + variable + Suppress(':') + arithExpr + Suppress(')') 
-    )
+        # 
+        # Variable
+        # 
+        variable = Word(alphas, alphanums)
+        numberOrVariable = common.number | variable
 
-    # 
-    # Commands
-    # 
-    move_abs = Group( Keyword('move_abs') + coord_arg )
-    move_rel = Group( Keyword('move_rel') + coord_arg )
-    snap = Group( Keyword('snap') + empty_arg )
-    record_for = Group( Keyword('record_for') + single_arg )
-    start_recording = Group( Keyword('start_recording') + empty_arg )
-    stop_recording = Group( Keyword('stop_recording') + empty_arg )
-    wait = Group( Keyword('wait') + single_arg )
-    comment = pythonStyleComment + LineEnd()
+        # 
+        # Math
+        # 
+        signOp = oneOf("+ -")
+        multOp = oneOf("* /")
+        plusOp = oneOf("+ -")
+        expOp = Literal("^")
+        factOp = Literal("!")
+        modOp = Literal("%")
 
-    varaible_assignment = Group(
-        (variable + Suppress('=') + arithExpr).setParseAction(
-            lambda t: ['varaible_assignment', t[0], t[1:]]
+        arithExpr = infixNotation(
+            numberOrVariable,
+            [
+                (signOp, 1, opAssoc.RIGHT),
+                (multOp, 2, opAssoc.LEFT),
+                (plusOp, 2, opAssoc.LEFT),
+                (expOp, 2, opAssoc.RIGHT),
+                (factOp, 1, opAssoc.LEFT),
+                (modOp, 2, opAssoc.LEFT),
+            ],
         )
-    )
 
-    # 
-    # Loop
-    # 
+        # 
+        # Arguments
+        # 
+        empty_arg = Suppress('()')
+        single_arg = Suppress('(') + arithExpr + Suppress(')')
+        coord_arg = Suppress('(') + arithExpr + Suppress(',') + arithExpr + Suppress(',') + arithExpr + Suppress(')')
+        loop_arg = arithExpr | ( 
+            Suppress('(') + variable + Suppress(':') + arithExpr + Suppress(')') 
+        )
 
-    #   Forward declaration of command list for nested loops
-    command = Forward()
+        # 
+        # Commands
+        # 
+        move_abs = Group( Keyword('move_abs') + coord_arg )
+        move_rel = Group( Keyword('move_rel') + coord_arg )
+        snap = Group( Keyword('snap') + empty_arg )
+        record_for = Group( Keyword('record_for') + single_arg )
+        start_recording = Group( Keyword('start_recording') + empty_arg )
+        stop_recording = Group( Keyword('stop_recording') + empty_arg )
+        wait = Group( Keyword('wait') + single_arg )
+        comment = pythonStyleComment + LineEnd()
 
-    #   Define loop command with nested commands
-    loop = Group( 
-        Keyword("loop") + loop_arg
-        + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') 
-    )
+        varaible_assignment = Group(
+            (variable + Suppress('=') + arithExpr).setParseAction(
+                lambda t: ['varaible_assignment', t[0], t[1:]]
+            )
+        )
 
-    #   Finally define command which included loop
-    command <<= (
-        move_abs | move_rel | snap | record_for | start_recording |
-        stop_recording | wait | comment | loop | varaible_assignment
-    )
+        # 
+        # Loop
+        # 
 
-    # Create a parser
-    parser = ZeroOrMore(command | comment) + StringEnd()
+        #   Forward declaration of command list for nested loops
+        command = Forward()
 
-    # 
-    # Configure
-    # 
-    
-    # Ignore space, tabs, return, newline
-    parser.setDefaultWhitespaceChars(' \t')
+        #   Define loop command with nested commands
+        loop = Group( 
+            Keyword("loop") + loop_arg
+            + Suppress('{') + Group(ZeroOrMore(command)) + Suppress('}') 
+        )
 
-    # Enable cache
-    parser.enablePackrat()
+        #   Finally define command which included loop
+        command <<= (
+            move_abs | move_rel | snap | record_for | start_recording |
+            stop_recording | wait | comment | loop | varaible_assignment
+        )
 
-    return parser
+        # Create a parser
+        parser = ZeroOrMore(command | comment) + StringEnd()
+
+        # 
+        # Configure
+        # 
+        
+        # Ignore space, tabs, return, newline
+        parser.setDefaultWhitespaceChars(' \t')
+
+        # Enable cache
+        parser.enablePackrat()
+
+        return parser
+
+
+    def executeScript(self, script: str) -> None:
+
+        parsedCommands = []
+
+        print('Parsing command.')
+
+        try:
+            # Parse the script
+            parsedCommands = self.parser.parseString(script, parseAll= True)
+
+        except ParseException as e:
+            print(f"Parsing error: {e}")
+            raise e
+        
+        # Execute the commands
+
+        print('Executing commands.')
+        
+        self._executeCommandList(parsedCommands)
+
+
+    def _executeCommandList(self, commandList: List | ParseResults, scopeVariableDict: dict | None = None) -> None:
+        
+        if scopeVariableDict is None:
+            scopeVariableDict = {}
+        
+        # Execute the command
+
+        for command in commandList:
+
+            commandName = command[0]
+
+            if commandName == 'move_abs':
+
+                x = self._resolveExpression(scopeVariableDict, command[1])
+                y = self._resolveExpression(scopeVariableDict, command[2])
+                z = self._resolveExpression(scopeVariableDict, command[3])
+                print(f'Move absolute for {x, y, z}')
+                
+            elif commandName == 'move_rel':
+
+                x = self._resolveExpression(scopeVariableDict, command[1])
+                y = self._resolveExpression(scopeVariableDict, command[2])
+                z = self._resolveExpression(scopeVariableDict, command[3])
+                print(f'Move relative for {x, y, z}')
+                
+            elif commandName == 'snap':
+                
+                print('Snap an image')
+                
+            elif commandName == 'record_for':
+                
+                recordTime = self._resolveExpression(scopeVariableDict, command[1])
+                print(f'Record for {recordTime} sec')
+                
+            elif commandName == 'start_recording':
+
+                print('Start recording')
+                
+            elif commandName == 'stop_recording':
+                
+                print('Stop recording')
+
+            elif commandName == 'wait':
+
+                waitTime = self._resolveExpression(scopeVariableDict, command[1])
+                print(f'Wait for {waitTime} sec')
+            
+            elif commandName == 'loop':
+
+                # Only support integer value. A float value will be cast and rounded to int. This need to be on the document.
+
+                numLoop = 0
+                loopVariable: str | None = None
+                subCommandList = []
+
+                # Parse the arguments
+                if len(command) == 3:
+                    # One argument loop
+                    numLoop = int(self._resolveExpression(scopeVariableDict, command[1]))
+                    subCommandList = command[2]
+
+                elif len(command) == 4:
+                    # Two argument loop in fashion of a:b
+                    numLoop = int(self._resolveExpression(scopeVariableDict, command[2]))
+                    # Create a new scope variable
+                    loopVariable = command[1]
+                    scopeVariableDict[loopVariable] = 0
+
+                    subCommandList = command[3]
+
+                # Execute looping sub commands
+                for i in range(numLoop):
+                    
+                    print(f'Loop {i}')
+                    # Update loop variable
+                    if loopVariable is not None:
+                        scopeVariableDict[loopVariable] = i
+                    # Execute sub commands
+                    self._executeCommandList(subCommandList, scopeVariableDict)
+            
+            elif commandName == 'varaible_assignment':
+
+                variable_name = command[1]
+                variable_value = self._resolveExpression(scopeVariableDict, command[2])
+                print(f'Assign {variable_name} = {variable_value}')
+                scopeVariableDict[variable_name] = variable_value
+
+
+    def _resolveExpression(self, scopeVariableDict, expression: str | int | float | ParseResults) -> int | float:
+
+        if isinstance(expression, (int, float)):
+            # Integer or floating point
+            return expression
+        
+        elif isinstance(expression, str):
+            # Variable
+            if expression in scopeVariableDict:
+                return scopeVariableDict[expression]
+            else:
+                raise ValueError(f"The variable '{expression}' is undefined.")
+
+        elif isinstance(expression, (list, ParseResults)):
+            # Arithmetic expression
+
+            if len(expression) == 1:
+                # Parenthesis with one variable
+                return self._resolveExpression(scopeVariableDict, expression[0])
+
+            elif len(expression) == 2:
+
+                op = expression[0]
+                value = self._resolveExpression(scopeVariableDict, expression[1])
+
+                # Sign operand
+                if op == '+':
+                    return value
+                elif op == '-':
+                    return -value
+                
+                # Factorial
+                elif op == '!':
+                    return value
+                
+                else:
+                    raise ValueError(f"Expression {expression} is invalid.")
+            
+            else:
+
+                left = self._resolveExpression(scopeVariableDict, expression[0])
+                op = expression[1]
+                right = self._resolveExpression(scopeVariableDict, expression[2])
+
+                # Plus, Minus
+                if op == '+':
+                    return left + right
+                elif op == '-':
+                    return left - right
+
+                # Multiplication, division
+                elif op == '*':
+                    return left * right                
+                elif op == '/':
+                    return left / right
+                
+                # Modulo
+                elif op == '%':
+                    return left % right
+                    
+                # Exponent
+                elif op == '^':
+                    return left ** right
+                
+        else:
+            raise ValueError(f"Expression {expression} is invalid.")
 
 
 def getMacroScript() -> str:
@@ -128,176 +311,10 @@ def getMacroScript() -> str:
     return script_text
 
 
-def executeCommandList(commandList: List | ParseResults, scopeVariableDict: dict | None = None) -> None:
-    
-    if scopeVariableDict is None:
-        scopeVariableDict = {}
-    
-    def resolveExpression(expression: str | int | float) -> int | float:
-
-        if isinstance(expression, (int, float)):
-            # Integer or floating point
-            return expression
-        
-        elif isinstance(expression, str):
-            # Variable
-            if expression in scopeVariableDict:
-                return scopeVariableDict[expression]
-            else:
-                raise ValueError(f"The variable '{expression}' is undefined.")
-
-        elif isinstance(expression, (list, ParseResults)):
-            # Arithmetic expression
-
-            if len(expression) == 1:
-                # Parenthesis with one variable
-                return resolveExpression(expression[0])
-
-            elif len(expression) == 2:
-
-                op = expression[0]
-                value = resolveExpression(expression[1])
-
-                # Sign operand
-                if op == '+':
-                    return value
-                elif op == '-':
-                    return -value
-                
-                # Factorial
-                elif op == '!':
-                    return value
-                
-                else:
-                    raise ValueError(f"Expression {expression} is invalid.")
-            
-            else:
-
-                left = resolveExpression(expression[0])
-                op = expression[1]
-                right = resolveExpression(expression[2])
-
-                # Plus, Minus
-                if op == '+':
-                    return left + right
-                elif op == '-':
-                    return left - right
-
-                # Multiplication, division
-                elif op == '*':
-                    return left * right                
-                elif op == '/':
-                    return left / right
-                
-                # Modulo
-                elif op == '%':
-                    return left % right
-                    
-                # Exponent
-                elif op == '^':
-                    return left ** right
-                
-        else:
-            raise ValueError(f"Expression {expression} is invalid.")
-    
-
-    # Execute the command
-
-    for command in commandList:
-
-        commandName = command[0]
-
-        if commandName == 'move_abs':
-
-            [x, y, z] = list(map(resolveExpression, command[1:4]))
-            print(f'Move absolute for {x, y, z}')
-            
-        elif commandName == 'move_rel':
-
-            [x, y, z] = list(map(resolveExpression, command[1:4]))
-            print(f'Move relative for {x, y, z}')
-            
-        elif commandName == 'snap':
-            
-            print('Snap an image')
-            
-        elif commandName == 'record_for':
-            
-            recordTime = resolveExpression(command[1])
-            print(f'Record for {recordTime} sec')
-            
-        elif commandName == 'start_recording':
-
-            print('Start recording')
-            
-        elif commandName == 'stop_recording':
-            
-            print('Stop recording')
-
-        elif commandName == 'wait':
-
-            waitTime = resolveExpression(command[1])
-            print(f'Wait for {waitTime} sec')
-        
-        elif commandName == 'loop':
-
-            # Only support integer value. A float value will be cast and rounded to int. This need to be on the document.
-
-            numLoop = 0
-            loopVariable: str | None = None
-            subCommandList = []
-
-            # Parse the arguments
-            if len(command) == 3:
-                # One argument loop
-                numLoop = int(resolveExpression(command[1]))
-                subCommandList = command[2]
-
-            elif len(command) == 4:
-                # Two argument loop in fashion of a:b
-                numLoop = int(resolveExpression(command[2]))
-                # Create a new scope variable
-                loopVariable = command[1]
-                scopeVariableDict[loopVariable] = 0
-
-                subCommandList = command[3]
-
-            # Execute looping sub commands
-            for i in range(numLoop):
-                
-                print(f'Loop {i}')
-                # Update loop variable
-                if loopVariable is not None:
-                    scopeVariableDict[loopVariable] = i
-                # Execute sub commands
-                executeCommandList(subCommandList, scopeVariableDict)
-        
-        elif commandName == 'varaible_assignment':
-
-            variable_name = command[1]
-            variable_value = resolveExpression(command[2])
-            print(f'Assign {variable_name} = {variable_value}')
-            scopeVariableDict[variable_name] = variable_value
-
-
 if __name__ == '__main__':
-
-
-    macroParser = createTextParser()
 
     macroScript = getMacroScript()
 
-    parsedCommands = []
+    macroScriptExecutor = MacroScriptExecutor()
 
-    try:
-        # Parse the script
-        parsedCommands = macroParser.parseString(macroScript, parseAll= True)
-
-    except ParseException as pe:
-        print(f"Parsing error: {pe}")
-        exit(0)
-    
-    print('Parsed command.')
-
-    # Execute the commands
-    executeCommandList(parsedCommands)
+    macroScriptExecutor.executeScript(macroScript)
