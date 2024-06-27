@@ -34,11 +34,18 @@ class MacroScriptExecutor:
     """
 
     def __init__(self) -> None:
+        """Initialize the parser
+        """
         self.parser = self._createTextParser()
         self.functionHandle: dict[callable] = {}
 
 
     def _createTextParser(self) -> ParserElement:
+        """Create the parser for the macro script.
+
+        Returns:
+            parser (ParserElement): macro script parser
+        """
 
         # 
         # Variable
@@ -158,27 +165,49 @@ class MacroScriptExecutor:
     
 
     def executeScript(self, script: str) -> None:
+        """Run the given macro script string
+
+        Args:
+            script (str): the written macro script
+
+        Raises:
+            parseException (ParseError): Raised if there is an error in parsing the script.
+            valueError (ValueError): Raised if there is an error in executing the script.
+        """
 
         parsedCommands = []
 
+        # Parse the script
         print('Parsing command.')
 
         try:
-            # Parse the script
             parsedCommands = self.parser.parseString(script, parseAll= True)
 
-        except ParseException as e:
-            print(f"Parsing error: {e}")
-            raise e
+        except ParseException as parseException:
+            print(f"Parsing error: {parseException}")
+            raise parseException
         
         # Execute the commands
-
         print('Executing commands.')
         
-        self._executeCommandList(parsedCommands)
+        try:
+            self._executeCommandList(parsedCommands)
+
+        except ValueError as valueError:
+            print(f'Executing error: {valueError}')
+            raise valueError
 
 
-    def _executeCommandList(self, commandList: List | ParseResults, scopeVariableDict: dict | None = None) -> None:
+    def _executeCommandList(self, commandList: List | ParseResults, scopeVariableDict: dict[int, float] | None = None) -> None:
+        """Execute the given command list.
+
+        Args:
+            commandList (List | ParseResults): a list of commands from the parsed macro script
+            scopeVariableDict (dict | None, optional): local scope variable dictionary. Defaults to None.
+        
+        Raises:
+            ValueError: Raised if a command is unrecognized.
+        """
         
         if scopeVariableDict is None:
             scopeVariableDict = {}
@@ -248,9 +277,24 @@ class MacroScriptExecutor:
                 variable_name = command[1]
                 variable_value = self._resolveExpression(scopeVariableDict, command[2])
                 scopeVariableDict[variable_name] = variable_value
+            
+            else:
+                raise ValueError(f'Command {command} is invalid.')
 
 
-    def _resolveExpression(self, scopeVariableDict, expression: str | int | float | ParseResults) -> int | float:
+    def _resolveExpression(self, scopeVariableDict: dict[int, float], expression: str | int | float | ParseResults) -> int | float:
+        """Resolve the given expression.
+
+        Args:
+            scopeVariableDict (dict[int, float]): the local scope variable dictionary to fetch variable value from.
+            expression (str | int | float | ParseResults): an expression to be resolved. The expression can be an integer, a floating point number, a variable name, or an arithmetic expression.
+
+        Raises:
+            valueError (ValueError): Raised if the expression is invalid.
+
+        Returns:
+            value (int | float): the resolved value.
+        """
 
         if isinstance(expression, (int, float)):
             # Integer or floating point
