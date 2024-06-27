@@ -591,6 +591,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'Macro'
+        on_release: root.open_macro()
     MyButton: 
         id:recording
         size_hint: (1, 0.1)
@@ -673,6 +674,40 @@ MainWindow:
         Button:
             text: "OK"
             on_release: root.ok()
+
+<MacroScriptWidget>:
+    size: root.size
+    pos: root.pos
+    
+    orientation: 'vertical'
+
+    BoxLayout:
+        orientation: 'horizontal'
+
+        TextInput:
+            text: 'myscript.txt'
+        
+        Button:
+            text: "Load"
+
+
+    BoxLayout:
+        orientation: 'horizontal'
+
+        TextInput:
+            text: 'My script'
+        
+        BoxLayout:
+            orientation: 'vertical'
+            
+            Button:
+                text: "Run"
+            Button:
+                text: "Stop"
+    
+    Button:
+        text: "Close"
+        on_release: root.closeCallback()
 
 
 <CalibrationTabPanel>:

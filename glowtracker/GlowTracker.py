@@ -295,6 +295,13 @@ class RightColumn(BoxLayout):
         self._popup.dismiss()
     
 
+    def open_macro(self):
+        widget = MacroScriptWidget()
+        self._popup = Popup(title= "Macro Script", content= widget, size_hint = (0.3, 0.45))
+        widget.closeCallback = self._popup.dismiss
+        self._popup.open()
+        
+
     def open_settings(self):
         # Disabled interaction with preview image widget
         app: GlowTrackerApp = App.get_running_app()
@@ -331,6 +338,12 @@ class RightColumn(BoxLayout):
             self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+
+
+class MacroScriptWidget(BoxLayout):
+    """MacroScriptExecutor widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
 
 
 class CalibrationTabPanel(TabbedPanel):
