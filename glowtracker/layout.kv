@@ -675,6 +675,15 @@ MainWindow:
             text: "OK"
             on_release: root.ok()
 
+
+<DraggablePopup>:
+    # Define the properties for the DraggablePopup
+    drag_rectangle: self.x, self.y, self.width, self.height
+    drag_timeout: 10000000
+    drag_distance: 0
+    overlay_color: [0, 0, 0, 0]
+
+
 <MacroScriptWidget>:
     size: root.size
     pos: root.pos

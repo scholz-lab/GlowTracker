@@ -43,6 +43,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
+from kivy.uix.behaviors import DragBehavior
 
 # 
 # IO, Utils
@@ -299,7 +300,7 @@ class RightColumn(BoxLayout):
 
     def open_macro(self):
         widget = MacroScriptWidget()
-        self._popup = Popup(title= "Macro Script", content= widget, size_hint = (0.3, 0.45))
+        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.4, 0.6))
         widget.closeCallback = self._popup.dismiss
         self._popup.open()
         
@@ -342,7 +343,18 @@ class RightColumn(BoxLayout):
             self._popup.open()
 
 
-class MacroScriptWidget(BoxLayout):
+class DraggablePopup(DragBehavior, Popup):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+
+    def _align_center(self, *_args):
+        # Override align_center function to not do naything
+        pass
+
+
+class MacroScriptWidget(DragBehavior, BoxLayout):
     """MacroScriptExecutor widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
@@ -383,7 +395,6 @@ class MacroScriptWidget(BoxLayout):
         self._popup.dismiss()
 
         # Combine file path
-        
         self.macroScriptFile = os.path.join(path, selection[0])
         
         # Load the script text

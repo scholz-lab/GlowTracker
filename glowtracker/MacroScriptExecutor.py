@@ -171,7 +171,7 @@ class MacroScriptExecutor:
             script (str): the written macro script
 
         Raises:
-            parseException (ParseError): Raised if there is an error in parsing the script.
+            parseException (ParseException): Raised if there is an error in parsing the script.
             valueError (ValueError): Raised if there is an error in executing the script.
         """
 
