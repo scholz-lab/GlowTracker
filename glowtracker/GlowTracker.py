@@ -61,6 +61,7 @@ import zaber_motion     # We need to import zaber_motion before pypylon to preve
 from pypylon import pylon
 import platformdirs 
 import shutil
+from pyparsing import ParseException
 
 # 
 # Own classes
@@ -68,6 +69,7 @@ import shutil
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
+from MacroScriptExecutor import MacroScriptExecutor
 
 # 
 # Math
@@ -344,6 +346,85 @@ class MacroScriptWidget(BoxLayout):
     """MacroScriptExecutor widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Attributes
+        self.macroScriptFile: str = ''
+        self.macroScript: str = ''
+        self._popup: Popup = None
+        self.app: GlowTrackerApp = App().get_running_app()
+        self.macroScriptExecutor = MacroScriptExecutor()
+
+        # Initialize MacroScriptExecutor
+        self.macroScriptExecutor.registerFunctionHandler(
+            move_abs_handle= lambda x, y, z: print(f"move_abs({x}, {y}, {z})"),
+            move_rel_handle= lambda x, y, z: print(f"move_rel({x}, {y}, {z})"),
+            snap_handle= lambda: print("snap()"),
+            record_for_handle= lambda x: print(f"record_for({x})"),
+            start_recording_handle= lambda: print("start_recording()"),
+            stop_recording_handle= lambda: print("stop_recording()")
+        )
+
+
+    def openLoadMacroScriptWidget(self):
+        loadWidget = LoadMacroScriptWidget(load= self.loadMacroScript)
+        # loadWidget.ids.filechooser.path = self.cameraConfigFile
+        self._popup = Popup(title="Load camera file", content=loadWidget,
+                            size_hint=(0.9, 0.9))
+        loadWidget.cancel = self._popup.dismiss
+
+        self._popup.open()
+
+    
+    def loadMacroScript(self, path, selection):
+        # Close the loading widget
+        self._popup.dismiss()
+
+        # Combine file path
+        
+        self.macroScriptFile = os.path.join(path, selection[0])
+        
+        # Load the script text
+        print(f'Loading the macro script {self.macroScriptFile}')
+
+        try:
+            with open(self.macroScriptFile, 'r') as file:
+                self.macroScript = file.read()
+
+        except FileNotFoundError:
+            print(f'The file {self.macroScriptFile} was not found.')
+
+        except IOError:
+            print(f'An error occurred while reading the file {self.macroScriptFile}.')
+        
+        # Set display text
+        self.ids.macroscriptfile.text = os.path.basename(selection[0])
+        self.ids.macroscripttext.text = self.macroScript
+    
+
+    def runMacroScript(self):
+        print(f'Running the macro script {self.macroScriptFile}.')
+        try:
+            self.macroScriptExecutor.executeScript(self.macroScript)
+
+        except ParseException as e:
+            print(e)
+        
+        except ValueError as e:
+            print(e)
+        
+
+    def stopMacroScript(self):
+        print('Stop running the macro script.')
+
+
+class LoadMacroScriptWidget(BoxLayout):
+    """Camera settings loading widget
+    """
+    load = ObjectProperty(None)
+    cancel = ObjectProperty(None)
 
 
 class CalibrationTabPanel(TabbedPanel):

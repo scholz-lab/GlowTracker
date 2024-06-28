@@ -685,30 +685,58 @@ MainWindow:
         orientation: 'horizontal'
 
         TextInput:
-            text: 'myscript.txt'
+            id: macroscriptfile
+            text: 'myScript.txt'
         
         Button:
             text: "Load"
+            on_release: root.openLoadMacroScriptWidget()
 
 
     BoxLayout:
         orientation: 'horizontal'
 
         TextInput:
-            text: 'My script'
+            id: macroscripttext
+            text: ''
         
         BoxLayout:
             orientation: 'vertical'
             
             Button:
                 text: "Run"
+                on_release: root.runMacroScript()
+
             Button:
                 text: "Stop"
+                on_release: root.stopMacroScript()
     
     Button:
         text: "Close"
         on_release: root.closeCallback()
 
+<LoadMacroScriptWidget>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+            path: ''
+            # dirselect: True
+            # path: '/home'
+            on_submit: root.load(self.path, self.selection)
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+
+            Button:
+                text: "Load"
+                on_release: root.load(filechooser.path, filechooser.selection)
 
 <CalibrationTabPanel>:
     size: root.size
