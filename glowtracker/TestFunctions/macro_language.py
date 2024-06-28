@@ -95,7 +95,7 @@ class MacroScriptExecutor:
         start_recording = Group( Keyword('start_recording') + empty_arg )
         stop_recording = Group( Keyword('stop_recording') + empty_arg )
         wait = Group( Keyword('wait') + single_arg )
-        comment = pythonStyleComment + LineEnd()
+        comment = (pythonStyleComment + LineEnd()).suppress()
 
         varaible_assignment = Group(
             (variable + Suppress('=') + arithExpr).setParseAction(
