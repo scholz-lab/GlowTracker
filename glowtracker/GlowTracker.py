@@ -386,13 +386,19 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         self.macroScriptExecutor = MacroScriptExecutor()
 
         # Initialize MacroScriptExecutor
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self.recordButton: RecordButton = self.imageAcquisitionManager.recordbutton
+        position_unit = 'mm'
+
         self.macroScriptExecutor.registerFunctionHandler(
-            move_abs_handle= lambda x, y, z: print(f"move_abs({x}, {y}, {z})"),
-            move_rel_handle= lambda x, y, z: print(f"move_rel({x}, {y}, {z})"),
-            snap_handle= lambda: print("snap()"),
+            move_abs_handle= lambda x, y, z: self.stage.move_abs((x,y,z), position_unit, wait_until_idle= True),
+            move_rel_handle= lambda x, y, z: self.stage.move_rel((x,y,z), position_unit, wait_until_idle= True),
+            snap_handle= lambda: self.imageAcquisitionManager.snap(),
             record_for_handle= lambda x: print(f"record_for({x})"),
-            start_recording_handle= lambda: print("start_recording()"),
-            stop_recording_handle= lambda: print("stop_recording()")
+            start_recording_handle= lambda: self.recordButton.startImageAcquisition(),
+            stop_recording_handle= lambda: self.recordButton.stopImageAcquisition()
         )
 
 
