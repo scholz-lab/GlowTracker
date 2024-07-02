@@ -36,8 +36,11 @@ class MacroScriptExecutor:
     def __init__(self) -> None:
         """Initialize the parser
         """
+        # Instance attributes
         self.parser = self._createTextParser()
         self.functionHandle: dict[callable] = {}
+        #   Internal stop signal
+        self._stopSignal = False
 
 
     def _createTextParser(self) -> ParserElement:
@@ -130,7 +133,7 @@ class MacroScriptExecutor:
         # 
         
         # Ignore space, tabs, return, newline
-        parser.setDefaultWhitespaceChars(' \t')
+        parser.setDefaultWhitespaceChars(' \t\r\n')
 
         # Enable cache
         parser.enablePackrat()
@@ -196,6 +199,12 @@ class MacroScriptExecutor:
         except ValueError as valueError:
             print(f'Executing error: {valueError}')
             raise valueError
+    
+
+    def stop(self) -> None:
+        """Stop running the macro
+        """
+        self._stopSignal = True
 
 
     def _executeCommandList(self, commandList: List | ParseResults, scopeVariableDict: dict[int, float] | None = None) -> None:
@@ -215,6 +224,9 @@ class MacroScriptExecutor:
         # Execute the command
 
         for command in commandList:
+
+            if self._stopSignal:
+                break
 
             commandName = command[0]
 
@@ -265,6 +277,9 @@ class MacroScriptExecutor:
 
                 # Execute looping sub commands
                 for i in range(numLoop):
+
+                    if self._stopSignal:
+                        break
                     
                     # Update loop variable
                     if loopVariable is not None:
@@ -280,6 +295,9 @@ class MacroScriptExecutor:
             
             else:
                 raise ValueError(f'Command {command} is invalid.')
+
+
+        self._stopSignal = False
 
 
     def _resolveExpression(self, scopeVariableDict: dict[int, float], expression: str | int | float | ParseResults) -> int | float:

@@ -290,44 +290,53 @@ class RightColumn(BoxLayout):
 
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
+        # Class instance attributes
+        self.app: GlowTrackerApp = App.get_running_app()
 
 
     def dismiss_popup(self):
         #rebind keyboard events
-        App.get_running_app().bind_keys()
+        self.app.bind_keys()
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = False
         self._popup.dismiss()
     
 
     def open_macro(self):
-        widget = MacroScriptWidget()
-        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.4, 0.6))
-        widget.closeCallback = self._popup.dismiss
+        
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+
+        # Create MacroScriptWidget Draggable Popup
+        widget = MacroScriptWidget(app = self.app)
+        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.4, 0.6), auto_dismiss = False)
+        widget.closeCallback = self.dismiss_popup
+
+        # Open the widget
         self._popup.open()
         
 
     def open_settings(self):
         # Disabled interaction with preview image widget
-        app: GlowTrackerApp = App.get_running_app()
-        app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
-        app.open_settings()
+        self.app.open_settings()
 
 
     def show_recording_settings(self):
         """change recording settings."""
+        #unbind keyboard events
+        self.app.unbind_keys()
+
         recordingSettings = RecordingSettings(ok= self.dismiss_popup)
         self._popup = Popup(title= "Recording Settings", content= recordingSettings, size_hint = (0.3, 0.45))
-        #unbind keyboard events
-        App.get_running_app().unbind_keys()
         self._popup.open()
 
 
     def show_calibration(self):
         """Show calibration window popup.
         """        
-        app: GlowTrackerApp = App.get_running_app()
-        camera = app.camera
-        stage: Stage = app.stage
+        camera = self.app.camera
+        stage: Stage = self.app.stage
 
         if camera is not None and stage is not None:
             # Create the calibration widget
@@ -346,9 +355,10 @@ class RightColumn(BoxLayout):
 class DraggablePopup(DragBehavior, Popup):
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(DraggablePopup, self).__init__(**kwargs)
 
 
+    @override
     def _align_center(self, *_args):
         # Override align_center function to not do naything
         pass
@@ -360,13 +370,19 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
     closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+
+        # Intercept GlowTrackerApp reference object.
+        #   There is a bug that if we call to get reference directly by App().get_running_app(),
+        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc. 
+        #   like a completely new object.
+        self.app: GlowTrackerApp = kwargs.pop('app', None)
+        
+        super(MacroScriptWidget, self).__init__(**kwargs)
 
         # Attributes
         self.macroScriptFile: str = ''
         self.macroScript: str = ''
         self._popup: Popup = None
-        self.app: GlowTrackerApp = App().get_running_app()
         self.macroScriptExecutor = MacroScriptExecutor()
 
         # Initialize MacroScriptExecutor
@@ -381,12 +397,12 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
 
 
     def openLoadMacroScriptWidget(self):
+        
         loadWidget = LoadMacroScriptWidget(load= self.loadMacroScript)
-        # loadWidget.ids.filechooser.path = self.cameraConfigFile
-        self._popup = Popup(title="Load camera file", content=loadWidget,
-                            size_hint=(0.9, 0.9))
-        loadWidget.cancel = self._popup.dismiss
+        self._popup = Popup(title= "Load camera file", content= loadWidget,
+            size_hint= (0.9, 0.9), auto_dismiss= False)
 
+        loadWidget.cancel = self._popup.dismiss
         self._popup.open()
 
     
@@ -429,6 +445,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
 
     def stopMacroScript(self):
         print('Stop running the macro script.')
+        self.macroScriptExecutor.stop()
 
 
 class LoadMacroScriptWidget(BoxLayout):
