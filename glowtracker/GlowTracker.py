@@ -440,13 +440,23 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
     def runMacroScript(self):
         print(f'Running the macro script {self.macroScriptFile}.')
         try:
-            self.macroScriptExecutor.executeScript(self.macroScript)
+            self.macroScriptExecutor.executeScript(self.macroScript, self.finishedMacroScript)
 
         except ParseException as e:
             print(e)
         
         except ValueError as e:
             print(e)
+
+        # Disable the run button
+        self.ids.runbutton.disabled = True
+    
+    
+    def finishedMacroScript(self):
+        print('Finished running the macro script.')
+        
+        # Enable the run button
+        self.ids.runbutton.disabled = False
         
 
     def stopMacroScript(self):

@@ -8,6 +8,8 @@ from typing import List
 
 import time
 
+from threading import Thread
+
 class MacroScriptExecutor:
     """Parser and executor for a custom glowtracker macro scripts.
 
@@ -39,8 +41,8 @@ class MacroScriptExecutor:
         # Instance attributes
         self.parser = self._createTextParser()
         self.functionHandle: dict[callable] = {}
-        #   Internal stop signal
-        self._stopSignal = False
+        self._executorThread: Thread = None
+        self._terminationFlag = [False]
 
 
     def _createTextParser(self) -> ParserElement:
@@ -167,11 +169,12 @@ class MacroScriptExecutor:
         self.functionHandle['stop_recording'] = stop_recording_handle
     
 
-    def executeScript(self, script: str) -> None:
+    def executeScript(self, script: str, finishedCallback: callable = None) -> None:
         """Run the given macro script string
 
         Args:
             script (str): the written macro script
+            finishedCallback (callable, optional): Callback when the script is finished. Defaults to None.
 
         Raises:
             parseException (ParseException): Raised if there is an error in parsing the script.
@@ -180,38 +183,62 @@ class MacroScriptExecutor:
 
         parsedCommands = []
 
-        # Parse the script
         print('Parsing command.')
 
         try:
+            # Parse the script
             parsedCommands = self.parser.parseString(script, parseAll= True)
 
         except ParseException as parseException:
             print(f"Parsing error: {parseException}")
             raise parseException
         
-        # Execute the commands
         print('Executing commands.')
-        
+
         try:
-            self._executeCommandList(parsedCommands)
+            
+            # Create a wrapper to execute the commands and call the callback when finished.
+            def executorThreadWrapper(commandList: List | ParseResults, terminationFlag: list[bool], finishedCallback: callable = None) -> None:
+
+                try:
+                    self._executeCommandList(commandList, terminationFlag)
+                    
+                finally:
+                    if finishedCallback is not None:
+                        finishedCallback()
+
+            self._terminationFlag[0] = False
+
+            # Spawn a thead to execute the commands
+            self._executorThread = Thread(
+                target= executorThreadWrapper, 
+                args= (parsedCommands, self._terminationFlag, finishedCallback), 
+                name= 'MacroScriptExecutor',
+                daemon= True
+            )
+            self._executorThread.start()
 
         except ValueError as valueError:
             print(f'Executing error: {valueError}')
             raise valueError
+        
+        except RuntimeError as runtimeError:
+            print(f'Executing error: {runtimeError}')
+            raise runtimeError
     
 
     def stop(self) -> None:
         """Stop running the macro
         """
-        self._stopSignal = True
+        self._terminationFlag[0] = True
 
 
-    def _executeCommandList(self, commandList: List | ParseResults, scopeVariableDict: dict[int, float] | None = None) -> None:
+    def _executeCommandList(self, commandList: List | ParseResults, terminationFlag: list[bool], scopeVariableDict: dict[int, float] | None = None) -> None:
         """Execute the given command list.
 
         Args:
             commandList (List | ParseResults): a list of commands from the parsed macro script
+            terminationFlag (list[bool]): a list of size 1 to indicate termination flag
             scopeVariableDict (dict | None, optional): local scope variable dictionary. Defaults to None.
         
         Raises:
@@ -225,7 +252,7 @@ class MacroScriptExecutor:
 
         for command in commandList:
 
-            if self._stopSignal:
+            if terminationFlag[0]:
                 break
 
             commandName = command[0]
@@ -278,14 +305,14 @@ class MacroScriptExecutor:
                 # Execute looping sub commands
                 for i in range(numLoop):
 
-                    if self._stopSignal:
+                    if terminationFlag[0]:
                         break
                     
                     # Update loop variable
                     if loopVariable is not None:
                         scopeVariableDict[loopVariable] = i
                     # Execute sub commands
-                    self._executeCommandList(subCommandList, scopeVariableDict)
+                    self._executeCommandList(subCommandList, terminationFlag, scopeVariableDict)
             
             elif commandName == 'varaible_assignment':
 
@@ -295,9 +322,6 @@ class MacroScriptExecutor:
             
             else:
                 raise ValueError(f'Command {command} is invalid.')
-
-
-        self._stopSignal = False
 
 
     def _resolveExpression(self, scopeVariableDict: dict[int, float], expression: str | int | float | ParseResults) -> int | float:
