@@ -1,7 +1,7 @@
 from pyparsing import (
     Group, Suppress, Forward, ZeroOrMore, Keyword, ParserElement, StringEnd, ParseException, common,
     pythonStyleComment, LineEnd, Word, alphas, alphanums, Literal, oneOf, 
-    infixNotation, opAssoc, ParseResults
+    infixNotation, opAssoc, ParseResults, delimitedList, QuotedString
 )
 
 from typing import List
@@ -90,6 +90,10 @@ class MacroScriptExecutor:
             Suppress('(') + variable + Suppress(':') + arithExpr + Suppress(')') 
         )
 
+        print_arg = Suppress('(') \
+            + delimitedList( QuotedString('"', multiline= True, unquoteResults= False) | arithExpr ) \
+            + Suppress(')')
+
         # 
         # Commands
         # 
@@ -100,13 +104,17 @@ class MacroScriptExecutor:
         start_recording = Group( Keyword('start_recording') + empty_arg )
         stop_recording = Group( Keyword('stop_recording') + empty_arg )
         wait = Group( Keyword('wait') + single_arg )
-        comment = (pythonStyleComment + LineEnd()).suppress()
 
+        #   Utility commands
+        comment = (pythonStyleComment + LineEnd()).suppress()
+        
         varaible_assignment = Group(
             (variable + Suppress('=') + arithExpr).setParseAction(
                 lambda t: ['varaible_assignment', t[0], t[1:]]
             )
         )
+
+        printCommand = Group( Keyword('print') + print_arg )
 
         # 
         # Loop
@@ -124,7 +132,7 @@ class MacroScriptExecutor:
         #   Finally define command which included loop
         command <<= (
             move_abs | move_rel | snap | record_for | start_recording |
-            stop_recording | wait | comment | loop | varaible_assignment
+            stop_recording | wait | comment | loop | varaible_assignment | printCommand
         )
 
         # Create a parser
@@ -319,6 +327,26 @@ class MacroScriptExecutor:
                 variable_name = command[1]
                 variable_value = self._resolveExpression(scopeVariableDict, command[2])
                 scopeVariableDict[variable_name] = variable_value
+            
+            elif commandName == 'print':
+
+                printArgs = command[1:]
+
+                # Resolve the print arguments
+                for i in range(len(printArgs)):
+                    word = printArgs[i]
+
+                    if word[0] == '"' and word[-1] == '"':
+                        # If the print argument is a string then remove the double quotes
+                        printArgs[i] = word[1:-1]
+                    else:
+                        # If the print argument is not a string then resolve the expression
+                        printArgs[i] = self._resolveExpression(scopeVariableDict, word)
+                
+                # Convert the list of arguments to a string
+                printString = ' '.join(map(str, printArgs))
+                
+                print(printString)
             
             else:
                 raise ValueError(f'Command {command} is invalid.')
