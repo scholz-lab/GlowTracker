@@ -397,15 +397,29 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
             move_rel_handle= lambda x, y, z: self.stage.move_rel((x,y,z), position_unit, wait_until_idle= True),
             snap_handle= lambda: self.imageAcquisitionManager.snap(),
             record_for_handle= lambda x: print(f"record_for({x})"),
-            start_recording_handle= lambda: self.recordButton.startImageAcquisition(),
-            stop_recording_handle= lambda: self.recordButton.stopImageAcquisition()
+            start_recording_handle= self._start_recording_handle,
+            stop_recording_handle= self._stop_recording_handle
         )
+
+
+    def _record_for_handle(self):
+        # In the record_for_handle, compute num frames and set ('Experiment', 'nframes') before start calling the recording function
+        # self.app.config.getint('Experiment', 'nframes')
+        pass
+
+    
+    def _start_recording_handle(self):
+        self.recordButton.state = 'down'
+
+
+    def _stop_recording_handle(self):
+        self.recordButton.state = 'normal'
 
 
     def openLoadMacroScriptWidget(self):
         
         loadWidget = LoadMacroScriptWidget(load= self.loadMacroScript)
-        self._popup = Popup(title= "Load camera file", content= loadWidget,
+        self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
         loadWidget.cancel = self._popup.dismiss
