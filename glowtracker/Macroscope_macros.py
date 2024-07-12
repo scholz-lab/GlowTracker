@@ -4,9 +4,7 @@
 import os
 from multiprocessing.pool import ThreadPool
 from queue import Queue
-from tifffile import imwrite
 from typing import Tuple, List
-from pypylon import pylon
 from skimage.measure import regionprops_table
 from skimage import measure
 import pandas as pd
@@ -539,7 +537,7 @@ class ImageSaver:
                 
                 img, imgPath, imgFileName = queueItem
                 # Save the image
-                imwrite(os.path.join(imgPath, imgFileName), img)
+                cv2.imwrite(os.path.join(imgPath, imgFileName), img)
                 
             else:
                 # put back on the queue for other consumers

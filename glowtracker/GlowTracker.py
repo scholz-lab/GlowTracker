@@ -81,7 +81,7 @@ from skimage.io import imsave
 import cv2
 
 # helper functions
-def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
+def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
     """This creates a timestamped filename so we don't overwrite our good work."""
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
@@ -1460,6 +1460,23 @@ class ImageAcquisitionManager(BoxLayout):
     def __init__(self,  **kwargs):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
 
+        # A queue to put an image into and trasfer to the saving thread
+        self.imageQueue = Queue()
+
+        # Start a thread for saving images
+        self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 2])
+        self.savingthread.start()
+
+
+    def __del__(self):
+
+        # Send signal to terminate recording workers
+        self.imageQueue.put(None)
+
+        # Close saving threads
+        self.savingthread.join()
+
+
     def snap(self):
         """Callback for saving a single image from the Snap button.
         """
@@ -1475,7 +1492,11 @@ class ImageAcquisitionManager(BoxLayout):
         # Get an image appropriately acoording to current viewing mode
         if self.recordbutton.state == 'down' or self.liveviewbutton.state == 'down':
             #   save the current image
-            basler.saveImage(self.image, path, snap_filename)
+            self.imageQueue.put([
+                np.copy(self.image),
+                path,
+                snap_filename
+            ])
 
         else:
             # Call capture an image
@@ -1483,6 +1504,13 @@ class ImageAcquisitionManager(BoxLayout):
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
+                self.imageQueue.put([
+                    np.copy(self.image),
+                    path,
+                    snap_filename
+                ])
+            else:
+                print('An error occured when taking an image')
                 
 
 class ScalableImage(ScatterLayout):
