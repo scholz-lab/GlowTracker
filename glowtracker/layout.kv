@@ -637,7 +637,13 @@ MainWindow:
             text: 'Framerate (1/s)'
         Label:
             text: str(root.framerate)
-        
+
+        Label: 
+            text: 'Continuous Recording'
+        ContinuousSwitch:
+            id: continuousswitch
+            state: app.config.getboolean('Experiment', 'iscontinuous')
+            
         Label: 
             text: 'Duration (sec)'
         TextInput:
@@ -675,6 +681,9 @@ MainWindow:
             text: "OK"
             on_release: root.ok()
 
+<ContinuousSwitch>:
+    size: root.size
+    pos: root.pos
 
 <DraggablePopup>:
     # Define the properties for the DraggablePopup

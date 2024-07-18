@@ -44,6 +44,7 @@ from kivy.uix.settings import SettingsWithSidebar, SettingItem
 from kivy.uix.textinput import TextInput
 from kivy.uix.slider import Slider
 from kivy.uix.behaviors import DragBehavior
+from kivy.uix.switch import Switch
 
 # 
 # IO, Utils
@@ -402,13 +403,17 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         )
 
 
-    def _record_for_handle(self):
-        # In the record_for_handle, compute num frames and set ('Experiment', 'nframes') before start calling the recording function
-        # self.app.config.getint('Experiment', 'nframes')
-        pass
+    def _record_for_handle(self, recordingTime):
+        # Set recording config
+        self.app.config.set('Experiment', 'iscontinuous', False)
+        # Start the recording mode
+        self.recordButton.state = 'down'
 
     
     def _start_recording_handle(self):
+        # Set recording config
+        self.app.config.set('Experiment', 'iscontinuous', True)
+        # Start the recording mode
         self.recordButton.state = 'down'
 
 
@@ -788,6 +793,35 @@ class RecordingSettings(BoxLayout):
         return App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate
 
 
+class ContinuousSwitch(Switch):
+
+    def __init__(self, **kwargs):
+        super(ContinuousSwitch, self).__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+    
+
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'iscontinuous',
+            and disabled or enabled the recording 'duration' and 'frames' input field.
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        super(ContinuousSwitch, self).on_touch_up(touch)
+
+        recordingSettings: RecordingSettings = self.parent.parent
+
+        if self.active:
+            self.app.config.set('Experiment', 'iscontinuous', True) 
+            recordingSettings.ids.duration.disabled = True
+            recordingSettings.ids.frames.disabled = True
+
+        else:
+            self.app.config.set('Experiment', 'iscontinuous', False)
+            recordingSettings.ids.duration.disabled = False
+            recordingSettings.ids.frames.disabled = False
+
+
 class CameraProperties(GridLayout):
     """Camera properties editor widget
     """   
@@ -924,8 +958,7 @@ class ImageAcquisitionButton(ToggleButton):
         # Start grabbing images
         self.camera.MaxNumBuffer = grabArgs.bufferSize
         
-        if grabArgs.numberOfImagesToGrab == -1:
-            # Endless grabbing
+        if grabArgs.isContinuous:
             self.camera.StartGrabbing(grabArgs.grabStrategy)
         
         else:
@@ -1134,6 +1167,7 @@ class RecordButton(ImageAcquisitionButton):
         
         # Declare class instance attributes
         self.numberRecordframes: int = 0
+        self.isContinuous: bool = False
         self.frameCounter: int = 0
         self.saveFilePath: str = ''
         self.coordinateFile: TextIOWrapper | None = None
@@ -1193,6 +1227,7 @@ class RecordButton(ImageAcquisitionButton):
         grabArgs = basler.CameraGrabParameters(
             bufferSize= self.app.config.getint('Experiment', 'buffersize'),
             numberOfImagesToGrab= self.numberRecordframes,
+            isContinuous= self.isContinuous,
             grabStrategy= pylon.GrabStrategy_OneByOne
         )
 
@@ -1360,7 +1395,7 @@ class RecordButton(ImageAcquisitionButton):
 
         return self.camera is not None \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.frameCounter < self.numberRecordframes \
+            and self.isContinuous or (self.frameCounter < self.numberRecordframes) \
             and self.state == 'down'
 
     
@@ -1417,7 +1452,10 @@ class RecordButton(ImageAcquisitionButton):
         #   the camera is going to shut itself off.
         #   Thus, we have to set the onHold transition flag if we're going to
         #   resume back in live view mode.
-        if self.prevLiveViewButtonState == 'down' and self.frameCounter == self.numberRecordframes:
+        if self.frameCounter == self.numberRecordframes \
+            and not self.isContinuous \
+            and self.prevLiveViewButtonState == 'down':
+                
             self.camera.setIsOnHold(True)
 
         super().receiveImageCallback()
@@ -1442,6 +1480,8 @@ class RecordButton(ImageAcquisitionButton):
         # Setup grabbing with recording settings
         self.numberRecordframes = self.app.config.getint('Experiment', 'nframes')
 
+        self.isContinuous = self.app.config.getboolean('Experiment', 'iscontinuous')
+
         # Get desired FPS from UI
         fps = self.app.root.ids.leftcolumn.ids.camprops.framerate
         print("Desired recording Framerate:", fps)
@@ -1453,7 +1493,7 @@ class RecordButton(ImageAcquisitionButton):
         # Update shown display settings, e.g. exposure, fps, gain values
         self.app.root.ids.leftcolumn.update_settings_display()
 
-        # precalculate the filename
+        # pre-calculate the filename
         self.imageFilenameExtension = self.app.config.get('Experiment', 'extension')
         self.imageFilenameFormat = timeStamped("basler_{}."+f"{self.imageFilenameExtension}")
         
