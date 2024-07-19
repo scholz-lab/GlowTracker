@@ -642,7 +642,6 @@ MainWindow:
             text: 'Continuous Recording'
         ContinuousSwitch:
             id: continuousswitch
-            state: app.config.getboolean('Experiment', 'iscontinuous')
             
         Label: 
             text: 'Duration (sec)'
@@ -653,6 +652,7 @@ MainWindow:
             halign: 'center'
             on_text_validate: root.duration = self.text
             on_text_validate: root.nframes = int(float(self.text)*root.framerate)
+            disabled: app.config.getboolean('Experiment', 'iscontinuous')
         
         Label: 
             text: 'Frames'
@@ -663,6 +663,7 @@ MainWindow:
             halign: 'center'
             on_text_validate: root.nframes = self.text
             on_text_validate: root.duration = float(self.text)/root.framerate
+            disabled: app.config.getboolean('Experiment', 'iscontinuous')
 
         Label: 
             text: 'Extension'

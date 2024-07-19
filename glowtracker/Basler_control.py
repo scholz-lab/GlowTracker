@@ -11,7 +11,8 @@ import numpy as np
 class CameraGrabParameters:
     bufferSize: int
     grabStrategy: pylon.GrabStrategy_OneByOne | pylon.GrabStrategy_LatestImageOnly
-    numberOfImagesToGrab: int = -1
+    isContinuous: bool = True
+    numberOfImagesToGrab: int = 1
     
 
 class Camera(pylon.InstantCamera):

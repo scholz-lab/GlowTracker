@@ -798,6 +798,7 @@ class ContinuousSwitch(Switch):
     def __init__(self, **kwargs):
         super(ContinuousSwitch, self).__init__(**kwargs)
         self.app: GlowTrackerApp = App.get_running_app()
+        self.active = self.app.config.getboolean('Experiment', 'iscontinuous')
     
 
     def on_touch_up(self, touch): 
@@ -1126,7 +1127,8 @@ class LiveViewButton(ImageAcquisitionButton):
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
-            numberOfImagesToGrab= -1,
+            isContinuous= True,
+            numberOfImagesToGrab= 1,
             grabStrategy= pylon.GrabStrategy_LatestImageOnly
         )
 
@@ -1226,8 +1228,8 @@ class RecordButton(ImageAcquisitionButton):
 
         grabArgs = basler.CameraGrabParameters(
             bufferSize= self.app.config.getint('Experiment', 'buffersize'),
-            numberOfImagesToGrab= self.numberRecordframes,
             isContinuous= self.isContinuous,
+            numberOfImagesToGrab= self.numberRecordframes,
             grabStrategy= pylon.GrabStrategy_OneByOne
         )
 
@@ -1367,6 +1369,7 @@ class RecordButton(ImageAcquisitionButton):
         
         # Close saving threads
         if self.savingthread:
+            self.imageQueue.put(None)
             self.savingthread.join()
         
         # Update display buffer text
