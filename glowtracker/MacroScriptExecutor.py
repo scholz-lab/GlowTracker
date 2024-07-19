@@ -55,7 +55,8 @@ class MacroScriptExecutor:
         # 
         # Variable
         # 
-        variable = Word(alphas, alphanums)
+        # A variable starts with an alphabet or an underscore, then the rest are a combination of alphabets, number, and underscores
+        variable = Word(alphas + '_', alphanums + '_')
         numberOrVariable = common.number | variable
 
         # 
