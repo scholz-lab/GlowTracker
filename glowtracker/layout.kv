@@ -702,38 +702,65 @@ MainWindow:
 
     BoxLayout:
         orientation: 'horizontal'
+        size_hint_y: 0.1
 
         TextInput:
             id: macroscriptfile
             text: 'myScript.txt'
+            size_hint_x: 0.8
         
         Button:
             text: "Load"
             on_release: root.openLoadMacroScriptWidget()
+            size_hint_x: None
 
+        Button:
+            text: "Save"
+            on_release: root.saveMacroScript()
+            size_hint_x: None
 
     BoxLayout:
         orientation: 'horizontal'
 
-        TextInput:
+        CodeInput:
             id: macroscripttext
             text: ''
+            size_hint_x: 0.9
         
         BoxLayout:
             orientation: 'vertical'
+            size_hint_x: None
             
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.05
+                
             Button:
                 id: runbutton
                 text: "Run"
                 on_release: root.runMacroScript()
+                size_hint_y: 0.2
+                background_color: [94/255, 190/255, 88/255, 1]
+                
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.05
 
             Button:
                 text: "Stop"
                 on_release: root.stopMacroScript()
-    
-    Button:
-        text: "Close"
-        on_release: root.closeCallback()
+                size_hint_y: 0.2
+                background_color: [226/255, 54/255, 18/255, 1]
+            
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.4
+            
+            Button:
+                text: "Close"
+                on_release: root.closeCallback()
+                size_hint_y: 0.1
+                
 
 <LoadMacroScriptWidget>:
     BoxLayout:

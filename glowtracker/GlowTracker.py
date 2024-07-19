@@ -309,7 +309,7 @@ class RightColumn(BoxLayout):
 
         # Create MacroScriptWidget Draggable Popup
         widget = MacroScriptWidget(app = self.app)
-        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.4, 0.6), auto_dismiss = False)
+        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
         widget.closeCallback = self.dismiss_popup
 
         # Open the widget
@@ -381,7 +381,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         super(MacroScriptWidget, self).__init__(**kwargs)
 
         # Attributes
-        self.macroScriptFile: str = ''
+        self.macroScriptFile: str = self.ids.macroscriptfile.text
         self.macroScript: str = ''
         self._popup: Popup = None
         self.macroScriptExecutor = MacroScriptExecutor()
@@ -452,14 +452,43 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
             print(f'An error occurred while reading the file {self.macroScriptFile}.')
         
         # Set display text
-        self.ids.macroscriptfile.text = os.path.basename(selection[0])
+        self.ids.macroscriptfile.text = selection[0]
         self.ids.macroscripttext.text = self.macroScript
+    
+
+    def saveMacroScript(self):
+        file_path = self.ids.macroscriptfile.text
+        script = self.ids.macroscripttext.text
+
+        try:
+            # Convert to absolute path if it's a relative path
+            abs_file_path = os.path.abspath(file_path)
+            
+            # Ensure the directory exists
+            directory = os.path.dirname(abs_file_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            
+            # Open the file in overwrite mode, creating it if it doesn't exist
+            with open(abs_file_path, 'w') as file:
+                file.write(script)
+
+            print(f"Saved the script {file_path}")
+
+        except IOError as e:
+            print(f"Error saving to {file_path}: {e}")
+
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
     
 
     def runMacroScript(self):
         print(f'Running the macro script {self.macroScriptFile}.')
         try:
-            self.macroScriptExecutor.executeScript(self.macroScript, self.finishedMacroScript)
+            self.macroScriptExecutor.executeScript(self.ids.macroscripttext.text, self.finishedMacroScript)
+
+            # Disable the run button
+            self.ids.runbutton.disabled = True
 
         except ParseException as e:
             print(e)
@@ -467,10 +496,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         except ValueError as e:
             print(e)
 
-        # Disable the run button
-        self.ids.runbutton.disabled = True
-    
-    
+
     def finishedMacroScript(self):
         print('Finished running the macro script.')
         
