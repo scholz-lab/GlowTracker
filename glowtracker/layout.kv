@@ -706,7 +706,7 @@ MainWindow:
 
         TextInput:
             id: macroscriptfile
-            text: 'myScript.txt'
+            text: app.config.get('MacroScript', 'recentscript')
             size_hint_x: 0.8
         
         Button:
@@ -772,7 +772,7 @@ MainWindow:
             path: ''
             # dirselect: True
             # path: '/home'
-            on_submit: root.load(self.path, self.selection)
+            on_submit: root.load(self.selection)
 
         BoxLayout:
             size_hint_y: None

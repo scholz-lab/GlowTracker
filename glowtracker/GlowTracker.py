@@ -365,7 +365,7 @@ class DraggablePopup(DragBehavior, Popup):
         pass
 
 
-class MacroScriptWidget(DragBehavior, BoxLayout):
+class MacroScriptWidget(BoxLayout):
     """MacroScriptExecutor widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
@@ -393,6 +393,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         self.recordButton: RecordButton = self.imageAcquisitionManager.recordbutton
         position_unit = 'mm'
 
+        # Register appropriate function handler
         self.macroScriptExecutor.registerFunctionHandler(
             move_abs_handle= lambda x, y, z: self.stage.move_abs((x,y,z), position_unit, wait_until_idle= True),
             move_rel_handle= lambda x, y, z: self.stage.move_rel((x,y,z), position_unit, wait_until_idle= True),
@@ -402,10 +403,21 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
             stop_recording_handle= self._stop_recording_handle
         )
 
+        # Load the recent script
+        if self.macroScriptFile != '':
+            self.loadMacroScript(self.macroScriptFile)
+
 
     def _record_for_handle(self, recordingTime):
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', False)
+
+        framerate = self.app.config.getfloat('Experiment', 'framerate')
+        nframes = int(recordingTime*framerate)
+        self.app.config.set('Experiment', 'nframes', nframes)
+
+        self.app.config.write()
+        
         # Start the recording mode
         self.recordButton.state = 'down'
 
@@ -413,6 +425,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
     def _start_recording_handle(self):
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', True)
+        self.app.config.write()
         # Start the recording mode
         self.recordButton.state = 'down'
 
@@ -423,7 +436,7 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
 
     def openLoadMacroScriptWidget(self):
         
-        loadWidget = LoadMacroScriptWidget(load= self.loadMacroScript)
+        loadWidget = LoadMacroScriptWidget(load= self.loadCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
@@ -431,12 +444,20 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
         self._popup.open()
 
     
-    def loadMacroScript(self, path, selection):
+    def loadCallback(self, selection: list[str]):
         # Close the loading widget
-        self._popup.dismiss()
+        if self._popup is not None:
+            self._popup.dismiss()
 
-        # Combine file path
-        self.macroScriptFile = os.path.join(path, selection[0])
+        if len(selection) == 0:
+            return
+        
+        self.loadMacroScript(selection[0])
+    
+    
+    def loadMacroScript(self, filePath: str):
+        # Get the absolute file path
+        self.macroScriptFile = os.path.abspath(filePath)
         
         # Load the script text
         print(f'Loading the macro script {self.macroScriptFile}')
@@ -452,8 +473,12 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
             print(f'An error occurred while reading the file {self.macroScriptFile}.')
         
         # Set display text
-        self.ids.macroscriptfile.text = selection[0]
+        self.ids.macroscriptfile.text = self.macroScriptFile
         self.ids.macroscripttext.text = self.macroScript
+
+        # Set as recent script
+        self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
+        self.app.config.write()
     
 
     def saveMacroScript(self):
@@ -473,13 +498,16 @@ class MacroScriptWidget(DragBehavior, BoxLayout):
             with open(abs_file_path, 'w') as file:
                 file.write(script)
 
+            # Set as recent script
+            self.app.config.set('MacroScript', 'recentscript', self.ids.macroscriptfile.text)
+
             print(f"Saved the script {file_path}")
 
         except IOError as e:
             print(f"Error saving to {file_path}: {e}")
 
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            print(f"Error saving macro script: {e}")
     
 
     def runMacroScript(self):
