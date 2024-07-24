@@ -1571,55 +1571,32 @@ class ImageAcquisitionManager(BoxLayout):
     def __init__(self,  **kwargs):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
 
-        # A queue to put an image into and trasfer to the saving thread
-        self.imageQueue = Queue()
-
-        # Start a thread for saving images
-        self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 2])
-        self.savingthread.start()
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.camera = self.app.camera
 
 
-    def __del__(self):
-
-        # Send signal to terminate recording workers
-        self.imageQueue.put(None)
-
-        # Close saving threads
-        self.savingthread.join()
-
-
-    def snap(self):
+    def snap(self) -> None:
         """Callback for saving a single image from the Snap button.
         """
-        app: GlowTrackerApp = App.get_running_app()
-        camera = app.camera
-        ext = app.config.get('Experiment', 'extension')
-        path = app.root.ids.leftcolumn.savefile
+        ext = self.app.config.get('Experiment', 'extension')
+        path = self.app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
         
-        if camera is None:
+        if self.camera is None:
             return
         
         # Get an image appropriately acoording to current viewing mode
         if self.recordbutton.state == 'down' or self.liveviewbutton.state == 'down':
             #   save the current image
-            self.imageQueue.put([
-                np.copy(self.image),
-                path,
-                snap_filename
-            ])
+            basler.saveImage(self.image, path, snap_filename)
 
         else:
             # Call capture an image
-            isSuccess, img = camera.singleTake()
+            isSuccess, img = self.camera.singleTake()
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
-                self.imageQueue.put([
-                    np.copy(self.image),
-                    path,
-                    snap_filename
-                ])
+
             else:
                 print('An error occured when taking an image')
                 
