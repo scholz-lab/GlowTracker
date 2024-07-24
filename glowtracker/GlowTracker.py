@@ -42,6 +42,7 @@ from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem
 from kivy.uix.textinput import TextInput
+from kivy.uix.codeinput import CodeInput
 from kivy.uix.slider import Slider
 from kivy.uix.behaviors import DragBehavior
 from kivy.uix.switch import Switch
@@ -312,7 +313,7 @@ class RightColumn(BoxLayout):
         # Create MacroScriptWidget Draggable Popup
         widget = MacroScriptWidget(app = self.app)
         widget.closeCallback = self.dismiss_popup
-        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
+        self._popup = MacroScriptWidgetPopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
 
         # Open the widget
         self._popup.open()
@@ -355,10 +356,10 @@ class RightColumn(BoxLayout):
             self._popup.open()
 
 
-class DraggablePopup(DragBehavior, Popup):
+class MacroScriptWidgetPopup(DragBehavior, Popup):
 
     def __init__(self, **kwargs):
-        super(DraggablePopup, self).__init__(**kwargs)
+        super(MacroScriptWidgetPopup, self).__init__(**kwargs)
 
 
     @override
@@ -374,6 +375,22 @@ class DraggablePopup(DragBehavior, Popup):
         if key == 27:
             self.dismiss()
             return True
+
+    
+    @override
+    def on_touch_down(self, touch) -> bool:
+        """Override on_touch_down function to check if the touch is inside the CodeInput region.
+        If it is, then disable the drag behavior and allow the CodeInput to handle the touch instead.
+        Returns:
+            has_been_handled(bool): Flag to indicate if the touch event has been handled or not to stop propagation.
+        """
+        discardRegion: CodeInput = self.content.ids.macroscripttext
+        
+        if discardRegion.collide_point(*touch.pos):
+            return discardRegion.on_touch_down(touch)
+            
+        else:
+            return super().on_touch_down(touch)
 
 
 class MacroScriptWidget(BoxLayout):
