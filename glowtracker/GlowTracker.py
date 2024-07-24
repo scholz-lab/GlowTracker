@@ -306,15 +306,17 @@ class RightColumn(BoxLayout):
         
         # Disabled interaction with preview image widget
         self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        # Unbind keyboard events
+        self.app.unbind_keys()
 
         # Create MacroScriptWidget Draggable Popup
         widget = MacroScriptWidget(app = self.app)
-        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
         widget.closeCallback = self.dismiss_popup
+        self._popup = DraggablePopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
 
         # Open the widget
         self._popup.open()
-        
+
 
     def open_settings(self):
         # Disabled interaction with preview image widget
@@ -363,6 +365,15 @@ class DraggablePopup(DragBehavior, Popup):
     def _align_center(self, *_args):
         # Override align_center function to not do naything
         pass
+
+
+    @override
+    def _handle_keyboard(self, _window, key, *_args):
+        # Override handle_keyboard function to always close the widget when ESC is pressed regardless whether the self.auto_dismiss is True or False
+        # ESC 
+        if key == 27:
+            self.dismiss()
+            return True
 
 
 class MacroScriptWidget(BoxLayout):
