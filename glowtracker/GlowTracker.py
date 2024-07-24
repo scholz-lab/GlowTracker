@@ -2845,7 +2845,7 @@ class GlowTrackerApp(App):
         return configFullPath
 
 
-    def build_config(self, config):
+    def build_config(self, config: ConfigParser):
         """Set the default values for the configs sections.
 
         Unfortunately, the caller of this function, which is Kivi.app.App.load_config(),
@@ -2856,13 +2856,95 @@ class GlowTrackerApp(App):
 
         Thus, we will skip the loading here and pass the responsibility to self.build() to load instead.
         """
-        pass
+        # Set the config defaults 
+        config.setdefaults('Stage', {
+            'speed_unit': 'mm/s',
+            'vhigh': '30.0',
+            'vlow': '1.0',
+            'port': '/dev/ttyUSB0',
+            'move_start': '0',
+            'homing': '0',
+            'stage_limits': '160,160,180',
+            'start_loc': '0,0,0',
+            'maxspeed': '20',
+            'maxspeed_unit': 'mm/s',
+            'acceleration': '60',
+            'acceleration_unit': 'mm/s^2',
+            'move_image_space_mode': '0'
+        })
+
+        config.setdefaults('Camera', {
+            'default_settings': 'defaults.pfs',
+            'display_fps': '15',
+            'rotation': '0',
+            'imagenormaldir': '+Z',
+            'pixelsize': '1'
+        })
+
+        config.setdefaults('Autofocus', {
+            'step_size': '0.5',
+            'nsteps': '10',
+            'step_units': 'um'
+        })
+
+        config.setdefaults('Calibration', {
+            'step_size': '300',
+            'step_units': 'um'
+        })
+
+        config.setdefaults('DualColor', {
+            'dualcolormode': '0',
+            'mainside': 'Right',
+            'viewmode': 'Splitted',
+            'recordingmode': 'Original',
+            'translation_x': '0',
+            'translation_y': '0',
+            'rotation': '0'
+        })
+
+        config.setdefaults('Livefocus', {
+            'min_step': '1',
+            'step_units': 'um',
+            'focus_fps': '4',
+            'factor': '3'
+        })
+
+        config.setdefaults('Tracking', {
+            'showtrackingoverlay': '1',
+            'roi_x': '1800',
+            'roi_y': '1800',
+            'capture_radius': '400',
+            'min_step': '1',
+            'threshold': '30',
+            'binning': '4',
+            'dark_bg': '1',
+            'mode': 'CMS',
+            'area': '400'
+        })
+
+        config.setdefaults('Experiment', {
+            'exppath': '',
+            'nframes': '7500',
+            'extension': 'tiff',
+            'iscontinuous': 'False',
+            'framerate': '50.0',
+            'duration': '150.0',
+            'buffersize': '3000'
+        })
+
+        config.setdefaults('MacroScript', {
+            'recentscript': ''
+        })
 
 
     def build(self):
 
-        # Read config file
-        self.config.read(self.configFile)
+        # Load user's config
+        self.config.update_config(self.configFile, overwrite= True)
+
+        # Also save the new updated config back to the user's. In case there are new config fields that the user doesn't have.
+        self.config.filename = self.configFile
+        self.config.write()
 
         # Set app name
         self.title = 'GlowTracker'
