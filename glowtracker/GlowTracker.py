@@ -552,11 +552,8 @@ class MacroScriptWidget(BoxLayout):
             self.ids.runbutton.disabled = True
 
         except ParseException as e:
-            print(e)
+            print(f"Parsing error: {e}")
         
-        except ValueError as e:
-            print(e)
-
 
     def finishedMacroScript(self):
         print('Finished running the macro script.')

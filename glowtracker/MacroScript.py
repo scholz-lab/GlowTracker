@@ -187,7 +187,6 @@ class MacroScriptExecutor:
 
         Raises:
             parseException (ParseException): Raised if there is an error in parsing the script.
-            valueError (ValueError): Raised if there is an error in executing the script.
         """
 
         parsedCommands = []
@@ -199,44 +198,33 @@ class MacroScriptExecutor:
             parsedCommands = self.parser.parseString(script, parseAll= True)
 
         except ParseException as parseException:
-            print(f"Parsing error: {parseException}")
             raise parseException
         
         print('Executing commands.')
 
-        try:
+        # Create a wrapper to execute the commands and call the callback when finished.
+        def executorThreadWrapper(commandList: List | ParseResults, terminationFlag: list[bool], finishedCallback: callable = None) -> None:
+
+            try:
+                self._executeCommandList(commandList, terminationFlag)
             
-            # Create a wrapper to execute the commands and call the callback when finished.
-            def executorThreadWrapper(commandList: List | ParseResults, terminationFlag: list[bool], finishedCallback: callable = None) -> None:
-
-                try:
-                    self._executeCommandList(commandList, terminationFlag)
+            except ValueError as e:
+                print(f'Macro Script error: {e}')
                 
-                except ValueError as e:
-                    raise e
-                    
-                finally:
-                    if finishedCallback is not None:
-                        finishedCallback()
+            finally:
+                if finishedCallback is not None:
+                    finishedCallback()
 
-            self._terminationFlag[0] = False
+        self._terminationFlag[0] = False
 
-            # Spawn a thead to execute the commands
-            self._executorThread = Thread(
-                target= executorThreadWrapper, 
-                args= (parsedCommands, self._terminationFlag, finishedCallback), 
-                name= 'MacroScriptExecutor',
-                daemon= True
-            )
-            self._executorThread.start()
-
-        except ValueError as valueError:
-            print(f'Executing error: {valueError}')
-            raise valueError
-        
-        except RuntimeError as runtimeError:
-            print(f'Executing error: {runtimeError}')
-            raise runtimeError
+        # Spawn a thead to execute the commands
+        self._executorThread = Thread(
+            target= executorThreadWrapper, 
+            args= (parsedCommands, self._terminationFlag, finishedCallback), 
+            name= 'MacroScriptExecutor',
+            daemon= True
+        )
+        self._executorThread.start()
     
 
     def stop(self) -> None:
