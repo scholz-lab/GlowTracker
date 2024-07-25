@@ -72,7 +72,7 @@ from pyparsing import ParseException
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
-from MacroScriptExecutor import MacroScriptExecutor
+from MacroScript import MacroScriptExecutor
 
 # 
 # Math
@@ -431,7 +431,7 @@ class MacroScriptWidget(BoxLayout):
             move_abs_handle= lambda x, y, z: self.stage.move_abs((x,y,z), position_unit, wait_until_idle= True),
             move_rel_handle= lambda x, y, z: self.stage.move_rel((x,y,z), position_unit, wait_until_idle= True),
             snap_handle= lambda: self.imageAcquisitionManager.snap(),
-            record_for_handle= lambda x: print(f"record_for({x})"),
+            record_for_handle= lambda x: self._record_for_handle(x),
             start_recording_handle= self._start_recording_handle,
             stop_recording_handle= self._stop_recording_handle
         )
@@ -2884,7 +2884,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Camera', {
-            'default_settings': 'defaults.pfs',
+            'default_settings': 'settings/defaults.pfs',
             'display_fps': '15',
             'rotation': '0',
             'imagenormaldir': '+Z',

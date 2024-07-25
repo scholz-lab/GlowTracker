@@ -211,6 +211,9 @@ class MacroScriptExecutor:
 
                 try:
                     self._executeCommandList(commandList, terminationFlag)
+                
+                except ValueError as e:
+                    raise e
                     
                 finally:
                     if finishedCallback is not None:
