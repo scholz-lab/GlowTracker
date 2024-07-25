@@ -225,16 +225,22 @@ class LeftColumn(BoxLayout):
 
         if camera is not None:
 
-            print('Updating camera settings')
+            if os.path.isfile(self.cameraConfigFile):
+                # If the camera config file exists, load it into the camera.
+                print('Updating camera settings')
 
-            # Set the camera config as specified in the file
-            camera.updateProperties(self.cameraConfigFile)
+                # Set the camera config as specified in the file.
+                camera.updateProperties(self.cameraConfigFile)
 
-            # Read and store the camera config separately for later use
-            self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
+                # Read and store the camera config separately for later use
+                self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
 
-            # Update display values on the GUI
-            self.update_settings_display()
+                # Update display values on the GUI
+                self.update_settings_display()
+
+            else:
+                # Otherwise, don't modify the camera and only copy attributes from camera object to dict
+                self.cameraConfig = camera.getAllFeatures()
 
 
     # when file is loaded - update slider values which updates the camera
