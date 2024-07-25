@@ -442,6 +442,11 @@ class MacroScriptWidget(BoxLayout):
 
 
     def _record_for_handle(self, recordingTime):
+
+        # Check if still in recording mode, if so, overwrite it
+        if self.recordButton.state == 'down':
+            self.recordButton.state = 'normal'
+        
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', False)
 
@@ -456,6 +461,11 @@ class MacroScriptWidget(BoxLayout):
 
     
     def _start_recording_handle(self):
+
+        # Check if still in recording mode, if so, overwrite it
+        if self.recordButton.state == 'down':
+            self.recordButton.state = 'normal'
+        
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', True)
         self.app.config.write()
