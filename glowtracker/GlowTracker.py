@@ -146,39 +146,40 @@ class LeftColumn(BoxLayout):
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
 
+        self.app: GlowTrackerApp = App.get_running_app()
+
         # Camera config value
-        self.cameraConfig: dict = []
+        self.cameraConfig: dict[str:any] = dict()
         
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
-        self.savefile = App.get_running_app().config.get("Experiment", "exppath")
+        self.savefile = self.app.config.get("Experiment", "exppath")
         self.path_validate()
-        self.cameraConfigFile = App.get_running_app().config.get('Camera', 'default_settings')
+        self.cameraConfigFile = self.app.config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
 
     def path_validate(self):
         p = Path(self.saveloc.text)
-        app = App.get_running_app()
         if p.exists() and p.is_dir():
-            app.config.set("Experiment", "exppath", self.saveloc.text)
-            app.config.write()
+            self.app.config.set("Experiment", "exppath", self.saveloc.text)
+            self.app.config.write()
         # check if the parent dir exists, then create the folder
         elif p.parent.exists():
             p.mkdir(mode=0o777, parents=False, exist_ok=True)
         else:
             self.saveloc.text = self.savefile
-        app.config.set("Experiment", "exppath", self.saveloc.text)
-        app.config.write()
-        self.savefile = App.get_running_app().config.get("Experiment", "exppath")
+        self.app.config.set("Experiment", "exppath", self.saveloc.text)
+        self.app.config.write()
+        self.savefile = self.app.config.get("Experiment", "exppath")
         # reset the stage keys
-        app.bind_keys()
+        self.app.bind_keys()
         print('saving path changed')
 
 
     def dismiss_popup(self):
-        App.get_running_app().bind_keys()
+        self.app.bind_keys()
         self._popup.dismiss()
 
 
@@ -189,7 +190,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
          #unbind keyboard events
-        App.get_running_app().unbind_keys()
+        self.app.unbind_keys()
         self._popup.open()
 
 
@@ -200,7 +201,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
         #unbind keyboard events
-        App.get_running_app().unbind_keys()
+        self.app.unbind_keys()
         self._popup.open()
 
 
@@ -220,7 +221,7 @@ class LeftColumn(BoxLayout):
     def apply_cam_settings(self) -> None:
         """Read and apply the camera config file to the camera.
         """
-        camera: basler.Camera = App.get_running_app().camera
+        camera: basler.Camera = self.app.camera
 
         if camera is not None:
 
@@ -239,7 +240,7 @@ class LeftColumn(BoxLayout):
     # when file is loaded - update slider values which updates the camera
     def update_settings_display(self):
         # update slider value using ids
-        camera = App.get_running_app().camera
+        camera = self.app.camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
         self.ids.camprops.framerate = camera.ResultingFrameRate()
@@ -247,15 +248,14 @@ class LeftColumn(BoxLayout):
 
     #autofocus popup
     def show_autofocus(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
+        camera = self.app.camera
+        stage = self.app.stage
         if camera is not None and stage is not None:
             content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
             self._popup = Popup(title="Focus the camera", content=content,
                                 size_hint=(0.9, 0.9))
             #unbind keyboard events
-            App.get_running_app().unbind_keys()
+            self.app.unbind_keys()
             self._popup.open()
         else:
             self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a camera!',
@@ -265,13 +265,12 @@ class LeftColumn(BoxLayout):
 
     # run autofocussing once on current location
     def run_autofocus(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
+        camera = self.app.camera
+        stage = self.app.stage
 
         if camera is not None and stage is not None:
             # stop grabbing
-            app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
+            self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
             # get config values
             stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
             stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
@@ -1600,7 +1599,6 @@ class ImageAcquisitionManager(BoxLayout):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
 
         self.app: GlowTrackerApp = App.get_running_app()
-        self.camera = self.app.camera
 
 
     def snap(self) -> None:
@@ -1609,8 +1607,9 @@ class ImageAcquisitionManager(BoxLayout):
         ext = self.app.config.get('Experiment', 'extension')
         path = self.app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
+        camera = self.app.camera
         
-        if self.camera is None:
+        if camera is None:
             return
         
         # Get an image appropriately acoording to current viewing mode
@@ -1620,7 +1619,7 @@ class ImageAcquisitionManager(BoxLayout):
 
         else:
             # Call capture an image
-            isSuccess, img = self.camera.singleTake()
+            isSuccess, img = camera.singleTake()
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
