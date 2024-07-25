@@ -309,6 +309,8 @@ class RightColumn(BoxLayout):
     
 
     def open_macro(self):
+        """Open the macro script widget popup.
+        """
         
         # Disabled interaction with preview image widget
         self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
@@ -375,7 +377,9 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
 
     @override
     def _handle_keyboard(self, _window, key, *_args):
-        # Override handle_keyboard function to always close the widget when ESC is pressed regardless whether the self.auto_dismiss is True or False
+        """Override handle_keyboard function to always close the widget when ESC is pressed,
+        regardless whether the self.auto_dismiss is True or False
+        """
         # ESC 
         if key == 27:
             self.dismiss()
@@ -441,7 +445,12 @@ class MacroScriptWidget(BoxLayout):
             self.loadMacroScript(self.macroScriptFile)
 
 
-    def _record_for_handle(self, recordingTime):
+    def _record_for_handle(self, recordingTime: float):
+        """Start recording for a certain amount of time.
+
+        Args:
+            recordingTime (float): recording duratino in seconds
+        """
 
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
@@ -461,6 +470,8 @@ class MacroScriptWidget(BoxLayout):
 
     
     def _start_recording_handle(self):
+        """Start the recording mode.
+        """
 
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
@@ -474,12 +485,16 @@ class MacroScriptWidget(BoxLayout):
 
 
     def _stop_recording_handle(self):
+        """Stop the recording mode.
+        """
         self.recordButton.state = 'normal'
 
 
     def openLoadMacroScriptWidget(self):
+        """Open a popup to load the macro script.
+        """
         
-        loadWidget = LoadMacroScriptWidget(load= self.loadCallback)
+        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
@@ -487,7 +502,13 @@ class MacroScriptWidget(BoxLayout):
         self._popup.open()
 
     
-    def loadCallback(self, selection: list[str]):
+    def _loadScriptWidgetCallback(self, selection: list[str]):
+        """Load the macro script from a list of given file path. Will choose only the first file.
+        Used for handler of LoadMacroScriptWidget.
+
+        Args:
+            selection (list[str]): list of script file path
+        """
         # Close the loading widget
         if self._popup is not None:
             self._popup.dismiss()
@@ -499,6 +520,11 @@ class MacroScriptWidget(BoxLayout):
     
     
     def loadMacroScript(self, filePath: str):
+        """Load the macro script from a given file path.
+
+        Args:
+            filePath (str): _description_
+        """
         # Get the absolute file path
         self.macroScriptFile = os.path.abspath(filePath)
         
@@ -525,6 +551,8 @@ class MacroScriptWidget(BoxLayout):
     
 
     def saveMacroScript(self):
+        """Save the current macro script into the same file (overwrite if exists).
+        """
         file_path = self.ids.macroscriptfile.text
         script = self.ids.macroscripttext.text
 
@@ -554,6 +582,9 @@ class MacroScriptWidget(BoxLayout):
     
 
     def runMacroScript(self):
+        """Run the current macro script.
+        """
+
         print(f'Running the macro script {self.macroScriptFile}.')
         try:
             self.macroScriptExecutor.executeScript(self.ids.macroscripttext.text, self.finishedMacroScript)
@@ -566,6 +597,8 @@ class MacroScriptWidget(BoxLayout):
         
 
     def finishedMacroScript(self):
+        """Callback when the macro script is finished. Simply enable the run button back.
+        """
         print('Finished running the macro script.')
         
         # Enable the run button
@@ -573,6 +606,8 @@ class MacroScriptWidget(BoxLayout):
         
 
     def stopMacroScript(self):
+        """Stop running the macro script.
+        """
         print('Stop running the macro script.')
         self.macroScriptExecutor.stop()
 
