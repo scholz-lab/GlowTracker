@@ -321,6 +321,7 @@ class RightColumn(BoxLayout):
         widget = MacroScriptWidget(app = self.app)
         widget.closeCallback = self.dismiss_popup
         self._popup = MacroScriptWidgetPopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
+        self._popup.closeCallback = self.dismiss_popup
 
         # Open the widget
         self._popup.open()
@@ -365,6 +366,8 @@ class RightColumn(BoxLayout):
 
 class MacroScriptWidgetPopup(DragBehavior, Popup):
 
+    closeCallback = ObjectProperty(None)
+
     def __init__(self, **kwargs):
         super(MacroScriptWidgetPopup, self).__init__(**kwargs)
 
@@ -382,7 +385,9 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
         """
         # ESC 
         if key == 27:
-            self.dismiss()
+            # Call closing the popup procedure
+            self.closeCallback()
+            # Tell the caller to stop propagating keyboard event
             return True
 
     
@@ -461,7 +466,15 @@ class MacroScriptWidget(BoxLayout):
 
         framerate = self.app.config.getfloat('Experiment', 'framerate')
         nframes = int(recordingTime*framerate)
-        self.app.config.set('Experiment', 'nframes', nframes)
+
+        # Unfortunately, the setting the nframes would invoke a cascading event
+        #   that eventually want to update the GUI. Which is not allowed to do
+        #   in a thread that is not a main thread.
+        @mainthread
+        def setNFrames():
+            self.app.config.set('Experiment', 'nframes', nframes)
+        
+        setNFrames()
 
         self.app.config.write()
         
@@ -1085,9 +1098,6 @@ class ImageAcquisitionButton(ToggleButton):
             5. Finished looping callback.
         """   
 
-        # Start grabbing images
-        self.camera.MaxNumBuffer = grabArgs.bufferSize
-        
         if grabArgs.isContinuous:
             self.camera.StartGrabbing(grabArgs.grabStrategy)
         
