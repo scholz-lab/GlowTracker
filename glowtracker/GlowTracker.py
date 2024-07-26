@@ -460,6 +460,10 @@ class MacroScriptWidget(BoxLayout):
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
+
+            # Wait until the camera really stop grabbing
+            while self.app.camera.IsGrabbing():
+                time.sleep(0.01)
         
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', False)
@@ -489,10 +493,15 @@ class MacroScriptWidget(BoxLayout):
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
+
+            # Wait until the camera really stop grabbing
+            while self.app.camera.IsGrabbing():
+                time.sleep(0.01)
         
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', True)
         self.app.config.write()
+
         # Start the recording mode
         self.recordButton.state = 'down'
 
