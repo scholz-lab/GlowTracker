@@ -739,7 +739,8 @@ MainWindow:
                 
             Button:
                 id: runbutton
-                text: "Run"
+                text: "[b]Run[/b]"
+                markup: True
                 on_release: root.runMacroScript()
                 size_hint_y: 0.2
                 background_color: [94/255, 190/255, 88/255, 1]
@@ -749,14 +750,28 @@ MainWindow:
                 size_hint_y: 0.05
 
             Button:
-                text: "Stop"
+                text: "[b]Stop[/b]"
+                markup: True
                 on_release: root.stopMacroScript()
                 size_hint_y: 0.2
                 background_color: [226/255, 54/255, 18/255, 1]
             
             BoxLayout:
                 # Filler
-                size_hint_y: 0.4
+                size_hint_y: 0.3
+            
+            Button:
+                text: "Wiki"
+                background_color: (0, 0, 0, 0)  # Transparent background
+                color: (0.5, 0.6, 1, 1)  # Blue text color
+                underline: True
+                size_hint_y: 0.1
+
+                on_release: 
+                    # importing webbrowser module 
+                    import webbrowser 
+                    # it will open google window in your browser 
+                    webbrowser.open('https://scholz-lab.github.io/GlowTracker/software/macro_script.html') 
             
             Button:
                 text: "Close"

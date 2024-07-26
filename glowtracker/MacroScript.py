@@ -31,7 +31,7 @@ class MacroScriptExecutor:
     - simple arithmetic e.g. '(x*2 + 10)^2'
 
 
-    Visit the wiki for more details: https://scholz-lab.github.io/GlowTracker/
+    Visit the wiki for more details: https://scholz-lab.github.io/GlowTracker/software/macro_script.html
 
     """
 
