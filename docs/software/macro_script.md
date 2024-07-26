@@ -23,7 +23,27 @@ Users can start using the feature by opening the Macro Script window at **Settin
 - **float**: a floating point number with decimals e.g. `3.33`
 - **number**: an integer or a floating point number
 - **str**: a string surrounded by double quotes e.g. `"Hello World"`
-- **var**: a variable name starts with an alphabet or an underscore, which can be assigned to a number or a another variable and combination of arithmetic e.g. `pos_X = 3`, `_pos_Y2 = pos_X * 2.4`
+- **var**: a variable name starts with an alphabet or an underscore, which can be assigned to a number or a another variable and combination of arithmetic
+- **arithm**: an arithmetic operation of combination symbols: +, -, *, /, %, ()
+- **command**: a predefined function listed below
+- **statement**: a variable assignment, command, or flow control
+
+## Grammar
+### Variable assignment
+A variable assignment is a command that assigns a value to a variable
+. The syntax is as follows: `var = value`. Where `var` is the variable name, and `value` is of type `int`, `float`, `var`, or `arithm` e.g. `pos_X = 3`, `_pos_Y2 = pos_X * 2.4`
+
+### Scope variable
+A variable is defined at the scope they are in and can be accessed within the same scope or sub scopes, such as in a loop.
+
+### Ignore whitespace
+The space, tab, new line, and return characters are ignored. 
+Theoretically statments can be written connected together without any whitespace in between and would still valid, as long as it is not ambiguous.
+Although, not recommended.
+
+### Comment
+A comment starts with `#` and ends with the end of the line.
+
 
 ## Commands
 Most of the commands will assume the current settings such as camera frame rate or file saving path to help make writing the script easier.
@@ -129,12 +149,59 @@ Multiple messages can be printed together by separating them with commas e.g. `p
 
 ## Flow Control
 
-### ```loop(iterator : times){ command, ... }```
+### ```loop(iterator : times){ statement, ... }```
 
-Execute a given list of commands inside the curly brackets `{ ... }` for a given, fixed number of times.
+Execute a given list of statement inside the curly brackets `{ ... }` for a given, fixed number of times.
 The `iterator` argument is a new variable that can be used inside the loop scope as a normal variable. Although the variable is writeable, it's value will be overwritten at each iteration.
 
 **Arguments**:
 
 - `iterator` **str**: the name of a new iterator that will be used to count the looping, starting from 0.
 - `times` **int**: number of times to loop
+
+## Example
+```python
+# 
+# An example script of how to do a scan recording in a grid fashion.
+# 
+# Define variables
+startingPosX = 46.35
+startingPosY = 76.61
+startingPosZ = 138.34
+endingPosX = 47.01
+endingPosY = 75.41
+endingPosZ = 138.34
+numCellsX = 4
+numCellsY = 4
+
+# Compute the width and height of each cell
+cellWidth = (endingPosX - startingPosX)/numCellsX
+cellHeight = (endingPosY - startingPosY)/numCellsY
+
+# Move to starting position
+move_abs(startingPosX, startingPosY, startingPosZ)
+
+# Loop over rows
+loop(i: numCellsX){
+
+    # Move to the beginning of the row
+    offsetX = (i-1) * cellWidth
+    move_abs(startingPosX + offsetX, startingPosY, startingPosZ)
+    
+    # Loop over columns
+    loop(j: numCellsY){
+
+        # Wait for a short amount to prevent a possible motion-blurred image
+        wait(0.2)
+        # Take an image
+        snap()
+		
+        # Or record a short clip
+        # record_for(1)
+        # wait(1)
+        
+        # Move relative down the Y axis
+        move_rel(0, cellHeight, 0)
+    }
+}
+```
