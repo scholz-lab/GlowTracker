@@ -2044,9 +2044,11 @@ class RuntimeControls(BoxLayout):
         trackingMode =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
+        min_brightness = app.config.getfloat('Tracking', 'min_brightness')
+        max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -2070,7 +2072,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -2156,7 +2158,7 @@ class RuntimeControls(BoxLayout):
 
             else:
                 try:
-                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False, min_brightness= min_brightness, max_brightness= max_brightness )
 
                 except ValueError as e:
                     ystep, xstep = 0, 0
@@ -2911,7 +2913,31 @@ class GlowTrackerApp(App):
             
             elif key == 'capture_radius':
                 updateOverlayFlag = True
-        
+
+            elif key == 'min_brightness':
+                
+                min_brightness = int(value)
+                max_brightness = self.config.getint('Tracking', 'max_brightness')
+
+                # Bound the value between [0, max_brightness]
+                min_brightness = max(0, min(min_brightness, max_brightness))
+
+                self.config.set('Tracking', 'min_brightness', min_brightness)
+                self.config.write()
+                updateSettingsWidgetFlag = True
+            
+            elif key == 'max_brightness':
+                
+                max_brightness = int(value)
+                min_brightness = self.config.getint('Tracking', 'min_brightness')
+
+                # Bound the value between [min_brightness, 255]
+                max_brightness = max(min_brightness, min(max_brightness, 255))
+
+                self.config.set('Tracking', 'max_brightness', max_brightness)
+                self.config.write()
+                updateSettingsWidgetFlag = True
+            
         elif section == 'Experiment':
 
             if key == 'exppath':
