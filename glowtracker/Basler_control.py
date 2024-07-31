@@ -11,7 +11,8 @@ import numpy as np
 class CameraGrabParameters:
     bufferSize: int
     grabStrategy: pylon.GrabStrategy_OneByOne | pylon.GrabStrategy_LatestImageOnly
-    numberOfImagesToGrab: int = -1
+    isContinuous: bool = True
+    numberOfImagesToGrab: int = 1
     
 
 class Camera(pylon.InstantCamera):
@@ -239,6 +240,45 @@ class Camera(pylon.InstantCamera):
         self.AcquisitionFrameRateEnable = True
         self.AcquisitionFrameRate = float(fps)
         return self.ResultingFrameRate()
+    
+
+    def getAllFeatures(self) -> dict[str, any]:
+        """Get all current camera's features.
+
+        Returns:
+            features(dict[str, any]): Dict of camera features
+        """
+        # Get all camera IValues
+        IValues: Tuple[genicam.IValue] = self.NodeMap.GetNodes()
+
+        features: dict[str, any] = dict()
+
+        for IValue in IValues:
+
+            try:
+                
+                # Check if it's one of the type we're interested in
+                if type(IValue) in [genicam.IBoolean, genicam.IInteger, genicam.IBoolean, genicam.IString]:
+
+                    # Check if the node that holds the value is a feature node
+                    node: genicam.INode = IValue.GetNode()
+                    
+                    if node.IsFeature():
+
+                        try:
+                            # Get feature name and value
+                            featureName = node.GetName()
+                            value = IValue.Value
+                            features[featureName] = value
+
+                        except genicam.AccessException as e:
+                            # Continue if node or value is not accessable.
+                            pass
+
+            except Exception as e:
+                print(f'Some weird exception {e}')
+
+        return features
 
 
 # Utility functions
