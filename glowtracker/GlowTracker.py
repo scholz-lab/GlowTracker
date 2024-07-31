@@ -1780,7 +1780,7 @@ class PreviewImage(Image):
             # Get the pixel value. Need to flip Y as image coord is top-left.
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]},{self.mouse_pos_in_tex_coord[1]},{pixelVal})'
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]}, {self.mouse_pos_in_tex_coord[1]}, {pixelVal})'
 
         return  
 
