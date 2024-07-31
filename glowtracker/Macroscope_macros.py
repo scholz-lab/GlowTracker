@@ -276,7 +276,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     # print(xmin, xmax, ymin, ymax)
-    img1_sm = img1[ymin:ymax, xmin:xmax]
+    
+    # Crop the region of interest.
+    #   Also, we have to copy. Otherwise, we would modified the original image.
+    img1_sm = np.copy( img1[ymin:ymax, xmin:xmax] )
 
     # Set pixels that are outside of the brightness range to 0
     img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
