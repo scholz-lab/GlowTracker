@@ -1554,7 +1554,26 @@ class ImageOverlay(FloatLayout):
                     self.redrawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask)
 
                 else:
-                    self.redrawTrackingOverlay()
+                    # If not tracking, then we have to compute the tracking overlay data first
+                    imageacquisitionmanager: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
+                    
+                    image: np.ndarray = np.zeros(0)
+
+                    if dualcolormode:
+                        image = imageacquisitionmanager.dualColorMainSideImage
+
+                    else:
+                        image = imageacquisitionmanager.image
+
+                    capture_radius = self.config.getboolean('Tracking', 'capture_radius')
+                    binning = self.config.getint('Tracking', 'binning')
+                    dark_bg = self.config.getboolean('Tracking', 'dark_bg')
+                    
+                    # Compute tracking data
+                    cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS(image= image, capture_radius= capture_radius, binning= binning, dark_bg= dark_bg)
+
+                    # Redraw the tracking overlay
+                    self.redrawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
 
     
     def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
@@ -2283,6 +2302,33 @@ class RuntimeControls(BoxLayout):
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+    
+
+    def computeTrackingCMS(self, image: np.ndarray, capture_radius: int, binning: int, dark_bg: bool) -> Tuple[float, float, np.ndarray]:
+        """Comput tracking mask and center off mass offsets that would be used for tracking, but just for analytic in this case
+
+        Args:
+            image (np.ndarray): input image
+            capture_radius (int): radius from the center of image; used for cropping
+            binning (int): amount of binning in both vertical and horizontal of the image
+            dark_bg (bool): is the background dark, or white (backlit)
+
+        Returns:
+            offsetX (float): CMS offset X
+            offsetY (float): CMS offset Y
+            trackingMask (np.ndarray): boolean mask indicating which pixels are used to compute CMS offsets
+        """
+
+        try:
+            offsetY, offsetX, trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg)
+
+        except ValueError as e:
+            offsetY, offsetX = 0, 0
+            trackingMask = np.zeros(image.shape, image.dtype)
+        
+        finally:
+            # Flip Y from the top-right corner to btm-left corner
+            return offsetX, -offsetY, trackingMask
 
 
 class TrackingOverlayQuickButton(ToggleButton):
