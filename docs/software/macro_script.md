@@ -31,19 +31,18 @@ Users can start using the feature by opening the Macro Script window at **Settin
 ## Grammar
 ### Variable assignment
 A variable assignment is a command that assigns a value to a variable
-. The syntax is as follows: `var = value`. Where `var` is the variable name, and `value` is of type `int`, `float`, `var`, or `arithm` e.g. `pos_X = 3`, `_pos_Y2 = pos_X * 2.4`
+. The syntax is as follows: `var = value`. Where `var` is the variable name, and `value` is of type `int`, `float`, `var`, or `arithm` e.g. `pos_X = 3`, `pos_Y2 = pos_X * 2.4`
 
 ### Scope variable
-A variable is defined at the scope they are in and can be accessed within the same scope or sub scopes, such as in a loop.
+A variable is defined at the scope they are in and can be accessed within the same scope or sub-scopes, such as in a loop.
 
 ### Ignore whitespace
 The space, tab, new line, and return characters are ignored. 
 Theoretically statments can be written connected together without any whitespace in between and would still valid, as long as it is not ambiguous.
-Although, not recommended.
+Although, this is not recommended for readability.
 
 ### Comment
 A comment starts with `#` and ends with the end of the line.
-
 
 ## Commands
 Most of the commands will assume the current settings such as camera frame rate or file saving path to help make writing the script easier.
@@ -78,7 +77,7 @@ Move the stage by a given relative amount in millimeters (mm).
 Take an image and save into the path specified in the lowert-left corner of the GlowTracker main window or in **Settings> Experiments> Save Path**.
 
 **Arguments**:
-
+wiki
 - None
 
 ---
