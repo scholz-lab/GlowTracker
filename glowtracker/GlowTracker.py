@@ -1886,51 +1886,61 @@ class ImageOverlay(FloatLayout):
         # Clear all the overlay
         self.clearOverlay()
 
+        # Update dual color overlay
         dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
         
         if dualcolormode:
             mainside = self.app.config.get('DualColor', 'mainside')
             self.drawDualColorOverlay(mainside)
                 
-        # If in the single color mode then redraw the tracking overlay
-        else:
-
-            showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
-            if showtrackingoverlay:
-                rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
-                if rtc.isTracking:
-                    self.redrawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask)
-
-                else:
-                    # If not tracking, then we have to compute the tracking overlay data first
-                    imageacquisitionmanager: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
-                    
-                    image: np.ndarray = np.zeros(0)
-
-                    if dualcolormode:
-                        image = imageacquisitionmanager.dualColorMainSideImage
-
-                    else:
-                        image = imageacquisitionmanager.image
-
-                    capture_radius = self.config.getboolean('Tracking', 'capture_radius')
-                    binning = self.config.getint('Tracking', 'binning')
-                    dark_bg = self.config.getboolean('Tracking', 'dark_bg')
-                    
-                    # Compute tracking data
-                    cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS(image= image, capture_radius= capture_radius, binning= binning, dark_bg= dark_bg)
-
-                    # Redraw the tracking overlay
-                    self.redrawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
+        # Update tracking overlay
+        showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
+        
+        if showtrackingoverlay:
+            self.updateTrackingOverlay(doClear= False)
 
     
-    def redrawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None):
-        """Clear and draw the tracking overlay
+    def updateTrackingOverlay(self, doClear: bool = True):
+        """Gather tracking overlay data and draw.
+
+        Args:
+            doClear (bool, optional): Clear the tracing overlay first before draw. Defaults to True.
         """
-        self.clearTrackingOverlay()
+
+        cmsOffset_x, cmsOffset_y = 0, 0
+        trackingMask = np.zeros(0)
+
+        rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
+        if rtc.isTracking:
+            # If tracking, the get the tracking data from RuntimeControls
+            cmsOffset_x, cmsOffset_y, trackingMask = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask
+
+        else:
+            # If not tracking, then we have to compute the tracking overlay data first
+            imageacquisitionmanager: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
+            
+            image: np.ndarray = np.zeros(0)
+
+            dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            if dualcolormode:
+                image = imageacquisitionmanager.dualColorMainSideImage
+
+            else:
+                image = imageacquisitionmanager.image
+
+            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+            binning = self.app.config.getint('Tracking', 'binning')
+            dark_bg = self.app.config.getboolean('Tracking', 'dark_bg')
+            
+            # Compute tracking data
+            cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS(image= image, capture_radius= capture_radius, binning= binning, dark_bg= dark_bg)
+
+        if doClear:
+            self.clearTrackingOverlay()
+
         self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
     
-
+    
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute the tracking overlay bounding box in the local widget space.
 
@@ -3441,10 +3451,8 @@ class GlowTrackerApp(App):
 
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
-            # Get tracking cms from runtimecontrol
-            rtc = self.root.ids.middlecolumn.runtimecontrols
-            self.root.ids.middlecolumn.ids.imageoverlay.drawTrackingOverlay(rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask)
-
+            self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay()
+    
 
     # ask for confirmation of closing
     def on_request_close(self, *args, **kwargs):
