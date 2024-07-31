@@ -25,9 +25,16 @@
         "options": ["tif", "png", "jpg"]
     },
     {
+        "type": "bool",
+        "title": "Continuous recording",
+        "desc": "Continuously record until press the stop button. Otherwise, record for a specified fixed duration.",
+        "section": "Experiment",
+        "key": "iscontinuous"
+    },
+    {
         "type": "numeric",
         "title": "Recording duration",
-        "desc": "How long is the video (min)",
+        "desc": "How long is the video (sec)",
         "section": "Experiment",
         "key": "duration"
     },

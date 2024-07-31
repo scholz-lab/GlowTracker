@@ -49,6 +49,7 @@ dependencies = [
     "overrides",
     "pandas",
     "platformdirs",
+    "pyparsing"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

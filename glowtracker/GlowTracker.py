@@ -42,7 +42,10 @@ from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem
 from kivy.uix.textinput import TextInput
+from kivy.uix.codeinput import CodeInput
 from kivy.uix.slider import Slider
+from kivy.uix.behaviors import DragBehavior
+from kivy.uix.switch import Switch
 
 # 
 # IO, Utils
@@ -61,6 +64,7 @@ import zaber_motion     # We need to import zaber_motion before pypylon to preve
 from pypylon import pylon
 import platformdirs 
 import shutil
+from pyparsing import ParseException
 
 # 
 # Own classes
@@ -68,6 +72,7 @@ import shutil
 from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
+from MacroScript import MacroScriptExecutor
 
 # 
 # Math
@@ -78,7 +83,7 @@ from skimage.io import imsave
 import cv2
 
 # helper functions
-def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-{fname}'):
+def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
     """This creates a timestamped filename so we don't overwrite our good work."""
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
@@ -141,39 +146,40 @@ class LeftColumn(BoxLayout):
     def __init__(self,  **kwargs):
         super(LeftColumn, self).__init__(**kwargs)
 
+        self.app: GlowTrackerApp = App.get_running_app()
+
         # Camera config value
-        self.cameraConfig: dict = []
+        self.cameraConfig: dict[str:any] = dict()
         
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
-        self.savefile = App.get_running_app().config.get("Experiment", "exppath")
+        self.savefile = self.app.config.get("Experiment", "exppath")
         self.path_validate()
-        self.cameraConfigFile = App.get_running_app().config.get('Camera', 'default_settings')
+        self.cameraConfigFile = self.app.config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
 
     def path_validate(self):
         p = Path(self.saveloc.text)
-        app = App.get_running_app()
         if p.exists() and p.is_dir():
-            app.config.set("Experiment", "exppath", self.saveloc.text)
-            app.config.write()
+            self.app.config.set("Experiment", "exppath", self.saveloc.text)
+            self.app.config.write()
         # check if the parent dir exists, then create the folder
         elif p.parent.exists():
             p.mkdir(mode=0o777, parents=False, exist_ok=True)
         else:
             self.saveloc.text = self.savefile
-        app.config.set("Experiment", "exppath", self.saveloc.text)
-        app.config.write()
-        self.savefile = App.get_running_app().config.get("Experiment", "exppath")
+        self.app.config.set("Experiment", "exppath", self.saveloc.text)
+        self.app.config.write()
+        self.savefile = self.app.config.get("Experiment", "exppath")
         # reset the stage keys
-        app.bind_keys()
+        self.app.bind_keys()
         print('saving path changed')
 
 
     def dismiss_popup(self):
-        App.get_running_app().bind_keys()
+        self.app.bind_keys()
         self._popup.dismiss()
 
 
@@ -184,7 +190,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Load camera file", content=content,
                             size_hint=(0.9, 0.9))
          #unbind keyboard events
-        App.get_running_app().unbind_keys()
+        self.app.unbind_keys()
         self._popup.open()
 
 
@@ -195,7 +201,7 @@ class LeftColumn(BoxLayout):
         self._popup = Popup(title="Select save location", content=content,
                             size_hint=(0.9, 0.9))
         #unbind keyboard events
-        App.get_running_app().unbind_keys()
+        self.app.unbind_keys()
         self._popup.open()
 
 
@@ -215,26 +221,32 @@ class LeftColumn(BoxLayout):
     def apply_cam_settings(self) -> None:
         """Read and apply the camera config file to the camera.
         """
-        camera: basler.Camera = App.get_running_app().camera
+        camera: basler.Camera = self.app.camera
 
         if camera is not None:
 
-            print('Updating camera settings')
+            if os.path.isfile(self.cameraConfigFile):
+                # If the camera config file exists, load it into the camera.
+                print('Updating camera settings')
 
-            # Set the camera config as specified in the file
-            camera.updateProperties(self.cameraConfigFile)
+                # Set the camera config as specified in the file.
+                camera.updateProperties(self.cameraConfigFile)
 
-            # Read and store the camera config separately for later use
-            self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
+                # Read and store the camera config separately for later use
+                self.cameraConfig = basler.readPFSFile(self.cameraConfigFile)
 
-            # Update display values on the GUI
-            self.update_settings_display()
+                # Update display values on the GUI
+                self.update_settings_display()
+
+            else:
+                # Otherwise, don't modify the camera and only copy attributes from camera object to dict
+                self.cameraConfig = camera.getAllFeatures()
 
 
     # when file is loaded - update slider values which updates the camera
     def update_settings_display(self):
         # update slider value using ids
-        camera = App.get_running_app().camera
+        camera = self.app.camera
         self.ids.camprops.exposure = camera.ExposureTime()
         self.ids.camprops.gain = camera.Gain()
         self.ids.camprops.framerate = camera.ResultingFrameRate()
@@ -242,15 +254,14 @@ class LeftColumn(BoxLayout):
 
     #autofocus popup
     def show_autofocus(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
+        camera = self.app.camera
+        stage = self.app.stage
         if camera is not None and stage is not None:
             content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
             self._popup = Popup(title="Focus the camera", content=content,
                                 size_hint=(0.9, 0.9))
             #unbind keyboard events
-            App.get_running_app().unbind_keys()
+            self.app.unbind_keys()
             self._popup.open()
         else:
             self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a camera!',
@@ -260,13 +271,12 @@ class LeftColumn(BoxLayout):
 
     # run autofocussing once on current location
     def run_autofocus(self):
-        app = App.get_running_app()
-        camera = app.camera
-        stage = app.stage
+        camera = self.app.camera
+        stage = self.app.stage
 
         if camera is not None and stage is not None:
             # stop grabbing
-            app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
+            self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
             # get config values
             stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
             stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
@@ -287,37 +297,58 @@ class RightColumn(BoxLayout):
 
     def __init__(self,  **kwargs):
         super(RightColumn, self).__init__(**kwargs)
+        # Class instance attributes
+        self.app: GlowTrackerApp = App.get_running_app()
 
 
     def dismiss_popup(self):
         #rebind keyboard events
-        App.get_running_app().bind_keys()
+        self.app.bind_keys()
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = False
         self._popup.dismiss()
     
 
+    def open_macro(self):
+        """Open the macro script widget popup.
+        """
+        
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        # Unbind keyboard events
+        self.app.unbind_keys()
+
+        # Create MacroScriptWidget Draggable Popup
+        widget = MacroScriptWidget(app = self.app)
+        widget.closeCallback = self.dismiss_popup
+        self._popup = MacroScriptWidgetPopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
+        self._popup.closeCallback = self.dismiss_popup
+
+        # Open the widget
+        self._popup.open()
+
+
     def open_settings(self):
         # Disabled interaction with preview image widget
-        app: GlowTrackerApp = App.get_running_app()
-        app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Call open settings
-        app.open_settings()
+        self.app.open_settings()
 
 
     def show_recording_settings(self):
         """change recording settings."""
+        #unbind keyboard events
+        self.app.unbind_keys()
+
         recordingSettings = RecordingSettings(ok= self.dismiss_popup)
         self._popup = Popup(title= "Recording Settings", content= recordingSettings, size_hint = (0.3, 0.45))
-        #unbind keyboard events
-        App.get_running_app().unbind_keys()
         self._popup.open()
 
 
     def show_calibration(self):
         """Show calibration window popup.
         """        
-        app: GlowTrackerApp = App.get_running_app()
-        camera = app.camera
-        stage: Stage = app.stage
+        camera = self.app.camera
+        stage: Stage = self.app.stage
 
         if camera is not None and stage is not None:
             # Create the calibration widget
@@ -331,6 +362,283 @@ class RightColumn(BoxLayout):
             self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+
+
+class MacroScriptWidgetPopup(DragBehavior, Popup):
+
+    closeCallback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super(MacroScriptWidgetPopup, self).__init__(**kwargs)
+
+
+    @override
+    def _align_center(self, *_args):
+        # Override align_center function to not do naything
+        pass
+
+
+    @override
+    def _handle_keyboard(self, _window, key, *_args):
+        """Override handle_keyboard function to always close the widget when ESC is pressed,
+        regardless whether the self.auto_dismiss is True or False
+        """
+        # ESC 
+        if key == 27:
+            # Call closing the popup procedure
+            self.closeCallback()
+            # Tell the caller to stop propagating keyboard event
+            return True
+
+    
+    @override
+    def on_touch_down(self, touch) -> bool:
+        """Override on_touch_down function to check if the touch is inside the CodeInput region.
+        If it is, then disable the drag behavior and allow the CodeInput to handle the touch instead.
+        Returns:
+            has_been_handled(bool): Flag to indicate if the touch event has been handled or not to stop propagation.
+        """
+        discardRegion: CodeInput = self.content.ids.macroscripttext
+        
+        if discardRegion.collide_point(*touch.pos):
+            return discardRegion.on_touch_down(touch)
+            
+        else:
+            return super().on_touch_down(touch)
+
+
+class MacroScriptWidget(BoxLayout):
+    """MacroScriptExecutor widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+
+        # Intercept GlowTrackerApp reference object.
+        #   There is a bug that if we call to get reference directly by App().get_running_app(),
+        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc. 
+        #   like a completely new object.
+        self.app: GlowTrackerApp = kwargs.pop('app', None)
+        
+        super(MacroScriptWidget, self).__init__(**kwargs)
+
+        # Attributes
+        self.macroScriptFile: str = self.ids.macroscriptfile.text
+        self.macroScript: str = ''
+        self._popup: Popup = None
+        self.macroScriptExecutor = MacroScriptExecutor()
+
+        # Initialize MacroScriptExecutor
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self.recordButton: RecordButton = self.imageAcquisitionManager.recordbutton
+        position_unit = 'mm'
+
+        # Register appropriate function handler
+        self.macroScriptExecutor.registerFunctionHandler(
+            move_abs_handle= lambda x, y, z: self.stage.move_abs((x,y,z), position_unit, wait_until_idle= True),
+            move_rel_handle= lambda x, y, z: self.stage.move_rel((x,y,z), position_unit, wait_until_idle= True),
+            snap_handle= lambda: self.imageAcquisitionManager.snap(),
+            record_for_handle= lambda x: self._record_for_handle(x),
+            start_recording_handle= self._start_recording_handle,
+            stop_recording_handle= self._stop_recording_handle
+        )
+
+        # Load the recent script
+        if self.macroScriptFile != '':
+            self.loadMacroScript(self.macroScriptFile)
+
+
+    def _record_for_handle(self, recordingTime: float):
+        """Start recording for a certain amount of time.
+
+        Args:
+            recordingTime (float): recording duratino in seconds
+        """
+
+        # Check if still in recording mode, if so, overwrite it
+        if self.recordButton.state == 'down':
+            self.recordButton.state = 'normal'
+
+            # Wait until the camera really stop grabbing
+            while self.app.camera.IsGrabbing():
+                time.sleep(0.01)
+        
+        # Set recording config
+        self.app.config.set('Experiment', 'iscontinuous', False)
+
+        framerate = self.app.config.getfloat('Experiment', 'framerate')
+        nframes = int(recordingTime*framerate)
+
+        # Unfortunately, the setting the nframes would invoke a cascading event
+        #   that eventually want to update the GUI. Which is not allowed to do
+        #   in a thread that is not a main thread.
+        @mainthread
+        def setNFrames():
+            self.app.config.set('Experiment', 'nframes', nframes)
+        
+        setNFrames()
+
+        self.app.config.write()
+        
+        # Start the recording mode
+        self.recordButton.state = 'down'
+
+    
+    def _start_recording_handle(self):
+        """Start the recording mode.
+        """
+
+        # Check if still in recording mode, if so, overwrite it
+        if self.recordButton.state == 'down':
+            self.recordButton.state = 'normal'
+
+            # Wait until the camera really stop grabbing
+            while self.app.camera.IsGrabbing():
+                time.sleep(0.01)
+        
+        # Set recording config
+        self.app.config.set('Experiment', 'iscontinuous', True)
+        self.app.config.write()
+
+        # Start the recording mode
+        self.recordButton.state = 'down'
+
+
+    def _stop_recording_handle(self):
+        """Stop the recording mode.
+        """
+        self.recordButton.state = 'normal'
+
+
+    def openLoadMacroScriptWidget(self):
+        """Open a popup to load the macro script.
+        """
+        
+        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
+        self._popup = Popup(title= "Load macro script file", content= loadWidget,
+            size_hint= (0.9, 0.9), auto_dismiss= False)
+
+        loadWidget.cancel = self._popup.dismiss
+        self._popup.open()
+
+    
+    def _loadScriptWidgetCallback(self, selection: list[str]):
+        """Load the macro script from a list of given file path. Will choose only the first file.
+        Used for handler of LoadMacroScriptWidget.
+
+        Args:
+            selection (list[str]): list of script file path
+        """
+        # Close the loading widget
+        if self._popup is not None:
+            self._popup.dismiss()
+
+        if len(selection) == 0:
+            return
+        
+        self.loadMacroScript(selection[0])
+    
+    
+    def loadMacroScript(self, filePath: str):
+        """Load the macro script from a given file path.
+
+        Args:
+            filePath (str): _description_
+        """
+        # Get the absolute file path
+        self.macroScriptFile = os.path.abspath(filePath)
+        
+        # Load the script text
+        print(f'Loading the macro script {self.macroScriptFile}')
+
+        try:
+            with open(self.macroScriptFile, 'r') as file:
+                self.macroScript = file.read()
+
+        except FileNotFoundError:
+            print(f'The file {self.macroScriptFile} was not found.')
+
+        except IOError:
+            print(f'An error occurred while reading the file {self.macroScriptFile}.')
+        
+        # Set display text
+        self.ids.macroscriptfile.text = self.macroScriptFile
+        self.ids.macroscripttext.text = self.macroScript
+
+        # Set as recent script
+        self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
+        self.app.config.write()
+    
+
+    def saveMacroScript(self):
+        """Save the current macro script into the same file (overwrite if exists).
+        """
+        file_path = self.ids.macroscriptfile.text
+        script = self.ids.macroscripttext.text
+
+        try:
+            # Convert to absolute path if it's a relative path
+            abs_file_path = os.path.abspath(file_path)
+            
+            # Ensure the directory exists
+            directory = os.path.dirname(abs_file_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            
+            # Open the file in overwrite mode, creating it if it doesn't exist
+            with open(abs_file_path, 'w') as file:
+                file.write(script)
+
+            # Set as recent script
+            self.app.config.set('MacroScript', 'recentscript', self.ids.macroscriptfile.text)
+
+            print(f"Saved the script {file_path}")
+
+        except IOError as e:
+            print(f"Error saving to {file_path}: {e}")
+
+        except Exception as e:
+            print(f"Error saving macro script: {e}")
+    
+
+    def runMacroScript(self):
+        """Run the current macro script.
+        """
+
+        print(f'Running the macro script {self.macroScriptFile}.')
+        try:
+            self.macroScriptExecutor.executeScript(self.ids.macroscripttext.text, self.finishedMacroScript)
+
+            # Disable the run button
+            self.ids.runbutton.disabled = True
+
+        except ParseException as e:
+            print(f"Parsing error: {e}")
+        
+
+    def finishedMacroScript(self):
+        """Callback when the macro script is finished. Simply enable the run button back.
+        """
+        print('Finished running the macro script.')
+        
+        # Enable the run button
+        self.ids.runbutton.disabled = False
+        
+
+    def stopMacroScript(self):
+        """Stop running the macro script.
+        """
+        print('Stop running the macro script.')
+        self.macroScriptExecutor.stop()
+
+
+class LoadMacroScriptWidget(BoxLayout):
+    """Camera settings loading widget
+    """
+    load = ObjectProperty(None)
+    cancel = ObjectProperty(None)
 
 
 class CalibrationTabPanel(TabbedPanel):
@@ -636,6 +944,36 @@ class RecordingSettings(BoxLayout):
         return App.get_running_app().root.ids.leftcolumn.ids.camprops.framerate
 
 
+class ContinuousSwitch(Switch):
+
+    def __init__(self, **kwargs):
+        super(ContinuousSwitch, self).__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.active = self.app.config.getboolean('Experiment', 'iscontinuous')
+    
+
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'iscontinuous',
+            and disabled or enabled the recording 'duration' and 'frames' input field.
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        super(ContinuousSwitch, self).on_touch_up(touch)
+
+        recordingSettings: RecordingSettings = self.parent.parent
+
+        if self.active:
+            self.app.config.set('Experiment', 'iscontinuous', True) 
+            recordingSettings.ids.duration.disabled = True
+            recordingSettings.ids.frames.disabled = True
+
+        else:
+            self.app.config.set('Experiment', 'iscontinuous', False)
+            recordingSettings.ids.duration.disabled = False
+            recordingSettings.ids.frames.disabled = False
+
+
 class CameraProperties(GridLayout):
     """Camera properties editor widget
     """   
@@ -769,11 +1107,7 @@ class ImageAcquisitionButton(ToggleButton):
             5. Finished looping callback.
         """   
 
-        # Start grabbing images
-        self.camera.MaxNumBuffer = grabArgs.bufferSize
-        
-        if grabArgs.numberOfImagesToGrab == -1:
-            # Endless grabbing
+        if grabArgs.isContinuous:
             self.camera.StartGrabbing(grabArgs.grabStrategy)
         
         else:
@@ -941,7 +1275,8 @@ class LiveViewButton(ImageAcquisitionButton):
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
-            numberOfImagesToGrab= -1,
+            isContinuous= True,
+            numberOfImagesToGrab= 1,
             grabStrategy= pylon.GrabStrategy_LatestImageOnly
         )
 
@@ -982,6 +1317,7 @@ class RecordButton(ImageAcquisitionButton):
         
         # Declare class instance attributes
         self.numberRecordframes: int = 0
+        self.isContinuous: bool = False
         self.frameCounter: int = 0
         self.saveFilePath: str = ''
         self.coordinateFile: TextIOWrapper | None = None
@@ -1040,6 +1376,7 @@ class RecordButton(ImageAcquisitionButton):
 
         grabArgs = basler.CameraGrabParameters(
             bufferSize= self.app.config.getint('Experiment', 'buffersize'),
+            isContinuous= self.isContinuous,
             numberOfImagesToGrab= self.numberRecordframes,
             grabStrategy= pylon.GrabStrategy_OneByOne
         )
@@ -1180,6 +1517,7 @@ class RecordButton(ImageAcquisitionButton):
         
         # Close saving threads
         if self.savingthread:
+            self.imageQueue.put(None)
             self.savingthread.join()
         
         # Update display buffer text
@@ -1208,7 +1546,7 @@ class RecordButton(ImageAcquisitionButton):
 
         return self.camera is not None \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.frameCounter < self.numberRecordframes \
+            and self.isContinuous or (self.frameCounter < self.numberRecordframes) \
             and self.state == 'down'
 
     
@@ -1265,7 +1603,10 @@ class RecordButton(ImageAcquisitionButton):
         #   the camera is going to shut itself off.
         #   Thus, we have to set the onHold transition flag if we're going to
         #   resume back in live view mode.
-        if self.prevLiveViewButtonState == 'down' and self.frameCounter == self.numberRecordframes:
+        if self.frameCounter == self.numberRecordframes \
+            and not self.isContinuous \
+            and self.prevLiveViewButtonState == 'down':
+                
             self.camera.setIsOnHold(True)
 
         super().receiveImageCallback()
@@ -1290,6 +1631,8 @@ class RecordButton(ImageAcquisitionButton):
         # Setup grabbing with recording settings
         self.numberRecordframes = self.app.config.getint('Experiment', 'nframes')
 
+        self.isContinuous = self.app.config.getboolean('Experiment', 'iscontinuous')
+
         # Get desired FPS from UI
         fps = self.app.root.ids.leftcolumn.ids.camprops.framerate
         print("Desired recording Framerate:", fps)
@@ -1301,7 +1644,7 @@ class RecordButton(ImageAcquisitionButton):
         # Update shown display settings, e.g. exposure, fps, gain values
         self.app.root.ids.leftcolumn.update_settings_display()
 
-        # precalculate the filename
+        # pre-calculate the filename
         self.imageFilenameExtension = self.app.config.get('Experiment', 'extension')
         self.imageFilenameFormat = timeStamped("basler_{}."+f"{self.imageFilenameExtension}")
         
@@ -1322,14 +1665,16 @@ class ImageAcquisitionManager(BoxLayout):
     def __init__(self,  **kwargs):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
 
-    def snap(self):
+        self.app: GlowTrackerApp = App.get_running_app()
+
+
+    def snap(self) -> None:
         """Callback for saving a single image from the Snap button.
         """
-        app: GlowTrackerApp = App.get_running_app()
-        camera = app.camera
-        ext = app.config.get('Experiment', 'extension')
-        path = app.root.ids.leftcolumn.savefile
+        ext = self.app.config.get('Experiment', 'extension')
+        path = self.app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
+        camera = self.app.camera
         
         if camera is None:
             return
@@ -1345,6 +1690,9 @@ class ImageAcquisitionManager(BoxLayout):
 
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
+
+            else:
+                print('An error occured when taking an image')
                 
 
 class ScalableImage(ScatterLayout):
@@ -2568,7 +2916,7 @@ class GlowTrackerApp(App):
         return configFullPath
 
 
-    def build_config(self, config):
+    def build_config(self, config: ConfigParser):
         """Set the default values for the configs sections.
 
         Unfortunately, the caller of this function, which is Kivi.app.App.load_config(),
@@ -2579,13 +2927,95 @@ class GlowTrackerApp(App):
 
         Thus, we will skip the loading here and pass the responsibility to self.build() to load instead.
         """
-        pass
+        # Set the config defaults 
+        config.setdefaults('Stage', {
+            'speed_unit': 'mm/s',
+            'vhigh': '30.0',
+            'vlow': '1.0',
+            'port': '/dev/ttyUSB0',
+            'move_start': '0',
+            'homing': '0',
+            'stage_limits': '160,160,180',
+            'start_loc': '0,0,0',
+            'maxspeed': '20',
+            'maxspeed_unit': 'mm/s',
+            'acceleration': '60',
+            'acceleration_unit': 'mm/s^2',
+            'move_image_space_mode': '0'
+        })
+
+        config.setdefaults('Camera', {
+            'default_settings': 'settings/defaults.pfs',
+            'display_fps': '15',
+            'rotation': '0',
+            'imagenormaldir': '+Z',
+            'pixelsize': '1'
+        })
+
+        config.setdefaults('Autofocus', {
+            'step_size': '0.5',
+            'nsteps': '10',
+            'step_units': 'um'
+        })
+
+        config.setdefaults('Calibration', {
+            'step_size': '300',
+            'step_units': 'um'
+        })
+
+        config.setdefaults('DualColor', {
+            'dualcolormode': '0',
+            'mainside': 'Right',
+            'viewmode': 'Splitted',
+            'recordingmode': 'Original',
+            'translation_x': '0',
+            'translation_y': '0',
+            'rotation': '0'
+        })
+
+        config.setdefaults('Livefocus', {
+            'min_step': '1',
+            'step_units': 'um',
+            'focus_fps': '4',
+            'factor': '3'
+        })
+
+        config.setdefaults('Tracking', {
+            'showtrackingoverlay': '1',
+            'roi_x': '1800',
+            'roi_y': '1800',
+            'capture_radius': '400',
+            'min_step': '1',
+            'threshold': '30',
+            'binning': '4',
+            'dark_bg': '1',
+            'mode': 'CMS',
+            'area': '400'
+        })
+
+        config.setdefaults('Experiment', {
+            'exppath': '',
+            'nframes': '7500',
+            'extension': 'tiff',
+            'iscontinuous': 'False',
+            'framerate': '50.0',
+            'duration': '150.0',
+            'buffersize': '3000'
+        })
+
+        config.setdefaults('MacroScript', {
+            'recentscript': ''
+        })
 
 
     def build(self):
 
-        # Read config file
-        self.config.read(self.configFile)
+        # Load user's config
+        self.config.update_config(self.configFile, overwrite= True)
+
+        # Also save the new updated config back to the user's. In case there are new config fields that the user doesn't have.
+        self.config.filename = self.configFile
+        self.config.write()
 
         # Set app name
         self.title = 'GlowTracker'
