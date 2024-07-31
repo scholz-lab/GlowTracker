@@ -1917,23 +1917,7 @@ class ImageOverlay(FloatLayout):
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
-            imageacquisitionmanager: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
-            
-            image: np.ndarray = np.zeros(0)
-
-            dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
-            if dualcolormode:
-                image = imageacquisitionmanager.dualColorMainSideImage
-
-            else:
-                image = imageacquisitionmanager.image
-
-            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
-            binning = self.app.config.getint('Tracking', 'binning')
-            dark_bg = self.app.config.getboolean('Tracking', 'dark_bg')
-            
-            # Compute tracking data
-            cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS(image= image, capture_radius= capture_radius, binning= binning, dark_bg= dark_bg)
+            cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
         if doClear:
             self.clearTrackingOverlay()
@@ -2664,23 +2648,34 @@ class RuntimeControls(BoxLayout):
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
     
 
-    def computeTrackingCMS(self, image: np.ndarray, capture_radius: int, binning: int, dark_bg: bool) -> Tuple[float, float, np.ndarray]:
+    def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
         """Comput tracking mask and center off mass offsets that would be used for tracking, but just for analytic in this case
-
-        Args:
-            image (np.ndarray): input image
-            capture_radius (int): radius from the center of image; used for cropping
-            binning (int): amount of binning in both vertical and horizontal of the image
-            dark_bg (bool): is the background dark, or white (backlit)
 
         Returns:
             offsetX (float): CMS offset X
             offsetY (float): CMS offset Y
             trackingMask (np.ndarray): boolean mask indicating which pixels are used to compute CMS offsets
         """
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Get the current image
+        image: np.ndarray = np.zeros(0)
+        dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
+        if dualcolormode:
+            image = self.imageacquisitionmanager.dualColorMainSideImage
+
+        else:
+            image = self.imageacquisitionmanager.image
+
+        # Get tracking configs
+        capture_radius = app.config.getint('Tracking', 'capture_radius')
+        binning = app.config.getint('Tracking', 'binning')
+        dark_bg = app.config.getboolean('Tracking', 'dark_bg')
+        min_brightness = app.config.getint('Tracking', 'min_brightness')
+        max_brightness = app.config.getint('Tracking', 'max_brightness')
 
         try:
-            offsetY, offsetX, trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg)
+            offsetY, offsetX, trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, min_brightness= min_brightness, max_brightness= max_brightness)
 
         except ValueError as e:
             offsetY, offsetX = 0, 0

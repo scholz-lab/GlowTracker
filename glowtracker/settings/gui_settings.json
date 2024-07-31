@@ -348,14 +348,14 @@
     {
         "type": "numeric",
         "title": "Minimum Brightness",
-        "desc": "Minimum brightness threshold for tracking. Pixels with brightness value below this threshold will be set to 0.",
+        "desc": "Minimum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value below this threshold will be set to 0.",
         "section": "Tracking",
         "key": "min_brightness"
     },
     {
         "type": "numeric",
         "title": "Maximum Brightness",
-        "desc": "Maximum brightness threshold for tracking. Pixels with brightness value heigher than this threshold will be set to 0.",
+        "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
         "section": "Tracking",
         "key": "max_brightness"
     }
