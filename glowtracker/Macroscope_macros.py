@@ -284,10 +284,8 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     # Set pixels that are outside of the brightness range to 0
     img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
     
-    if display:
-        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display, bin_factor=bin_factor)
-    else:
-        mask, resize_factor = create_mask(img1_sm, dark_bg, display=display)
+    # Compute tracking mask
+    mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display= display, bin_factor= bin_factor)
 
     h, w = mask.shape
 
@@ -373,15 +371,22 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
         img = img / 255
 
     if dark_bg:
-        img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+
+        try:
+            img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+        
+        except ValueError as e:
+            print(f'Error computing mask: {e}')
         
         # gamma correction
         gamma = np.log(np.mean(img))/np.log(0.5)
         gamma = np.clip(gamma, 0.5, 2)
         img = img**(1/gamma)
+
     else:
         img = cv2.GaussianBlur(img, (7, 7), 0)
         img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+        
     intermediate_images.append(img)
     
     # rescale the image to [0, 255] so that further steps
@@ -391,7 +396,6 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
-    
 
     # perform thresholding to binarize the image
     if dark_bg:
@@ -414,8 +418,9 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
 
     if display:
         return img, resize_factor, intermediate_images
+        
     else:
-        return img, resize_factor
+        return img, resize_factor, None
 
 
 def find_CMS(mask, K=5, display=False):
