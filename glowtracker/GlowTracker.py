@@ -1780,7 +1780,7 @@ class PreviewImage(Image):
             # Get the pixel value. Need to flip Y as image coord is top-left.
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]},{self.mouse_pos_in_tex_coord[1]},{pixelVal})'
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]}, {self.mouse_pos_in_tex_coord[1]}, {pixelVal})'
 
         return  
 
@@ -1917,23 +1917,7 @@ class ImageOverlay(FloatLayout):
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
-            imageacquisitionmanager: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
-            
-            image: np.ndarray = np.zeros(0)
-
-            dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
-            if dualcolormode:
-                image = imageacquisitionmanager.dualColorMainSideImage
-
-            else:
-                image = imageacquisitionmanager.image
-
-            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
-            binning = self.app.config.getint('Tracking', 'binning')
-            dark_bg = self.app.config.getboolean('Tracking', 'dark_bg')
-            
-            # Compute tracking data
-            cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS(image= image, capture_radius= capture_radius, binning= binning, dark_bg= dark_bg)
+            cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
         if doClear:
             self.clearTrackingOverlay()
@@ -2421,9 +2405,11 @@ class RuntimeControls(BoxLayout):
         trackingMode =  app.config.get('Tracking', 'mode')
         area = app.config.getint('Tracking', 'area')
         threshold = app.config.getfloat('Tracking', 'threshold')
+        min_brightness = app.config.getfloat('Tracking', 'min_brightness')
+        max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -2447,7 +2433,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -2533,7 +2519,7 @@ class RuntimeControls(BoxLayout):
 
             else:
                 try:
-                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
+                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False, min_brightness= min_brightness, max_brightness= max_brightness )
 
                 except ValueError as e:
                     ystep, xstep = 0, 0
@@ -2662,23 +2648,34 @@ class RuntimeControls(BoxLayout):
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
     
 
-    def computeTrackingCMS(self, image: np.ndarray, capture_radius: int, binning: int, dark_bg: bool) -> Tuple[float, float, np.ndarray]:
+    def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
         """Comput tracking mask and center off mass offsets that would be used for tracking, but just for analytic in this case
-
-        Args:
-            image (np.ndarray): input image
-            capture_radius (int): radius from the center of image; used for cropping
-            binning (int): amount of binning in both vertical and horizontal of the image
-            dark_bg (bool): is the background dark, or white (backlit)
 
         Returns:
             offsetX (float): CMS offset X
             offsetY (float): CMS offset Y
             trackingMask (np.ndarray): boolean mask indicating which pixels are used to compute CMS offsets
         """
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Get the current image
+        image: np.ndarray = np.zeros(0)
+        dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
+        if dualcolormode:
+            image = self.imageacquisitionmanager.dualColorMainSideImage
+
+        else:
+            image = self.imageacquisitionmanager.image
+
+        # Get tracking configs
+        capture_radius = app.config.getint('Tracking', 'capture_radius')
+        binning = app.config.getint('Tracking', 'binning')
+        dark_bg = app.config.getboolean('Tracking', 'dark_bg')
+        min_brightness = app.config.getint('Tracking', 'min_brightness')
+        max_brightness = app.config.getint('Tracking', 'max_brightness')
 
         try:
-            offsetY, offsetX, trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg)
+            offsetY, offsetX, trackingMask = macro.extractWormsCMS(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, min_brightness= min_brightness, max_brightness= max_brightness)
 
         except ValueError as e:
             offsetY, offsetX = 0, 0
@@ -3046,7 +3043,9 @@ class GlowTrackerApp(App):
             'binning': '4',
             'dark_bg': '1',
             'mode': 'CMS',
-            'area': '400'
+            'area': '400',
+            'min_brightness': '0',
+            'max_brightness': '255'
         })
 
         config.setdefaults('Experiment', {
@@ -3397,7 +3396,31 @@ class GlowTrackerApp(App):
             
             elif key == 'capture_radius':
                 updateOverlayFlag = True
-        
+
+            elif key == 'min_brightness':
+                
+                min_brightness = int(value)
+                max_brightness = self.config.getint('Tracking', 'max_brightness')
+
+                # Bound the value between [0, max_brightness]
+                min_brightness = max(0, min(min_brightness, max_brightness))
+
+                self.config.set('Tracking', 'min_brightness', min_brightness)
+                self.config.write()
+                updateSettingsWidgetFlag = True
+            
+            elif key == 'max_brightness':
+                
+                max_brightness = int(value)
+                min_brightness = self.config.getint('Tracking', 'min_brightness')
+
+                # Bound the value between [min_brightness, 255]
+                max_brightness = max(min_brightness, min(max_brightness, 255))
+
+                self.config.set('Tracking', 'max_brightness', max_brightness)
+                self.config.write()
+                updateSettingsWidgetFlag = True
+            
         elif section == 'Experiment':
 
             if key == 'exppath':

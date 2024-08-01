@@ -260,7 +260,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
 
 
-def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False):
+def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int = 255):
     '''
     use image to detect motion of object.
     input: image of shape (N,M) 
@@ -276,7 +276,13 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     # print(xmin, xmax, ymin, ymax)
-    img1_sm = img1[ymin:ymax, xmin:xmax]
+    
+    # Crop the region of interest.
+    #   Also, we have to copy. Otherwise, we would modified the original image.
+    img1_sm = np.copy( img1[ymin:ymax, xmin:xmax] )
+
+    # Set pixels that are outside of the brightness range to 0
+    img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
     
     # Compute tracking mask
     mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display= display, bin_factor= bin_factor)
