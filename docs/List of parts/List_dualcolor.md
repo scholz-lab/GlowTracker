@@ -11,6 +11,30 @@ nav_order: 1
     <img src="..\custom_assets\images\image.png" width="75%">
 </p>
 
+## Light Path
+
+{: .parts-table }
+| Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
+| --- | --- | --- | --- | --- |
+| 1 | MNWHL4: White LED 4900 K, 740 mW | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4) | 1 | 158,81 |
+| 2 | acA3088-57um: USB 3.0 Camera, monochrome | [Basler](https://www.baslerweb.com/en/shop/aca3088-57um/) | 1 | 389,00 |
+| 3 | USB 3.0 Micro B | [Kabelmeister](https://www.kabelmeister.de/USB-3.0-Kabel-Stecker-A-an-Stecker-Micro-B-Premium-AWG28-AWG24-UL-KUPFER-schwarz-1m/UK30P-AMB-010S) | 1 | 7,90 |
+| 4 | YN50mm F1.8: 50mm F1.8 Objective | [Yongnuo](https://th.hkyongnuo.com/products/yn50mm-f18) | 2 | 110,00 |
+| 5 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
+| 6 | SM1M05: Lens Tube Without External Threads, 1/2" Long, Two Retaining Rings Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1M05) | 1 | 13,96 |
+| 7 | SM1S20: Lens Tube Spacer, 2" Long  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1S20) | 1 | 15,44 |
+| 8 | SM1L03: Lens Tube, 0.30" Thread Depth, One Retaining Ring Included  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L03) | 1 | 11,95 |
+| 9 | SM1RR: Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1RR) | 10 | 4,43 |
+| 10 | SM1NR1: Zoom Housing for Ø1" Optics, Non-Rotating, 2" travel  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1NR1) | 1 | 214,89 |
+| 11 | ACL25416U-A: Aspheric Condenser Lens, Ø1", f=16 mm, NA=0.79, ARC: 350-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ACL25416U-A) | 1 | 29,16 |
+| 12 | AC254-050-A-ML: f=50 mm, Ø1" Achromatic Doublet, SM1-Threaded Mount, ARC: 400-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=AC254-050-A-ML) | 1 | 105,83 |
+| 13 | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | 1 | 21,49 |
+| 14 | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | 1 | 25,82 |
+| 15 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
+| 16 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 59,00 |
+| --- | --- | --- | --- | --- |
+
+
 |              | Dual color macroscope                       | Part number | Description                                                          | Quantity | Price per unit (12/2023) | Vendor   | Link                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------ | ------------------------------------------- | ----------- | -------------------------------------------------------------------- | -------- | -------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lightpath    | White LED                                   | 1           | MNWHL4 - 4900 K, 740 mW                                              | 1        | 155.69         | Thorlabs | [https://www.thorlabs.de/MNWHL4](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4)                                                                                                                                                                                                                                                                                                                                   |
