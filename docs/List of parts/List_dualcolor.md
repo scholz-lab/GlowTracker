@@ -32,6 +32,14 @@ nav_order: 1
 | 14 | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | 1 | 25,82 |
 | 15 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
 | 16 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 59,00 |
+| 17 | BBE1-E02: 1" Broadband Dielectric Elliptical Mirror, 400 - 750 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=BBE1-E02) | 2 | 118,53 |
+| 18 | KCB1EC/M: Right-Angle Kinematic Elliptical Mirror Mount with Smooth Cage Rod Bores | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=KCB1EC/M#ad-image-1) | 2 | 202,55 |
+| 19 | C4W-CC: 30 mm Cage Cube Connector | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=C4W-CC#ad-image-0) | 1 | 54,54 |
+| 20 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
+| 21 | ER025: Cage Assembly Rod, 1/4" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER025) | 16 | 4,96 |
+| 22 | SM1CP2M: Externally SM1-Threaded End Cap for Machining | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1CP2M) | 3 | 19,09 |
+| 23 | DFM1/M: Kinematic Fluorescence Filter Cube for Ø25 mm Fluorescence Filters, 30 mm Cage Compatible | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=DFM1/M) | 3 | 385,34 |
+| 24 | CDI11786: Precision slit 3500um ± 40um width. 10 mm lengh. 316 Stainless Steel | TBD from Thorlabs | 1 | 142,71 |
 | --- | --- | --- | --- | --- |
 
 
