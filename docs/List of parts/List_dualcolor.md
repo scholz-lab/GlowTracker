@@ -11,6 +11,10 @@ nav_order: 1
     <img src="..\custom_assets\images\image.png" width="75%">
 </p>
 
+<figure class="center-figure">
+    <img src="..\custom_assets\images\2 - optics\all_parts_labeled.jpg" alt="dual color all parts" >
+    <figcaption>Dual color macroscope light-path parts labeled</figcaption>
+</figure>
 ## Light Path
 
 {: .parts-table }
