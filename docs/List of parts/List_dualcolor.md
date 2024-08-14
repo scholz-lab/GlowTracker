@@ -43,6 +43,7 @@ nav_order: 1
 | 21 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
 | 22 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
 | 23 | SM2A26: Adapter with External M49 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26) | 1 | 31,06 |
+| 24 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
 
 
 ## Filters
@@ -50,11 +51,11 @@ nav_order: 1
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 24 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072?search=true) | 1 | 405,00 |
-| 25 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
-| 26 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
-| 27 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
-| 28 | Di01-R488/561-25x36: 488/561 nm lasers BrightLine® dual-edge laser dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/di01_r488_561_25x36/fl-006697) | 1 | 555,00 |
+| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072?search=true) | 1 | 405,00 |
+| 26 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
+| 27 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
+| 28 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
+| 29 | Di01-R488/561-25x36: 488/561 nm lasers BrightLine® dual-edge laser dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/di01_r488_561_25x36/fl-006697) | 1 | 555,00 |
 
 
 ## Illumination
@@ -62,9 +63,9 @@ nav_order: 1
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 29 | MNWHL4: White LED 4900 K, 740 mW | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4) | 1 | 158,81 |
-| 30 | LEDD1B: T-Cube LED Driver, 1200 mA Max Drive Current | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=LEDD1B) | 1 | 322,86 |
-| 31 | KPS201: 15 V, 2.66 A Power Supply Unit with 3.5 mm Jack Connector | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=KPS201) | 1 | 36,66 |
+| 30 | MNWHL4: White LED 4900 K, 740 mW | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4) | 1 | 158,81 |
+| 31 | LEDD1B: T-Cube LED Driver, 1200 mA Max Drive Current | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=LEDD1B) | 1 | 322,86 |
+| 32 | KPS201: 15 V, 2.66 A Power Supply Unit with 3.5 mm Jack Connector | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=KPS201) | 1 | 36,66 |
 
 
 ## Stage
@@ -72,11 +73,11 @@ nav_order: 1
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 32 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 1.655,00 |
-| 33 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
-| 34 | AP102C: X-LRM, X-LSM, and X-LHM Metric Top Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP102C) | 1 | 93,00 |
-| 35 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
-| 36 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 72,00 |
-| 37 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 35,00 |
-| 38 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 15,00 |
-| 39 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 44,00 |
+| 33 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 1.655,00 |
+| 34 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
+| 35 | AP102C: X-LRM, X-LSM, and X-LHM Metric Top Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP102C) | 1 | 93,00 |
+| 36 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
+| 37 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 72,00 |
+| 38 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 35,00 |
+| 39 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 15,00 |
+| 40 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 44,00 |
