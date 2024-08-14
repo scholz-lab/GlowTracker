@@ -44,6 +44,8 @@ nav_order: 1
 | 22 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
 | 23 | SM2A26: Adapter with External M49 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26) | 1 | 31,06 |
 | 24 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
+| --- | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | TBD | --- |
+| --- | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | TBD | --- |
 
 
 ## Filters
