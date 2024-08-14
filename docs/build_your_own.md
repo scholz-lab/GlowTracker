@@ -403,9 +403,9 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
       </td>
       <td>
         <figure class="center-figure">
-            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.jpg" alt="cube" >
-            <figcaption>5. Add the excitation filter to the cube insert. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the lightsplitter. </figcaption>
-          </figure>
+            <img src="custom_assets/images/2 - optics/filtercubes/filtercube 1 - excitation/1.png" alt="cube" >
+            <figcaption>5. Add the excitation filter to the cube insert with the arrow pointing inward. Secure it with a retaining ring. The filter should sit in front of the LED when the insert is back in the light splitter. </figcaption>
+        </figure>
       </td>
     </tr>
   </table>
@@ -417,8 +417,25 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 </p>
 
 <p align="justify">
-  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope.
+  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should be pointing against the direction of the incoming light, i.e. outward of the cube as depicted below.
 </p>
+<table class="equal-column-table">
+    <tr>
+      <td>
+        <figure class="center-figure">
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/2.jpg" alt="618/50" >
+          <figcaption>Filter 618/50 nm direction</figcaption>
+        </figure>
+      </td>
+      <td>
+        <figure class="center-figure">
+          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/3.jpg" alt="520/36" >
+          <figcaption>Filter 520/36 nm direction</figcaption>
+        </figure>
+      </td>
+    </tr>
+</table>
+
 
 ### Filter cube 3 - Image splitter cube without emission filters
 <p align="justify">
