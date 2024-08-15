@@ -1693,15 +1693,35 @@ class ImageAcquisitionManager(BoxLayout):
 
             else:
                 print('An error occured when taking an image')
-                
 
+
+class CutBoxLayout(BoxLayout, StencilView):
+
+    def on_touch_down(self, touch):
+        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """
+
+        if self.collide_point(*touch.pos):
+            return super().on_touch_down(touch)
+        else:
+            return False
+    
+    def on_touch_up(self, touch):
+        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """
+        if self.collide_point(*touch.pos):
+            return super().on_touch_up(touch)
+        else:
+            return False
+
+        
 class ScalableImage(ScatterLayout):
 
     def on_touch_up(self, touch):
         
         # If the widget is enabled and interaction point is inside its bounding box
         if self.disabled or not self.collide_point(*touch.pos):
-            return
+            return False
 
         if touch.is_mouse_scrolling:
             if touch.button == 'scrollup':
