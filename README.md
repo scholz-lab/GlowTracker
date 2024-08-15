@@ -21,7 +21,7 @@
 1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
 2. Use `conda` to create a new python environment named `glowtracker`.
     ```bash
-    conda create -n glowtracker 'python>=3.10,<3.12'
+    conda create -n glowtracker "python>=3.10,<3.12"
     ```
 
 3. Activate the `glowtracker` environment 
@@ -51,8 +51,8 @@
 
 5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-6. After finished installation, the software can be started in serveral ways
-    - If you have installed via pip
+6. After finished installation, the software can be started in several ways
+    - If you have installed it via pip
         ```bash
         python -m glowtracker
         ```
@@ -60,17 +60,17 @@
         ```bash
         glowtracker
         ```
-    - If you have installed by cloning the package and running them locally
+    - If you have installed it by cloning the package and running them locally
         ```bash
         python glowtracker/__main__.py
         ```
 
 ### Device Setup
 #### Stage
-In `glowtracker.ini`, specify the connection `port` name to your Stage. In Windows, this is usually `port = COM3`. In Linux, usually `port = /dev/ttyUSB0`
+In **Settings > Stage > Stage serial port**, specify the connection port name to your Stage. In Windows, this is usually `port = COM3`. And `/dev/ttyUSB0` for Linux.
 
 #### Camera
-In `glowtracker.ini`, specify the path to your pylon default camera setting `default_settings`. This is a `.pfs` file that can be obtained from the `pylon Viewer` software that you have downloaded.
+In **Settings > Camera > Default camera settings**, specify the path to your pylon default camera setting. This is a `.pfs` file that can be obtained from the [pylon Viewer](https://www.baslerweb.com/en/software/pylon/pylon-viewer/) software that you have downloaded.
 
 ## GUI overview
 <img alt="annotated GUI" src="glowtracker/images/gui_annotation.png" width="1250">
