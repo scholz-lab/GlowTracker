@@ -2106,14 +2106,18 @@ class ImageOverlay(FloatLayout):
             self.trackingMaskLayout.clear_widgets()
             self.trackingMaskLayout = None
             
-        self.trackingMask.texture = None
-        self.remove_widget(self.trackingMask)
+        if self.trackingMask is not None:
+            self.trackingMask.texture = None
+            self.remove_widget(self.trackingMask)
         
-        self.trackingBorder = None
-        self.cmsShape = None
+        if self.trackingBorder is not None:
+            self.canvas.remove(self.trackingBorder)
+            self.trackingBorder = None
+
+        if self.cmsShape is not None:
+            self.canvas.remove(self.cmsShape)
+            self.cmsShape = None
         
-        self.canvas.clear()
-    
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
@@ -3474,7 +3478,7 @@ class GlowTrackerApp(App):
 
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
-            self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay()
+            self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay(doClear= False)
     
 
     # ask for confirmation of closing
