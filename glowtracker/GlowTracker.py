@@ -2072,14 +2072,20 @@ class ImageOverlay(FloatLayout):
         # 
         # Draw tracking center of mass if provided
         # 
-        if cmsOffset_x is not None:
+        if cmsOffset_x is not None and cmsOffset_y is not None:
+            
+            # Compute scaling
+            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+            normImageSize = np.array(previewImage.get_norm_image_size())
+            imageSize = previewImage.texture_size
+            displayedScale = normImageSize[0] / imageSize[0]
             
             # Compute the overlay bbox
             center, _, _ = self.computeTrackingOverlayBorderBBox()
 
-            cms = center + np.array([cmsOffset_x, cmsOffset_y])
+            cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale 
 
-            pointRadius = 8
+            pointRadius = 10 * displayedScale
 
             if self.cmsShape is None:
                 # If the tracking shape is not yet created, create it and draw
