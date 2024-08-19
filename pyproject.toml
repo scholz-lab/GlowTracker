@@ -16,8 +16,8 @@ exclude = [
 [tool.setuptools.package-data]
 glowtracker = [
     "layout.kv",
-    "glowtracker.ini",
     "icons/*",
+    "settings/default.pfs",
     "settings/gui_settings.json",
     "settings/experiment_settings.json"
 ]
