@@ -24,7 +24,7 @@ nav_order: 1
 | 2 | acA3088-57um: USB 3.0 Camera, monochrome | [Basler](https://www.baslerweb.com/en/shop/aca3088-57um/) | 1 | 389,00 |
 | 3 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 59,00 |
 | 4 | YN50mm F1.8: 50mm F1.8 Objective | [Yongnuo](https://th.hkyongnuo.com/products/yn50mm-f18) | 2 | 110,00 |
-| 5 | SM1A71: Adapter with External SM1 Threads and External SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A71) | 1 | 28,88 |
+| 5 | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | 2 | 25,82 |
 | 6 | DFM1/M: Kinematic Fluorescence Filter Cube for Ø25 mm Fluorescence Filters, 30 mm Cage Compatible | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=DFM1/M) | 3 | 385,34 |
 | 7 | SM1CP2M: Externally SM1-Threaded End Cap for Machining | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1CP2M) | 3 | 19,09 |
 | 8 | ER025: Cage Assembly Rod, 1/4" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER025) | 16 | 4,96 |
@@ -42,10 +42,12 @@ nav_order: 1
 | 20 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
 | 21 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
 | 22 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
-| 23 | SM2A26: Adapter with External M49 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26) | 1 | 31,06 |
+| 23 | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | 2 | 21,49 |
 | 24 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
-| --- | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | TBD | --- |
-| --- | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | TBD | --- |
+
+Please note that the choice of objective dictates the adapters. 
+In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2**(5) and **SM2A53**(23) adapters to connect with the cage and the camera.
+However, if you choose the objectives from other vendors, such as **Canon**, the appropriate adapters would be [SM1A71](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) and [SM2A26](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26), respectively.
 
 
 ## Filters
