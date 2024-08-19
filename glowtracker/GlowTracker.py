@@ -2015,6 +2015,9 @@ class ImageOverlay(FloatLayout):
             trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
         """
         
+        # Frequently used 
+        center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+
         # 
         # Check if needs to draw tracking mask
         # 
@@ -2026,7 +2029,6 @@ class ImageOverlay(FloatLayout):
                 self.trackingMaskLayout = FloatLayout()
 
                 #   Set the position and size to fit the overlay
-                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
                 self.trackingMaskLayout.pos = btm_left.tolist()
                 self.trackingMaskLayout.size = (top_right - btm_left).tolist()
 
@@ -2054,7 +2056,6 @@ class ImageOverlay(FloatLayout):
                 self.trackingMask.opacity = 0.5
 
                 # Set the position and size to fit the overlay
-                _, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
                 self.trackingMask.pos = btm_left.tolist()
                 self.trackingMask.size = (top_right - btm_left).tolist()
 
@@ -2072,9 +2073,6 @@ class ImageOverlay(FloatLayout):
         # 
         if self.trackingBorder is None:
 
-            # Compute the overlay bbox
-            center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
-            
             trackingBorderPoints = [
                 btm_left[0], btm_left[1],
                 btm_left[0], top_right[1],
@@ -2092,20 +2090,24 @@ class ImageOverlay(FloatLayout):
         # 
         # Draw tracking center of mass if provided
         # 
-        if cmsOffset_x is not None:
+        if cmsOffset_x is not None and cmsOffset_y is not None:
             
-            # Compute the overlay bbox
-            center, _, _ = self.computeTrackingOverlayBorderBBox()
+            # Compute scaling
+            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+            normImageSize = np.array(previewImage.get_norm_image_size())
+            imageSize = previewImage.texture_size
+            displayedScale = normImageSize[0] / imageSize[0]
+            
+            # Compute cms draw position
+            cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale 
 
-            cms = center + np.array([cmsOffset_x, cmsOffset_y])
-
-            pointRadius = 8
+            pointRadius = 10 * displayedScale
 
             if self.cmsShape is None:
                 # If the tracking shape is not yet created, create it and draw
                 self.cmsShape = Ellipse(
                     pos= (cms[0] - pointRadius, cms[1] - pointRadius), 
-                    size=(pointRadius * 2, pointRadius * 2)
+                    size= (pointRadius * 2, pointRadius * 2)
                 )
 
                 # Draw the cms as a teal dot
