@@ -61,3 +61,40 @@ code {
   background-color: $code-bg-color;
   border-radius: 0.3rem;
 }
+
+.parts-table {
+  // Style for the spanning header
+  tr:first-child th {
+    text-align: center;
+    background-color: #f8f8f8;  // Light gray background
+    font-weight: bold;
+    padding: 10px;
+  }
+
+  // Reduce allowed minimum width
+  th, td {
+    min-width: 1rem;
+  }
+
+  // Set width and text alignment of each columns
+  td:nth-child(1) {
+    width: 5%;
+    text-align: center;
+  }
+  td:nth-child(2) {
+    width: 60%;
+    text-align: left;
+  }
+  td:nth-child(3) {
+    width: 10%;
+    text-align: center;
+  }
+  td:nth-child(4) {
+    width: 10%;
+    text-align: center;
+  }
+  td:nth-child(5) {
+    width: 15%;
+    text-align: right;
+  }
+}
