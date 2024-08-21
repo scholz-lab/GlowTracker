@@ -417,7 +417,7 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 </p>
 
 <p align="justify">
-  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should be pointing against the direction of the incoming light, i.e. outward of the cube as depicted below.
+  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should follow the direction of the light, i.e. outward of the cube and toward the camera as depicted below.
 </p>
 <table class="equal-column-table">
     <tr>
