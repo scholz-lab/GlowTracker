@@ -421,7 +421,7 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 </p>
 
 <figure class="center-figure">
-  <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/emission filter cube labeled.png" alt="emission filter cube" width="50%">
+  <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/emission filter cube labeled.jpg" alt="emission filter cube" width="50%">
   <figcaption>Emission filter cube with 618/50 and 520/36 filters.</figcaption>
 </figure>
 
