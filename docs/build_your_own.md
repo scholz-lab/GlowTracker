@@ -419,23 +419,11 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 <p align="justify">
   Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should follow the direction of the light, i.e. outward of the cube and toward the camera as depicted below.
 </p>
-<table class="equal-column-table">
-    <tr>
-      <td>
-        <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/2.jpg" alt="618/50" >
-          <figcaption>Filter 618/50 nm direction</figcaption>
-        </figure>
-      </td>
-      <td>
-        <figure class="center-figure">
-          <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/3.jpg" alt="520/36" >
-          <figcaption>Filter 520/36 nm direction</figcaption>
-        </figure>
-      </td>
-    </tr>
-</table>
 
+<figure class="center-figure">
+  <img src="custom_assets/images/2 - optics/filtercubes/filtercube 2 - split/emission filter cube labeled.png" alt="emission filter cube" width="50%">
+  <figcaption>Emission filter cube with 618/50 and 520/36 filters.</figcaption>
+</figure>
 
 ### Filter cube 3 - Image splitter cube without emission filters
 <p align="justify">
