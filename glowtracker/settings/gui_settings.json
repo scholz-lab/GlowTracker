@@ -157,10 +157,10 @@
      {
         "type": "options",
         "title": "Focus step units",
-        "desc": "micrometer/sec or millimeter/sec",
+        "desc": "micrometer or millimeter",
         "section": "Autofocus",
         "key": "step_units",
-        "options": ["mm/s", "um/s"]
+        "options": ["mm", "um"]
     },
     {
         "type": "title",
@@ -176,10 +176,10 @@
     {
         "type": "options",
         "title": "Calibration step units",
-        "desc": "micrometer/sec or millimeter/sec",
+        "desc": "micrometer or millimeter",
         "section": "Calibration",
         "key": "step_units",
-        "options": ["mm/s", "um/s"]
+        "options": ["mm", "um"]
     },
     {
         "type": "title",
