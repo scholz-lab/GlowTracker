@@ -54,7 +54,7 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072?search=true) | 1 | 405,00 |
+| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072) | 1 | 405,00 |
 | 26 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
 | 27 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
 | 28 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
