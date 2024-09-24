@@ -425,9 +425,9 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
   <figcaption>Emission filter cube with 618/50 and 520/36 filters.</figcaption>
 </figure>
 
-### Filter cube 3 - Image splitter cube without emission filters
+### Filter cube 3 - Image merge cube
 <p align="justify">
-  This cube combines the red and green images. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Make sure the reflective side is oriented correctly.
+  This cube combines the red and green images. You will only need the final  561nm longpass dichroic. Secure it in the cube as described above. Orient the front side of the mirror toward the red channel.
 </p>
 
 ## Adjust field-of-view for dual color imaging <a name="dualview-alignment"></a>
