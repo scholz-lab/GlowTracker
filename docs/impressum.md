@@ -15,6 +15,7 @@ nav_order: 8
 * Takkasila Saichol
 * Behzad Shomali
 * Monika Scholz
+* Aniket Rane
 
 **Hardware:** 
 * Luis Alvarez 
