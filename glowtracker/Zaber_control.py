@@ -192,7 +192,8 @@ class Stage:
         necessary if device was disconnected from power source
         '''
         if self.connection is not None:
-            self.axis_z.home(wait_until_idle= False)
+            # Home and wwait the Z axis first to prevent accident
+            self.axis_z.home(wait_until_idle= True)
             self.axis_y.home(wait_until_idle= False)
             self.axis_x.home(wait_until_idle= True)
     
@@ -303,7 +304,7 @@ class Stage:
             self.move_y(steps[1], unit = unit, wait_until_idle=wait_until_idle)
         
         if pos_len == 3 and steps[2] != 0:
-            self.move_z(steps[1], unit = unit, wait_until_idle=wait_until_idle)
+            self.move_z(steps[2], unit = unit, wait_until_idle=wait_until_idle)
         
 
     def start_move(self, velocity: Vec3, unit: str = 'um/s') -> None:
