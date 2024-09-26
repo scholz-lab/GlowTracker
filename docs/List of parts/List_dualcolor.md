@@ -37,16 +37,15 @@ nav_order: 1
 | 15 | SM1NR1: Zoom Housing for Ø1" Optics, Non-Rotating, 2" travel | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1NR1) | 1 | 214,89 |
 | 16 | CDI11786: Precision slit 3500um ± 40um width. 10 mm length. 316 Stainless Steel | TBD from Thorlabs | 1 | 142,71 |
 | 17 | SM1S20: Lens Tube Spacer, 2" Long | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1S20) | 1 | 15,44 |
-| 18 | SM1L03: Lens Tube, 0.30" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L03) | 1 | 11,95 |
-| 19 | ACL25416U-A: Aspheric Condenser Lens, Ø1", f=16 mm, NA=0.79, ARC: 350-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ACL25416U-A) | 1 | 29,16 |
-| 20 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
-| 21 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
-| 22 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
-| 23 | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | 2 | 21,49 |
-| 24 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
+| 18 | ACL25416U-A: Aspheric Condenser Lens, Ø1", f=16 mm, NA=0.79, ARC: 350-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ACL25416U-A) | 1 | 29,16 |
+| 19 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
+| 20 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
+| 21 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
+| 22 | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | 2 | 21,49 |
+| 23 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
 
 Please note that the choice of objective dictates the adapters. 
-In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2**(5) and **SM2A53**(23) adapters to connect with the cage and the camera.
+In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2**(5) and **SM2A53**(22) adapters to connect with the cage and the camera.
 However, if you choose the objectives from other vendors, such as **Canon**, the appropriate adapters would be [SM1A71](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) and [SM2A26](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26), respectively.
 
 
@@ -55,7 +54,7 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072?search=true) | 1 | 405,00 |
+| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072) | 1 | 405,00 |
 | 26 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
 | 27 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
 | 28 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
@@ -77,7 +76,7 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 33 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 1.655,00 |
+| 33 | X-LSM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A) | 3 | 2.397,00 |
 | 34 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
 | 35 | AP102C: X-LRM, X-LSM, and X-LHM Metric Top Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP102C) | 1 | 93,00 |
 | 36 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |

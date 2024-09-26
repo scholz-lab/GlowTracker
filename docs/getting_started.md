@@ -1,5 +1,5 @@
 ---
-title: 1 Getting Started
+title: 1. Getting Started
 layout: default
 nav_order: 2
 ---
