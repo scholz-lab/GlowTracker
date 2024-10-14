@@ -7,17 +7,25 @@ nav_order: 4
 
 # List of parts for the upgrade options
 
-|                          | Macroscope upgrade options | Part number                    | Description                                          | Quantity | Price per unit (12/2023)| Vendor   | Link                                                                                                                                                               |
-| ------------------------ | -------------------------- | ------------------------------ | ---------------------------------------------------- | -------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Additional magnification | EO 12 mm                   | Alternative objective          | Series Fixed Focal Length Lens                       | 1        | 225            | Edmund   | [https://www.edmundoptics.eu/12mm](https://www.edmundoptics.eu/p/12mm-uc-series-fixed-focal-length-lens/2969/)           |
-|                          | EO 16 mm                   | Alternative objective          | Series Fixed Focal Length Lens                       | 1        | 326            | Edmund   | [https://www.edmundoptics.com/16mm](https://www.edmundoptics.com/p/16mm-c-series-fixed-focal-length-lens/16525/)         |
-|                          | Thread adapter             | Adapter for alternate obective | SM1T4                                                | 1        | 26.42          | Thorlabs | [https://www.thorlabs.com/SM1T4](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1T4)                                             |
-|                          | Thread adapter             | Adapter for alternate obective | SM1A25                                               | 1        | 20.03          | Thorlabs | [https://www.thorlabs.de/SM1A25](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A25)                                             |
-| Stage second option      | X-XYZ-LSM150A (Optional)   | Supplementary                  | XY Series: Two-axis stages with built-in controllers | 3        | 7808           | Zaber    | [https://www.zaber.com/X-XY-LSM150A](https://www.zaber.com/products/xy-xyz-gantry-systems/XY/specs?part=X-XY-LSM150A) |
-| ND Filters     | ND Filters Ø25 mm, SM1 Mounted, 350 - 1100 nm   | Supplementary                  | Nd filter OD = 1.0 and OD = 0.5  | 1        | 673.81           | Thorlabs    | [ND Filters](https://www.thorlabs.de/thorproduct.cfm?partnumber=NDK01) |
+
+
+|       | Macroscope upgrade options | Description | Quantity | Price per unit € (08/2024) | Vendor | 
+| --- | --- | --- | --- | --- | --- |
+| Additional magnification | EO 12 mm objective  | Series Fixed Focal Length Lens  | 1 | 260 | [Edmund Optics](https://www.edmundoptics.eu/p/12mm-uc-series-fixed-focal-length-lens/2969/)
+|  | EO 16 mm objective | Series Fixed Focal Length Lens | 1 | 325 | [Edmund Optics](https://www.edmundoptics.com/p/16mm-c-series-fixed-focal-length-lens/16525/)
+|  | Olympus PLN 10X Objective | | 1 | 352 | [Edmund Optics](https://www.edmundoptics.de/p/olympus-pln-10x-objective/29222/)
+|  | Olympus PLN 20X Objective | | 1 | 433 | [Edmund Optics](https://www.edmundoptics.de/p/olympus-pln-20x-objective/29223/)
+|  |  | |  |  |
+| Thread adapter | SM1T4 - Adapter  |  SM1 (1.035"-40) Coupler, External Threads, Fixed Shoulder and Locking Ring | 1 | 26,94 | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1T4)
+|  | SM1A25 - Adapter | Adapter with External M25.5 x 0.5 Threads and Internal SM1 Threads | 1 | 20,43 | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A25)
+|  |  | |  |  |
+| ND Filters   | NDK01 - Box with 10 Reflective ND Filters | Ø25 mm, SM1 Mounted, 350 - 1100 nm  | 1 | 673,81 | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=NDK01)
+
 
 
 ---
+
+## Objective specifications
 
 | Objective     | f#               | NA =½\*f# | Focal length (mm) | Max FOV width (mm) | Magnification |
 | ------------- | ------------- | --------- | ----------------- | ------------------ | ------------- |
