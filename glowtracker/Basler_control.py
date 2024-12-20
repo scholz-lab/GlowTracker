@@ -112,22 +112,34 @@ class Camera(pylon.InstantCamera):
         if self.IsGrabbing():
             try:
                 # Retrieve an image
-                grabResult: pylon.GrabResult = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+                #   The function pylon.InstantCamera is not well-ported to Python API.
+                #   If the grab is succeeded it will return pylon.GrabResult object.
+                #   Otherwise, it will return False.
+                grabResult: pylon.GrabResult | bool = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
 
-                if grabResult.GrabSucceeded():
+                if isinstance(grabResult, bool) and grabResult == False:
+                    pass
 
-                    isSuccess = True
-                    img = grabResult.Array
-                    retrieveTimestamp = time.perf_counter()
-                    conversion_factor = 1e6  # for conversion in ms
-                    timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
-                    grabResult.Release()
+                else:
+                    # Need to double check
+                    if grabResult.GrabSucceeded():
+
+                        isSuccess = True
+                        img = grabResult.Array
+                        retrieveTimestamp = time.perf_counter()
+                        conversion_factor = 1e6  # for conversion in ms
+                        timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
+                        grabResult.Release()
 
             except genicam.RuntimeException as e:
-                # Handle a RuntimeException here because
-                #   when closing the app while in a grabbing mode,
-                #   this thread will still trying to access the camera result
-                print(e)
+                # An exception is thrown here when trying to access a grab result while the camera 
+                #   aquisition is being shut down. This can happen when the acquisition is happening
+                #   in a thread and failed to synchronize with the main thread in time.
+                pass
+                
+            except Exception as e:
+                # Report other error behaviors for better handling
+                print(f'Camera::retrieveGrabbingResult -- {e}')
 
         return isSuccess, img, timestamp, retrieveTimestamp
 
