@@ -1,7 +1,6 @@
 name: glowtracker
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - kivy=2.2.1
   - matplotlib=3.7.2
@@ -13,11 +12,11 @@ dependencies:
   - scikit-image=0.22.0
   - scipy=1.11.1
   - zaber-motion=4.2.0
-  - overrides
-  - pandas
+  - overrides=7.7.0
+  - pandas=2.2.0
   - pip:
     - pypylon==2.2.0
-    - itk-elastix
-    - platformdirs
-    - pyparsing
+    - itk-elastix==0.19.1
+    - platformdirs==3.9.1
+    - pyparsing==3.0.9
 
