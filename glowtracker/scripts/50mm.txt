@@ -1,0 +1,21 @@
+
+l = 0.540 # wavelength of illuminating light in (um)
+n = 1 # refractive index of medium
+m = 1 # magnification
+e = 2.4 # pixel size
+f_number = 1.8
+na = 1 / (2 * f_number) # numerical aperture
+dof = ((l * n) / (na * na)) + ((n / (m * na)) * e) # depth of field
+z_stepsize = 0.005 # in um
+
+n_images = 50
+total_images = ((2 * n_images) + 1)
+
+init_z_move = -1 * n_images * z_stepsize
+
+move_rel(0, 0, init_z_move)
+loop(i: total_images){
+    wait(0.2) # to compensate motion blur
+    snap()
+    move_rel(0, 0, z_stepsize)
+}

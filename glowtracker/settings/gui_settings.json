@@ -154,6 +154,43 @@
         "section": "Autofocus",
         "key": "step_size"
     },
+    {
+        "type": "options",
+        "title": "Model type",
+        "desc": "Type of model to load for autofocus",
+        "section": "Autofocus",
+        "key": "model_type",
+        "options": ["RESNET_18", "RESNET_34", "RESNET_50", "MOBILENET_V3_SMALL", "MOBILENET_V3_LARGE"]
+    },
+    {
+        "type": "path",
+        "title": "Model path",
+        "desc": "Path to the specific model to load for autofocus",
+        "section": "Autofocus",
+        "key": "model_path"
+    },
+    {
+        "type": "numeric",
+        "title": "Depth of field",
+        "desc": "Total depth of field",
+        "section": "Autofocus",
+        "key": "depth_of_field"
+    },
+    {
+        "type": "numeric",
+        "title": "Input size",
+        "desc": "Input size for model",
+        "section": "Autofocus",
+        "key": "crop_size"
+    },
+    {
+        "type": "numeric",
+        "title": "Tracking fps",
+        "desc": "Rate to call autofocus model during tracking",
+        "section": "Autofocus",
+        "key": "focus_fps"
+    },
+
      {
         "type": "options",
         "title": "Focus step units",

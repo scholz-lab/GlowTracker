@@ -303,7 +303,7 @@ class Stage:
             self.move_y(steps[1], unit = unit, wait_until_idle=wait_until_idle)
         
         if pos_len == 3 and steps[2] != 0:
-            self.move_z(steps[1], unit = unit, wait_until_idle=wait_until_idle)
+            self.move_z(steps[2], unit = unit, wait_until_idle=wait_until_idle)
         
 
     def start_move(self, velocity: Vec3, unit: str = 'um/s') -> None:

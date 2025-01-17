@@ -53,7 +53,7 @@ from kivy.uix.switch import Switch
 import datetime
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Lock
 from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
@@ -65,7 +65,9 @@ from pypylon import pylon
 import platformdirs 
 import shutil
 from pyparsing import ParseException
-
+import matplotlib.pyplot as plt
+import collections
+import threading
 # 
 # Own classes
 # 
@@ -73,14 +75,18 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
+from Autofocus import *
 
 # 
 # Math
 # 
 import math
 import numpy as np
-from skimage.io import imsave
+from skimage.io import imsave, imshow
 import cv2
+import PIL
+
+z_estimate = 0
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -115,6 +121,63 @@ def imageToTexture(image: np.ndarray) -> Texture:
 
     return image_texture
 
+def autofocus(model, crop_size, dof, tracking=True):
+    app = App.get_running_app()
+    camera = app.camera
+    stage: Stage = app.stage
+    dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+    if camera is not None and stage is not None:
+        rtc: RuntimeControls = app.root.ids.middlecolumn.ids.runtimecontrols
+        iam: ImageAcquisitionManager = rtc.ids.imageacquisitionmanager
+
+        x_offset = 0
+        y_offset = 0
+        if not tracking:
+            x_offset, y_offset, _ = rtc.computeTrackingCMS()
+            y_offset *= -1 
+            x_offset = int(x_offset)
+            y_offset = int(y_offset)
+
+        image = None
+        if dualColorMode:
+            image = iam.dualColorMainSideImage
+        else:
+            image = iam.image
+
+        height, width = image.shape[:2]
+        center_x = width // 2
+        center_y = height // 2
+            
+        # Calculate the top-left corner of the crop box
+        start_x = center_x + x_offset - crop_size // 2
+        start_y = center_y + y_offset - crop_size // 2
+            
+        # Ensure the cropping coordinates are within the image boundaries
+        start_x = max(0, min(start_x, width - crop_size))
+        start_y = max(0, min(start_y, height - crop_size))
+
+        # Crop the image
+        
+        image = image[start_y:start_y + crop_size, start_x:start_x + crop_size]
+        image = PIL.Image.fromarray(image)
+        image = image.convert('RGB')
+
+        # Feed into model to get deviation from focus: f(c) = delta
+        delta = get_autofocus_delta(model, image)
+        print(f'Delta = {delta}')
+            
+        # if delta > depth of field then move stage
+        if abs(delta) > dof:
+            #app.coords[2] += (delta / 1000.) # current z stage position
+            #print(f'Current z position = {app.coords[2]}')
+            #if not alpha == 0:
+            #    z_estimate = (alpha * z_estimate) + ((1 - alpha) * app.coords[2])
+            #    print(f'Estimates z position = {z_estimate}')
+            #    stage.move_abs([0, 0, z_estimate], wait_until_idle=True)
+            #    app.coords[2] = z_estimate
+            #else:
+            stage.move_z(delta, wait_until_idle=True)
+            app.coords[2] += (delta / 1000.) # update Z stage values
 
 class WarningPopup(Popup):
     ok_text = StringProperty('OK')
@@ -251,7 +314,6 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.gain = camera.Gain()
         self.ids.camprops.framerate = camera.ResultingFrameRate()
 
-
     #autofocus popup
     def show_autofocus(self):
         camera = self.app.camera
@@ -268,7 +330,15 @@ class LeftColumn(BoxLayout):
                             size_hint=(0.5, 0.25))
             self._popup.open()
 
+    def run_autofocus(self):
+        model_path = App.get_running_app().config.get('Autofocus', 'model_path')
+        model_type = App.get_running_app().config.get('Autofocus', 'model_type')
+        depth_of_field = App.get_running_app().config.getfloat('Autofocus', 'depth_of_field')
+        crop_size = App.get_running_app().config.getint('Autofocus', 'crop_size')
+        model = load_model(model_path=model_path, model_type=model_type)
+        autofocus(model=model, crop_size=crop_size, dof=depth_of_field, tracking=False)
 
+    """"      
     # run autofocussing once on current location
     def run_autofocus(self):
         camera = self.app.camera
@@ -286,7 +356,7 @@ class LeftColumn(BoxLayout):
             # update the images shown - delete old ones if rerunning
             self._popup.content.delete_images()
             self._popup.content.add_images(imstack, nsteps, focal_plane)
-
+    """
 
 class MiddleColumn(BoxLayout, StencilView):
     runtimecontrols = ObjectProperty(None)
@@ -891,8 +961,8 @@ class AutoFocus(BoxLayout):
     def __init__(self,  **kwargs):
         super(AutoFocus, self).__init__(**kwargs)
         self.imagewidgets = []
-
-
+    
+    """"
     def add_images(self, imstack, n, focal_plane):
          # build as many labelled images as we will need
         for i in range(n):
@@ -909,6 +979,9 @@ class AutoFocus(BoxLayout):
     def delete_images(self):
         for wg in self.imagewidgets:
             self.ids.multipleimages.remove_widget(wg)
+    """
+
+
 
 
 class LabelImage():
@@ -1521,7 +1594,7 @@ class RecordButton(ImageAcquisitionButton):
             self.savingthread.join()
         
         # Update display buffer text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
+       # self.runtimeControls.buffer_af.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
         print("Stop recording")
 
@@ -1557,7 +1630,7 @@ class RecordButton(ImageAcquisitionButton):
             - Put the image into an image saving queue.
         """        
         # Update buffer display text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
+       # self.runtimeControls.buffer_af.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
         # Write coordinate into file.
         #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
@@ -2241,7 +2314,7 @@ class ImageOverlay(FloatLayout):
         """
         self.clearTrackingOverlay()
         self.clearDualColorOverlay()
-    
+
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
@@ -2250,7 +2323,7 @@ class RuntimeControls(BoxLayout):
     imageacquisitionmanager: ImageAcquisitionManager = ObjectProperty(rebind=True)
     cropX = NumericProperty(0, rebind=True)
     cropY = NumericProperty(0, rebind=True)
-    
+    buffer = ObjectProperty(rebind=True)
 
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
@@ -2263,62 +2336,192 @@ class RuntimeControls(BoxLayout):
         self.cmsOffset_x: float | None = None
         self.cmsOffset_y: float | None = None
         self.trackingMask: np.ndarray | None = None
+        self.focusevent = None
+        self.model_path = App.get_running_app().config.get('Autofocus', 'model_path')
+        self.model_type = App.get_running_app().config.get('Autofocus', 'model_type')
+        self.model = load_model(model_path=self.model_path, model_type=self.model_type)
+        self.dof = App.get_running_app().config.getfloat('Autofocus', 'depth_of_field')
+        self.crop_size = App.get_running_app().config.getint('Autofocus', 'crop_size')
+        self.stop_event = None
+        self.autofocus_thread = None
+        self.alpha = 0.4
+    
+    """
+    def run_autofocus_tracking(self, stop_event) -> None:
+        #Autofocus tracking function to be running inside a thread
+        
+        app: GlowTrackerApp = App.get_running_app()
+        stage = app.stage
+        camera = app.camera
 
+        # Compute second per frame to determine the lower bound waiting time
+        camera_spf = 1 / camera.ResultingFrameRate()
+        
+        # Dual Color mode settings
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        
+        image: np.ndarray | None = None
+        retrieveTimestamp: float = 0
+        prevImage: np.ndarray | None = None
 
+        estimated_next_timestamp: float | None = None
+
+        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and (not stop_event.is_set()):
+            # Handling image cycle synchronization.
+            # Because the recording and tracking thread are asynchronous
+            # and doesn't have the same priority, it could be the case that
+            # one thread get executed more than the other and the estimated time
+            # became inaccurate.
+            wait_time = 0
+            if estimated_next_timestamp is not None:
+                
+                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
+                diff_estimated_time = estimated_next_timestamp - retrieveTimestamp
+
+                # If the estimated time is approximately close to the image timestamp
+                # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
+                if abs(diff_estimated_time)/camera_spf < 0.1:
+                    pass
+                else:
+                    # If the estimated time is less than the current time
+                    # then it is also ok to use the current image
+                    if estimated_next_timestamp < retrieveTimestamp:
+                        pass
+                    # If the estimated time is more than the current image timestamp
+                    # then compute the estimated next cycle time and wait
+                    else:
+                        current_time = time.perf_counter()
+
+                        diff_time_factor = (current_time - retrieveTimestamp) / camera_spf
+                        fractional_part, integer_part = math.modf(diff_time_factor)
+
+                        wait_time = camera_spf * ( 1.0 - fractional_part )
+
+                        time.sleep(wait_time)
+            else:
+                # Wait for the stage to finished moving/centering at location in the
+                # first time
+                stage.wait_until_idle()
+
+                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
+                estimated_next_timestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
+
+            # Get the latest image
+            tracking_frame_start_time = time.perf_counter()
+
+            if dualColorMode:
+                image = self.imageacquisitionmanager.dualColorMainSideImage
+            else:
+                image = self.imageacquisitionmanager.image
+
+            retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
+
+            # If prev frame is empty then use the same as current
+            if prevImage is None:
+                prevImage = image
+
+            # Preprocess image
+            height, width = image.shape[:2]
+            center_x = width // 2
+            center_y = height // 2
+            
+            # Calculate the top-left corner of the crop box
+            start_x = center_x - self.crop_size // 2
+            start_y = center_y - self.crop_size // 2
+            
+            # Ensure the cropping coordinates are within the image boundaries
+            #start_x = max(0, min(start_x, width - self.crop_size))
+            #start_y = max(0, min(start_y, height - self.crop_size))
+
+            # Crop the image
+            image = image[start_y:start_y + self.crop_size, start_x:start_x + self.crop_size]
+            image = PIL.Image.fromarray(image)
+            image = image.convert('RGB')
+
+            # Extract delta z
+            delta_z = get_autofocus_delta(self.model, image)
+            print(delta_z)
+
+            # getting stage coord is slow so we will interpolate from movements
+            if abs(delta_z) > self.dof:
+                stage.move_z(delta_z, wait_until_idle =False)
+                prevImage = image
+            else:
+                delta_z = 0
+
+            tracking_frame_end_time = time.perf_counter()
+
+            #   Wait for stage movement to finish to not get motion blur.
+            #   This could be done by checking with stage.is_busy().
+            #   However, that function call is very costly (~3 secs) 
+            #   and is not good for loop checking.
+            #   So we are going to just estimate it here.
+
+            #   Delay from receing the image in recording and tracking it
+            delay_receive_image_and_tracking_time = tracking_frame_start_time - retrieveTimestamp
+
+            #   Time take to compute tracking
+            computation_time = tracking_frame_end_time - tracking_frame_start_time
+
+            #   Communication delay from host to stage is 20 ms
+            communication_delay = 20e-3 
+
+            #   Travel time
+            #       Because x and y axis travel independently, the speed that we have to wait 
+            #       is the maximum between the two.
+            max_travel_dist = abs(delta_z)       # in micro meter : 1e-6
+            stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
+
+            #   Sums up all the waiting time ingredient
+            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
+
+            #   Compute the waiting time to reach the next receive image
+            fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
+            time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
+
+            #   Sums up the total time we need to wait, which are:
+            #       communication delay
+            #       + stage travelling time
+            #       + time to receiving the last blurry image
+            total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
+
+            estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
+
+            # Wait
+            time.sleep(total_waiting_time)
+    """
+
+    def run_autofocus_interval(self, interval, stop_event):
+        while not stop_event.is_set():
+            print('autofocus running...')
+            autofocus(model=self.model, crop_size=self.crop_size, dof=self.dof,
+                      tracking=True)
+            time.sleep(interval)
+    
     def on_framecounter(self, instance, value):
         self.text = str(value)
-
 
     def startFocus(self):
         # schedule a focus routine
         camera = App.get_running_app().camera
         stage = App.get_running_app().stage
         if camera is not None and stage is not None and camera.IsGrabbing():
-             # get config values
-            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
-            print("Focus Framerate:", focus_fps)
-            z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
-            unit = App.get_running_app().config.get('Livefocus', 'step_units')
-            factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
-
-            self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+            focus_fps = App.get_running_app().config.getfloat('Autofocus', 'focus_fps')
+            print('Focus fps:', focus_fps)
+            self.stop_event = threading.Event()
+            self.autofocus_thread = threading.Thread(target=self.run_autofocus_interval, 
+                args=(focus_fps, self.stop_event,), daemon=True)
+            self.autofocus_thread.start()
         else:
             self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
             self.autofocuscheckbox.state = 'normal'
 
-
     def stopFocus(self):
-        # unschedule a focus routine
-        if self.focusevent:
-            Clock.unschedule(self.focusevent)
-
-
-    def focus(self, z_step, unit, focus_step_factor, *args):
-        # run the actual focus routine - calculate the focus values and correct accordinly.
-        start = time.time()
-        app = App.get_running_app()
-        if not app.camera.IsGrabbing():
-            self.autofocuscheckbox.state = 'normal'
-            return
-        # calculate current value of focus
-        self.focus_history.append(macro.calculate_focus(app.image))
-
-        # calculate control variables if we have enough history
-        if len(self.focus_history)>1 and self.focus_motion != 0:
-            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step, focus_step_factor)
-        else:
-            self.focus_motion = z_step
-        print('Move (z)',self.focus_motion,unit)
-        app.stage.move_z(self.focus_motion, unit)
-        app.coords[2] += self.focus_motion/1000
-        # throw away stuff
-        self.focus_history = self.focus_history[-1:]
-
-        #print('Saving time: ',time.time() - start)
-        return
-
+        self.stop_event.set()
+        self.autofocus_thread.join()
+        print('Stop autofocus')
 
     def trackingButtonCallback(self):
         """Display tracking instruction popup
@@ -2343,7 +2546,6 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
     
-
     def startTracking(self, start_pos_tex_coord: np.array) -> None:
         """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
 
@@ -2442,7 +2644,6 @@ class RuntimeControls(BoxLayout):
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
-        
 
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
@@ -2663,7 +2864,6 @@ class RuntimeControls(BoxLayout):
         dualcolormode = app.config.getboolean('DualColor', 'dualcolormode')
         if dualcolormode:
             image = self.imageacquisitionmanager.dualColorMainSideImage
-
         else:
             image = self.imageacquisitionmanager.image
 
@@ -3008,7 +3208,12 @@ class GlowTrackerApp(App):
         config.setdefaults('Autofocus', {
             'step_size': '0.5',
             'nsteps': '10',
-            'step_units': 'um'
+            'step_units': 'um',
+            'model_path': '',
+            'model_type': 'RESNET_18',
+            'depth_of_field': '15',
+            'focus_fps': '2',
+            'crop_size': '100'
         })
 
         config.setdefaults('Calibration', {
@@ -3475,7 +3680,6 @@ class GlowTrackerApp(App):
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay()
-    
 
     # ask for confirmation of closing
     def on_request_close(self, *args, **kwargs):
