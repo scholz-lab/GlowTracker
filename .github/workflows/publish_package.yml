@@ -21,7 +21,9 @@ jobs:
     # Run the workflow on the latest Ubuntu version
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # NOTE: this permission is mandatory for trusted publishing
+      id-token: write # trusted publishing
+      contents: read  # allow access to repo
+      packages: write # package deployment
     steps:
       # Checkout the repository
       - name: Checkout glowtracker
