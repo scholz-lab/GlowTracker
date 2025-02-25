@@ -157,10 +157,10 @@
      {
         "type": "options",
         "title": "Focus step units",
-        "desc": "micrometer/sec or millimeter/sec",
+        "desc": "micrometer or millimeter",
         "section": "Autofocus",
         "key": "step_units",
-        "options": ["mm/s", "um/s"]
+        "options": ["mm", "um"]
     },
     {
         "type": "title",
@@ -176,10 +176,10 @@
     {
         "type": "options",
         "title": "Calibration step units",
-        "desc": "micrometer/sec or millimeter/sec",
+        "desc": "micrometer or millimeter",
         "section": "Calibration",
         "key": "step_units",
-        "options": ["mm/s", "um/s"]
+        "options": ["mm", "um"]
     },
     {
         "type": "title",
@@ -275,6 +275,13 @@
         "title": "Tracking"
     },
     {
+        "type": "bool",
+        "title": "Display tracking overlay",
+        "desc": "Display the tracking overlay which shows the ROI and the center of mass of the object.",
+        "section": "Tracking",
+        "key": "showtrackingoverlay"
+    },
+    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",
@@ -337,6 +344,20 @@
         "section": "Tracking",
         "key": "mode",
         "options": ["CMS", "Diff", "Min/Max"]
+    },
+    {
+        "type": "numeric",
+        "title": "Minimum Brightness",
+        "desc": "Minimum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value below this threshold will be set to 0.",
+        "section": "Tracking",
+        "key": "min_brightness"
+    },
+    {
+        "type": "numeric",
+        "title": "Maximum Brightness",
+        "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
+        "section": "Tracking",
+        "key": "max_brightness"
     }
 ]
 

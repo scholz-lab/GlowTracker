@@ -16,15 +16,15 @@ exclude = [
 [tool.setuptools.package-data]
 glowtracker = [
     "layout.kv",
-    "macroscope.ini",
     "icons/*",
+    "settings/default.pfs",
     "settings/gui_settings.json",
     "settings/experiment_settings.json"
 ]
 
 [project]
 name = "glowtracker"
-version = "0.9.0"
+version = "0.10.0"
 description = "GlowTracker provides a graphical user interface to operate a macroscope. The macroscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
 authors = [
     { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" }
@@ -37,17 +37,20 @@ readme = "README.md"
 license = {file = "LICENSE.txt"}
 requires-python = ">=3.10"
 dependencies = [
-    "kivy>=2.2.1",
-    "numpy>=1.25.1",
-    "matplotlib>=3.7.2",
-    "zaber-motion>=4.2.0",
-    "pypylon>=1.9.0",
-    "opencv-python>=4.7.0",
-    "scipy>=1.11.1",
-    "scikit-image>=0.22.0",
-    "itk-elastix",
-    "overrides",
-    "pandas"
+    "kivy==2.2.1",
+    "matplotlib==3.7.2",
+    "numpy==1.25.1",
+    "opencv-python==4.7.0.72",
+    "pillow==10.0.0",
+    "scikit-image==0.22.0",
+    "scipy==1.11.1",
+    "zaber-motion==4.2.0",
+    "overrides==7.7.0",
+    "pandas==2.2.0",
+    "pypylon==2.2.0",
+    "itk-elastix==0.19.0",
+    "platformdirs==3.9.1",
+    "pyparsing==3.0.9"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
@@ -60,6 +63,7 @@ keywords = [
     "python",
     "research",
     "macroscope",
+    "microscope",
     "tracking",
     "Zaber",
     "Basler"

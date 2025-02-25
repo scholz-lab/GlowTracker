@@ -4,12 +4,11 @@
 import os
 from multiprocessing.pool import ThreadPool
 from queue import Queue
-from tifffile import imwrite
 from typing import Tuple, List
-from pypylon import pylon
 from skimage.measure import regionprops_table
 from skimage import measure
 import pandas as pd
+import tifffile
 
 # 
 # Own classes
@@ -35,13 +34,13 @@ import cv2
 
 
 #%% Autofocus using z axis
-def zFocus(stage, camera, stepsize, stepunits, nsteps):
+def zFocus(stage, camera: basler.Camera, stepsize, stepunits, nsteps):
     """take a series of images and move the camera, then calculate focus."""
     stack = []
     zpos = []
     stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
     for i in np.arange(0, nsteps):
-            isSuccess, img = basler.single_take(camera)
+            isSuccess, img = camera.singleTake()
             pos = stage.get_position()
             print(pos)
             if isSuccess and len(pos) > 2:
@@ -261,7 +260,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
 
 
-def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False):
+def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int = 255):
     '''
     use image to detect motion of object.
     input: image of shape (N,M) 
@@ -277,20 +276,31 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     # print(xmin, xmax, ymin, ymax)
-    img1_sm = img1[ymin:ymax, xmin:xmax]
     
-    if display:
-        mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display=display, bin_factor=bin_factor)
-    else:
-        mask, resize_factor = create_mask(img1_sm, dark_bg, display=display)
+    # Crop the region of interest.
+    #   Also, we have to copy. Otherwise, we would modified the original image.
+    img1_sm = np.copy( img1[ymin:ymax, xmin:xmax] )
+
+    # Set pixels that are outside of the brightness range to 0
+    img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
+    
+    # Compute tracking mask
+    mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display= display, bin_factor= bin_factor)
 
     h, w = mask.shape
 
+    result = None
+    try:
+        result = find_CMS(mask, display=display)
+    
+    except ValueError as e:
+        raise e
+    
+    # Unpack return values
     if display:
-        (xc, yc), annotated_mask = find_CMS(mask, display=display)
+        (xc, yc), annotated_mask = result
     else:
-        xc, yc = find_CMS(mask, display=display)
-
+        xc, yc = result
    
     # show intermediate steps for debugging
     if display:
@@ -308,10 +318,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         plt.title('img reduced')
         plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
 
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, annotated_mask
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, mask
     
     else:
-        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor
+        return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, mask
     
 
 
@@ -361,15 +371,22 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
         img = img / 255
 
     if dark_bg:
-        img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+
+        try:
+            img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
+        
+        except ValueError as e:
+            print(f'Error computing mask: {e}')
         
         # gamma correction
         gamma = np.log(np.mean(img))/np.log(0.5)
         gamma = np.clip(gamma, 0.5, 2)
         img = img**(1/gamma)
+
     else:
         img = cv2.GaussianBlur(img, (7, 7), 0)
         img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
+        
     intermediate_images.append(img)
     
     # rescale the image to [0, 255] so that further steps
@@ -379,7 +396,6 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
-    
 
     # perform thresholding to binarize the image
     if dark_bg:
@@ -402,8 +418,9 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
 
     if display:
         return img, resize_factor, intermediate_images
+        
     else:
-        return img, resize_factor
+        return img, resize_factor, None
 
 
 def find_CMS(mask, K=5, display=False):
@@ -430,13 +447,20 @@ def find_CMS(mask, K=5, display=False):
         x coordinate of the CMS
     cms_y_center
         y coordinate of the CMS
+    
+    Raise
+    -------
+    ValueError
+        The input image is invalid. Either completely black or white.
     '''
     labels = measure.label(mask)
-    props = pd.DataFrame(regionprops_table(labels, properties=('centroid', 'area')))
+    regionprop = regionprops_table(labels, properties=('centroid', 'area'))
+    props = pd.DataFrame(regionprop)
+
+    if props.empty:
+        raise ValueError("Cannot find any centroid.")
+
     props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
-    
-    props['x'] = props['x'] 
-    props['y'] = props['y']
     
     # keep only the K biggest regions
     props = props.sort_values(by='area', ascending=False).head(K)
@@ -444,7 +468,8 @@ def find_CMS(mask, K=5, display=False):
     middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
     props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
     
-    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] # keep the closest to the previous center
+    # keep the closest to the previous center
+    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] 
     
     if display:
         annotated_mask = mask.copy()
@@ -523,9 +548,9 @@ class ImageSaver:
             if queueItem is not None:
                 
                 img, imgPath, imgFileName = queueItem
-                # Save the image
-                imwrite(os.path.join(imgPath, imgFileName), img)
-                
+                # Save the image    
+                tifffile.imwrite(os.path.join(imgPath, imgFileName), img)
+
             else:
                 # put back on the queue for other consumers
                 imageQueue.put(None)
@@ -689,11 +714,11 @@ class CameraAndStageCalibrator:
         pass
 
 
-    def takeCalibrationImage(self, camera: pylon.InstantCamera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    def takeCalibrationImage(self, camera: basler.Camera, stage: zaber.Stage, stepsize: float, stepunits: str, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         """Take images for camera&stage transformation matrix calibration.
 
         Args:
-            camera (pylon.InstantCamera): pylon camera to take images with.
+            camera (basler.Camera): pylon camera to take images with.
             stage (zaber.Stage): zaber stage class to move the camera with.
             stepsize (float): movement step size in each stage basis axes.
             stepunits (str): stage movement step unit.
@@ -708,16 +733,16 @@ class CameraAndStageCalibrator:
         self.stepsize = stepsize
         self.stepunits = stepunits
 
-        isSuccessImageOrig, self.basisOrigImage = basler.single_take(camera)
+        isSuccessImageOrig, self.basisOrigImage = camera.singleTake()
 
         # Move along stage's X axis
         stage.move_rel((stepsize, 0, 0), stepunits, wait_until_idle = True)
-        isSuccessImageX, self.basisXImage = basler.single_take(camera)
+        isSuccessImageX, self.basisXImage = camera.singleTake()
 
         # Move along stage's Y axis
         stage.move_rel((-stepsize, 0, 0), stepunits, wait_until_idle = True)
         stage.move_rel((0, stepsize, 0), stepunits, wait_until_idle = True)
-        isSuccessImageY, self.basisYImage = basler.single_take(camera)
+        isSuccessImageY, self.basisYImage = camera.singleTake()
 
         # Move back to origin
         stage.move_rel((0, -stepsize, 0), stepunits, wait_until_idle = True)

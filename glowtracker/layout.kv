@@ -18,18 +18,24 @@ MainWindow:
     padding: [10,10,10,10]
     spacing: 10
     MyLogo:
-        size_hint: (0.3, 0.15)
+        size_hint: (0.3, 0.12)
+
     Image:
         fit_mode: 'contain'
         source: 'icons/glowtracker_gray_logo.png'
         border: 0,0,0,0
-        size_hint: (0.5, 0.15)
+        size_hint: (0.5, 0.12)
+
     MyLabel:
-        size_hint: (0.1,0.15)
+        size_hint: (0.1, 0.12)
+        text: "v. 0.10.0"
+
     LeftColumn:
         id: leftcolumn
+
     MiddleColumn:
         id: middlecolumn
+
     RightColumn:
         id: rightcolumn
 
@@ -440,14 +446,14 @@ MainWindow:
             valign: 'top'
             text_size: self.size
             id: stagepos
-            text: 'Stage (mm): ({:.2f},{:.2f},{:.2f})'.format(*app.coords)
+            text: 'Stage (mm): ({:.2f}, {:.2f}, {:.2f})'.format(*app.coords)
         Label:
             #size_hint: (0.5, 0.05)
             valign: 'top'
             pos_hint: {'right': 1}
             text_size: self.size
             id: pixelvalue
-            text: '(0,0,0)'
+            text: '(0, 0, 0)'
             halign: 'right'
         
     RuntimeControls:
@@ -455,9 +461,10 @@ MainWindow:
         size_hint: (1, 0.2)
 
 
-
-<CutBoxLayout@BoxLayout+StencilView>:
+<CutBoxLayout>:
     orientation: 'horizontal'
+
+
 ### live camera image
 <PreviewImage>:
     canvas:
@@ -505,16 +512,30 @@ MainWindow:
             id: trackingcheckbox
             on_state: root.trackingButtonCallback() if self.state=='down' else root.stopTracking()
 
-    GridLayout:
-        cols: 2
-        rows: 3
-        MyLabel:
-            text: 'Buffer'
-            color: '#ffffff'
-        MyCounter:
-            id: buffer
-            color: '#ffffff'
-            text: str(self.value)
+    BoxLayout:
+        orientation: 'vertical'
+
+        BoxLayout:
+            orientation: 'horizontal'
+            MyLabel:
+                text: 'Buffer'
+                color: '#ffffff'
+            MyCounter:
+                id: buffer
+                color: '#ffffff'
+                text: str(self.value)
+
+        BoxLayout:
+            id: trackingoverlayquickbuttonlayout
+            padding: [dp(5), 0, dp(5), dp(5)]
+
+            TrackingOverlayQuickButton:
+                id: trackingoverlayquickbutton
+
+        DualColorViewModeQuickButtonLayout:
+            id: dualcolorviewmodequickbuttonlayout
+            padding: [dp(5), dp(5), dp(5), 0]
+            
 
 ### LiveView, Record, Snap
 <ImageAcquisitionManager>:
@@ -577,6 +598,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'Macro'
+        on_release: root.open_macro()
     MyButton: 
         id:recording
         size_hint: (1, 0.1)
@@ -601,68 +623,191 @@ MainWindow:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    
+
+    Label: 
+        text: "    Press Enter after edited Duration or Framerate to update it's counterpart value."
+        text_size: root.width, None
+        size: self.texture_size
+        size_hint: (1, 0.3)
+        valign: 'top'
+        halign: 'left'
+        markup: True
+        font_size: 13
+        padding: [dp(10), dp(0), dp(10), dp(5)]
+
     GridLayout:
-        cols : 3
-        Label: 
-            text: 'Frames'
-        Label: 
-            text: str(root.nframes)
-        TextInput:
-            id: frames
-            text: str(root.nframes)
-            multiline: False
-            on_text_validate: root.nframes = self.text
-            on_text_validate: root.duration = float(self.text)/root.framerate
+        cols : 2
+        padding: [dp(10), dp(5), dp(10), dp(10)]
+        spacing: [0, dp(15)]
+
         Label: 
             text: 'Framerate (1/s)'
+        Label:
+            text: str(root.framerate)
+
         Label: 
-            text: str(root.framerate)
-        TextInput:
-            id: framerate
-            text: str(root.framerate)
-            multiline: False
-            on_text_validate: root.framerate = self.text
-            on_text_validate: root.duration = root.nframes/float(self.text)
+            text: 'Continuous Recording'
+        ContinuousSwitch:
+            id: continuousswitch
+            
         Label: 
             text: 'Duration (sec)'
-        Label: 
-            text: str(root.duration)
         TextInput:
             id: duration
             text: "{:.2f}".format(root.duration)
             multiline: False
+            halign: 'center'
             on_text_validate: root.duration = self.text
             on_text_validate: root.nframes = int(float(self.text)*root.framerate)
+            disabled: app.config.getboolean('Experiment', 'iscontinuous')
+        
+        Label: 
+            text: 'Frames'
+        TextInput:
+            id: frames
+            text: str(root.nframes)
+            multiline: False
+            halign: 'center'
+            on_text_validate: root.nframes = self.text
+            on_text_validate: root.duration = float(self.text)/root.framerate
+            disabled: app.config.getboolean('Experiment', 'iscontinuous')
+
         Label: 
             text: 'Extension'
-        Label: 
-            text: str(root.fileformat)
         TextInput:
             id: fileformat
             text: root.fileformat
             multiline: False
+            halign: 'center'
             on_text_validate: root.fileformat = self.text
-        Label:
-            text: 'buffer'
-        Label:
-            text: str(root.buffersize)
-        TextInput:
-            id: buffersize
-            text: str(root.buffersize)
-            multiline: False
-            on_text_validate: root.buffersize = int(self.text)
+
         
     BoxLayout:
         size_hint_y: None
-        height: 30
+        height: dp(30)
         Button:
             text: "OK"
             on_release: root.ok()
 
-        # Button:
-        #     text: "Confirm"
-        #     on_release: root.update(frames.text)
+<ContinuousSwitch>:
+    size: root.size
+    pos: root.pos
+
+<MacroScriptWidgetPopup>:
+    # Define the properties for the DraggablePopup
+    drag_rectangle: self.x, self.y, self.width, self.height
+    drag_timeout: 10000000
+    drag_distance: 0
+    overlay_color: [0, 0, 0, 0]
+
+
+<MacroScriptWidget>:
+    size: root.size
+    pos: root.pos
+    
+    orientation: 'vertical'
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: 0.1
+
+        TextInput:
+            id: macroscriptfile
+            text: app.config.get('MacroScript', 'recentscript')
+            size_hint_x: 0.8
+        
+        Button:
+            text: "Load"
+            on_release: root.openLoadMacroScriptWidget()
+            size_hint_x: None
+
+        Button:
+            text: "Save"
+            on_release: root.saveMacroScript()
+            size_hint_x: None
+
+    BoxLayout:
+        orientation: 'horizontal'
+
+        CodeInput:
+            id: macroscripttext
+            text: ''
+            size_hint_x: 0.9
+            do_wrap: False
+            auto_indent: True
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: None
+            
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.05
+                
+            Button:
+                id: runbutton
+                text: "[b]Run[/b]"
+                markup: True
+                on_release: root.runMacroScript()
+                size_hint_y: 0.2
+                background_color: [94/255, 190/255, 88/255, 1]
+                
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.05
+
+            Button:
+                text: "[b]Stop[/b]"
+                markup: True
+                on_release: root.stopMacroScript()
+                size_hint_y: 0.2
+                background_color: [226/255, 54/255, 18/255, 1]
+            
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.3
+            
+            Button:
+                text: "Wiki"
+                background_color: (0, 0, 0, 0)  # Transparent background
+                color: (0.5, 0.6, 1, 1)  # Blue text color
+                underline: True
+                size_hint_y: 0.1
+
+                on_release: 
+                    # importing webbrowser module 
+                    import webbrowser 
+                    # it will open google window in your browser 
+                    webbrowser.open('https://scholz-lab.github.io/GlowTracker/software/macro_script.html') 
+            
+            Button:
+                text: "Close"
+                on_release: root.closeCallback()
+                size_hint_y: 0.1
+                
+
+<LoadMacroScriptWidget>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+            path: ''
+            # dirselect: True
+            # path: '/home'
+            on_submit: root.load(self.selection)
+
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+
+            Button:
+                text: "Load"
+                on_release: root.load(filechooser.selection)
 
 <CalibrationTabPanel>:
     size: root.size

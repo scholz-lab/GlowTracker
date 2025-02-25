@@ -6,3 +6,6 @@ record/
 
 # logs
 *.log
+
+# Runtime config file
+glowtracker.ini
