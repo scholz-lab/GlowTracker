@@ -19,7 +19,7 @@ nav_order: 4
 | Thread adapter | SM1T4 - Adapter  |  SM1 (1.035"-40) Coupler, External Threads, Fixed Shoulder and Locking Ring | 1 | 26,94 | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1T4)
 |  | SM1A25 - Adapter | Adapter with External M25.5 x 0.5 Threads and Internal SM1 Threads | 1 | 20,43 | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A25)
 |  |  | |  |  |
-| ND Filters   | NDK01 - Box with 10 Reflective ND Filters | Ø25 mm, SM1 Mounted, 350 - 1100 nm  | 1 | 673,81 | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=NDK01)
+| ND Filters   | NEK01 - Box with 10 Absorptive Ø25 mm ND Filters  | SM1-Mounted, 400 - 650 nm  | 1 | 578,28 | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=NEK01)
 
 
 
