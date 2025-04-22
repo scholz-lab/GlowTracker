@@ -2038,7 +2038,9 @@ class ImageOverlay(FloatLayout):
                 # Add the Image widget
                 self.trackingMaskLayout.add_widget(self.trackingMask)
             
-            if self.trackingMask.texture is None:
+            if self.trackingMask.texture is None \
+                or self.trackingMask.texture.width != trackingMask.shape[1] \
+                or self.trackingMask.texture.height != trackingMask.shape[0]:
 
                 # Create Texture
                 self.trackingMask.texture = Texture.create(
