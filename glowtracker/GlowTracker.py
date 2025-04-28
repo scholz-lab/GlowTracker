@@ -73,6 +73,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
+from AutoFocus import AutoFocusPID
 
 # 
 # Math
@@ -252,21 +253,61 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
-    #autofocus popup
-    def show_autofocus(self):
+    def autoFocusButtonCallback(self):
+
         camera = self.app.camera
         stage = self.app.stage
-        if camera is not None and stage is not None:
-            content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
-            self._popup = Popup(title="Focus the camera", content=content,
-                                size_hint=(0.9, 0.9))
-            #unbind keyboard events
-            self.app.unbind_keys()
-            self._popup.open()
-        else:
-            self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a camera!',
+
+        if camera is None or stage is None:
+            # Popup a warning dialog
+            self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a running camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+            
+        else:
+
+            # Check if acquiring image
+            imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+
+            if imageAcquisitionManager.liveviewbutton.state == 'normal' \
+                and imageAcquisitionManager.recordbutton.state == 'normal':
+                print('Please start LiveView or Record to auto adjust focus.')
+                return
+
+            
+            image: np.ndarray | None = None
+
+            dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            
+            # Init autofocus class
+            autoFocusPID = AutoFocusPID()
+
+            print('Start autofocus')
+            counter = 0
+            
+            while not autoFocusPID.isStable():
+
+                # Get current stage-z pos
+                stagePos = stage.get_position()
+                if stagePos is None:
+                    return
+
+                pos_z = stagePos[2]
+
+                # Get current image
+                if dualcolormode:
+                    image = imageAcquisitionManager.dualColorMainSideImage
+                else:
+                    image = imageAcquisitionManager.image
+
+                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, dt= 1)
+
+                print(f'round: {counter}, error: {autoFocusPID.errorLog[-1]}, new_z: {new_pos_z}')
+
+                # Move lens to new lens_position
+                stage.move_abs([0, 0, new_pos_z], unit= 'mm', wait_until_idle= True)
+
+            print('Autofocus is stable!')
 
 
     # run autofocussing once on current location
