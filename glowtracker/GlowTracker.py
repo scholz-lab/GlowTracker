@@ -278,14 +278,23 @@ class LeftColumn(BoxLayout):
             image: np.ndarray | None = None
 
             dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
+
+            prevImageTimeStamp: float = 0
+            deltaTime: float = 0
             
-            # Init autofocus class
-            autoFocusPID = AutoFocusPID()
+            # Instantiate autofocus class
+            #   Load settings
+            kp = self.app.config.getfloat('Autofocus', 'KP')
+            ki = self.app.config.getfloat('Autofocus', 'KI')
+            kd = self.app.config.getfloat('Autofocus', 'KD')
+            maxStep = self.app.config.getint('Autofocus', 'MAXSTEP')
+            autoFocusPID = AutoFocusPID(kp, ki, kd)
 
             print('Start autofocus')
             counter = 0
             
-            while not autoFocusPID.isStable():
+            while not autoFocusPID.isStable() \
+                and len(autoFocusPID.focusLog) < maxStep:
 
                 # Get current stage-z pos
                 stagePos = stage.get_position()
@@ -300,9 +309,23 @@ class LeftColumn(BoxLayout):
                 else:
                     image = imageAcquisitionManager.image
 
-                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, dt= 1)
+                # Get time stamp and convert from ms to sec
+                imageTimeStamp = imageAcquisitionManager.imageTimeStamp * 1e-3
+
+                if counter == 0:
+                    deltaTime = 1
+
+                else:
+                    deltaTime = imageTimeStamp - prevImageTimeStamp
+                
+                print(f'deltaTime: {deltaTime}')
+                    
+                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, deltaTime)
 
                 print(f'round: {counter}, error: {autoFocusPID.errorLog[-1]}, new_z: {new_pos_z}')
+
+                prevImageTimeStamp = imageTimeStamp
+                counter += 1
 
                 # Move lens to new lens_position
                 stage.move_abs([0, 0, new_pos_z], unit= 'mm', wait_until_idle= True)
@@ -3075,9 +3098,10 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Autofocus', {
-            'step_size': '0.5',
-            'nsteps': '10',
-            'step_units': 'um'
+            'kp': '0.5',
+            'ki': '0.01',
+            'kd': '0.1',
+            'MAXSTEP' : '10'
         })
 
         config.setdefaults('Calibration', {

@@ -142,25 +142,31 @@
     },
     {
         "type": "numeric",
-        "title": "Steps",
-        "desc": "how many images to take for autofocusing",
+        "title": "K_p",
+        "desc": "const",
         "section": "Autofocus",
-        "key": "nsteps"
+        "key": "kp"
     },
     {
         "type": "numeric",
-        "title": "Stepsize",
-        "desc": "how large are the steps",
+        "title": "K_i",
+        "desc": "const",
         "section": "Autofocus",
-        "key": "step_size"
+        "key": "ki"
     },
-     {
-        "type": "options",
-        "title": "Focus step units",
-        "desc": "micrometer or millimeter",
+    {
+        "type": "numeric",
+        "title": "K_d",
+        "desc": "const",
         "section": "Autofocus",
-        "key": "step_units",
-        "options": ["mm", "um"]
+        "key": "kd"
+    },
+    {
+        "type": "numeric",
+        "title": "Max steps",
+        "desc": "Maxinum number of steps to perform autofocus iteration.",
+        "section": "Autofocus",
+        "key": "MAXSTEP"
     },
     {
         "type": "title",

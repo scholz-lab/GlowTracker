@@ -80,7 +80,10 @@ if __name__ == '__main__':
     # Get current stage-z pos
     pos_z = 0.0
 
-    while not autoFocusPID.is_focus_stable():
+    MAX_STEP = 10
+
+    while not autoFocusPID.is_focus_stable() \
+        and len(autoFocusPID.focusLog) < MAX_STEP:
 
         # Take an image at the current position
         image = np.array([], np.float32)
