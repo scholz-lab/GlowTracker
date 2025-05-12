@@ -73,7 +73,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
-from AutoFocus import AutoFocusPID
+from AutoFocus import AutoFocusPID, FocusMode
 
 # 
 # Math
@@ -318,11 +318,9 @@ class LeftColumn(BoxLayout):
                 else:
                     deltaTime = imageTimeStamp - prevImageTimeStamp
                 
-                print(f'deltaTime: {deltaTime}')
-                    
-                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, deltaTime)
+                print(f'round: {counter}')
 
-                print(f'round: {counter}, error: {autoFocusPID.errorLog[-1]}, new_z: {new_pos_z}')
+                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, 1)
 
                 prevImageTimeStamp = imageTimeStamp
                 counter += 1

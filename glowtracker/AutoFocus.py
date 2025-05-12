@@ -1,6 +1,22 @@
 from typing import List
 import cv2
 import numpy as np
+from enum import Enum
+
+class FocusMode(Enum):
+    # Variance of Laplace
+    VarianceOfLaplace = 0
+    # Tenengrad
+    Tenengrad = 1
+    # Brenner's
+    Brenners = 2
+    # Energy of Laplacian
+    EnergyOfLaplacian = 3
+    # Modified Laplacian
+    ModifiedLaplace = 4
+    # Sum of High-Frequency DCT Coefficient
+    SumOfHighDCT = 5
+
 
 class AutoFocusPID:
 
@@ -17,19 +33,58 @@ class AutoFocusPID:
         self.errorLog: List[float] = []
         self.posLog: List[float] = []
 
+        self.direction: int = 1
 
-    def estimateFocus(self, image: np.ndarray) -> float:
-        """Compute focus measure using Variance of Laplacian."""
+
+    def estimateFocus(self, image: np.ndarray, mode: FocusMode = FocusMode.SumOfHighDCT) -> float:
+        """Estimate focus of an image.
+
+        Args:
+            image (np.ndarray): gray-scale image
+            mode (int, optional): Focus mode. Defaults to 5 which is Sum of High-Frequency DCT Coefficients.
+
+        Returns:
+            float: estimated focus
+        """
+        estimatedFocus = 0
+
+        if mode == FocusMode.VarianceOfLaplace:
+
+            laplacian = cv2.Laplacian(image, cv2.CV_64F)
+            estimatedFocus = laplacian.var()
+
+        elif mode == FocusMode.Tenengrad:
+            gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
+            gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
+            gradient_magnitude = gx**2 + gy**2
+            estimatedFocus = np.mean(gradient_magnitude)
+
+        elif mode == FocusMode.Brenners:
+            shifted = np.roll(image, -2, axis=1)
+            diff = (image - shifted)**2
+            estimatedFocus = np.sum(diff)
         
-        laplacian = cv2.Laplacian(image, cv2.CV_64F)
+        elif mode == FocusMode.EnergyOfLaplacian:
+            lap = cv2.Laplacian(image, cv2.CV_64F)
+            estimatedFocus = np.sum(np.abs(lap))
+        
+        elif mode == FocusMode.ModifiedLaplace:
+            mlap = cv2.Laplacian(image, cv2.CV_64F, ksize=3)
+            estimatedFocus = np.sum(np.abs(mlap))
+        
+        elif mode == FocusMode.SumOfHighDCT:
+            resized = cv2.resize(image, (32, 32))  # Small for fast DCT
+            dct = cv2.dct(np.float32(resized))
+            hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
+            estimatedFocus = np.sum(np.abs(hf_coeffs))
 
-        return laplacian.var()
+        return estimatedFocus
         
 
-    def executePIDStep(self, image: np.ndarray, currentPos: float, dt: float = 1) -> float:
+    def executePIDStep(self, image: np.ndarray, currentPos: float, dt: float = 1, mode: FocusMode = FocusMode.SumOfHighDCT) -> float:
         """Perform one PID control step based on current image and lens position."""
         
-        focus_measure = self.estimateFocus(image)
+        focus_measure = self.estimateFocus(image, mode)
 
         # If this is the first time executing
         prevFocus: float = focus_measure
@@ -40,8 +95,13 @@ class AutoFocusPID:
             prevError = self.errorLog[-1]
             
         # Compute error as a simple gradient.
-        # TODO: Change step size to time base?
         error = (focus_measure - prevFocus) / dt
+
+        # # Auto direction reversal
+        # if error < 0:
+        #     self.direction *= -1
+        #     error = abs(error)  # Flip the gradient to remain positive
+
 
         # PID calculations
         self.integral += error
@@ -52,6 +112,9 @@ class AutoFocusPID:
 
         # Update lens position based on PID output
         newPos = currentPos + pid_output
+
+        print(f'\t{focus_measure:.4f}, {error:.4f}, {self.KP * error:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}')
+
 
         # Record
         self.focusLog.append(focus_measure)
