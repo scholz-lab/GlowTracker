@@ -2,6 +2,7 @@ from typing import List
 import cv2
 import numpy as np
 from enum import Enum
+import math
 
 class FocusMode(Enum):
     # Variance of Laplace
@@ -16,6 +17,71 @@ class FocusMode(Enum):
     ModifiedLaplace = 4
     # Sum of High-Frequency DCT Coefficient
     SumOfHighDCT = 5
+
+class SimpleFocusOptimizer:
+
+    def __init__(self, initial_step=0.1, min_step=0.001, max_iterations=20):
+        
+        self.initial_step = initial_step
+        self.min_step = min_step
+        self.max_iterations = max_iterations
+        self.reset()
+
+    def reset(self):
+
+        self.current_step = self.initial_step
+        self.direction = 1  # Start moving forward
+        self.iterations = 0
+        self.best_focus = None
+        self.best_pos = None
+        self.last_pos = None
+        self.last_focus = None
+        self.done = False
+
+
+    def estimateFocus(self, image):
+        resized = cv2.resize(image, (32, 32))  # Small for fast DCT
+        dct = cv2.dct(np.float32(resized))
+        hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
+        estimatedFocus = np.sum(np.abs(hf_coeffs))
+        return estimatedFocus
+
+    def execute_one_step(self, position, image):
+        
+        focus_value = self.estimateFocus(image)
+        
+        if self.done:
+            return None
+
+        self.iterations += 1
+
+        if self.best_focus is None or focus_value > self.best_focus:
+            self.best_focus = focus_value
+            self.best_pos = position
+
+        if self.last_focus is not None:
+            if focus_value < self.last_focus:
+                # We got worse → reverse and reduce step
+                self.direction *= -1
+                self.current_step *= 0.5
+
+        if self.current_step < self.min_step or self.iterations >= self.max_iterations:
+            self.done = True
+            return None
+
+        # Update state
+        self.last_pos = position
+        self.last_focus = focus_value
+
+        # Return next lens position
+        next_pos = position + self.direction * self.current_step
+        return next_pos
+
+    def should_continue(self):
+        return not self.done
+
+    def get_result(self):
+        return self.best_pos, self.best_focus
 
 
 class AutoFocusPID:
@@ -46,7 +112,7 @@ class AutoFocusPID:
         Returns:
             float: estimated focus
         """
-        estimatedFocus = 0
+        estimatedFocus: float = 0
 
         if mode == FocusMode.VarianceOfLaplace:
 
@@ -89,37 +155,46 @@ class AutoFocusPID:
         # If this is the first time executing
         prevFocus: float = focus_measure
         prevError: float = 0
+        prevPos: float = 0
 
         if len(self.focusLog) > 0:
             prevFocus = self.focusLog[-1]
             prevError = self.errorLog[-1]
+            prevPos = self.posLog[-1]
             
         # Compute error as a simple gradient.
-        error = (focus_measure - prevFocus) / dt
+        # error = (focus_measure - prevFocus) / dt
 
-        # # Auto direction reversal
-        # if error < 0:
-        #     self.direction *= -1
-        #     error = abs(error)  # Flip the gradient to remain positive
+        moved_distance = currentPos - prevPos
 
-
+        error = (focus_measure - prevFocus) / math.copysign(1, moved_distance)
+        
         # PID calculations
         self.integral += error
 
-        derivative = (error - prevError)
+        derivative = (error - prevError) / moved_distance
 
         pid_output = (self.KP * error) + (self.KI * self.integral) + (self.KD * derivative)
+
+
+        if len(self.focusLog) == 0:
+            # If this is a first time, just nudge it a little bit
+            pid_output = currentPos * 0.001
+
+
+        pid_output = max( min(0.2, pid_output), -0.2 )
 
         # Update lens position based on PID output
         newPos = currentPos + pid_output
 
-        print(f'\t{focus_measure:.4f}, {error:.4f}, {self.KP * error:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}')
+
+        print(f'\t{focus_measure:.4f}, {error:.4f}, {self.KP * error:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}, {pid_output:.4f}, {currentPos:.4f}, {newPos:.4f}')
 
 
         # Record
         self.focusLog.append(focus_measure)
         self.errorLog.append(error)
-        self.posLog.append(newPos)
+        self.posLog.append(currentPos)
 
         return newPos 
 

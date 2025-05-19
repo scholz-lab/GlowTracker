@@ -73,7 +73,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
-from AutoFocus import AutoFocusPID, FocusMode
+from AutoFocus import AutoFocusPID, FocusMode, SimpleFocusOptimizer
 
 # 
 # Math
@@ -288,13 +288,20 @@ class LeftColumn(BoxLayout):
             ki = self.app.config.getfloat('Autofocus', 'KI')
             kd = self.app.config.getfloat('Autofocus', 'KD')
             maxStep = self.app.config.getint('Autofocus', 'MAXSTEP')
+            
             autoFocusPID = AutoFocusPID(kp, ki, kd)
 
+            optimizer = SimpleFocusOptimizer()
+            optimizer.reset()
+            
             print('Start autofocus')
             counter = 0
             
-            while not autoFocusPID.isStable() \
-                and len(autoFocusPID.focusLog) < maxStep:
+            
+            # while not autoFocusPID.isStable() \
+            #     and len(autoFocusPID.focusLog) < maxStep:
+
+            while optimizer.should_continue():
 
                 # Get current stage-z pos
                 stagePos = stage.get_position()
@@ -312,21 +319,20 @@ class LeftColumn(BoxLayout):
                 # Get time stamp and convert from ms to sec
                 imageTimeStamp = imageAcquisitionManager.imageTimeStamp * 1e-3
 
-                if counter == 0:
-                    deltaTime = 1
+                # new_pos_z = autoFocusPID.executePIDStep(image, pos_z, 1)
 
-                else:
-                    deltaTime = imageTimeStamp - prevImageTimeStamp
-                
-                print(f'round: {counter}')
-
-                new_pos_z = autoFocusPID.executePIDStep(image, pos_z, 1)
+                new_pos_z = optimizer.execute_one_step(pos_z, image)
 
                 prevImageTimeStamp = imageTimeStamp
                 counter += 1
 
                 # Move lens to new lens_position
-                stage.move_abs([0, 0, new_pos_z], unit= 'mm', wait_until_idle= True)
+                if new_pos_z is not None:
+                    stage.move_abs([0, 0, new_pos_z], unit= 'mm', wait_until_idle= True)
+            
+
+            best_pos_z, best_focus = optimizer.get_result()
+            stage.move_abs([0, 0, best_pos_z], unit= 'mm', wait_until_idle= True)
 
             print('Autofocus is stable!')
 

@@ -4,6 +4,8 @@ import numpy as np
 import os
 from PIL import Image
 import pandas as pd
+from datetime import datetime
+import re
 
 FOCUS_MODE_DICT = {
     0: 'Variance of Laplace',
@@ -51,6 +53,46 @@ def estimateFocus(image: np.ndarray, mode: int) -> float:
     return float(estimatedFocus)
 
 
+
+def read_tiff_images_chronologically(directory_path):
+    arrays = []
+
+    # List all TIFF files
+    file_names = [
+        f for f in os.listdir(directory_path)
+        if f.lower().endswith('.tiff') or f.lower().endswith('.tif')
+    ]
+
+    # Function to extract datetime from filename
+    def extract_datetime(filename):
+        match = re.search(r"(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d+)", filename)
+        if match:
+            timestamp_str = match.group(1)
+            try:
+                # Remove microseconds part (if any), or split as needed
+                base_time, micro = timestamp_str.rsplit('-', 1)
+                dt = datetime.strptime(base_time, "%Y-%m-%d-%H-%M-%S")
+                micro = int(micro)
+                return dt.replace(microsecond=micro)
+            except Exception as e:
+                print(f"Error parsing datetime in {filename}: {e}")
+        return datetime.min  # fallback: send to start of sort
+
+    # Sort files by extracted datetime
+    sorted_files = sorted(file_names, key=extract_datetime)
+
+    # Load images as NumPy arrays
+    for file_name in sorted_files:
+        full_path = os.path.join(directory_path, file_name)
+        try:
+            with Image.open(full_path) as img:
+                arrays.append(np.array(img))
+        except Exception as e:
+            print(f"Failed to load {file_name}: {e}")
+
+    return arrays
+
+
 def read_arrays_from_directory(directory_path: str):
     arrays = []
     
@@ -79,9 +121,10 @@ def read_arrays_from_directory(directory_path: str):
 
 if __name__ == '__main__':
 
-    imageFolderPath = 'C:/Workspace/GlowTracker/glowtracker/record'
+    imageFolderPath = 'C:/Workspace/GlowTracker/glowtracker/record/numba9'
 
-    images = read_arrays_from_directory(imageFolderPath)
+    # images = read_arrays_from_directory(imageFolderPath)
+    images = read_tiff_images_chronologically(imageFolderPath)
 
     # Create a DataFrame filled with zeros
     df = pd.DataFrame(0, index= range(len(images)), columns= FOCUS_MODE_DICT.items())
