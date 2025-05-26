@@ -710,7 +710,7 @@ class LoadMacroScriptWidget(BoxLayout):
 
 
 class CalibrationTabPanel(TabbedPanel):
-    """Calibration widget that holds CameraAndStageCalibration, and DualColorCalibration
+    """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
     """    
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -722,7 +722,8 @@ class CalibrationTabPanel(TabbedPanel):
         self.closeCallback = closeCallback
         self.ids.stagecalibration.setCloseCallback( closeCallback )
         self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
-    
+        self.ids.depthoffieldcalibration.setCloseCallback( closeCallback )
+
 
 class CameraAndStageCalibration(BoxLayout):
     """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
@@ -806,7 +807,7 @@ class CameraAndStageCalibration(BoxLayout):
 
         # Show axis figure
         stageToImageRotMat = np.linalg.inv(app.imageToStageRotMat)
-        plotImage = macro.renderChangeOfBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
+        plotImage = macro.CameraAndStageCalibrator.renderChangeOfBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
         self.ids.cameraandstageaxes.texture = imageToTexture(plotImage)
 
         # Resume the camera to previous state
@@ -895,6 +896,65 @@ class DualColorCalibration(BoxLayout):
 
         # Update the composite display image
         self.ids.calibratedimage.texture = imageToTexture(combinedImage)
+
+        # Resume the camera to previous state
+        liveViewButton.state = prevLiveViewButtonState
+
+
+class DepthOfFieldCalibration(BoxLayout):
+    """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
+    """    
+    closeCallback = ObjectProperty(None)
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+    
+
+    def calibrate(self):
+        """Execute the camera and stage calibration process.
+            1. Take calibration images.
+            2. Fit normal distribution curve.
+            3. Estimate DOF as 20% area about peak focus.
+            4. Display results.
+        """        
+        app: GlowTrackerApp = App.get_running_app()
+        camera: basler.Camera = app.camera
+        stage: Stage = app.stage
+
+        if camera is None or stage is None:
+            return
+        
+        # stop camera if already running
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
+        
+        # get config values
+        depthoffieldsearchdistance = app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+        depthoffieldnumsampleimages = app.config.getint('Calibration', 'depthoffieldnumsampleimages')
+
+        # Take calibration images
+        depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+        
+        # Estimate DOF
+        try:
+            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages)
+
+            # Save to config
+            app.config.set('Camera', 'depthoffield', estimatedDof)
+            app.config.write()
+
+            # Display estimation plot
+            estimatedDofPlotImage = depthOfFieldEstimator.genEstimatedDofPlot()
+            self.ids.estimateddofplot.texture = imageToTexture(estimatedDofPlotImage)
+
+        except Exception as e:
+            print(f'Failed to estimate depth of field: {e}')
 
         # Resume the camera to previous state
         liveViewButton.state = prevLiveViewButtonState
@@ -3098,7 +3158,8 @@ class GlowTrackerApp(App):
             'display_fps': '15',
             'rotation': '0',
             'imagenormaldir': '+Z',
-            'pixelsize': '1'
+            'pixelsize': '1',
+            'depthoffield': '0.0001'
         })
 
         config.setdefaults('Autofocus', {
@@ -3110,7 +3171,9 @@ class GlowTrackerApp(App):
 
         config.setdefaults('Calibration', {
             'step_size': '300',
-            'step_units': 'um'
+            'step_units': 'um',
+            'depthoffieldsearchdistance': '2',
+            'depthoffieldnumsampleimages' : '50'
         })
 
         config.setdefaults('DualColor', {

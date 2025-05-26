@@ -22,6 +22,8 @@ import Zaber_control as zaber
 import math
 import numpy as np
 import scipy.ndimage as ndi
+from scipy.optimize import curve_fit
+from scipy.stats import norm
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
@@ -871,6 +873,54 @@ class CameraAndStageCalibrator:
 
         return pixelSize * imageToStageMat, imageToStageMat
 
+    
+    @staticmethod
+    def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+        """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
+
+        Args:
+            stageToImageMat (np.ndarray): _description_
+
+        Returns:
+            np.ndarray: _description_
+        """    
+        # Define the coordinates for the vectors
+        stageX = [1, 0]  # Vector from origin to (1,0)
+        stageY = [0, 1]  # Vector from origin to (0,1)
+        imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
+        imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
+
+        # Create the plot
+        fig = plt.figure(figsize=(6, 6))
+        
+        def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
+            plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
+                            ha= 'center', fontsize= 12, color= 'black')
+        
+        drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
+        drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
+
+        # Set plot limits and labels
+        plt.xlim(-1, 1)
+        plt.ylim(-1, 1)
+        plt.xlabel('X')
+        plt.ylabel('Y')
+
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+        return image_array
+
 
 class DualColorImageCalibrator:
     
@@ -998,48 +1048,151 @@ class DualColorImageCalibrator:
         return transformationMat
 
 
-def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
-    """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
-
-    Args:
-        stageToImageMat (np.ndarray): _description_
-
-    Returns:
-        np.ndarray: _description_
-    """    
-    # Define the coordinates for the vectors
-    stageX = [1, 0]  # Vector from origin to (1,0)
-    stageY = [0, 1]  # Vector from origin to (0,1)
-    imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
-    imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
-
-    # Create the plot
-    fig = plt.figure(figsize=(6, 6))
+class DepthOfFieldEstimator:
     
-    def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
-        plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
-        plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
-                        ha= 'center', fontsize= 12, color= 'black')
+    def __init__(self):
+
+        # Create a DataFrame to store DoF data 
+        self.dofDataFrame = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'])
+
+        self.normDistParams: list[float, float, float, float] = [0, 0, 0, 0]
+
+
+    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> float:
+        
+        self._takeCalibrationImages(camera, stage, searchDistance, numImages)
+        
+        self.normDistParams = self._fitDataToNormalDist()
+
+        # Find the x position where cumulative area from mu to x is 10%
+        p = 0.5 + 0.1  # 0.60 cumulative probability
+        z = norm.ppf(p)  # z-score
+        C, A, mu, sigma = self.normDistParams
+        x_pct_end = mu + z * sigma
+        x_pct_begin = mu - z * sigma
+
+        # Compute dof as range that cover 20% about mean
+        estimatedDof = x_pct_end - x_pct_begin
+
+        return estimatedDof
     
-    drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
-    drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
-    drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
-    drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
 
-    # Set plot limits and labels
-    plt.xlim(-1, 1)
-    plt.ylim(-1, 1)
-    plt.xlabel('X')
-    plt.ylabel('Y')
+    def _takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> None:
+        
+        # Create an empty DataFrame
+        df = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'], index= range(numImages))
+        
+        # Save current position
+        startingPos = stage.get_position(unit='mm')
 
-    # Add grid and legend
-    plt.grid(True)
-    plt.legend()
+        # Compute moving position
+        currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
+        stepSize_z = searchDistance / (numImages - 1)
 
-    # Render the plot to a numpy array
-    canvas = FigureCanvasAgg(fig)
-    canvas.draw()
-    width, height = fig.get_size_inches() * fig.get_dpi()
-    image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+        # Go to the beginning position
+        stage.move_abs(currentPos, wait_until_idle= True)
 
-    return image_array
+        for i in range(numImages):
+
+            # Take an image
+            isSuccess, image = camera.singleTake()
+            
+            if not isSuccess:
+                raise RuntimeError('Taking an image is unsuccessful')
+
+            # Estimate focus of the image
+            estimatedFocus = estimateFocus(image)
+            
+            # Store the image
+            df.iloc[i] = [currentPos[2], image, estimatedFocus]
+            
+            # Move to a new position
+            currentPos[2] = currentPos[2] + stepSize_z
+            stage.move_abs(currentPos, wait_until_idle= True)
+
+        # Return stage to starting position
+        stage.move_abs(startingPos)
+
+        self.dofDataFrame = df
+
+
+    @staticmethod
+    def shifted_normal_dist(x, C, A, mu, sigma):
+        return C + A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
+        
+
+    def _fitDataToNormalDist(self):
+
+        x_data = self.dofDataFrame['pos_z'].tolist()
+        y_data = self.dofDataFrame['estimatedFocus'].tolist()
+
+        # Initial guesses: [baseline, amplitude, center, spread]
+        C0 = np.min(y_data)
+        A0 = np.max(y_data) - C0
+        mu0 = x_data[np.argmax(y_data)]
+        sigma0 = (np.max(x_data) - np.min(x_data)) / 6  # reasonable guess for spread
+
+        p0 = [C0, A0, mu0, sigma0]
+        
+        # Curve fitting
+        normDistParams, _ = curve_fit(DepthOfFieldEstimator.shifted_normal_dist, x_data, y_data, p0=p0)
+        
+        return normDistParams
+
+    
+    def genEstimatedDofPlot(self) -> np.ndarray:
+        
+        # Create the plot
+        fig = plt.figure(figsize=(6, 6))
+
+        x_data = self.dofDataFrame['pos_z'].tolist()
+        y_data = self.dofDataFrame['estimatedFocus'].tolist()
+        
+        # Plotting
+        x_fit = np.linspace(min(x_data), max(x_data), 500)
+
+        y_normal_fit = DepthOfFieldEstimator.shifted_normal_dist(x_fit, *self.normDistParams)
+
+        plt.plot(x_data, y_data, 'bo', label='data')
+        plt.plot(x_fit, y_normal_fit, 'r-', label='fitted normal distribution')
+        plt.xlim(min(x_data), max(x_data))
+        plt.ylim(min(y_data), max(y_data))
+        plt.xlabel('Position')
+        plt.ylabel('Focus')
+        plt.title('Estimated Focus and Depth of Field')
+        plt.tight_layout()
+
+        # Find the x position where cumulative area from mu to x is 10%
+        p = 0.5 + 0.1  # 0.60 cumulative probability
+        z = norm.ppf(p)  # z-score
+        C, A, mu, sigma = self.normDistParams
+        x_pct_end = mu + z * sigma
+        x_pct_begin = mu - z * sigma
+
+        # Shade the area from -z to z
+        x_fill = np.linspace(x_pct_begin, x_pct_end, 200)
+        y_fill = DepthOfFieldEstimator.shifted_normal_dist(x_fill, *self.normDistParams)
+        plt.fill_between(x_fill, y_fill, C, color='green', alpha=0.4, label='20% area at mean')
+
+        # Plot vertical lines at x_pct_begin, x_pct_end for clarity
+        plt.axvline(x_pct_begin, color='blue', linestyle='--', label=f'lower boundary (x={x_pct_begin:.2f})')
+        plt.axvline(x_pct_end, color='green', linestyle='--', label=f'upper boundary (x={x_pct_end:.2f})')
+
+        # Add legend
+        plt.legend()
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        plotImage = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+        return plotImage
+
+
+def estimateFocus(image):
+    resized = cv2.resize(image, (32, 32))  # Small for fast DCT
+    dct = cv2.dct(np.float32(resized))
+    hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
+    estimatedFocus = np.sum(np.abs(hf_coeffs))
+    return estimatedFocus

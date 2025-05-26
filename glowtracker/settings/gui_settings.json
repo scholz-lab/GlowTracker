@@ -131,6 +131,13 @@
     },
     {
         "type": "numeric",
+        "title": "Depth of Field (mm)",
+        "desc": "Camera depth of field. Can be estimated in Depth of Field calibration tab.",
+        "section": "Camera",
+        "key": "depthoffield"
+    },
+    {
+        "type": "numeric",
         "title": "Pixelsize",
         "desc": "Use calibration to calculate (um/px)",
         "section": "Camera",
@@ -186,6 +193,20 @@
         "section": "Calibration",
         "key": "step_units",
         "options": ["mm", "um"]
+    },
+    {
+        "type": "numeric",
+        "title": "Depth of Field search distance.",
+        "desc": "Distance (mm) range about current position to estimate Depth of Field from.",
+        "section": "Calibration",
+        "key": "depthoffieldsearchdistance"
+    },
+    {
+        "type": "numeric",
+        "title": "Depth of Field number of sample images.",
+        "desc": "Number of sample images to take to estimate Depth of Field from.",
+        "section": "Calibration",
+        "key": "depthoffieldnumsampleimages"
     },
     {
         "type": "title",

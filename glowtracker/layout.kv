@@ -826,6 +826,12 @@ MainWindow:
         
         DualColorCalibration:
             id: dualcolorcalibration
+    
+    TabbedPanelItem:
+        text: 'Depth of Field Calibration'
+
+        DepthOfFieldCalibration:
+            id: depthoffieldcalibration
 
 
 <CameraAndStageCalibration>:
@@ -936,6 +942,49 @@ MainWindow:
             id: rotation
             size_hint_x: .25
             text: f"Rotation (rad): {app.config.getfloat('DualColor', 'rotation'):.3f}"
+        Button:
+            text: "Calibrate"
+            size_hint_x: .35
+            on_release: root.calibrate()
+        Button:
+            text: "Close"
+            size_hint_x: .15
+            on_release: root.closeCallback()
+
+
+<DepthOfFieldCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    GridLayout:
+        cols: 4
+        spacing: 20
+
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Image'
+                size_hint_y: 0.1
+            Image:
+                id: bestfocusimage
+
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'Estimated Depth of Field'
+                size_hint_y: 0.1
+            Image:
+                id: estimateddofplot
+    
+    BoxLayout:
+        size_hint_y: .08
+
+        Label:
+            id: pxsize
+            # size_hint_x: .5
+            text: f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.4f} mm"
         Button:
             text: "Calibrate"
             size_hint_x: .35
