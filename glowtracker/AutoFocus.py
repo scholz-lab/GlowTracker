@@ -18,7 +18,7 @@ class FocusMode(Enum):
     # Sum of High-Frequency DCT Coefficient
     SumOfHighDCT = 5
 
-class SimpleFocusOptimizer:
+class Autofocus:
 
     def __init__(self, initial_step=0.1, min_step=0.001, max_iterations=20):
         
@@ -26,6 +26,18 @@ class SimpleFocusOptimizer:
         self.min_step = min_step
         self.max_iterations = max_iterations
         self.reset()
+
+    def __init__(self, step_size=1.0, min_step=0.1, trend_window=5, damping=0.9):
+        self.step_size = step_size
+        self.min_step = min_step
+        self.damping = damping
+        self.direction = 1  # +1 = forward, -1 = backward
+        self.trend_window = trend_window
+        self.trend_buffer = collections.deque(maxlen=trend_window)
+        self.last_focus = None
+        self.best_focus = None
+        self.best_position = None
+
 
     def reset(self):
 
@@ -46,18 +58,40 @@ class SimpleFocusOptimizer:
         estimatedFocus = np.sum(np.abs(hf_coeffs))
         return estimatedFocus
 
-    def execute_one_step(self, position, image):
+    def execute_one_step(self, pos, image):
         
+        # Estimate focus
         focus_value = self.estimateFocus(image)
         
-        if self.done:
-            return None
-
-        self.iterations += 1
-
-        if self.best_focus is None or focus_value > self.best_focus:
+        # Update best focus
+        if self.best_focus is None or \
+            focus_value > self.best_focus:
+            
             self.best_focus = focus_value
-            self.best_pos = position
+            self.best_pos = pos
+
+        if self.last_focus is None:
+            # Nudge a little in random direction
+            pass
+
+        else:
+            # Check avg focus trend if it has been increasin or decreasing
+            trend = focus_value - self.last_focus
+            self.trend_buffer.append(trend)
+
+            avg_trend = sum(self.trend_buffer) / len(self.trend_buffer)
+
+            if avg_trend < 0:
+                # Focus is degrading → reverse direction
+                self.direction *= -1
+                self.step_size *= self.damping
+
+                # if self.step_size < self.min_step:
+                #     self.step_size = self.min_step
+
+        self.last_focus = focus_value
+
+        return pos + self.direction * self.step_size
 
         if self.last_focus is not None:
             if focus_value < self.last_focus:
@@ -70,11 +104,12 @@ class SimpleFocusOptimizer:
             return None
 
         # Update state
-        self.last_pos = position
+        self.last_pos = pos
         self.last_focus = focus_value
+        self.iterations += 1
 
         # Return next lens position
-        next_pos = position + self.direction * self.current_step
+        next_pos = pos + self.direction * self.current_step
         return next_pos
 
     def should_continue(self):

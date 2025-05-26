@@ -73,7 +73,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
-from AutoFocus import AutoFocusPID, FocusMode, SimpleFocusOptimizer
+from AutoFocus import AutoFocusPID, FocusMode, Autofocus
 
 # 
 # Math
@@ -291,7 +291,7 @@ class LeftColumn(BoxLayout):
             
             autoFocusPID = AutoFocusPID(kp, ki, kd)
 
-            optimizer = SimpleFocusOptimizer()
+            optimizer = Autofocus()
             optimizer.reset()
             
             print('Start autofocus')
