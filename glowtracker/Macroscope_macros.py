@@ -1051,18 +1051,31 @@ class DualColorImageCalibrator:
 class DepthOfFieldEstimator:
     
     def __init__(self):
-
         # Create a DataFrame to store DoF data 
         self.dofDataFrame = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'])
-
+        # C, A, mu, sigma
         self.normDistParams: list[float, float, float, float] = [0, 0, 0, 0]
 
 
     def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> float:
+        """Estimate the Depth of Field of an optical system by finding distance that cover 20% area about the sharpest focus
+            1. Take calibration images.
+            2. Fit normal distribution curve.
+            3. Estimate DOF as 20% area about peak focus.
+
+        Args:
+            camera (basler.Camera): camera object
+            stage (zaber.Stage): Zaber stage object
+            searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
+            numImages (int): number of images to sample in the above distance to estimate DoF
+
+        Returns:
+            dof (float): estimated Depth of Field
+        """
         
         self._takeCalibrationImages(camera, stage, searchDistance, numImages)
         
-        self.normDistParams = self._fitDataToNormalDist()
+        self._fitDataToNormalDist()
 
         # Find the x position where cumulative area from mu to x is 10%
         p = 0.5 + 0.1  # 0.60 cumulative probability
@@ -1078,6 +1091,17 @@ class DepthOfFieldEstimator:
     
 
     def _takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> None:
+        """Scan over the searchDistance area and take sample images.
+
+        Args:
+            camera (basler.Camera): camera object
+            stage (zaber.Stage): Zaber stage object
+            searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
+            numImages (int): number of images to sample in the above distance to estimate DoF
+
+        Raises:
+            RuntimeError: When taking an image is unsuccessful
+        """
         
         # Create an empty DataFrame
         df = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'], index= range(numImages))
@@ -1117,12 +1141,25 @@ class DepthOfFieldEstimator:
 
 
     @staticmethod
-    def shifted_normal_dist(x, C, A, mu, sigma):
+    def shiftedNormalDist(x: float, C: float, A: float, mu: float, sigma: float) -> float:
+        """Shifted normal distribution model
+
+        Args:
+            x (float): x value
+            C (float): Constant(y shift)
+            A (float): Amplitude
+            mu (float): mean
+            sigma (float) standard deviation
+
+        Returns:
+            y(float): y value
+        """
         return C + A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
         
 
     def _fitDataToNormalDist(self):
-
+        """Fit self.normDistParams into a shifted normal distribution model that best represent self.dofDataFrame
+        """
         x_data = self.dofDataFrame['pos_z'].tolist()
         y_data = self.dofDataFrame['estimatedFocus'].tolist()
 
@@ -1135,15 +1172,17 @@ class DepthOfFieldEstimator:
         p0 = [C0, A0, mu0, sigma0]
         
         # Curve fitting
-        normDistParams, _ = curve_fit(DepthOfFieldEstimator.shifted_normal_dist, x_data, y_data, p0=p0)
-        
-        return normDistParams
+        self.normDistParams, _ = curve_fit(DepthOfFieldEstimator.shiftedNormalDist, x_data, y_data, p0=p0)
 
     
     def genEstimatedDofPlot(self) -> np.ndarray:
-        
+        """Generate pyplot image of the fitted self.normDistParams and the estimated DoF from it.
+
+        Returns:
+            image (np.ndarray): plot image
+        """
         # Create the plot
-        fig = plt.figure(figsize=(6, 6))
+        fig = plt.figure(figsize=(10, 7))
 
         x_data = self.dofDataFrame['pos_z'].tolist()
         y_data = self.dofDataFrame['estimatedFocus'].tolist()
@@ -1151,15 +1190,14 @@ class DepthOfFieldEstimator:
         # Plotting
         x_fit = np.linspace(min(x_data), max(x_data), 500)
 
-        y_normal_fit = DepthOfFieldEstimator.shifted_normal_dist(x_fit, *self.normDistParams)
+        y_normal_fit = DepthOfFieldEstimator.shiftedNormalDist(x_fit, *self.normDistParams)
 
         plt.plot(x_data, y_data, 'bo', label='data')
         plt.plot(x_fit, y_normal_fit, 'r-', label='fitted normal distribution')
         plt.xlim(min(x_data), max(x_data))
         plt.ylim(min(y_data), max(y_data))
-        plt.xlabel('Position')
-        plt.ylabel('Focus')
-        plt.title('Estimated Focus and Depth of Field')
+        plt.xlabel('Position Z')
+        plt.ylabel('Estimated Focus')
         plt.tight_layout()
 
         # Find the x position where cumulative area from mu to x is 10%
@@ -1171,7 +1209,7 @@ class DepthOfFieldEstimator:
 
         # Shade the area from -z to z
         x_fill = np.linspace(x_pct_begin, x_pct_end, 200)
-        y_fill = DepthOfFieldEstimator.shifted_normal_dist(x_fill, *self.normDistParams)
+        y_fill = DepthOfFieldEstimator.shiftedNormalDist(x_fill, *self.normDistParams)
         plt.fill_between(x_fill, y_fill, C, color='green', alpha=0.4, label='20% area at mean')
 
         # Plot vertical lines at x_pct_begin, x_pct_end for clarity
@@ -1188,11 +1226,34 @@ class DepthOfFieldEstimator:
         plotImage = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
 
         return plotImage
+    
+
+    def getBestFocusImage(self) -> np.ndarray:
+        """Get a sampled image that has the best focus
+
+        Returns:
+            image (np.ndarray): best-focus image
+        """
+        bestFocusIndex = self.dofDataFrame['estimatedFocus'].idxmax()
+        bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
+        return bestFocusImage
 
 
-def estimateFocus(image):
-    resized = cv2.resize(image, (32, 32))  # Small for fast DCT
+def estimateFocus(image: np.ndarray) -> float:
+    """Estimate a focus value of an image using Sum of High-Frequency Discrete Cosine Transform Coefficient
+
+    Args:
+        image (np.ndarray): gray-scale image
+
+    Returns:
+        focus (float): estimated focus value
+    """
+    # Down-sample for fast DCT
+    resized = cv2.resize(image, (32, 32))  
+    # Perform Discrete Cosine Transform
     dct = cv2.dct(np.float32(resized))
-    hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
+    # Keep only high-freq block
+    hf_coeffs = dct[8:, 8:]  
+    # Sum up absolute coefficients
     estimatedFocus = np.sum(np.abs(hf_coeffs))
     return estimatedFocus

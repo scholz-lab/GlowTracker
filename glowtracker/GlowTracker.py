@@ -916,16 +916,13 @@ class DepthOfFieldCalibration(BoxLayout):
     
 
     def calibrate(self):
-        """Execute the camera and stage calibration process.
-            1. Take calibration images.
-            2. Fit normal distribution curve.
-            3. Estimate DOF as 20% area about peak focus.
-            4. Display results.
-        """        
+        """Estimate Depth of Field of the current optic system and display the results.
+        """
         app: GlowTrackerApp = App.get_running_app()
         camera: basler.Camera = app.camera
         stage: Stage = app.stage
 
+        # Safe guard
         if camera is None or stage is None:
             return
         
@@ -952,6 +949,10 @@ class DepthOfFieldCalibration(BoxLayout):
             # Display estimation plot
             estimatedDofPlotImage = depthOfFieldEstimator.genEstimatedDofPlot()
             self.ids.estimateddofplot.texture = imageToTexture(estimatedDofPlotImage)
+
+            # Display best focus image
+            bestFocusImage = depthOfFieldEstimator.getBestFocusImage()
+            self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
         except Exception as e:
             print(f'Failed to estimate depth of field: {e}')

@@ -959,21 +959,23 @@ MainWindow:
     spacing: 20
 
     GridLayout:
-        cols: 4
+        cols: 2
         spacing: 20
 
         BoxLayout:
             orientation: 'vertical'
+            size_hint_x: 0.4
             Label:
-                text: 'Image'
+                text: 'Best focus image'
                 size_hint_y: 0.1
             Image:
                 id: bestfocusimage
 
         BoxLayout:
             orientation: 'vertical'
+            size_hint_x: 0.6
             Label:
-                text: 'Estimated Depth of Field'
+                text: 'Estimated Depth of Field plot'
                 size_hint_y: 0.1
             Image:
                 id: estimateddofplot
