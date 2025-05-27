@@ -984,9 +984,9 @@ MainWindow:
         size_hint_y: .08
 
         Label:
-            id: pxsize
+            id: estimateddepthoffieldtext
             # size_hint_x: .5
-            text: f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.4f} mm"
+            text: f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
         Button:
             text: "Calibrate"
             size_hint_x: .35

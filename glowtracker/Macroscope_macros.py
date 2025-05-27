@@ -23,7 +23,8 @@ import math
 import numpy as np
 import scipy.ndimage as ndi
 from scipy.optimize import curve_fit
-from scipy.stats import norm
+from scipy.stats import gennorm
+from scipy.special import gamma as gammafunc
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
@@ -1053,8 +1054,8 @@ class DepthOfFieldEstimator:
     def __init__(self):
         # Create a DataFrame to store DoF data 
         self.dofDataFrame = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'])
-        # C, A, mu, sigma
-        self.normDistParams: list[float, float, float, float] = [0, 0, 0, 0]
+        # C, A, mu, alpha, beta
+        self.normDistParams: list[float, float, float, float, float] = [0, 0, 0, 0, 0]
 
 
     def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> float:
@@ -1078,11 +1079,11 @@ class DepthOfFieldEstimator:
         self._fitDataToNormalDist()
 
         # Find the x position where cumulative area from mu to x is 10%
+        C, A, mu, alpha, beta = self.normDistParams
         p = 0.5 + 0.1  # 0.60 cumulative probability
-        z = norm.ppf(p)  # z-score
-        C, A, mu, sigma = self.normDistParams
-        x_pct_end = mu + z * sigma
-        x_pct_begin = mu - z * sigma
+        z = gennorm.ppf(p, beta, scale= alpha)  # z-score
+        x_pct_end = mu + z
+        x_pct_begin = mu - z
 
         # Compute dof as range that cover 20% about mean
         estimatedDof = x_pct_end - x_pct_begin
@@ -1139,26 +1140,38 @@ class DepthOfFieldEstimator:
 
         self.dofDataFrame = df
 
-
+    
     @staticmethod
-    def shiftedNormalDist(x: float, C: float, A: float, mu: float, sigma: float) -> float:
-        """Shifted normal distribution model
+    def shiftedGeneralizedNormalDist(x: float, C: float, A: float, mu: float, alpha: float, beta: float) -> float:
+        """Shifted and scaled generalized normal distribution model
 
         Args:
             x (float): x value
             C (float): Constant(y shift)
             A (float): Amplitude
             mu (float): mean
-            sigma (float) standard deviation
+            alpha (float): scale
+            beta (float): shape
 
         Returns:
             y(float): y value
         """
-        return C + A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
+        # Compute y as pdf
+        y = C + A * (
+            beta
+            / ( 2 * alpha * gammafunc(1/beta))
+            * np.exp(
+                -np.power(
+                    np.abs((x - mu) / alpha),
+                    beta
+                )
+            )
+        )
+        return y
         
 
     def _fitDataToNormalDist(self):
-        """Fit self.normDistParams into a shifted normal distribution model that best represent self.dofDataFrame
+        """Fit self.normDistParams into a shifted generalized normal distribution model that best represent self.dofDataFrame
         """
         x_data = self.dofDataFrame['pos_z'].tolist()
         y_data = self.dofDataFrame['estimatedFocus'].tolist()
@@ -1167,12 +1180,13 @@ class DepthOfFieldEstimator:
         C0 = np.min(y_data)
         A0 = np.max(y_data) - C0
         mu0 = x_data[np.argmax(y_data)]
-        sigma0 = (np.max(x_data) - np.min(x_data)) / 6  # reasonable guess for spread
+        alpha0 = (np.max(x_data) - np.min(x_data)) / 6  # reasonable guess for spread
+        beta0 = 2 # normal distribution
 
-        p0 = [C0, A0, mu0, sigma0]
+        p0 = [C0, A0, mu0, alpha0, beta0]
         
         # Curve fitting
-        self.normDistParams, _ = curve_fit(DepthOfFieldEstimator.shiftedNormalDist, x_data, y_data, p0=p0)
+        self.normDistParams, _ = curve_fit(DepthOfFieldEstimator.shiftedGeneralizedNormalDist, x_data, y_data, p0= p0)
 
     
     def genEstimatedDofPlot(self) -> np.ndarray:
@@ -1190,7 +1204,7 @@ class DepthOfFieldEstimator:
         # Plotting
         x_fit = np.linspace(min(x_data), max(x_data), 500)
 
-        y_normal_fit = DepthOfFieldEstimator.shiftedNormalDist(x_fit, *self.normDistParams)
+        y_normal_fit = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fit, *self.normDistParams)
 
         plt.plot(x_data, y_data, 'bo', label='data')
         plt.plot(x_fit, y_normal_fit, 'r-', label='fitted normal distribution')
@@ -1201,15 +1215,15 @@ class DepthOfFieldEstimator:
         plt.tight_layout()
 
         # Find the x position where cumulative area from mu to x is 10%
+        C, A, mu, alpha, beta = self.normDistParams
         p = 0.5 + 0.1  # 0.60 cumulative probability
-        z = norm.ppf(p)  # z-score
-        C, A, mu, sigma = self.normDistParams
-        x_pct_end = mu + z * sigma
-        x_pct_begin = mu - z * sigma
+        z = gennorm.ppf(p, beta, scale= alpha)  # z-score
+        x_pct_end = mu + z
+        x_pct_begin = mu - z
 
         # Shade the area from -z to z
         x_fill = np.linspace(x_pct_begin, x_pct_end, 200)
-        y_fill = DepthOfFieldEstimator.shiftedNormalDist(x_fill, *self.normDistParams)
+        y_fill = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fill, *self.normDistParams)
         plt.fill_between(x_fill, y_fill, C, color='green', alpha=0.4, label='20% area at mean')
 
         # Plot vertical lines at x_pct_begin, x_pct_end for clarity

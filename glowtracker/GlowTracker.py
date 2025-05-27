@@ -954,6 +954,9 @@ class DepthOfFieldCalibration(BoxLayout):
             bestFocusImage = depthOfFieldEstimator.getBestFocusImage()
             self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
+            # Update display text
+            self.ids.estimateddepthoffieldtext = f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
+
         except Exception as e:
             print(f'Failed to estimate depth of field: {e}')
 
