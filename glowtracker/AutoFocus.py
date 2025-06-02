@@ -121,18 +121,21 @@ class Autofocus:
 
 class AutoFocusPID:
 
-    def __init__(self, KP: float = 0.5, KI: float = 0.01, KD: float = 0.1, errorThreshold: float = 0.001) -> None:
+    def __init__(self, KP: float = 0.5, KI: float = 0.01, KD: float = 0.1, SP: float = 1000, minStepDist: float = 0.001, focusClosenessThreshold: float = 100, integralLifeTime: int = 20 ) -> None:
 
         self.KP = KP
         self.KI = KI
         self.KD = KD
-        self.errorThreashold: float = errorThreshold
-        
-        self.integral: float = 0
 
+        self.SP: float = SP
+        self.minStepDist: float = minStepDist
+        self.focusClosenessThreshold: float = focusClosenessThreshold
+        
+        self.integralLifeTime: int = integralLifeTime
+        
+        self.posLog: List[float] = []
         self.focusLog: List[float] = []
         self.errorLog: List[float] = []
-        self.posLog: List[float] = []
 
         self.direction: int = 1
 
@@ -182,56 +185,52 @@ class AutoFocusPID:
         return estimatedFocus
         
 
-    def executePIDStep(self, image: np.ndarray, currentPos: float, dt: float = 1, mode: FocusMode = FocusMode.SumOfHighDCT) -> float:
+    def executePIDStep(self, image: np.ndarray, pos: float, estimateFocusMode: FocusMode = FocusMode.SumOfHighDCT) -> float:
         """Perform one PID control step based on current image and lens position."""
         
-        focus_measure = self.estimateFocus(image, mode)
-
-        # If this is the first time executing
-        prevFocus: float = focus_measure
-        prevError: float = 0
-        prevPos: float = 0
-
-        if len(self.focusLog) > 0:
-            prevFocus = self.focusLog[-1]
-            prevError = self.errorLog[-1]
-            prevPos = self.posLog[-1]
-            
-        # Compute error as a simple gradient.
-        # error = (focus_measure - prevFocus) / dt
-
-        moved_distance = currentPos - prevPos
-
-        error = (focus_measure - prevFocus) / math.copysign(1, moved_distance)
-        
-        # PID calculations
-        self.integral += error
-
-        derivative = (error - prevError) / moved_distance
-
-        pid_output = (self.KP * error) + (self.KI * self.integral) + (self.KD * derivative)
-
+        # Estimate focus the image at current position
+        PV = self.estimateFocus(image, estimateFocusMode)
+        # Compute error
+        err = self.SP - PV
+        U: float = 0.0
 
         if len(self.focusLog) == 0:
-            # If this is a first time, just nudge it a little bit
-            pid_output = currentPos * 0.001
+            # If this is the first time executing, simply move by a minimum distance
+            U = self.minStepDist * self.direction
 
+        else:
+            prevErr = self.errorLog[-1]
+            # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
+            derivative = (err - prevErr)
 
-        pid_output = max( min(0.2, pid_output), -0.2 )
+            # If the difference between current and previous error is still high enough
+            #   and the difference between current focus and target focus (SP) is still high
+            if abs(derivative) > self.focusClosenessThreshold \
+                and abs(err) > self.focusClosenessThreshold:
+                
+                # PID calculations
+                self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
 
-        # Update lens position based on PID output
-        newPos = currentPos + pid_output
+                U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
 
+                # Decide direction. If the error is increasing then we should flip direction.
+                # Maybe we should average from some range to avoid noise?
+                if derivative > 0:
+                    self. direction = self.direction * -1
 
-        print(f'\t{focus_measure:.4f}, {error:.4f}, {self.KP * error:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}, {pid_output:.4f}, {currentPos:.4f}, {newPos:.4f}')
+                U = U * self.direction
+                
+                print(f'\t{PV:.4f}, {err:.4f}, {self.KP * err:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}, {U:.4f}, {pos:.4f}')
 
 
         # Record
-        self.focusLog.append(focus_measure)
-        self.errorLog.append(error)
-        self.posLog.append(currentPos)
+        self.focusLog.append(PV)
+        self.errorLog.append(err)
+        self.posLog.append(pos)
 
-        return newPos 
+        newPos = pos + U
+
+        return newPos
 
 
     def isStable(self, recentSteps: int = 3) -> bool:

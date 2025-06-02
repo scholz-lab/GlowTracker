@@ -2393,55 +2393,75 @@ class RuntimeControls(BoxLayout):
         self.text = str(value)
 
 
-    def startFocus(self):
+    def startLiveFocus(self):
         # schedule a focus routine
         camera = App.get_running_app().camera
         stage = App.get_running_app().stage
+        
         if camera is not None and stage is not None and camera.IsGrabbing():
-             # get config values
-            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
-            print("Focus Framerate:", focus_fps)
-            z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
-            unit = App.get_running_app().config.get('Livefocus', 'step_units')
-            factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
+            # get config values
+            app: GlowTrackerApp = App.get_running_app()
 
-            self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+            focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+            focus_spf = 1/focus_fps
+
+            print("Live focus Framerate:", focus_fps)
+
+            # z_step = app.config.getfloat('Livefocus', 'min_step')
+            # unit = app.config.get('Livefocus', 'step_units')
+            # factor = app.config.getfloat('Livefocus', 'factor')
+            # self.focusevent = Clock.schedule_interval(partial(self.liveFocusLoop,  z_step, unit, factor), 1.0 / focus_fps)
+
+            KP = app.config.getfloat('Autofocus', 'kp')
+            KI = app.config.getfloat('Autofocus', 'ki')
+            KD = app.config.getfloat('Autofocus', 'kd')
+            SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
+            depthoffield = app.config.getfloat('Camera', 'depthoffield')
+            
+            autoFocusPID = AutoFocusPID(
+                KP= KP,
+                KI= KI,
+                KD= KD,
+                SP= SP,
+                minStepDist= depthoffield,
+                focusClosenessThreshold= 100,
+                integralLifeTime= 20
+            )
+
+            imageAcquisitionManager: ImageAcquisitionManager = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+
+            self.focusevent = Clock.schedule_interval(
+                partial(self._liveFocusLoop, autoFocusPID, imageAcquisitionManager, stage)
+                , focus_spf
+            )
+
         else:
             self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
             self.autofocuscheckbox.state = 'normal'
 
+    
+    def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage , dt: float) -> None:
 
-    def stopFocus(self):
-        # unschedule a focus routine
+        print('One autofocus step')
+        # Get current image
+        image = imageAcquisitionManager.image
+
+        # Get current position
+        pos = stage.get_position(unit= 'mm')
+
+        # Perform one autofocus step
+        newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
+
+        # Move to the new position
+        stage.move_abs([pos[0], pos[1], newPos_z])
+
+
+    def stopLiveFocus(self):
+        # unschedule the focus routine
         if self.focusevent:
             Clock.unschedule(self.focusevent)
-
-
-    def focus(self, z_step, unit, focus_step_factor, *args):
-        # run the actual focus routine - calculate the focus values and correct accordinly.
-        start = time.time()
-        app = App.get_running_app()
-        if not app.camera.IsGrabbing():
-            self.autofocuscheckbox.state = 'normal'
-            return
-        # calculate current value of focus
-        self.focus_history.append(macro.calculate_focus(app.image))
-
-        # calculate control variables if we have enough history
-        if len(self.focus_history)>1 and self.focus_motion != 0:
-            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step, focus_step_factor)
-        else:
-            self.focus_motion = z_step
-        print('Move (z)',self.focus_motion,unit)
-        app.stage.move_z(self.focus_motion, unit)
-        app.coords[2] += self.focus_motion/1000
-        # throw away stuff
-        self.focus_history = self.focus_history[-1:]
-
-        #print('Saving time: ',time.time() - start)
-        return
 
 
     def trackingButtonCallback(self):

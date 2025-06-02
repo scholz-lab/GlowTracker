@@ -503,7 +503,7 @@ MainWindow:
             color: '#ffffff'
         CheckBox:
             id: autofocuscheckbox
-            on_state: root.startFocus() if self.state=='down' else root.stopFocus()
+            on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
             
         MyLabel:
             text: 'Tracking'
