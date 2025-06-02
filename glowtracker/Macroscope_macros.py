@@ -1074,9 +1074,9 @@ class DepthOfFieldEstimator:
             dof (float): estimated Depth of Field
         """
         
-        self._takeCalibrationImages(camera, stage, searchDistance, numImages)
+        self.takeCalibrationImages(camera, stage, searchDistance, numImages)
         
-        self._fitDataToNormalDist()
+        self.fitDataToNormalDist()
 
         # Find the x position where cumulative area from mu to x is 10%
         C, A, mu, alpha, beta = self.normDistParams
@@ -1091,7 +1091,7 @@ class DepthOfFieldEstimator:
         return estimatedDof
     
 
-    def _takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> None:
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1170,7 +1170,7 @@ class DepthOfFieldEstimator:
         return y
         
 
-    def _fitDataToNormalDist(self):
+    def fitDataToNormalDist(self):
         """Fit self.normDistParams into a shifted generalized normal distribution model that best represent self.dofDataFrame
         """
         x_data = self.dofDataFrame['pos_z'].tolist()

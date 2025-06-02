@@ -176,6 +176,13 @@
         "key": "MAXSTEP"
     },
     {
+        "type": "numeric",
+        "title": "Best focus value",
+        "desc": "Current best focus value. Use as a target value for autofocusing",
+        "section": "Autofocus",
+        "key": "bestfocusvalue"
+    },
+    {
         "type": "title",
         "title": "Calibration"
     },

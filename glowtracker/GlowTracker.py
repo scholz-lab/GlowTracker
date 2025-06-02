@@ -269,73 +269,37 @@ class LeftColumn(BoxLayout):
             # Check if acquiring image
             imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
-            if imageAcquisitionManager.liveviewbutton.state == 'normal' \
-                and imageAcquisitionManager.recordbutton.state == 'normal':
-                print('Please start LiveView or Record to auto adjust focus.')
-                return
+            # Stop camera if already running
+            liveViewButton: Button = imageAcquisitionManager.ids.liveviewbutton
+            prevLiveViewButtonState: str = liveViewButton.state
+            liveViewButton.state = 'normal'
 
-            
-            image: np.ndarray | None = None
-
-            dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
-
-            prevImageTimeStamp: float = 0
-            deltaTime: float = 0
-            
-            # Instantiate autofocus class
             #   Load settings
-            kp = self.app.config.getfloat('Autofocus', 'KP')
-            ki = self.app.config.getfloat('Autofocus', 'KI')
-            kd = self.app.config.getfloat('Autofocus', 'KD')
-            maxStep = self.app.config.getint('Autofocus', 'MAXSTEP')
+            depthoffield = self.app.config.getfloat('Camera', 'depthoffield')
+            depthoffieldsearchdistance = self.app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+
+            #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
+            depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+            numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
+            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples)
+
+            #   Get best-focused position
+            bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
+            bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
             
-            autoFocusPID = AutoFocusPID(kp, ki, kd)
+            # Move to the best-focus position
+            stagePosition = stage.get_position()
+            stagePosition[2] = bestFocusPosition
+            stage.move_abs(stagePosition, unit= 'mm')
 
-            optimizer = Autofocus()
-            optimizer.reset()
+            # Remember best focus value for later auto focus
+            bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+            self.app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+            self.app.config.write()
+
+            # Return LiveView state
+            liveViewButton.state = prevLiveViewButtonState
             
-            print('Start autofocus')
-            counter = 0
-            
-            
-            # while not autoFocusPID.isStable() \
-            #     and len(autoFocusPID.focusLog) < maxStep:
-
-            while optimizer.should_continue():
-
-                # Get current stage-z pos
-                stagePos = stage.get_position()
-                if stagePos is None:
-                    return
-
-                pos_z = stagePos[2]
-
-                # Get current image
-                if dualcolormode:
-                    image = imageAcquisitionManager.dualColorMainSideImage
-                else:
-                    image = imageAcquisitionManager.image
-
-                # Get time stamp and convert from ms to sec
-                imageTimeStamp = imageAcquisitionManager.imageTimeStamp * 1e-3
-
-                # new_pos_z = autoFocusPID.executePIDStep(image, pos_z, 1)
-
-                new_pos_z = optimizer.execute_one_step(pos_z, image)
-
-                prevImageTimeStamp = imageTimeStamp
-                counter += 1
-
-                # Move lens to new lens_position
-                if new_pos_z is not None:
-                    stage.move_abs([0, 0, new_pos_z], unit= 'mm', wait_until_idle= True)
-            
-
-            best_pos_z, best_focus = optimizer.get_result()
-            stage.move_abs([0, 0, best_pos_z], unit= 'mm', wait_until_idle= True)
-
-            print('Autofocus is stable!')
-
 
     # run autofocussing once on current location
     def run_autofocus(self):
@@ -3170,7 +3134,8 @@ class GlowTrackerApp(App):
             'kp': '0.5',
             'ki': '0.01',
             'kd': '0.1',
-            'MAXSTEP' : '10'
+            'MAXSTEP' : '10',
+            'bestfocusvalue' : 2000
         })
 
         config.setdefaults('Calibration', {
