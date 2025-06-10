@@ -65,6 +65,7 @@ from pypylon import pylon
 import platformdirs 
 import shutil
 from pyparsing import ParseException
+import matplotlib.pyplot as plt
 
 # 
 # Own classes
@@ -2395,8 +2396,8 @@ class RuntimeControls(BoxLayout):
 
     def startLiveFocus(self):
         # schedule a focus routine
-        camera = App.get_running_app().camera
-        stage = App.get_running_app().stage
+        camera: GlowTrackerApp = App.get_running_app().camera
+        stage: Stage = App.get_running_app().stage
         
         if camera is not None and stage is not None and camera.IsGrabbing():
             # get config values
@@ -2430,8 +2431,43 @@ class RuntimeControls(BoxLayout):
 
             imageAcquisitionManager: ImageAcquisitionManager = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
+            # FOR DEBUGGING
+            # Init interactive plot handle
+            plt.ion()
+
+            fig, axisPlotHandle = plt.subplots()
+            linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
+            axisPlotHandle.axhline(SP, color = 'g', linestyle= '--', label= 'Best Focus')
+
+            axisPlotHandle.set_title("Live Focus")
+            axisPlotHandle.set_xlabel("Iteration")
+            axisPlotHandle.set_ylabel("Estimated Focus")
+
+            fig2, axisPlotHandle2 = plt.subplots()
+            central = 91.5
+            x_min = central - 2
+            x_max = central + 2
+            axisPlotHandle2.set_xlim(x_min, x_max)
+            
+            x_fit = np.linspace(x_min, x_max, 500)
+            normDistParams = [8.02318040e+02, 5.58524786e+02, 9.15577610e+01, 1.25053785e-01, 1.32576410e+00]
+            y_normal_fit = macro.DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fit, *normDistParams)
+            axisPlotHandle2.plot(x_fit, y_normal_fit, 'g-', label='Estimated Focus curve')
+
+            posLinePlotHandle, = axisPlotHandle2.plot([], [], 'r-', label= 'pos')
+
+            axisPlotHandle2.set_title("Live Position")
+            axisPlotHandle2.set_xlabel("Pos_z")
+            axisPlotHandle2.set_ylabel("Estimated Focus")
+
+            plt.legend()
+
+            focus_spf = 3
+
+            print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
+            
             self.focusevent = Clock.schedule_interval(
-                partial(self._liveFocusLoop, autoFocusPID, imageAcquisitionManager, stage)
+                partial(self._liveFocusLoop, autoFocusPID, imageAcquisitionManager, stage, linePlotHandle, axisPlotHandle, posLinePlotHandle)
                 , focus_spf
             )
 
@@ -2442,9 +2478,8 @@ class RuntimeControls(BoxLayout):
             self.autofocuscheckbox.state = 'normal'
 
     
-    def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage , dt: float) -> None:
-
-        print('One autofocus step')
+    def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage, linePlotHandle, axisPlotHandle, posLinePlotHandle, dt: float) -> None:
+        
         # Get current image
         image = imageAcquisitionManager.image
 
@@ -2456,9 +2491,27 @@ class RuntimeControls(BoxLayout):
 
         # Move to the new position
         stage.move_abs([pos[0], pos[1], newPos_z])
+        
+        # Debug plot
+        x_data = list(range(len(autoFocusPID.focusLog)))
+        y_data = autoFocusPID.focusLog
+        linePlotHandle.set_xdata(x_data)
+        linePlotHandle.set_ydata(y_data)
+
+        axisPlotHandle.set_xlim(min(x_data), max(x_data))
+        axisPlotHandle.set_ylim(min(y_data), max(y_data))
+
+        posLinePlotHandle.set_xdata(autoFocusPID.posLog[-10:])
+        posLinePlotHandle.set_ydata(autoFocusPID.focusLog[-10:])
+
+        plt.draw()
+        plt.pause(0.05)
 
 
     def stopLiveFocus(self):
+
+        plt.ioff()
+        
         # unschedule the focus routine
         if self.focusevent:
             Clock.unschedule(self.focusevent)
@@ -3151,9 +3204,9 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Autofocus', {
-            'kp': '0.5',
-            'ki': '0.01',
-            'kd': '0.1',
+            'kp': '0.000001',
+            'ki': '0.00000001',
+            'kd': '0.0000001',
             'MAXSTEP' : '10',
             'bestfocusvalue' : 2000
         })
