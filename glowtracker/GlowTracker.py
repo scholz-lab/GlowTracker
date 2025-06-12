@@ -2462,7 +2462,7 @@ class RuntimeControls(BoxLayout):
 
             plt.legend()
 
-            focus_spf = 3
+            # focus_spf = 1
 
             print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
             
@@ -2480,6 +2480,7 @@ class RuntimeControls(BoxLayout):
     
     def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage, linePlotHandle, axisPlotHandle, posLinePlotHandle, dt: float) -> None:
         
+        # startTime = time.perf_counter_ns()
         # Get current image
         image = imageAcquisitionManager.image
 
@@ -2488,6 +2489,11 @@ class RuntimeControls(BoxLayout):
 
         # Perform one autofocus step
         newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
+
+        # endTime = time.perf_counter_ns()
+
+        # elapsedTime = endTime - startTime
+        # print(f'process time: {elapsedTime * 1e-6} ms')
 
         # Move to the new position
         stage.move_abs([pos[0], pos[1], newPos_z])
@@ -2505,7 +2511,7 @@ class RuntimeControls(BoxLayout):
         posLinePlotHandle.set_ydata(autoFocusPID.focusLog[-10:])
 
         plt.draw()
-        plt.pause(0.05)
+        plt.pause(0.001)
 
 
     def stopLiveFocus(self):
@@ -3413,7 +3419,7 @@ class GlowTrackerApp(App):
         if self.stage is None:
             return
         
-        print(key, scancode, codepoint, modifier)
+        # print(key, scancode, codepoint, modifier)
 
         if 'shift' in modifier:
             v = self.vlow

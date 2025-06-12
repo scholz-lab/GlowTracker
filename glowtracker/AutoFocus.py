@@ -139,6 +139,8 @@ class AutoFocusPID:
 
         self.direction: int = 1
 
+        self.directionResetCounter = 0
+
 
     def estimateFocus(self, image: np.ndarray, mode: FocusMode = FocusMode.SumOfHighDCT) -> float:
         """Estimate focus of an image.
@@ -190,10 +192,20 @@ class AutoFocusPID:
         
         # Estimate focus the image at current position
         PV = self.estimateFocus(image, estimateFocusMode)
+
+        # # Apply weighted average to PV
+        # pvs = (self.focusLog[-2:] + [PV])[::-1]
+        # weights = [7, 3, 1]
+        # PV = 0
+        # for i in range(len(pvs)):
+        #     PV = PV + pvs[i] * weights[i]
+        # PV = PV / sum(weights)
+
         # Compute error
         err = self.SP - PV
         U: float = 0.0
 
+        print('-------------------')
         if len(self.focusLog) == 0:
             # If this is the first time executing, simply move by a minimum distance
             U = self.minStepDist * self.direction
@@ -205,8 +217,9 @@ class AutoFocusPID:
 
             # If the difference between current and previous error is still high enough
             #   and the difference between current focus and target focus (SP) is still high
-            if abs(derivative) > self.focusClosenessThreshold \
-                and abs(err) > self.focusClosenessThreshold:
+            # if abs(derivative) > self.focusClosenessThreshold \
+                # and abs(err) > self.focusClosenessThreshold:
+            if abs(err) > self.focusClosenessThreshold:
                 
                 # PID calculations
                 self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
@@ -215,11 +228,26 @@ class AutoFocusPID:
 
                 # Decide direction. If the error is increasing then we should flip direction.
                 # Maybe we should average from some range to avoid noise?
-                if derivative > 0:
-                    self. direction = self.direction * -1
+                #   Compute past derivatives
+                histLength = 3
+
+                if self.directionResetCounter > histLength:
+                    
+                    # Compute derivative of past error up to histLength
+                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-histLength:]
+                    diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
+
+                    if sum(diffs) > 0:
+                        
+                        print('\t Change direction')
+                        self.direction = self.direction * -1
+                        self.directionResetCounter = 0
+                
+                self.directionResetCounter += 1
 
                 U = U * self.direction
                 
+                # Focus, Err, 1st, 2nd, 3rd, dist, new pos
                 print(f'\t{PV:.4f}, {err:.4f}, {self.KP * err:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}, {U:.4f}, {pos:.4f}')
 
 
