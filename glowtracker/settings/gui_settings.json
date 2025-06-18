@@ -183,6 +183,13 @@
         "key": "bestfocusvalue"
     },
     {
+        "type": "bool",
+        "title": "Show graph",
+        "desc": "Display graph of focus values",
+        "section": "Autofocus",
+        "key": "isshowgraph"
+    },
+    {
         "type": "title",
         "title": "Calibration"
     },

@@ -2380,7 +2380,7 @@ class RuntimeControls(BoxLayout):
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
-        self.focusevent = None
+        self.liveFocusThread = None
         self.focus_motion = 0
         self.isTracking = False
         self.coord_updateevent: ClockEvent | None = None
@@ -2404,7 +2404,6 @@ class RuntimeControls(BoxLayout):
             app: GlowTrackerApp = App.get_running_app()
 
             focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
-            focus_spf = 1/focus_fps
 
             print("Live focus Framerate:", focus_fps)
 
@@ -2417,6 +2416,7 @@ class RuntimeControls(BoxLayout):
             KI = app.config.getfloat('Autofocus', 'ki')
             KD = app.config.getfloat('Autofocus', 'kd')
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
+            isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
             
             autoFocusPID = AutoFocusPID(
@@ -2431,13 +2431,36 @@ class RuntimeControls(BoxLayout):
 
             imageAcquisitionManager: ImageAcquisitionManager = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
-            # FOR DEBUGGING
+            autoFocusArgs = autoFocusPID, imageAcquisitionManager, camera, stage, isshowgraph, focus_fps
+
+            self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
+
+            self.liveFocusThread.start()
+
+        else:
+            self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
+                            size_hint=(0.5, 0.25))
+            self._popup.open()
+            self.autofocuscheckbox.state = 'normal'
+
+    
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, camera: basler.Camera, stage: Stage, isShowGraph: bool = False, fps: float = 10.0) -> None:
+        
+        linePlotHandle = None
+        axisPlotHandle = None
+        posLinePlotHandle = None
+
+        spf = 1.0 / fps
+
+        print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
+
+        if isShowGraph:
             # Init interactive plot handle
             plt.ion()
 
             fig, axisPlotHandle = plt.subplots()
             linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
-            axisPlotHandle.axhline(SP, color = 'g', linestyle= '--', label= 'Best Focus')
+            # axisPlotHandle.axhline(bestFocusValue, color = 'g', linestyle= '--', label= 'Best Focus')
 
             axisPlotHandle.set_title("Live Focus")
             axisPlotHandle.set_xlabel("Iteration")
@@ -2462,59 +2485,53 @@ class RuntimeControls(BoxLayout):
 
             plt.legend()
 
-            # focus_spf = 1
+        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.autofocuscheckbox.state == 'down':
 
-            print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
+            startTime = time.perf_counter()
+
+            # Get current image
+            image = imageAcquisitionManager.image
+
+            # Get current position
+            pos = stage.get_position(unit= 'mm', isAsync= False)
+
+            # Perform one autofocus step
+            newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
+
+            # Move to the new position
+            stage.move_abs([pos[0], pos[1], newPos_z])
             
-            self.focusevent = Clock.schedule_interval(
-                partial(self._liveFocusLoop, autoFocusPID, imageAcquisitionManager, stage, linePlotHandle, axisPlotHandle, posLinePlotHandle)
-                , focus_spf
-            )
+            # Debug plot
+            if isShowGraph:
+                x_data = list(range(len(autoFocusPID.focusLog)))
+                y_data = autoFocusPID.focusLog
+                linePlotHandle.set_xdata(x_data)
+                linePlotHandle.set_ydata(y_data)
 
-        else:
-            self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
-                            size_hint=(0.5, 0.25))
-            self._popup.open()
-            self.autofocuscheckbox.state = 'normal'
+                axisPlotHandle.set_xlim(min(x_data), max(x_data))
+                axisPlotHandle.set_ylim(min(y_data), max(y_data))
 
+                posLinePlotHandle.set_xdata(autoFocusPID.posLog[-10:])
+                posLinePlotHandle.set_ydata(autoFocusPID.focusLog[-10:])
+
+                plt.draw()
+            
+            endTime = time.perf_counter()
+
+            elapsedTime = endTime - startTime
+
+            waitTime = spf - elapsedTime
+
+            if waitTime > 0:
+                time.sleep(waitTime)
+        
+        # The live tracking has stopped
+        plt.ioff()
+        self.autofocuscheckbox.state == 'normal'
     
-    def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage, linePlotHandle, axisPlotHandle, posLinePlotHandle, dt: float) -> None:
-        
-        # Get current image
-        image = imageAcquisitionManager.image
-
-        # Get current position
-        pos = stage.get_position(unit= 'mm')
-
-        # Perform one autofocus step
-        newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
-
-        # Move to the new position
-        stage.move_abs([pos[0], pos[1], newPos_z])
-        
-        # Debug plot
-        x_data = list(range(len(autoFocusPID.focusLog)))
-        y_data = autoFocusPID.focusLog
-        linePlotHandle.set_xdata(x_data)
-        linePlotHandle.set_ydata(y_data)
-
-        axisPlotHandle.set_xlim(min(x_data), max(x_data))
-        axisPlotHandle.set_ylim(min(y_data), max(y_data))
-
-        posLinePlotHandle.set_xdata(autoFocusPID.posLog[-10:])
-        posLinePlotHandle.set_ydata(autoFocusPID.focusLog[-10:])
-
-        plt.draw()
-        plt.pause(0.001)
-
 
     def stopLiveFocus(self):
-
-        plt.ioff()
-        
-        # unschedule the focus routine
-        if self.focusevent:
-            Clock.unschedule(self.focusevent)
+        pass
 
 
     def trackingButtonCallback(self):
@@ -3209,7 +3226,8 @@ class GlowTrackerApp(App):
             'ki': '0.00000001',
             'kd': '0.0000001',
             'MAXSTEP' : '10',
-            'bestfocusvalue' : 2000
+            'bestfocusvalue' : 2000,
+            'isshowgraph': '0',
         })
 
         config.setdefaults('Calibration', {
