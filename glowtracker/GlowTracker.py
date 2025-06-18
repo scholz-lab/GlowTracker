@@ -2480,7 +2480,6 @@ class RuntimeControls(BoxLayout):
     
     def _liveFocusLoop(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, stage: Stage, linePlotHandle, axisPlotHandle, posLinePlotHandle, dt: float) -> None:
         
-        # startTime = time.perf_counter_ns()
         # Get current image
         image = imageAcquisitionManager.image
 
@@ -2489,11 +2488,6 @@ class RuntimeControls(BoxLayout):
 
         # Perform one autofocus step
         newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
-
-        # endTime = time.perf_counter_ns()
-
-        # elapsedTime = endTime - startTime
-        # print(f'process time: {elapsedTime * 1e-6} ms')
 
         # Move to the new position
         stage.move_abs([pos[0], pos[1], newPos_z])
@@ -3140,6 +3134,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
+        self.updateFpsEvent = None
     
 
     def getDefaultUserConfigFilePath(self) -> str:
@@ -3268,6 +3263,10 @@ class GlowTrackerApp(App):
 
         config.setdefaults('MacroScript', {
             'recentscript': ''
+        })
+
+        config.setdefaults('Developer', {
+            'showfps': 'false'
         })
 
 
@@ -3633,6 +3632,41 @@ class GlowTrackerApp(App):
 
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
+
+        elif section == 'Developer':
+
+            if key == 'showfps':
+                # Convert from text to boolean
+                showfps = bool(int(value))
+                if showfps:
+                    self.root.ids.fpslabel.disabled = False
+                    self.root.ids.fpslabel.opacity = 1
+
+                    if self.updateFpsEvent is not None:
+                        # Stop current event first
+                        Clock.unschedule(self.updateFpsEvent)
+                        self.updateFpsEvent = None
+
+                    # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+
+                    def tmpFunc(dt):
+                        self.root.ids.fpslabel.text = f'FPS: {Clock.get_fps():.1f}'
+
+                    # Start an update event
+                    self.updateFpsEvent = Clock.schedule_interval(
+                        tmpFunc
+                        , 1.0
+                    )
+
+                else:
+                    self.root.ids.fpslabel.disabled = True
+                    self.root.ids.fpslabel.opacity = 0
+                    # Stop an update event
+                    Clock.unschedule(self.updateFpsEvent)
+                    self.updateFpsEvent = None
+
+                updateSettingsWidgetFlag = True
+
             
         # Update setting widget value to reflect the setting file
         if updateSettingsWidgetFlag:

@@ -351,11 +351,11 @@
         "key": "threshold"
     },
     {
-    "type": "numeric",
-    "title": "Area (px)",
-    "desc": "What is the relevant area that changes?",
-    "section": "Tracking",
-    "key": "area"
+        "type": "numeric",
+        "title": "Area (px)",
+        "desc": "What is the relevant area that changes?",
+        "section": "Tracking",
+        "key": "area"
     },
     {
         "type": "numeric",
@@ -392,6 +392,17 @@
         "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
         "section": "Tracking",
         "key": "max_brightness"
+    },
+    {
+        "type": "title",
+        "title": "Developer"
+    },
+    {
+        "type": "bool",
+        "title": "Show FPS",
+        "desc": "Display the FPS counter on the top right corner.",
+        "section": "Developer",
+        "key": "showfps"
     }
 ]
 

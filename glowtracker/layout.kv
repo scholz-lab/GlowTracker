@@ -26,9 +26,38 @@ MainWindow:
         border: 0,0,0,0
         size_hint: (0.5, 0.12)
 
-    MyLabel:
+    BoxLayout:
         size_hint: (0.1, 0.12)
-        text: "v. 0.10.0"
+        FloatLayout:
+            Label:
+                size_hint: (1, 1)
+                font_size: 18
+                color: '#8e0045ff'
+
+                text: "v. 0.10.0"
+                id: versionlabel
+
+                pos_hint: {'x':.0, 'y':.0}
+                text_size: self.size
+                halign: 'center'
+                valign: 'middle'
+                
+            Label:
+                size_hint: (1, 1)
+                font_size: 18
+                color: '#ffffff'
+
+                text: "FPS:"
+                id: fpslabel
+
+                pos_hint: {'x':.0, 'y':.0}
+                text_size: self.size
+                halign: 'right'
+                valign: 'top'
+
+                disabled: app.config.getboolean('Developer', 'showfps') is False
+                opacity: 1 if app.config.getboolean('Developer', 'showfps') else 0
+
 
     LeftColumn:
         id: leftcolumn
