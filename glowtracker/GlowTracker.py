@@ -2403,14 +2403,9 @@ class RuntimeControls(BoxLayout):
             # get config values
             app: GlowTrackerApp = App.get_running_app()
 
-            focus_fps = app.config.getfloat('Livefocus', 'focus_fps')
+            focus_fps = app.config.getfloat('Autofocus', 'focus_fps')
 
             print("Live focus Framerate:", focus_fps)
-
-            # z_step = app.config.getfloat('Livefocus', 'min_step')
-            # unit = app.config.get('Livefocus', 'step_units')
-            # factor = app.config.getfloat('Livefocus', 'factor')
-            # self.focusevent = Clock.schedule_interval(partial(self.liveFocusLoop,  z_step, unit, factor), 1.0 / focus_fps)
 
             KP = app.config.getfloat('Autofocus', 'kp')
             KI = app.config.getfloat('Autofocus', 'ki')
@@ -3236,6 +3231,7 @@ class GlowTrackerApp(App):
             'kd': '0.0000001',
             'MAXSTEP' : '10',
             'bestfocusvalue' : 2000,
+            'focus_fps': '15',
             'isshowgraph': '0',
         })
 
@@ -3254,13 +3250,6 @@ class GlowTrackerApp(App):
             'translation_x': '0',
             'translation_y': '0',
             'rotation': '0'
-        })
-
-        config.setdefaults('Livefocus', {
-            'min_step': '1',
-            'step_units': 'um',
-            'focus_fps': '4',
-            'factor': '3'
         })
 
         config.setdefaults('Tracking', {

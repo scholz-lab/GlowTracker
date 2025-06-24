@@ -178,9 +178,16 @@
     {
         "type": "numeric",
         "title": "Best focus value",
-        "desc": "Current best focus value. Use as a target value for autofocusing",
+        "desc": "Current best focus value. Use as a target value for autofocusing.",
         "section": "Autofocus",
         "key": "bestfocusvalue"
+    },
+    {
+        "type": "numeric",
+        "title": "Focus FPS",
+        "desc": "How frequent to perform autofocusing.",
+        "section": "Autofocus",
+        "key": "focus_fps"
     },
     {
         "type": "bool",
@@ -277,39 +284,6 @@
         "desc": "Rotation from minor to main",
         "section": "DualColor",
         "key": "rotation"
-    },
-    {
-        "type": "title",
-        "title": "Live Focus"
-    },
-    {
-        "type": "numeric",
-        "title": "Minimal focussing step",
-        "desc": "what is the smallest step during live focus?",
-        "section": "Livefocus",
-        "key": "min_step"
-    },
-     {
-        "type": "options",
-        "title": "step units",
-        "desc": "micrometer/sec",
-        "section": "Livefocus",
-        "key": "step_units",
-        "options": ["um"]
-    },
-    {
-        "type": "numeric",
-        "title": "Update rate",
-        "desc": "how often is focused?",
-        "section": "Livefocus",
-        "key": "focus_fps"
-    },
-    {
-        "type": "numeric",
-        "title": "Conversion factor",
-        "desc": "how many times larger than the min step is the maximum step?",
-        "section": "Livefocus",
-        "key": "factor"
     },
     {
         "type": "title",
