@@ -2462,7 +2462,6 @@ class RuntimeControls(BoxLayout):
                     axisPlotHandle.set_xlim(min(graph_x_data), max(graph_x_data))
                     axisPlotHandle.set_ylim(min(graph_y_data), max(graph_y_data))
 
-
                     # restore background
                     fig.canvas.restore_region(background)
 
@@ -2473,7 +2472,7 @@ class RuntimeControls(BoxLayout):
                     fig.canvas.blit(axisPlotHandle.bbox)
 
                 
-                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, focus_fps)
+                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focus_fps)
 
             autoFocusArgs = autoFocusPID, imageAcquisitionManager, camera, stage, isshowgraph, focus_fps, graph_x_data, graph_y_data
 
@@ -2512,8 +2511,8 @@ class RuntimeControls(BoxLayout):
             stage.move_abs([pos[0], pos[1], newPos_z])
             
             if isShowGraph:
-                graph_x_data = list(range(len(autoFocusPID.focusLog)))
-                graph_y_data = autoFocusPID.focusLog
+                graph_x_data.append(len(autoFocusPID.focusLog) - 1)
+                graph_y_data.append(autoFocusPID.focusLog[-1])
             
             endTime = time.perf_counter()
 
