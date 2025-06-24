@@ -58,7 +58,7 @@ from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
 from overrides import override
-from typing import Tuple
+from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
@@ -2431,11 +2431,61 @@ class RuntimeControls(BoxLayout):
 
             imageAcquisitionManager: ImageAcquisitionManager = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
-            autoFocusArgs = autoFocusPID, imageAcquisitionManager, camera, stage, isshowgraph, focus_fps
+            # Data handle from LiveFocus thread to plotting in main thread
+            graph_x_data = list()
+            graph_y_data = list()
+
+            if isshowgraph:
+
+                # Create a LiveFocus graph
+                axisPlotHandle = None
+                linePlotHandle = None
+
+                # Init interactive plot handle
+                plt.ion()
+
+                fig, axisPlotHandle = plt.subplots()
+                linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
+
+                axisPlotHandle.set_title("Live Focus")
+                axisPlotHandle.set_xlabel("Iteration")
+                axisPlotHandle.set_ylabel("Estimated Focus")
+
+                background = fig.canvas.copy_from_bbox(axisPlotHandle.bbox)
+
+                plt.legend()
+                plt.show()
+
+                # Event to update the graph 
+                def updateLiveFocusGraph(dt:float):
+
+                    print('Update graph')
+                    
+                    linePlotHandle.set_xdata(graph_x_data)
+                    linePlotHandle.set_ydata(graph_y_data)
+
+                    axisPlotHandle.set_xlim(min(graph_x_data), max(graph_x_data))
+                    axisPlotHandle.set_ylim(min(graph_y_data), max(graph_y_data))
+
+
+                    # restore background
+                    fig.canvas.restore_region(background)
+
+                    # redraw just the points
+                    axisPlotHandle.draw_artist(linePlotHandle)
+
+                    # fill in the axes rectangle
+                    fig.canvas.blit(axisPlotHandle.bbox)
+
+                
+                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, focus_fps)
+
+            autoFocusArgs = autoFocusPID, imageAcquisitionManager, camera, stage, isshowgraph, focus_fps, graph_x_data, graph_y_data
 
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
 
             self.liveFocusThread.start()
+
 
         else:
             self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
@@ -2444,46 +2494,11 @@ class RuntimeControls(BoxLayout):
             self.autofocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, camera: basler.Camera, stage: Stage, isShowGraph: bool = False, fps: float = 10.0) -> None:
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, camera: basler.Camera, stage: Stage, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list()) -> None:
         
-        linePlotHandle = None
-        axisPlotHandle = None
-        posLinePlotHandle = None
-
         spf = 1.0 / fps
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
-
-        if isShowGraph:
-            # Init interactive plot handle
-            plt.ion()
-
-            fig, axisPlotHandle = plt.subplots()
-            linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
-            # axisPlotHandle.axhline(bestFocusValue, color = 'g', linestyle= '--', label= 'Best Focus')
-
-            axisPlotHandle.set_title("Live Focus")
-            axisPlotHandle.set_xlabel("Iteration")
-            axisPlotHandle.set_ylabel("Estimated Focus")
-
-            fig2, axisPlotHandle2 = plt.subplots()
-            central = 91.5
-            x_min = central - 2
-            x_max = central + 2
-            axisPlotHandle2.set_xlim(x_min, x_max)
-            
-            x_fit = np.linspace(x_min, x_max, 500)
-            normDistParams = [8.02318040e+02, 5.58524786e+02, 9.15577610e+01, 1.25053785e-01, 1.32576410e+00]
-            y_normal_fit = macro.DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fit, *normDistParams)
-            axisPlotHandle2.plot(x_fit, y_normal_fit, 'g-', label='Estimated Focus curve')
-
-            posLinePlotHandle, = axisPlotHandle2.plot([], [], 'r-', label= 'pos')
-
-            axisPlotHandle2.set_title("Live Position")
-            axisPlotHandle2.set_xlabel("Pos_z")
-            axisPlotHandle2.set_ylabel("Estimated Focus")
-
-            plt.legend()
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.autofocuscheckbox.state == 'down':
 
@@ -2501,20 +2516,9 @@ class RuntimeControls(BoxLayout):
             # Move to the new position
             stage.move_abs([pos[0], pos[1], newPos_z])
             
-            # Debug plot
             if isShowGraph:
-                x_data = list(range(len(autoFocusPID.focusLog)))
-                y_data = autoFocusPID.focusLog
-                linePlotHandle.set_xdata(x_data)
-                linePlotHandle.set_ydata(y_data)
-
-                axisPlotHandle.set_xlim(min(x_data), max(x_data))
-                axisPlotHandle.set_ylim(min(y_data), max(y_data))
-
-                posLinePlotHandle.set_xdata(autoFocusPID.posLog[-10:])
-                posLinePlotHandle.set_ydata(autoFocusPID.focusLog[-10:])
-
-                plt.draw()
+                graph_x_data = list(range(len(autoFocusPID.focusLog)))
+                graph_y_data = autoFocusPID.focusLog
             
             endTime = time.perf_counter()
 
@@ -2525,13 +2529,18 @@ class RuntimeControls(BoxLayout):
             if waitTime > 0:
                 time.sleep(waitTime)
         
-        # The live tracking has stopped
-        plt.ioff()
+        # The live focus has stopped
         self.autofocuscheckbox.state == 'normal'
     
 
     def stopLiveFocus(self):
-        pass
+        """Callback to stop LiveFocus mode
+        """
+        app: GlowTrackerApp = App.get_running_app()
+        isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
+        if isshowgraph:
+            Clock.unschedule(self.updateLiveFocusGraphEvent)
+            plt.ioff()
 
 
     def trackingButtonCallback(self):
