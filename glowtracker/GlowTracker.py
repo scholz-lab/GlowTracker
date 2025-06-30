@@ -3347,7 +3347,18 @@ class GlowTrackerApp(App):
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
 
         return layout
+    
 
+    def on_start(self):
+        '''Event handler for the `on_start` event which is fired after
+        initialization (after build() has been called) but before the
+        application has started running.
+        '''
+        # Display FPS label if enabled
+        showfps = self.config.getboolean('Developer', 'showfps')
+        if showfps:
+            self.startShowFpsEvent()
+    
     
     # use custom settings for our GUI
     def build_settings(self, settings):
@@ -3683,31 +3694,10 @@ class GlowTrackerApp(App):
                 # Convert from text to boolean
                 showfps = bool(int(value))
                 if showfps:
-                    self.root.ids.fpslabel.disabled = False
-                    self.root.ids.fpslabel.opacity = 1
-
-                    if self.updateFpsEvent is not None:
-                        # Stop current event first
-                        Clock.unschedule(self.updateFpsEvent)
-                        self.updateFpsEvent = None
-
-                    # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
-
-                    def tmpFunc(dt):
-                        self.root.ids.fpslabel.text = f'FPS: {Clock.get_fps():.1f}'
-
-                    # Start an update event
-                    self.updateFpsEvent = Clock.schedule_interval(
-                        tmpFunc
-                        , 1.0
-                    )
+                    self.startShowFpsEvent()
 
                 else:
-                    self.root.ids.fpslabel.disabled = True
-                    self.root.ids.fpslabel.opacity = 0
-                    # Stop an update event
-                    Clock.unschedule(self.updateFpsEvent)
-                    self.updateFpsEvent = None
+                    self.stopShowFpsEvent()
 
                 updateSettingsWidgetFlag = True
 
@@ -3727,6 +3717,33 @@ class GlowTrackerApp(App):
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
         
+
+    def startShowFpsEvent(self):
+        # Bring up the FPS label
+        self.root.ids.fpslabel.disabled = False
+        self.root.ids.fpslabel.opacity = 1
+
+        if self.updateFpsEvent is not None:
+            # Stop current event first
+            Clock.unschedule(self.updateFpsEvent)
+            self.updateFpsEvent = None
+
+        def updateFpsText(dt):
+            self.root.ids.fpslabel.text = f'FPS: {Clock.get_fps():.1f}'
+
+        # Start an update event
+        self.updateFpsEvent = Clock.schedule_interval(
+            updateFpsText
+            , 1.0
+        )
+
+    def stopShowFpsEvent(self):
+        self.root.ids.fpslabel.disabled = True
+        self.root.ids.fpslabel.opacity = 0
+        # Stop an update event
+        Clock.unschedule(self.updateFpsEvent)
+        self.updateFpsEvent = None
+
 
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
@@ -3780,13 +3797,17 @@ class GlowTrackerApp(App):
         # disconnect hardware
         # stop remaining stage motion
         if self.stage is not None:
+            print('Disconnecting Stage')
             self.stage.stop()
             self.stage.disconnect()
+        
         if self.camera is not None:
-            print('disconnecting')
+            print('Disconnecting Camera')
             self.camera.Close()
+
         # stop the app
         self.stop()
+        
         # close the window
         self.root_window.close()
     
