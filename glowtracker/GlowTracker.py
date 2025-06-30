@@ -2,7 +2,7 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
- 
+
 # 
 # Kivy Imports
 # 
@@ -15,6 +15,8 @@ from kivy.config import Config, ConfigParser
 # get the free clock (more accurate timing)
 # Config.set('graphics', 'KIVY_CLOCK', 'free')
 # Config.set('modules', 'monitor', '')
+Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-touch emulation
+
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
