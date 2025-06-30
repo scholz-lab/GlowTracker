@@ -278,11 +278,14 @@ class LeftColumn(BoxLayout):
             #   Load settings
             depthoffield = self.app.config.getfloat('Camera', 'depthoffield')
             depthoffieldsearchdistance = self.app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            dualColorModeMainSide = self.app.config.get('DualColor', 'mainside')
+            capturedRadius = self.app.config.getint('Tracking', 'capture_radius')
 
             #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
             depthOfFieldEstimator = macro.DepthOfFieldEstimator()
             numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
-            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples)
+            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, dualColorMode, dualColorModeMainSide, capturedRadius)
 
             #   Get best-focused position
             bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
@@ -899,13 +902,17 @@ class DepthOfFieldCalibration(BoxLayout):
         # get config values
         depthoffieldsearchdistance = app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
         depthoffieldnumsampleimages = app.config.getint('Calibration', 'depthoffieldnumsampleimages')
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
+        capturedRadius = app.config.getint('Tracking', 'capture_radius')
+
 
         # Take calibration images
         depthOfFieldEstimator = macro.DepthOfFieldEstimator()
         
         # Estimate DOF
         try:
-            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages)
+            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages, dualColorMode, mainSide, capturedRadius)
 
             # Save to config
             app.config.set('Camera', 'depthoffield', estimatedDof)
@@ -2411,6 +2418,8 @@ class RuntimeControls(BoxLayout):
             KI = app.config.getfloat('Autofocus', 'ki')
             KD = app.config.getfloat('Autofocus', 'kd')
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
+            dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+            capturedRadius = app.config.getint('Tracking', 'capture_radius')
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
             
@@ -2423,8 +2432,6 @@ class RuntimeControls(BoxLayout):
                 focusClosenessThreshold= 100,
                 integralLifeTime= 20
             )
-
-            imageAcquisitionManager: ImageAcquisitionManager = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
             # Data handle from LiveFocus thread to plotting in main thread
             graph_x_data = list()
@@ -2474,7 +2481,7 @@ class RuntimeControls(BoxLayout):
                 
                 self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focus_fps)
 
-            autoFocusArgs = autoFocusPID, imageAcquisitionManager, camera, stage, isshowgraph, focus_fps, graph_x_data, graph_y_data
+            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focus_fps, graph_x_data, graph_y_data
 
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
 
@@ -2488,9 +2495,10 @@ class RuntimeControls(BoxLayout):
             self.autofocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, imageAcquisitionManager: ImageAcquisitionManager, camera: basler.Camera, stage: Stage, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list()) -> None:
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list()) -> None:
         
         spf = 1.0 / fps
+        image = None
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
@@ -2499,18 +2507,37 @@ class RuntimeControls(BoxLayout):
             startTime = time.perf_counter()
 
             # Get current image
-            image = imageAcquisitionManager.image
+            if dualColorMode:
+                image = self.imageacquisitionmanager.dualColorMainSideImage
+            else:
+                image = self.imageacquisitionmanager.image
+
+            # Center-crop the image
+            h, w = image.shape
+            ymin, ymax, xmin, xmax = 0,h,0,w
+            
+            if capturedRadius > 0 :
+                ymin = np.max([0, h//2 - capturedRadius])
+                ymax = np.min([h, h//2 + capturedRadius])
+                xmin = np.max([0, w//2 - capturedRadius])
+                xmax = np.min([w, w//2 + capturedRadius])
+            
+            # Crop the region of interest.
+            #   Also, we have to copy. Otherwise, we would modified the original image.
+            croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
+
 
             # Get current position
             pos = stage.get_position(unit= 'mm', isAsync= False)
 
             # Perform one autofocus step
-            newPos_z = autoFocusPID.executePIDStep(image, pos= pos[2])
+            newPos_z = autoFocusPID.executePIDStep(croppedImage, pos= pos[2])
 
             # Move to the new position
             stage.move_abs([pos[0], pos[1], newPos_z])
             
             if isShowGraph:
+                # Update live graph data
                 graph_x_data.append(len(autoFocusPID.focusLog) - 1)
                 graph_y_data.append(autoFocusPID.focusLog[-1])
             

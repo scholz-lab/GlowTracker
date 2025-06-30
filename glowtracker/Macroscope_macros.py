@@ -277,8 +277,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     ymin, ymax, xmin, xmax = 0,h,0,w
     
     if capture_radius > 0 :
-        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-    # print(xmin, xmax, ymin, ymax)
+        ymin = np.max([0,h//2-capture_radius])
+        ymax = np.min([h,h//2+capture_radius])
+        xmin = np.max([0,w//2-capture_radius])
+        xmax = np.min([w,w//2+capture_radius])
     
     # Crop the region of interest.
     #   Also, we have to copy. Otherwise, we would modified the original image.
@@ -1058,7 +1060,7 @@ class DepthOfFieldEstimator:
         self.normDistParams: list[float, float, float, float, float] = [0, 0, 0, 0, 0]
 
 
-    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> float:
+    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> float:
         """Estimate the Depth of Field of an optical system by finding distance that cover 20% area about the sharpest focus
             1. Take calibration images.
             2. Fit normal distribution curve.
@@ -1074,7 +1076,7 @@ class DepthOfFieldEstimator:
             dof (float): estimated Depth of Field
         """
         
-        self.takeCalibrationImages(camera, stage, searchDistance, numImages)
+        self.takeCalibrationImages(camera, stage, searchDistance, numImages, dualColorMode, dualColorModeMainSide, capturedRadius)
         
         self.fitDataToNormalDist()
 
@@ -1091,7 +1093,7 @@ class DepthOfFieldEstimator:
         return estimatedDof
     
 
-    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int) -> None:
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1121,10 +1123,34 @@ class DepthOfFieldEstimator:
 
             # Take an image
             isSuccess, image = camera.singleTake()
-            
+
             if not isSuccess:
                 raise RuntimeError('Taking an image is unsuccessful')
 
+            h, w = image.shape
+            
+            if dualColorMode:
+
+                if dualColorModeMainSide == 'Left':
+                    image = image[:, :w//2]
+
+                elif dualColorModeMainSide == 'Right':
+                    image = image[:, w//2:]
+
+                w = image.shape[1]
+            
+
+            # Center-crop the image
+            ymin, ymax, xmin, xmax = 0,h,0,w
+            
+            if capturedRadius > 0 :
+                ymin = np.max([0, h//2 - capturedRadius])
+                ymax = np.min([h, h//2 + capturedRadius])
+                xmin = np.max([0, w//2 - capturedRadius])
+                xmax = np.min([w, w//2 + capturedRadius])
+            
+            image = image[ymin:ymax, xmin:xmax]
+            
             # Estimate focus of the image
             estimatedFocus = estimateFocus(image)
             
