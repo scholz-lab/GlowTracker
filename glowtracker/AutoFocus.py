@@ -265,9 +265,7 @@ class AutoFocusPID:
         self.errorLog.append(err)
         self.posLog.append(pos)
 
-        newPos = pos + U
-
-        return newPos
+        return U
 
 
     def isStable(self, recentSteps: int = 3) -> bool:

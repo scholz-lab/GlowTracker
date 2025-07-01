@@ -55,7 +55,7 @@ from kivy.uix.switch import Switch
 import datetime
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Lock
 from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
@@ -2423,6 +2423,7 @@ class RuntimeControls(BoxLayout):
             # Data handle from LiveFocus thread to plotting in main thread
             graph_x_data = list()
             graph_y_data = list()
+            graph_data_lock = Lock()
 
             if isshowgraph:
 
@@ -2437,7 +2438,7 @@ class RuntimeControls(BoxLayout):
 
                 linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
 
-                bestFocusPlotHandle, = axisPlotHandle.axhline(y= SP, color='g', linestyle='-.', label= 'Estimated Maximum Focus')
+                bestFocusPlotHandle = axisPlotHandle.axhline(y= SP, color= 'g', linestyle= '-.', label= 'Estimated Maximum Focus')
 
                 axisPlotHandle.set_title("Live Focus")
                 axisPlotHandle.set_xlabel("Iteration")
@@ -2451,10 +2452,9 @@ class RuntimeControls(BoxLayout):
                 # Event to update the graph 
                 def updateLiveFocusGraph( dt: float ):
 
-                    print('Update graph')
-                    
-                    linePlotHandle.set_xdata(graph_x_data)
-                    linePlotHandle.set_ydata(graph_y_data)
+                    with graph_data_lock:
+                        linePlotHandle.set_xdata(graph_x_data)
+                        linePlotHandle.set_ydata(graph_y_data)
 
                     axisPlotHandle.set_xlim(min(graph_x_data), max(graph_x_data))
                     axisPlotHandle.set_ylim(min(graph_y_data), max(graph_y_data))
@@ -2464,6 +2464,7 @@ class RuntimeControls(BoxLayout):
 
                     # redraw the line plots
                     axisPlotHandle.draw_artist(linePlotHandle)
+                    axisPlotHandle.draw_artist(bestFocusPlotHandle)
 
                     # fill in the axes rectangle
                     fig.canvas.blit(axisPlotHandle.bbox)
@@ -2472,7 +2473,7 @@ class RuntimeControls(BoxLayout):
                 self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focus_fps)
 
             # Pack args
-            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focus_fps, graph_x_data, graph_y_data
+            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focus_fps, graph_x_data, graph_y_data, graph_data_lock
 
             # Start the autofocus thread
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
@@ -2487,7 +2488,7 @@ class RuntimeControls(BoxLayout):
             self.autofocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list()) -> None:
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
         """Autofocus loop to be executed inside a thread.
 
         Args:
@@ -2500,6 +2501,7 @@ class RuntimeControls(BoxLayout):
             fps (float, optional): Maximum frequency to perform autofocus per second. Defaults to 10.0.
             graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
             graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
+            graph_data_lock (Lock, optional): threading Lock object for modifying graph_data
         """
         app: GlowTrackerApp = App.get_running_app()
         spf = 1.0 / fps
@@ -2533,18 +2535,22 @@ class RuntimeControls(BoxLayout):
             croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
 
             # Get current position
-            pos = stage.get_position(unit= 'mm', isAsync= False)
+            pos = app.coords[2]
 
             # Perform one autofocus step
-            newPos_z = autoFocusPID.executePIDStep(croppedImage, pos= pos[2])
+            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
-            # Move to the new position
-            stage.move_abs([pos[0], pos[1], newPos_z])
+            # Move relative z-position
+            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
+
+            # Update App's internal stage coordinate
+            app.coords[2] = app.coords[2] + relPosZ
             
             if isShowGraph:
                 # Update live graph data
-                graph_x_data.append(len(autoFocusPID.focusLog) - 1)
-                graph_y_data.append(autoFocusPID.focusLog[-1])
+                with graph_data_lock:
+                    graph_x_data.append(len(autoFocusPID.focusLog) - 1)
+                    graph_y_data.append(autoFocusPID.focusLog[-1])
             
             endTime = time.perf_counter()
 
