@@ -76,7 +76,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
-from AutoFocus import AutoFocusPID, FocusMode, Autofocus
+from AutoFocus import AutoFocusPID, FocusEstimationMethod
 
 # 
 # Math
@@ -2405,6 +2405,7 @@ class RuntimeControls(BoxLayout):
             KI = app.config.getfloat('Autofocus', 'ki')
             KD = app.config.getfloat('Autofocus', 'kd')
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
+            focusEstimationMethod = app.config.get('Autofocus', 'focusestimationmethod')
             dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
             capturedRadius = app.config.getint('Tracking', 'capture_radius')
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
@@ -2415,9 +2416,10 @@ class RuntimeControls(BoxLayout):
                 KI= KI,
                 KD= KD,
                 SP= SP,
+                focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
                 minStepDist= depthoffield,
-                focusClosenessThreshold= 100,
-                integralLifeTime= 20
+                acceptableErrorPercentage= 0.05,
+                integralLifeTime= 100
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -3267,7 +3269,7 @@ class GlowTrackerApp(App):
             'kp': '0.000001',
             'ki': '0.00000001',
             'kd': '0.0000001',
-            'MAXSTEP' : '10',
+            'focusestimationmethod' : 'SumOfHighDCT',
             'bestfocusvalue' : 2000,
             'focus_fps': '15',
             'isshowgraph': '0',

@@ -2,134 +2,44 @@ from typing import List
 import cv2
 import numpy as np
 from enum import Enum
-import math
 
-class FocusMode(Enum):
+class FocusEstimationMethod(Enum):
     # Variance of Laplace
-    VarianceOfLaplace = 0
+    VarianceOfLaplace = 'VarianceOfLaplace'
     # Tenengrad
-    Tenengrad = 1
+    Tenengrad = 'Tenengrad'
     # Brenner's
-    Brenners = 2
+    Brenners = 'Brenners'
     # Energy of Laplacian
-    EnergyOfLaplacian = 3
+    EnergyOfLaplacian = 'EnergyOfLaplacian'
     # Modified Laplacian
-    ModifiedLaplace = 4
+    ModifiedLaplace = 'ModifiedLaplace'
     # Sum of High-Frequency DCT Coefficient
-    SumOfHighDCT = 5
-
-class Autofocus:
-
-    def __init__(self, initial_step=0.1, min_step=0.001, max_iterations=20):
-        
-        self.initial_step = initial_step
-        self.min_step = min_step
-        self.max_iterations = max_iterations
-        self.reset()
-
-    def __init__(self, step_size=1.0, min_step=0.1, trend_window=5, damping=0.9):
-        self.step_size = step_size
-        self.min_step = min_step
-        self.damping = damping
-        self.direction = 1  # +1 = forward, -1 = backward
-        self.trend_window = trend_window
-        self.trend_buffer = collections.deque(maxlen=trend_window)
-        self.last_focus = None
-        self.best_focus = None
-        self.best_position = None
-
-
-    def reset(self):
-
-        self.current_step = self.initial_step
-        self.direction = 1  # Start moving forward
-        self.iterations = 0
-        self.best_focus = None
-        self.best_pos = None
-        self.last_pos = None
-        self.last_focus = None
-        self.done = False
-
-
-    def estimateFocus(self, image):
-        resized = cv2.resize(image, (32, 32))  # Small for fast DCT
-        dct = cv2.dct(np.float32(resized))
-        hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
-        estimatedFocus = np.sum(np.abs(hf_coeffs))
-        return estimatedFocus
-
-    def execute_one_step(self, pos, image):
-        
-        # Estimate focus
-        focus_value = self.estimateFocus(image)
-        
-        # Update best focus
-        if self.best_focus is None or \
-            focus_value > self.best_focus:
-            
-            self.best_focus = focus_value
-            self.best_pos = pos
-
-        if self.last_focus is None:
-            # Nudge a little in random direction
-            pass
-
-        else:
-            # Check avg focus trend if it has been increasin or decreasing
-            trend = focus_value - self.last_focus
-            self.trend_buffer.append(trend)
-
-            avg_trend = sum(self.trend_buffer) / len(self.trend_buffer)
-
-            if avg_trend < 0:
-                # Focus is degrading → reverse direction
-                self.direction *= -1
-                self.step_size *= self.damping
-
-                # if self.step_size < self.min_step:
-                #     self.step_size = self.min_step
-
-        self.last_focus = focus_value
-
-        return pos + self.direction * self.step_size
-
-        if self.last_focus is not None:
-            if focus_value < self.last_focus:
-                # We got worse → reverse and reduce step
-                self.direction *= -1
-                self.current_step *= 0.5
-
-        if self.current_step < self.min_step or self.iterations >= self.max_iterations:
-            self.done = True
-            return None
-
-        # Update state
-        self.last_pos = pos
-        self.last_focus = focus_value
-        self.iterations += 1
-
-        # Return next lens position
-        next_pos = pos + self.direction * self.current_step
-        return next_pos
-
-    def should_continue(self):
-        return not self.done
-
-    def get_result(self):
-        return self.best_pos, self.best_focus
-
+    SumOfHighDCT = 'SumOfHighDCT'
 
 class AutoFocusPID:
 
-    def __init__(self, KP: float = 0.5, KI: float = 0.01, KD: float = 0.1, SP: float = 1000, minStepDist: float = 0.001, focusClosenessThreshold: float = 100, integralLifeTime: int = 20 ) -> None:
+    def __init__(self, KP: float = 0.5, KI: float = 0.01, KD: float = 0.1, SP: float = 1000, focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT, minStepDist: float = 0.0001, acceptableErrorPercentage: float = 0.05, integralLifeTime: int = 100 ) -> None:
+        """Initialize attributes
+
+        Args:
+            KP (float, optional): Proportional constant. Defaults to 0.5.
+            KI (float, optional): Integral constant. Defaults to 0.01.
+            KD (float, optional): Differential constant. Defaults to 0.1.
+            SP (float, optional): Setpoint. Defaults to 1000.
+            focusEstimationMethod (FocusEstimationMethod, optional): Which kind of focus estimation mode to use. Defaults to focusEstimationMethod.SumOfHighDCT
+            minStepDist (float, optional): Minimum move distance. Defaults to 0.0001.
+            acceptableErrorPercentage (float, optional): Acceptable error ratio between PV / SP . Defaults to 0.05 which means PV is acceptable within 0.95 <= PV / SP <= 1.05 range
+            integralLifeTime (int, optional): How far back (iteration step) do we count the values into the integral. Defaults to 100.
+        """
 
         self.KP = KP
         self.KI = KI
         self.KD = KD
-
         self.SP: float = SP
+        self.focusEstimationMethod = focusEstimationMethod
         self.minStepDist: float = minStepDist
-        self.focusClosenessThreshold: float = focusClosenessThreshold
+        self.acceptableErrorPercentage: float = acceptableErrorPercentage
         
         self.integralLifeTime: int = integralLifeTime
         
@@ -142,7 +52,7 @@ class AutoFocusPID:
         self.directionResetCounter = 0
 
 
-    def estimateFocus(self, image: np.ndarray, mode: FocusMode = FocusMode.SumOfHighDCT) -> float:
+    def estimateFocus(self, image: np.ndarray) -> float:
         """Estimate focus of an image.
 
         Args:
@@ -154,31 +64,30 @@ class AutoFocusPID:
         """
         estimatedFocus: float = 0
 
-        if mode == FocusMode.VarianceOfLaplace:
-
+        if self.focusEstimationMethod == FocusEstimationMethod.VarianceOfLaplace:
             laplacian = cv2.Laplacian(image, cv2.CV_64F)
             estimatedFocus = laplacian.var()
 
-        elif mode == FocusMode.Tenengrad:
+        elif self.focusEstimationMethod == FocusEstimationMethod.Tenengrad:
             gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
             gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
             gradient_magnitude = gx**2 + gy**2
             estimatedFocus = np.mean(gradient_magnitude)
 
-        elif mode == FocusMode.Brenners:
+        elif self.focusEstimationMethod == FocusEstimationMethod.Brenners:
             shifted = np.roll(image, -2, axis=1)
             diff = (image - shifted)**2
             estimatedFocus = np.sum(diff)
         
-        elif mode == FocusMode.EnergyOfLaplacian:
+        elif self.focusEstimationMethod == FocusEstimationMethod.EnergyOfLaplacian:
             lap = cv2.Laplacian(image, cv2.CV_64F)
             estimatedFocus = np.sum(np.abs(lap))
         
-        elif mode == FocusMode.ModifiedLaplace:
+        elif self.focusEstimationMethod == FocusEstimationMethod.ModifiedLaplace:
             mlap = cv2.Laplacian(image, cv2.CV_64F, ksize=3)
             estimatedFocus = np.sum(np.abs(mlap))
         
-        elif mode == FocusMode.SumOfHighDCT:
+        elif self.focusEstimationMethod == FocusEstimationMethod.SumOfHighDCT:
             resized = cv2.resize(image, (32, 32))  # Small for fast DCT
             dct = cv2.dct(np.float32(resized))
             hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
@@ -187,20 +96,19 @@ class AutoFocusPID:
         return estimatedFocus
         
 
-    def executePIDStep(self, image: np.ndarray, pos: float, estimateFocusMode: FocusMode = FocusMode.SumOfHighDCT) -> float:
+    def executePIDStep(self, image: np.ndarray, pos: float) -> float:
         """Perform one PID control step based on current image and lens position.
 
         Args:
             image (np.ndarray): gray-scaled image
             pos (float): stage z-axis position
-            estimateFocusMode (FocusMode, optional): Mode of estimating focus from an image. Defaults to FocusMode.SumOfHighDCT.
 
         Returns:
             relPosZ (float): estimated **relative** z-axis position to move to
         """
 
         # Estimate focus the image at current position
-        PV = self.estimateFocus(image, estimateFocusMode)
+        PV = self.estimateFocus(image)
 
         # # Apply weighted average to PV
         # pvs = (self.focusLog[-2:] + [PV])[::-1]
@@ -224,11 +132,9 @@ class AutoFocusPID:
             # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
             derivative = (err - prevErr)
 
-            # If the difference between current and previous error is still high enough
-            #   and the difference between current focus and target focus (SP) is still high
-            # if abs(derivative) > self.focusClosenessThreshold \
-                # and abs(err) > self.focusClosenessThreshold:
-            if abs(err) > self.focusClosenessThreshold:
+            # If the PV is not close enough to the SP (percentage-wise), then execute 
+            errorRatio = abs( PV / self.SP - 1.0)
+            if errorRatio > self.acceptableErrorPercentage:
                 
                 # PID calculations
                 self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
@@ -236,9 +142,7 @@ class AutoFocusPID:
                 U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
 
                 # Decide direction. If the error is increasing then we should flip direction.
-                # Maybe we should average from some range to avoid noise?
-                #   Compute past derivatives
-                histLength = 3
+                histLength = 5
 
                 if self.directionResetCounter > histLength:
                     
@@ -266,16 +170,4 @@ class AutoFocusPID:
         self.posLog.append(pos)
 
         return U
-
-
-    def isStable(self, recentSteps: int = 3) -> bool:
-        """Check if all recent-step errors are less than threshold"""
-
-        if len(self.errorLog) < recentSteps:
-            # Not enough history
-            return False
-        
-        recentErrors = self.errorLog[-recentSteps:]
-
-        return all(abs(e) < self.errorThreashold for e in recentErrors)
 

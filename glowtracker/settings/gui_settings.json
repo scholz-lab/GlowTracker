@@ -169,11 +169,12 @@
         "key": "kd"
     },
     {
-        "type": "numeric",
-        "title": "Max steps",
-        "desc": "Maxinum number of steps to perform autofocus iteration.",
+        "type": "options",
+        "title": "Focus Estimation Method",
+        "desc": "The method which uses to estimate the focus value from an image.",
         "section": "Autofocus",
-        "key": "MAXSTEP"
+        "key": "focusestimationmethod",
+        "options": ["VarianceOfLaplace", "Tenengrad", "Brenners", "EnergyOfLaplacian", "ModifiedLaplace", "SumOfHighDCT"]
     },
     {
         "type": "numeric",
