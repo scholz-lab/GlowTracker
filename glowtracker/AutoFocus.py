@@ -188,8 +188,17 @@ class AutoFocusPID:
         
 
     def executePIDStep(self, image: np.ndarray, pos: float, estimateFocusMode: FocusMode = FocusMode.SumOfHighDCT) -> float:
-        """Perform one PID control step based on current image and lens position."""
-        
+        """Perform one PID control step based on current image and lens position.
+
+        Args:
+            image (np.ndarray): gray-scaled image
+            pos (float): stage z-axis position
+            estimateFocusMode (FocusMode, optional): Mode of estimating focus from an image. Defaults to FocusMode.SumOfHighDCT.
+
+        Returns:
+            relPosZ (float): estimated **relative** z-axis position to move to
+        """
+
         # Estimate focus the image at current position
         PV = self.estimateFocus(image, estimateFocusMode)
 
@@ -272,23 +281,3 @@ class AutoFocusPID:
 
         return all(abs(e) < self.errorThreashold for e in recentErrors)
 
-
-if __name__ == '__main__':
-
-    autoFocusPID = AutoFocusPID(Kp=0.5, Ki=0.01, Kd=0.1)
-
-    # Get current stage-z pos
-    pos_z = 0.0
-
-    MAX_STEP = 10
-
-    while not autoFocusPID.is_focus_stable() \
-        and len(autoFocusPID.focusLog) < MAX_STEP:
-
-        # Take an image at the current position
-        image = np.array([], np.float32)
-        
-        new_pos_z = autoFocusPID.executePIDStep(image, pos_z, dt= 1)
-
-        # Move lens to new lens_position
-        stage.move_absolute(new_pos_z)

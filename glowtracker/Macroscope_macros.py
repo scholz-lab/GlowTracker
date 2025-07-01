@@ -36,49 +36,6 @@ import itk
 import cv2
 
 
-#%% Autofocus using z axis
-def zFocus(stage, camera: basler.Camera, stepsize, stepunits, nsteps):
-    """take a series of images and move the camera, then calculate focus."""
-    stack = []
-    zpos = []
-    stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
-    for i in np.arange(0, nsteps):
-            isSuccess, img = camera.singleTake()
-            pos = stage.get_position()
-            print(pos)
-            if isSuccess and len(pos) > 2:
-                stack.append(img)
-                zpos.append(pos[2])
-                print(stepunits)
-                stage.move_z(stepsize, stepunits, wait_until_idle = True)
-    stack = np.array(stack)
-    zpos = np.array(zpos)
-    # Looking for the focal plane using the frame of maximal variance
-    average_frame_intensity = np.mean(stack, axis=(2, 1))
-    normalized_stack = stack.astype(float)/average_frame_intensity[:, np.newaxis, np.newaxis] 
-    stack_variance = np.var(normalized_stack, axis=(2, 1))
-    focal_plane = np.argmax(stack_variance)
-    # Moving to best position
-    stage.move_abs((None,None,zpos[focal_plane]))
-    # return focus values, images and best location
-    return stack_variance, stack, zpos, focal_plane
-
-
-# functions for live focusing
-def calculate_focus(im, nbin = 1):
-    """given an image array, calculate a proxy for sharpness."""
-    return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
-
-
-def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
-    """given past values calculate the next focussing move."""
-    error = (focus_history[-1]-focus_history[-2])/np.abs(focus_history[-2])#  current - previous. negative means it got worse
-    print(error)
-    if ~np.isfinite(error):
-        return 0
-    return error*np.sign(past_motion)*focus_step_factor*min_step#np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
-
-
 # functions for tracking
 #%% Functions used for centering stage
 # def extractWorms(img, area=0, bin_factor=4, li_init=10, display = True):
@@ -1071,6 +1028,9 @@ class DepthOfFieldEstimator:
             stage (zaber.Stage): Zaber stage object
             searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
             numImages (int): number of images to sample in the above distance to estimate DoF
+            dualColorMode (bool): is the image dual-colored. Defaults to False
+            dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
+            capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping.
 
         Returns:
             dof (float): estimated Depth of Field
@@ -1101,6 +1061,9 @@ class DepthOfFieldEstimator:
             stage (zaber.Stage): Zaber stage object
             searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
             numImages (int): number of images to sample in the above distance to estimate DoF
+            dualColorMode (bool): is the image dual-colored. Defaults to False
+            dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
+            capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping
 
         Raises:
             RuntimeError: When taking an image is unsuccessful
@@ -1177,7 +1140,7 @@ class DepthOfFieldEstimator:
             A (float): Amplitude
             mu (float): mean
             alpha (float): scale
-            beta (float): shape
+            beta (float): shape/spread
 
         Returns:
             y(float): y value

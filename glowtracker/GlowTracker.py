@@ -257,7 +257,8 @@ class LeftColumn(BoxLayout):
 
 
     def autoFocusButtonCallback(self):
-
+        """Move to the best focused distance by perform a sweep scan (z-axis) about the current position.
+        """
         camera = self.app.camera
         stage = self.app.stage
 
@@ -305,25 +306,6 @@ class LeftColumn(BoxLayout):
 
             # Return LiveView state
             liveViewButton.state = prevLiveViewButtonState
-            
-
-    # run autofocussing once on current location
-    def run_autofocus(self):
-        camera = self.app.camera
-        stage = self.app.stage
-
-        if camera is not None and stage is not None:
-            # stop grabbing
-            self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
-            # get config values
-            stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
-            stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
-            nsteps = self._popup.content.nsteps#app.config.getint('Autofocus', 'nsteps')
-            # run the autofocus
-            _, imstack, _, focal_plane = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
-            # update the images shown - delete old ones if rerunning
-            self._popup.content.delete_images()
-            self._popup.content.add_images(imstack, nsteps, focal_plane)
 
 
 class MiddleColumn(BoxLayout, StencilView):
@@ -2404,12 +2386,15 @@ class RuntimeControls(BoxLayout):
 
 
     def startLiveFocus(self):
-        # schedule a focus routine
+        """Initiate an autofocus thread.
+        """
         camera: GlowTrackerApp = App.get_running_app().camera
         stage: Stage = App.get_running_app().stage
         
+        # Sanity check
         if camera is not None and stage is not None and camera.IsGrabbing():
-            # get config values
+
+            # Load config values
             app: GlowTrackerApp = App.get_running_app()
 
             focus_fps = app.config.getfloat('Autofocus', 'focus_fps')
@@ -2449,7 +2434,10 @@ class RuntimeControls(BoxLayout):
                 plt.ion()
 
                 fig, axisPlotHandle = plt.subplots()
+
                 linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
+
+                bestFocusPlotHandle, = axisPlotHandle.axhline(y= SP, color='g', linestyle='-.', label= 'Estimated Maximum Focus')
 
                 axisPlotHandle.set_title("Live Focus")
                 axisPlotHandle.set_xlabel("Iteration")
@@ -2461,7 +2449,7 @@ class RuntimeControls(BoxLayout):
                 plt.show()
 
                 # Event to update the graph 
-                def updateLiveFocusGraph(dt:float):
+                def updateLiveFocusGraph( dt: float ):
 
                     print('Update graph')
                     
@@ -2474,17 +2462,19 @@ class RuntimeControls(BoxLayout):
                     # restore background
                     fig.canvas.restore_region(background)
 
-                    # redraw just the points
+                    # redraw the line plots
                     axisPlotHandle.draw_artist(linePlotHandle)
 
                     # fill in the axes rectangle
                     fig.canvas.blit(axisPlotHandle.bbox)
 
-                
+                # Lunch an updating event. This has to be executed in the main thread so we can't multithread it.
                 self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focus_fps)
 
+            # Pack args
             autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focus_fps, graph_x_data, graph_y_data
 
+            # Start the autofocus thread
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
 
             self.liveFocusThread.start()
@@ -2498,12 +2488,26 @@ class RuntimeControls(BoxLayout):
 
     
     def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list()) -> None:
-        
+        """Autofocus loop to be executed inside a thread.
+
+        Args:
+            autoFocusPID (AutoFocusPID): Autofocus object
+            camera (basler.Camera): camera
+            stage (Stage): stage
+            dualColorMode (bool, optional): is the image dual-colored. Defaults to False.
+            capturedRadius (float, optional): radius from center of the image to square crop. Defaults to 0 means no cropping.
+            isShowGraph (bool, optional): Is the live focus graph enabled. Defaults to False.
+            fps (float, optional): Maximum frequency to perform autofocus per second. Defaults to 10.0.
+            graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
+            graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
+        """
+        app: GlowTrackerApp = App.get_running_app()
         spf = 1.0 / fps
         image = None
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
+        # Continuously running as long as these conditions are met.
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.autofocuscheckbox.state == 'down':
 
             startTime = time.perf_counter()
@@ -2528,7 +2532,6 @@ class RuntimeControls(BoxLayout):
             #   Also, we have to copy. Otherwise, we would modified the original image.
             croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
 
-
             # Get current position
             pos = stage.get_position(unit= 'mm', isAsync= False)
 
@@ -2549,6 +2552,7 @@ class RuntimeControls(BoxLayout):
 
             waitTime = spf - elapsedTime
 
+            # Wait until matching spf
             if waitTime > 0:
                 time.sleep(waitTime)
         
