@@ -19,7 +19,19 @@ class FocusEstimationMethod(Enum):
 
 class AutoFocusPID:
 
-    def __init__(self, KP: float = 0.5, KI: float = 0.01, KD: float = 0.1, SP: float = 1000, focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT, minStepDist: float = 0.0001, acceptableErrorPercentage: float = 0.05, integralLifeTime: int = 100 ) -> None:
+    def __init__(
+        self, 
+        KP: float = 0.5, 
+        KI: float = 0.01,
+        KD: float = 0.1,
+        SP: float = 1000,
+        focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
+        minStepDist: float = 0.0001,
+        integralLifeTime: int = 0,
+        smoothingWindow: int = 1,
+        minStepBeforeChangeDir: int = 0,
+        acceptableErrorPercentage: float = 0.05
+    ) -> None:
         """Initialize attributes
 
         Args:
@@ -29,8 +41,10 @@ class AutoFocusPID:
             SP (float, optional): Setpoint. Defaults to 1000.
             focusEstimationMethod (FocusEstimationMethod, optional): Which kind of focus estimation mode to use. Defaults to focusEstimationMethod.SumOfHighDCT
             minStepDist (float, optional): Minimum move distance. Defaults to 0.0001.
+            integralLifeTime (int, optional): How far back (iteration step) do we count the values into the integral. Defaults to 0 means no limit.
+            smoothingWindow (int, optional): How far back (iteration step) do we smooth the PV over. Defaults to 1, which means no smoothing.
+            minStepBeforeChangeDir (int, optional): Minimum number of steps to perform before allowing changing of direction. Defaults to 0, which means can change direction at any time.
             acceptableErrorPercentage (float, optional): Acceptable error ratio between PV / SP . Defaults to 0.05 which means PV is acceptable within 0.95 <= PV / SP <= 1.05 range
-            integralLifeTime (int, optional): How far back (iteration step) do we count the values into the integral. Defaults to 100.
         """
 
         self.KP = KP
@@ -39,16 +53,20 @@ class AutoFocusPID:
         self.SP: float = SP
         self.focusEstimationMethod = focusEstimationMethod
         self.minStepDist: float = minStepDist
+        self.integralLifeTime: int = integralLifeTime
+        self.smoothingWindow: int = smoothingWindow
+        # Blending weight for PV smoothing
+        self.WEIGHT_MAX = 9
+        self.WEIHT_MIN = 1
+        self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
         self.acceptableErrorPercentage: float = acceptableErrorPercentage
         
-        self.integralLifeTime: int = integralLifeTime
         
         self.posLog: List[float] = []
         self.focusLog: List[float] = []
         self.errorLog: List[float] = []
 
         self.direction: int = 1
-
         self.directionResetCounter = 0
 
 
@@ -110,13 +128,18 @@ class AutoFocusPID:
         # Estimate focus the image at current position
         PV = self.estimateFocus(image)
 
-        # # Apply weighted average to PV
-        # pvs = (self.focusLog[-2:] + [PV])[::-1]
-        # weights = [7, 3, 1]
-        # PV = 0
-        # for i in range(len(pvs)):
-        #     PV = PV + pvs[i] * weights[i]
-        # PV = PV / sum(weights)
+        # Apply a linear, weighted average to PV with emphasis on recent data
+        focuses = np.array( self.focusLog[-self.smoothingWindow:] )
+
+        # Compute linear weight
+        t = np.array([1])
+
+        if (len(focuses) > 1):
+            t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+        
+        weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+
+        PV = sum(focuses * weights) / sum(weights)
 
         # Compute error
         err = self.SP - PV
@@ -137,19 +160,21 @@ class AutoFocusPID:
             if errorRatio > self.acceptableErrorPercentage:
                 
                 # PID calculations
-                self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
+                if self.integralLifeTime > 0:
+                    self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
+                else:
+                    self.integral = np.sum(self.errorLog)
 
                 U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
 
                 # Decide direction. If the error is increasing then we should flip direction.
-                histLength = 5
-
-                if self.directionResetCounter > histLength:
+                if self.directionResetCounter > self.minStepBeforeChangeDir:
                     
                     # Compute derivative of past error up to histLength
-                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-histLength:]
+                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
                     diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
 
+                    # The averaing error is increasing
                     if sum(diffs) > 0:
                         
                         print('\t Change direction')

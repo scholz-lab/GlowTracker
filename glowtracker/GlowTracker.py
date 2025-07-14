@@ -2397,9 +2397,9 @@ class RuntimeControls(BoxLayout):
             # Load config values
             app: GlowTrackerApp = App.get_running_app()
 
-            focus_fps = app.config.getfloat('Autofocus', 'focus_fps')
+            focusfps = app.config.getfloat('Autofocus', 'focusfps')
 
-            print("Live focus Framerate:", focus_fps)
+            print("Live focus Framerate:", focusfps)
 
             KP = app.config.getfloat('Autofocus', 'kp')
             KI = app.config.getfloat('Autofocus', 'ki')
@@ -2410,6 +2410,8 @@ class RuntimeControls(BoxLayout):
             capturedRadius = app.config.getint('Tracking', 'capture_radius')
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
+            smoothingwindow = app.config.getint('Tracking', 'smoothingwindow')
+            minstepbeforechangedir = app.config.getint('Tracking', 'minstepbeforechangedir')
             
             autoFocusPID = AutoFocusPID(
                 KP= KP,
@@ -2419,7 +2421,9 @@ class RuntimeControls(BoxLayout):
                 focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
                 minStepDist= depthoffield,
                 acceptableErrorPercentage= 0.05,
-                integralLifeTime= 100
+                integralLifeTime= 0,
+                smoothingWindow= smoothingwindow,
+                minStepBeforeChangeDir= minstepbeforechangedir
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -2472,10 +2476,10 @@ class RuntimeControls(BoxLayout):
                     fig.canvas.blit(axisPlotHandle.bbox)
 
                 # Lunch an updating event. This has to be executed in the main thread so we can't multithread it.
-                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focus_fps)
+                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focusfps)
 
             # Pack args
-            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focus_fps, graph_x_data, graph_y_data, graph_data_lock
+            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focusfps, graph_x_data, graph_y_data, graph_data_lock
 
             # Start the autofocus thread
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
@@ -2543,7 +2547,7 @@ class RuntimeControls(BoxLayout):
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
             # Move relative z-position
-            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
+            stage.move_z(relPosZ, unit='mm', wait_until_idle= True)
 
             # Update App's internal stage coordinate
             app.coords[2] = app.coords[2] + relPosZ
@@ -3269,9 +3273,11 @@ class GlowTrackerApp(App):
             'kp': '0.000001',
             'ki': '0.00000001',
             'kd': '0.0000001',
-            'focusestimationmethod' : 'SumOfHighDCT',
-            'bestfocusvalue' : 2000,
-            'focus_fps': '15',
+            'focusestimationmethod': 'SumOfHighDCT',
+            'smoothingwindow': '1',
+            'minstepbeforechangedir': '0',
+            'bestfocusvalue': 2000,
+            'focusfps': '15',
             'isshowgraph': '0',
         })
 

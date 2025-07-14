@@ -149,22 +149,22 @@
     },
     {
         "type": "numeric",
-        "title": "K_p",
-        "desc": "const",
+        "title": "Proportional gain (P)",
+        "desc": "How strongly the controller reacts to the current error.",
         "section": "Autofocus",
         "key": "kp"
     },
     {
         "type": "numeric",
-        "title": "K_i",
-        "desc": "const",
+        "title": "Integral gain (I)",
+        "desc": "How much the controller compensates for accumulated past errors.",
         "section": "Autofocus",
         "key": "ki"
     },
     {
         "type": "numeric",
-        "title": "K_d",
-        "desc": "const",
+        "title": "Differential gain (D)",
+        "desc": "How rapidly changing errors are dampened.",
         "section": "Autofocus",
         "key": "kd"
     },
@@ -178,8 +178,22 @@
     },
     {
         "type": "numeric",
+        "title": "Smoothing window size",
+        "desc": "How far back (iterations) do we perform a linear, weighted average smoothing to the estimated focus value (PV). Defaults to 1, which means only consider the current value -- no smoothing.",
+        "section": "Autofocus",
+        "key": "smoothingwindow"
+    },
+    {
+        "type": "numeric",
+        "title": "Min steps before change dir",
+        "desc": "Minimum step before allowin chaning direction. Defaults to 0, which means can change direction at any time.",
+        "section": "Autofocus",
+        "key": "minstepbeforechangedir"
+    },
+    {
+        "type": "numeric",
         "title": "Best focus value",
-        "desc": "Current best focus value. Use as a target value for autofocusing.",
+        "desc": "Current best focus value. Use as a target value for autofocusing. Automatically filled in from DoF calibration.",
         "section": "Autofocus",
         "key": "bestfocusvalue"
     },
@@ -188,12 +202,12 @@
         "title": "Focus FPS",
         "desc": "How frequent to perform autofocusing.",
         "section": "Autofocus",
-        "key": "focus_fps"
+        "key": "focusfps"
     },
     {
         "type": "bool",
         "title": "Show graph",
-        "desc": "Display graph of focus values",
+        "desc": "Display graph of focus values. Useful for tuning constants.",
         "section": "Autofocus",
         "key": "isshowgraph"
     },
