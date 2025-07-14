@@ -17,6 +17,51 @@ class FocusEstimationMethod(Enum):
     # Sum of High-Frequency DCT Coefficient
     SumOfHighDCT = 'SumOfHighDCT'
 
+
+def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarray) -> float:
+    """Estimate focus of an image.
+
+    Args:
+        image (np.ndarray): gray-scale image
+        mode (int, optional): Focus mode. Defaults to 5 which is Sum of High-Frequency DCT Coefficients.
+
+    Returns:
+        float: estimated focus
+    """
+    estimatedFocus: float = 0
+
+    if focusEstimationMethod == FocusEstimationMethod.VarianceOfLaplace:
+        laplacian = cv2.Laplacian(image, cv2.CV_64F)
+        estimatedFocus = laplacian.var()
+
+    elif focusEstimationMethod == FocusEstimationMethod.Tenengrad:
+        gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
+        gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
+        gradient_magnitude = gx**2 + gy**2
+        estimatedFocus = np.mean(gradient_magnitude)
+
+    elif focusEstimationMethod == FocusEstimationMethod.Brenners:
+        shifted = np.roll(image, -2, axis=1)
+        diff = (image - shifted)**2
+        estimatedFocus = np.sum(diff)
+    
+    elif focusEstimationMethod == FocusEstimationMethod.EnergyOfLaplacian:
+        lap = cv2.Laplacian(image, cv2.CV_64F)
+        estimatedFocus = np.sum(np.abs(lap))
+    
+    elif focusEstimationMethod == FocusEstimationMethod.ModifiedLaplace:
+        mlap = cv2.Laplacian(image, cv2.CV_64F, ksize=3)
+        estimatedFocus = np.sum(np.abs(mlap))
+    
+    elif focusEstimationMethod == FocusEstimationMethod.SumOfHighDCT:
+        resized = cv2.resize(image, (32, 32))  # Small for fast DCT
+        dct = cv2.dct(np.float32(resized))
+        hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
+        estimatedFocus = np.sum(np.abs(hf_coeffs))
+
+    return estimatedFocus
+
+
 class AutoFocusPID:
 
     def __init__(
@@ -70,50 +115,6 @@ class AutoFocusPID:
         self.directionResetCounter = 0
 
 
-    def estimateFocus(self, image: np.ndarray) -> float:
-        """Estimate focus of an image.
-
-        Args:
-            image (np.ndarray): gray-scale image
-            mode (int, optional): Focus mode. Defaults to 5 which is Sum of High-Frequency DCT Coefficients.
-
-        Returns:
-            float: estimated focus
-        """
-        estimatedFocus: float = 0
-
-        if self.focusEstimationMethod == FocusEstimationMethod.VarianceOfLaplace:
-            laplacian = cv2.Laplacian(image, cv2.CV_64F)
-            estimatedFocus = laplacian.var()
-
-        elif self.focusEstimationMethod == FocusEstimationMethod.Tenengrad:
-            gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
-            gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
-            gradient_magnitude = gx**2 + gy**2
-            estimatedFocus = np.mean(gradient_magnitude)
-
-        elif self.focusEstimationMethod == FocusEstimationMethod.Brenners:
-            shifted = np.roll(image, -2, axis=1)
-            diff = (image - shifted)**2
-            estimatedFocus = np.sum(diff)
-        
-        elif self.focusEstimationMethod == FocusEstimationMethod.EnergyOfLaplacian:
-            lap = cv2.Laplacian(image, cv2.CV_64F)
-            estimatedFocus = np.sum(np.abs(lap))
-        
-        elif self.focusEstimationMethod == FocusEstimationMethod.ModifiedLaplace:
-            mlap = cv2.Laplacian(image, cv2.CV_64F, ksize=3)
-            estimatedFocus = np.sum(np.abs(mlap))
-        
-        elif self.focusEstimationMethod == FocusEstimationMethod.SumOfHighDCT:
-            resized = cv2.resize(image, (32, 32))  # Small for fast DCT
-            dct = cv2.dct(np.float32(resized))
-            hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
-            estimatedFocus = np.sum(np.abs(hf_coeffs))
-
-        return estimatedFocus
-        
-
     def executePIDStep(self, image: np.ndarray, pos: float) -> float:
         """Perform one PID control step based on current image and lens position.
 
@@ -126,10 +127,13 @@ class AutoFocusPID:
         """
 
         # Estimate focus the image at current position
-        PV = self.estimateFocus(image)
+        PV = estimateFocus(self.focusEstimationMethod, image)
 
         # Apply a linear, weighted average to PV with emphasis on recent data
-        focuses = np.array( self.focusLog[-self.smoothingWindow:] )
+        focuses = [PV]
+        if self.smoothingWindow > 1:
+            focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+        focuses = np.array(focuses)
 
         # Compute linear weight
         t = np.array([1])

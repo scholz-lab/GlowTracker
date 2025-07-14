@@ -15,6 +15,7 @@ import tifffile
 # 
 import Basler_control as basler
 import Zaber_control as zaber
+from AutoFocus import FocusEstimationMethod, estimateFocus
 
 # 
 # Math
@@ -1017,7 +1018,7 @@ class DepthOfFieldEstimator:
         self.normDistParams: list[float, float, float, float, float] = [0, 0, 0, 0, 0]
 
 
-    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> float:
+    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> float:
         """Estimate the Depth of Field of an optical system by finding distance that cover 20% area about the sharpest focus
             1. Take calibration images.
             2. Fit normal distribution curve.
@@ -1028,6 +1029,7 @@ class DepthOfFieldEstimator:
             stage (zaber.Stage): Zaber stage object
             searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
             numImages (int): number of images to sample in the above distance to estimate DoF
+            focusEstimationMethod (FocusEstimationMethod): Which kind of focus estimation mode to use.
             dualColorMode (bool): is the image dual-colored. Defaults to False
             dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
             capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping.
@@ -1036,7 +1038,7 @@ class DepthOfFieldEstimator:
             dof (float): estimated Depth of Field
         """
         
-        self.takeCalibrationImages(camera, stage, searchDistance, numImages, dualColorMode, dualColorModeMainSide, capturedRadius)
+        self.takeCalibrationImages(camera, stage, searchDistance, numImages, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
         
         self.fitDataToNormalDist()
 
@@ -1053,7 +1055,7 @@ class DepthOfFieldEstimator:
         return estimatedDof
     
 
-    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1061,6 +1063,7 @@ class DepthOfFieldEstimator:
             stage (zaber.Stage): Zaber stage object
             searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
             numImages (int): number of images to sample in the above distance to estimate DoF
+            focusEstimationMethod (FocusEstimationMethod): Which kind of focus estimation mode to use.
             dualColorMode (bool): is the image dual-colored. Defaults to False
             dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
             capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping
@@ -1115,7 +1118,7 @@ class DepthOfFieldEstimator:
             image = image[ymin:ymax, xmin:xmax]
             
             # Estimate focus of the image
-            estimatedFocus = estimateFocus(image)
+            estimatedFocus = estimateFocus(focusEstimationMethod, image)
             
             # Store the image
             df.iloc[i] = [currentPos[2], image, estimatedFocus]
@@ -1231,32 +1234,16 @@ class DepthOfFieldEstimator:
         return plotImage
     
 
-    def getBestFocusImage(self) -> np.ndarray:
+    def getBestFocusImage(self) -> Tuple[float, np.ndarray, float]:
         """Get a sampled image that has the best focus
 
         Returns:
-            image (np.ndarray): best-focus image
+            pos_z (float): best-focused position
+            image (np.ndarray): best-focused image
+            focus (float): best-focused value
         """
         bestFocusIndex = self.dofDataFrame['estimatedFocus'].idxmax()
+        bestFocusPosition = self.dofDataFrame.iloc[bestFocusIndex]['pos_z']
         bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
-        return bestFocusImage
-
-
-def estimateFocus(image: np.ndarray) -> float:
-    """Estimate a focus value of an image using Sum of High-Frequency Discrete Cosine Transform Coefficient
-
-    Args:
-        image (np.ndarray): gray-scale image
-
-    Returns:
-        focus (float): estimated focus value
-    """
-    # Down-sample for fast DCT
-    resized = cv2.resize(image, (32, 32))  
-    # Perform Discrete Cosine Transform
-    dct = cv2.dct(np.float32(resized))
-    # Keep only high-freq block
-    hf_coeffs = dct[8:, 8:]  
-    # Sum up absolute coefficients
-    estimatedFocus = np.sum(np.abs(hf_coeffs))
-    return estimatedFocus
+        bestFocusValue = self.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+        return bestFocusPosition, bestFocusImage, bestFocusValue

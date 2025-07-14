@@ -284,11 +284,12 @@ class LeftColumn(BoxLayout):
             dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
             dualColorModeMainSide = self.app.config.get('DualColor', 'mainside')
             capturedRadius = self.app.config.getint('Tracking', 'capture_radius')
+            focusEstimationMethod = FocusEstimationMethod(self.app.config.get('Autofocus', 'focusestimationmethod'))
 
             #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
             depthOfFieldEstimator = macro.DepthOfFieldEstimator()
             numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
-            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, dualColorMode, dualColorModeMainSide, capturedRadius)
+            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
 
             #   Get best-focused position
             bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
@@ -889,6 +890,7 @@ class DepthOfFieldCalibration(BoxLayout):
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         mainSide = app.config.get('DualColor', 'mainside')
         capturedRadius = app.config.getint('Tracking', 'capture_radius')
+        focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
 
 
         # Take calibration images
@@ -896,22 +898,23 @@ class DepthOfFieldCalibration(BoxLayout):
         
         # Estimate DOF
         try:
-            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages, dualColorMode, mainSide, capturedRadius)
-
-            # Save to config
-            app.config.set('Camera', 'depthoffield', estimatedDof)
-            app.config.write()
+            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages, focusEstimationMethod, dualColorMode, mainSide, capturedRadius)
 
             # Display estimation plot
             estimatedDofPlotImage = depthOfFieldEstimator.genEstimatedDofPlot()
             self.ids.estimateddofplot.texture = imageToTexture(estimatedDofPlotImage)
 
             # Display best focus image
-            bestFocusImage = depthOfFieldEstimator.getBestFocusImage()
+            bestFocusPosition, bestFocusImage, bestFocusValue = depthOfFieldEstimator.getBestFocusImage()
             self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
             # Update display text
-            self.ids.estimateddepthoffieldtext = f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
+            self.ids.estimateddepthoffieldtext.text = f"Estimated Depth of Field: {estimatedDof:.5f} mm. Best in-focused position: {bestFocusPosition:.2f} mm."
+
+            # Save to config
+            app.config.set('Camera', 'depthoffield', estimatedDof)
+            app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+            app.config.write()
 
         except Exception as e:
             print(f'Failed to estimate depth of field: {e}')
@@ -2405,13 +2408,13 @@ class RuntimeControls(BoxLayout):
             KI = app.config.getfloat('Autofocus', 'ki')
             KD = app.config.getfloat('Autofocus', 'kd')
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
-            focusEstimationMethod = app.config.get('Autofocus', 'focusestimationmethod')
+            focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
             dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
             capturedRadius = app.config.getint('Tracking', 'capture_radius')
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
-            smoothingwindow = app.config.getint('Tracking', 'smoothingwindow')
-            minstepbeforechangedir = app.config.getint('Tracking', 'minstepbeforechangedir')
+            smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
+            minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
             
             autoFocusPID = AutoFocusPID(
                 KP= KP,
@@ -2458,6 +2461,10 @@ class RuntimeControls(BoxLayout):
                 # Event to update the graph 
                 def updateLiveFocusGraph( dt: float ):
 
+                    # Empty guard
+                    if len(graph_x_data) == 0 and len(graph_y_data) == 0:
+                        return
+                    
                     with graph_data_lock:
                         linePlotHandle.set_xdata(graph_x_data)
                         linePlotHandle.set_ydata(graph_y_data)
