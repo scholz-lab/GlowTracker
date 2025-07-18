@@ -3270,9 +3270,9 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Autofocus', {
-            'kp': '0.000001',
-            'ki': '0.00000001',
-            'kd': '0.0000001',
+            'kp': '0.00001',
+            'ki': '0.000000001',
+            'kd': '0.000000001',
             'focusestimationmethod': 'SumOfHighDCT',
             'smoothingwindow': '1',
             'minstepbeforechangedir': '0',
