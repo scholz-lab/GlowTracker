@@ -508,7 +508,7 @@ MainWindow:
 <RuntimeControls>:
     framecounter: framecounter
     buffer : buffer
-    autofocuscheckbox: autofocuscheckbox
+    livefocuscheckbox: livefocuscheckbox
     trackingcheckbox: trackingcheckbox
     imageacquisitionmanager: imageacquisitionmanager
 
@@ -528,10 +528,10 @@ MainWindow:
             color: '#ffffff'
             text: str(self.value)
         MyLabel:
-            text: 'Autofocus'
+            text: 'Livefocus'
             color: '#ffffff'
         CheckBox:
-            id: autofocuscheckbox
+            id: livefocuscheckbox
             on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
             
         MyLabel:

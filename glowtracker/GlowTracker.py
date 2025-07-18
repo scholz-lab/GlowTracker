@@ -2361,7 +2361,7 @@ class ImageOverlay(FloatLayout):
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
-    autofocuscheckbox = ObjectProperty(rebind=True)
+    livefocuscheckbox = ObjectProperty(rebind=True)
     trackingcheckbox = ObjectProperty(rebind=True)
     imageacquisitionmanager: ImageAcquisitionManager = ObjectProperty(rebind=True)
     cropX = NumericProperty(0, rebind=True)
@@ -2491,7 +2491,7 @@ class RuntimeControls(BoxLayout):
             self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-            self.autofocuscheckbox.state = 'normal'
+            self.livefocuscheckbox.state = 'normal'
 
     
     def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
@@ -2516,7 +2516,7 @@ class RuntimeControls(BoxLayout):
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
         # Continuously running as long as these conditions are met.
-        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.autofocuscheckbox.state == 'down':
+        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.livefocuscheckbox.state == 'down':
 
             startTime = time.perf_counter()
 
@@ -2547,7 +2547,7 @@ class RuntimeControls(BoxLayout):
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
             # Move relative z-position
-            stage.move_z(relPosZ, unit='mm', wait_until_idle= True)
+            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
 
             # Update App's internal stage coordinate
             app.coords[2] = app.coords[2] + relPosZ
@@ -2569,7 +2569,7 @@ class RuntimeControls(BoxLayout):
                 time.sleep(waitTime)
         
         # The live focus has stopped
-        self.autofocuscheckbox.state == 'normal'
+        self.livefocuscheckbox.state == 'normal'
     
 
     def stopLiveFocus(self):
