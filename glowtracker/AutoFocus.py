@@ -149,7 +149,6 @@ class AutoFocusPID:
         err = self.SP - PV
         U: float = 0.0
 
-        print('-------------------')
         if len(self.focusLog) == 0:
             # If this is the first time executing, simply move by a minimum distance
             U = self.minStepDist * self.direction
@@ -181,7 +180,6 @@ class AutoFocusPID:
                     # The averaing error is increasing
                     if sum(diffs) > 0:
                         
-                        print('\t Change direction')
                         self.direction = self.direction * -1
                         self.directionResetCounter = 0
                 
@@ -189,9 +187,6 @@ class AutoFocusPID:
 
                 U = U * self.direction
                 
-                # Focus, Err, 1st, 2nd, 3rd, dist, new pos
-                print(f'\t{PV:.4f}, {err:.4f}, {self.KP * err:.4f}, {self.KI * self.integral:.4f}, {self.KD * derivative:.4f}, {U:.4f}, {pos:.4f}')
-
 
         # Record
         self.focusLog.append(PV)
