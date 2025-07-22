@@ -15,6 +15,7 @@ import tifffile
 # 
 import Basler_control as basler
 import Zaber_control as zaber
+from AutoFocus import FocusEstimationMethod, estimateFocus
 
 # 
 # Math
@@ -22,6 +23,9 @@ import Zaber_control as zaber
 import math
 import numpy as np
 import scipy.ndimage as ndi
+from scipy.optimize import curve_fit
+from scipy.stats import gennorm
+from scipy.special import gamma as gammafunc
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
@@ -31,49 +35,6 @@ from skimage.transform import downscale_local_mean
 from skimage.registration import phase_cross_correlation
 import itk
 import cv2
-
-
-#%% Autofocus using z axis
-def zFocus(stage, camera: basler.Camera, stepsize, stepunits, nsteps):
-    """take a series of images and move the camera, then calculate focus."""
-    stack = []
-    zpos = []
-    stage.move_z(-0.5*nsteps*stepsize, stepunits, wait_until_idle = True)
-    for i in np.arange(0, nsteps):
-            isSuccess, img = camera.singleTake()
-            pos = stage.get_position()
-            print(pos)
-            if isSuccess and len(pos) > 2:
-                stack.append(img)
-                zpos.append(pos[2])
-                print(stepunits)
-                stage.move_z(stepsize, stepunits, wait_until_idle = True)
-    stack = np.array(stack)
-    zpos = np.array(zpos)
-    # Looking for the focal plane using the frame of maximal variance
-    average_frame_intensity = np.mean(stack, axis=(2, 1))
-    normalized_stack = stack.astype(float)/average_frame_intensity[:, np.newaxis, np.newaxis] 
-    stack_variance = np.var(normalized_stack, axis=(2, 1))
-    focal_plane = np.argmax(stack_variance)
-    # Moving to best position
-    stage.move_abs((None,None,zpos[focal_plane]))
-    # return focus values, images and best location
-    return stack_variance, stack, zpos, focal_plane
-
-
-# functions for live focusing
-def calculate_focus(im, nbin = 1):
-    """given an image array, calculate a proxy for sharpness."""
-    return np.std(im[::nbin, ::nbin])/np.mean(im[::nbin, ::nbin])
-
-
-def calculate_focus_move(past_motion, focus_history, min_step, focus_step_factor = 100):
-    """given past values calculate the next focussing move."""
-    error = (focus_history[-1]-focus_history[-2])/np.abs(focus_history[-2])#  current - previous. negative means it got worse
-    print(error)
-    if ~np.isfinite(error):
-        return 0
-    return error*np.sign(past_motion)*focus_step_factor*min_step#np.min([error*focus_step_factor*min_step, focus_step_factor*min_step])
 
 
 # functions for tracking
@@ -274,8 +235,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     ymin, ymax, xmin, xmax = 0,h,0,w
     
     if capture_radius > 0 :
-        ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
-    # print(xmin, xmax, ymin, ymax)
+        ymin = np.max([0,h//2-capture_radius])
+        ymax = np.min([h,h//2+capture_radius])
+        xmin = np.max([0,w//2-capture_radius])
+        xmax = np.min([w,w//2+capture_radius])
     
     # Crop the region of interest.
     #   Also, we have to copy. Otherwise, we would modified the original image.
@@ -871,6 +834,54 @@ class CameraAndStageCalibrator:
 
         return pixelSize * imageToStageMat, imageToStageMat
 
+    
+    @staticmethod
+    def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
+        """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
+
+        Args:
+            stageToImageMat (np.ndarray): _description_
+
+        Returns:
+            np.ndarray: _description_
+        """    
+        # Define the coordinates for the vectors
+        stageX = [1, 0]  # Vector from origin to (1,0)
+        stageY = [0, 1]  # Vector from origin to (0,1)
+        imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
+        imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
+
+        # Create the plot
+        fig = plt.figure(figsize=(6, 6))
+        
+        def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
+            plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
+                            ha= 'center', fontsize= 12, color= 'black')
+        
+        drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
+        drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
+
+        # Set plot limits and labels
+        plt.xlim(-1, 1)
+        plt.ylim(-1, 1)
+        plt.xlabel('X')
+        plt.ylabel('Y')
+
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+        return image_array
+
 
 class DualColorImageCalibrator:
     
@@ -998,48 +1009,241 @@ class DualColorImageCalibrator:
         return transformationMat
 
 
-def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
-    """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
-
-    Args:
-        stageToImageMat (np.ndarray): _description_
-
-    Returns:
-        np.ndarray: _description_
-    """    
-    # Define the coordinates for the vectors
-    stageX = [1, 0]  # Vector from origin to (1,0)
-    stageY = [0, 1]  # Vector from origin to (0,1)
-    imageX = [stageToImageMat[0, 0], stageToImageMat[1, 0]]
-    imageY = [stageToImageMat[0, 1], stageToImageMat[1, 1]]
-
-    # Create the plot
-    fig = plt.figure(figsize=(6, 6))
+class DepthOfFieldEstimator:
     
-    def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
-        plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
-        plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
-                        ha= 'center', fontsize= 12, color= 'black')
+    def __init__(self):
+        # Create a DataFrame to store DoF data 
+        self.dofDataFrame = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'])
+        # C, A, mu, alpha, beta
+        self.normDistParams: list[float, float, float, float, float] = [0, 0, 0, 0, 0]
+
+
+    def estimate(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> float:
+        """Estimate the Depth of Field of an optical system by finding distance that cover 20% area about the sharpest focus
+            1. Take calibration images.
+            2. Fit normal distribution curve.
+            3. Estimate DOF as 20% area about peak focus.
+
+        Args:
+            camera (basler.Camera): camera object
+            stage (zaber.Stage): Zaber stage object
+            searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
+            numImages (int): number of images to sample in the above distance to estimate DoF
+            focusEstimationMethod (FocusEstimationMethod): Which kind of focus estimation mode to use.
+            dualColorMode (bool): is the image dual-colored. Defaults to False
+            dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
+            capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping.
+
+        Returns:
+            dof (float): estimated Depth of Field
+        """
+        
+        self.takeCalibrationImages(camera, stage, searchDistance, numImages, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
+        
+        self.fitDataToNormalDist()
+
+        # Find the x position where cumulative area from mu to x is 10%
+        C, A, mu, alpha, beta = self.normDistParams
+        p = 0.5 + 0.1  # 0.60 cumulative probability
+        z = gennorm.ppf(p, beta, scale= alpha)  # z-score
+        x_pct_end = mu + z
+        x_pct_begin = mu - z
+
+        # Compute dof as range that cover 20% about mean
+        estimatedDof = x_pct_end - x_pct_begin
+
+        return estimatedDof
     
-    drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
-    drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
-    drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
-    drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
 
-    # Set plot limits and labels
-    plt.xlim(-1, 1)
-    plt.ylim(-1, 1)
-    plt.xlabel('X')
-    plt.ylabel('Y')
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
+        """Scan over the searchDistance area and take sample images.
 
-    # Add grid and legend
-    plt.grid(True)
-    plt.legend()
+        Args:
+            camera (basler.Camera): camera object
+            stage (zaber.Stage): Zaber stage object
+            searchDistance (float): distance (mm) about current position to sample images from and estimate DoF
+            numImages (int): number of images to sample in the above distance to estimate DoF
+            focusEstimationMethod (FocusEstimationMethod): Which kind of focus estimation mode to use.
+            dualColorMode (bool): is the image dual-colored. Defaults to False
+            dualColorModeMainSide (str): if the image is dual-colored, which side of the image is the main side. Defaults to 'Right'
+            capturedRadius (float): radius from center of the image to square crop. Defaults to 0 means no cropping
 
-    # Render the plot to a numpy array
-    canvas = FigureCanvasAgg(fig)
-    canvas.draw()
-    width, height = fig.get_size_inches() * fig.get_dpi()
-    image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+        Raises:
+            RuntimeError: When taking an image is unsuccessful
+        """
+        
+        # Create an empty DataFrame
+        df = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'], index= range(numImages))
+        
+        # Save current position
+        startingPos = stage.get_position(unit='mm')
 
-    return image_array
+        # Compute moving position
+        currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
+        stepSize_z = searchDistance / (numImages - 1)
+
+        # Go to the beginning position
+        stage.move_abs(currentPos, wait_until_idle= True)
+
+        for i in range(numImages):
+
+            # Take an image
+            isSuccess, image = camera.singleTake()
+
+            if not isSuccess:
+                raise RuntimeError('Taking an image is unsuccessful')
+
+            h, w = image.shape
+            
+            if dualColorMode:
+
+                if dualColorModeMainSide == 'Left':
+                    image = image[:, :w//2]
+
+                elif dualColorModeMainSide == 'Right':
+                    image = image[:, w//2:]
+
+                w = image.shape[1]
+            
+
+            # Center-crop the image
+            ymin, ymax, xmin, xmax = 0,h,0,w
+            
+            if capturedRadius > 0 :
+                ymin = np.max([0, h//2 - capturedRadius])
+                ymax = np.min([h, h//2 + capturedRadius])
+                xmin = np.max([0, w//2 - capturedRadius])
+                xmax = np.min([w, w//2 + capturedRadius])
+            
+            image = image[ymin:ymax, xmin:xmax]
+            
+            # Estimate focus of the image
+            estimatedFocus = estimateFocus(focusEstimationMethod, image)
+            
+            # Store the image
+            df.iloc[i] = [currentPos[2], image, estimatedFocus]
+            
+            # Move to a new position
+            currentPos[2] = currentPos[2] + stepSize_z
+            stage.move_abs(currentPos, wait_until_idle= True)
+
+        # Return stage to starting position
+        stage.move_abs(startingPos)
+
+        self.dofDataFrame = df
+
+    
+    @staticmethod
+    def shiftedGeneralizedNormalDist(x: float, C: float, A: float, mu: float, alpha: float, beta: float) -> float:
+        """Shifted and scaled generalized normal distribution model
+
+        Args:
+            x (float): x value
+            C (float): Constant(y shift)
+            A (float): Amplitude
+            mu (float): mean
+            alpha (float): scale
+            beta (float): shape/spread
+
+        Returns:
+            y(float): y value
+        """
+        # Compute y as pdf
+        y = C + A * (
+            beta
+            / ( 2 * alpha * gammafunc(1/beta))
+            * np.exp(
+                -np.power(
+                    np.abs((x - mu) / alpha),
+                    beta
+                )
+            )
+        )
+        return y
+        
+
+    def fitDataToNormalDist(self):
+        """Fit self.normDistParams into a shifted generalized normal distribution model that best represent self.dofDataFrame
+        """
+        x_data = self.dofDataFrame['pos_z'].tolist()
+        y_data = self.dofDataFrame['estimatedFocus'].tolist()
+
+        # Initial guesses: [baseline, amplitude, center, spread]
+        C0 = np.min(y_data)
+        A0 = np.max(y_data) - C0
+        mu0 = x_data[np.argmax(y_data)]
+        alpha0 = (np.max(x_data) - np.min(x_data)) / 6  # reasonable guess for spread
+        beta0 = 2 # normal distribution
+
+        p0 = [C0, A0, mu0, alpha0, beta0]
+        
+        # Curve fitting
+        self.normDistParams, _ = curve_fit(DepthOfFieldEstimator.shiftedGeneralizedNormalDist, x_data, y_data, p0= p0)
+
+    
+    def genEstimatedDofPlot(self) -> np.ndarray:
+        """Generate pyplot image of the fitted self.normDistParams and the estimated DoF from it.
+
+        Returns:
+            image (np.ndarray): plot image
+        """
+        # Create the plot
+        fig = plt.figure(figsize=(10, 7))
+
+        x_data = self.dofDataFrame['pos_z'].tolist()
+        y_data = self.dofDataFrame['estimatedFocus'].tolist()
+        
+        # Plotting
+        x_fit = np.linspace(min(x_data), max(x_data), 500)
+
+        y_normal_fit = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fit, *self.normDistParams)
+
+        plt.plot(x_data, y_data, 'bo', label='data')
+        plt.plot(x_fit, y_normal_fit, 'r-', label='fitted normal distribution')
+        plt.xlim(min(x_data), max(x_data))
+        plt.ylim(min(y_data), max(y_data))
+        plt.xlabel('Position Z')
+        plt.ylabel('Estimated Focus')
+        plt.tight_layout()
+
+        # Find the x position where cumulative area from mu to x is 10%
+        C, A, mu, alpha, beta = self.normDistParams
+        p = 0.5 + 0.1  # 0.60 cumulative probability
+        z = gennorm.ppf(p, beta, scale= alpha)  # z-score
+        x_pct_end = mu + z
+        x_pct_begin = mu - z
+
+        # Shade the area from -z to z
+        x_fill = np.linspace(x_pct_begin, x_pct_end, 200)
+        y_fill = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fill, *self.normDistParams)
+        plt.fill_between(x_fill, y_fill, C, color='green', alpha=0.4, label='20% area at mean')
+
+        # Plot vertical lines at x_pct_begin, x_pct_end for clarity
+        plt.axvline(x_pct_begin, color='blue', linestyle='--', label=f'lower boundary (x={x_pct_begin:.2f})')
+        plt.axvline(x_pct_end, color='green', linestyle='--', label=f'upper boundary (x={x_pct_end:.2f})')
+
+        # Add legend
+        plt.legend()
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        plotImage = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+
+        return plotImage
+    
+
+    def getBestFocusImage(self) -> Tuple[float, np.ndarray, float]:
+        """Get a sampled image that has the best focus
+
+        Returns:
+            pos_z (float): best-focused position
+            image (np.ndarray): best-focused image
+            focus (float): best-focused value
+        """
+        bestFocusIndex = self.dofDataFrame['estimatedFocus'].idxmax()
+        bestFocusPosition = self.dofDataFrame.iloc[bestFocusIndex]['pos_z']
+        bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
+        bestFocusValue = self.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+        return bestFocusPosition, bestFocusImage, bestFocusValue

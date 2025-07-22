@@ -2,7 +2,7 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
- 
+
 # 
 # Kivy Imports
 # 
@@ -15,6 +15,8 @@ from kivy.config import Config, ConfigParser
 # get the free clock (more accurate timing)
 # Config.set('graphics', 'KIVY_CLOCK', 'free')
 # Config.set('modules', 'monitor', '')
+Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-touch emulation
+
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
@@ -53,18 +55,19 @@ from kivy.uix.switch import Switch
 import datetime
 import time
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Lock
 from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
 from overrides import override
-from typing import Tuple
+from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from pypylon import pylon
 import platformdirs 
 import shutil
 from pyparsing import ParseException
+import matplotlib.pyplot as plt
 
 # 
 # Own classes
@@ -73,6 +76,7 @@ from Zaber_control import Stage, AxisEnum
 import Macroscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
+from AutoFocus import AutoFocusPID, FocusEstimationMethod
 
 # 
 # Math
@@ -252,40 +256,57 @@ class LeftColumn(BoxLayout):
         self.ids.camprops.framerate = camera.ResultingFrameRate()
 
 
-    #autofocus popup
-    def show_autofocus(self):
+    def autoFocusButtonCallback(self):
+        """Move to the best focused distance by perform a sweep scan (z-axis) about the current position.
+        """
         camera = self.app.camera
         stage = self.app.stage
-        if camera is not None and stage is not None:
-            content = AutoFocus(run_autofocus = self.run_autofocus, cancel=self.dismiss_popup)
-            self._popup = Popup(title="Focus the camera", content=content,
-                                size_hint=(0.9, 0.9))
-            #unbind keyboard events
-            self.app.unbind_keys()
-            self._popup.open()
-        else:
-            self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a camera!',
+
+        if camera is None or stage is None:
+            # Popup a warning dialog
+            self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a running camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
+            
+        else:
 
+            # Check if acquiring image
+            imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
 
-    # run autofocussing once on current location
-    def run_autofocus(self):
-        camera = self.app.camera
-        stage = self.app.stage
+            # Stop camera if already running
+            liveViewButton: Button = imageAcquisitionManager.ids.liveviewbutton
+            prevLiveViewButtonState: str = liveViewButton.state
+            liveViewButton.state = 'normal'
 
-        if camera is not None and stage is not None:
-            # stop grabbing
-            self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton.state = 'normal'
-            # get config values
-            stepsize = self._popup.content.stepsize#app.config.getfloat('Autofocus', 'step_size')
-            stepunits = self._popup.content.stepunits#app.config.get('Autofocus', 'step_units')
-            nsteps = self._popup.content.nsteps#app.config.getint('Autofocus', 'nsteps')
-            # run the autofocus
-            _, imstack, _, focal_plane = macro.zFocus(stage, camera, stepsize, stepunits, nsteps)
-            # update the images shown - delete old ones if rerunning
-            self._popup.content.delete_images()
-            self._popup.content.add_images(imstack, nsteps, focal_plane)
+            #   Load settings
+            depthoffield = self.app.config.getfloat('Camera', 'depthoffield')
+            depthoffieldsearchdistance = self.app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+            dualColorModeMainSide = self.app.config.get('DualColor', 'mainside')
+            capturedRadius = self.app.config.getint('Tracking', 'capture_radius')
+            focusEstimationMethod = FocusEstimationMethod(self.app.config.get('Autofocus', 'focusestimationmethod'))
+
+            #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
+            depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+            numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
+            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
+
+            #   Get best-focused position
+            bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
+            bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
+            
+            # Move to the best-focus position
+            stagePosition = stage.get_position()
+            stagePosition[2] = bestFocusPosition
+            stage.move_abs(stagePosition, unit= 'mm')
+
+            # Remember best focus value for later auto focus
+            bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+            self.app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+            self.app.config.write()
+
+            # Return LiveView state
+            liveViewButton.state = prevLiveViewButtonState
 
 
 class MiddleColumn(BoxLayout, StencilView):
@@ -642,7 +663,7 @@ class LoadMacroScriptWidget(BoxLayout):
 
 
 class CalibrationTabPanel(TabbedPanel):
-    """Calibration widget that holds CameraAndStageCalibration, and DualColorCalibration
+    """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
     """    
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -654,7 +675,8 @@ class CalibrationTabPanel(TabbedPanel):
         self.closeCallback = closeCallback
         self.ids.stagecalibration.setCloseCallback( closeCallback )
         self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
-    
+        self.ids.depthoffieldcalibration.setCloseCallback( closeCallback )
+
 
 class CameraAndStageCalibration(BoxLayout):
     """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
@@ -738,7 +760,7 @@ class CameraAndStageCalibration(BoxLayout):
 
         # Show axis figure
         stageToImageRotMat = np.linalg.inv(app.imageToStageRotMat)
-        plotImage = macro.renderChangeOfBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
+        plotImage = macro.CameraAndStageCalibrator.renderChangeOfBasisImage(macro.swapMatXYOrder(stageToImageRotMat))
         self.ids.cameraandstageaxes.texture = imageToTexture(plotImage)
 
         # Resume the camera to previous state
@@ -827,6 +849,75 @@ class DualColorCalibration(BoxLayout):
 
         # Update the composite display image
         self.ids.calibratedimage.texture = imageToTexture(combinedImage)
+
+        # Resume the camera to previous state
+        liveViewButton.state = prevLiveViewButtonState
+
+
+class DepthOfFieldCalibration(BoxLayout):
+    """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
+    """    
+    closeCallback = ObjectProperty(None)
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+    
+
+    def calibrate(self):
+        """Estimate Depth of Field of the current optic system and display the results.
+        """
+        app: GlowTrackerApp = App.get_running_app()
+        camera: basler.Camera = app.camera
+        stage: Stage = app.stage
+
+        # Safe guard
+        if camera is None or stage is None:
+            return
+        
+        # stop camera if already running
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
+        
+        # get config values
+        depthoffieldsearchdistance = app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+        depthoffieldnumsampleimages = app.config.getint('Calibration', 'depthoffieldnumsampleimages')
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
+        capturedRadius = app.config.getint('Tracking', 'capture_radius')
+        focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
+
+
+        # Take calibration images
+        depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+        
+        # Estimate DOF
+        try:
+            estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages, focusEstimationMethod, dualColorMode, mainSide, capturedRadius)
+
+            # Display estimation plot
+            estimatedDofPlotImage = depthOfFieldEstimator.genEstimatedDofPlot()
+            self.ids.estimateddofplot.texture = imageToTexture(estimatedDofPlotImage)
+
+            # Display best focus image
+            bestFocusPosition, bestFocusImage, bestFocusValue = depthOfFieldEstimator.getBestFocusImage()
+            self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
+
+            # Update display text
+            self.ids.estimateddepthoffieldtext.text = f"Estimated Depth of Field: {estimatedDof:.5f} mm. Best in-focused position: {bestFocusPosition:.2f} mm."
+
+            # Save to config
+            app.config.set('Camera', 'depthoffield', estimatedDof)
+            app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+            app.config.write()
+
+        except Exception as e:
+            print(f'Failed to estimate depth of field: {e}')
 
         # Resume the camera to previous state
         liveViewButton.state = prevLiveViewButtonState
@@ -2273,7 +2364,7 @@ class ImageOverlay(FloatLayout):
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
-    autofocuscheckbox = ObjectProperty(rebind=True)
+    livefocuscheckbox = ObjectProperty(rebind=True)
     trackingcheckbox = ObjectProperty(rebind=True)
     imageacquisitionmanager: ImageAcquisitionManager = ObjectProperty(rebind=True)
     cropX = NumericProperty(0, rebind=True)
@@ -2283,7 +2374,7 @@ class RuntimeControls(BoxLayout):
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
-        self.focusevent = None
+        self.liveFocusThread = None
         self.focus_motion = 0
         self.isTracking = False
         self.coord_updateevent: ClockEvent | None = None
@@ -2297,55 +2388,205 @@ class RuntimeControls(BoxLayout):
         self.text = str(value)
 
 
-    def startFocus(self):
-        # schedule a focus routine
-        camera = App.get_running_app().camera
-        stage = App.get_running_app().stage
+    def startLiveFocus(self):
+        """Initiate an autofocus thread.
+        """
+        camera: GlowTrackerApp = App.get_running_app().camera
+        stage: Stage = App.get_running_app().stage
+        
+        # Sanity check
         if camera is not None and stage is not None and camera.IsGrabbing():
-             # get config values
-            focus_fps = App.get_running_app().config.getfloat('Livefocus', 'focus_fps')
-            print("Focus Framerate:", focus_fps)
-            z_step = App.get_running_app().config.getfloat('Livefocus', 'min_step')
-            unit = App.get_running_app().config.get('Livefocus', 'step_units')
-            factor = App.get_running_app().config.getfloat('Livefocus', 'factor')
 
-            self.focusevent = Clock.schedule_interval(partial(self.focus,  z_step, unit, factor), 1.0 / focus_fps)
+            # Load config values
+            app: GlowTrackerApp = App.get_running_app()
+
+            focusfps = app.config.getfloat('Autofocus', 'focusfps')
+
+            print("Live focus Framerate:", focusfps)
+
+            KP = app.config.getfloat('Autofocus', 'kp')
+            KI = app.config.getfloat('Autofocus', 'ki')
+            KD = app.config.getfloat('Autofocus', 'kd')
+            SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
+            focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
+            dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+            capturedRadius = app.config.getint('Tracking', 'capture_radius')
+            isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
+            depthoffield = app.config.getfloat('Camera', 'depthoffield')
+            smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
+            minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
+            
+            autoFocusPID = AutoFocusPID(
+                KP= KP,
+                KI= KI,
+                KD= KD,
+                SP= SP,
+                focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
+                minStepDist= depthoffield,
+                acceptableErrorPercentage= 0.05,
+                integralLifeTime= 0,
+                smoothingWindow= smoothingwindow,
+                minStepBeforeChangeDir= minstepbeforechangedir
+            )
+
+            # Data handle from LiveFocus thread to plotting in main thread
+            graph_x_data = list()
+            graph_y_data = list()
+            graph_data_lock = Lock()
+
+            if isshowgraph:
+
+                # Create a LiveFocus graph
+                axisPlotHandle = None
+                linePlotHandle = None
+
+                # Init interactive plot handle
+                plt.ion()
+
+                fig, axisPlotHandle = plt.subplots()
+
+                linePlotHandle, = axisPlotHandle.plot([], [], 'r-', label= 'Current Focus')
+
+                bestFocusPlotHandle = axisPlotHandle.axhline(y= SP, color= 'g', linestyle= '-.', label= 'Estimated Maximum Focus')
+
+                axisPlotHandle.set_title("Live Focus")
+                axisPlotHandle.set_xlabel("Iteration")
+                axisPlotHandle.set_ylabel("Estimated Focus")
+
+                background = fig.canvas.copy_from_bbox(axisPlotHandle.bbox)
+
+                plt.legend()
+                plt.show()
+
+                # Event to update the graph 
+                def updateLiveFocusGraph( dt: float ):
+
+                    # Empty guard
+                    if len(graph_x_data) == 0 and len(graph_y_data) == 0:
+                        return
+                    
+                    with graph_data_lock:
+                        linePlotHandle.set_xdata(graph_x_data)
+                        linePlotHandle.set_ydata(graph_y_data)
+
+                    axisPlotHandle.set_xlim(min(graph_x_data), max(graph_x_data))
+                    axisPlotHandle.set_ylim(min(graph_y_data), max(graph_y_data))
+
+                    # restore background
+                    fig.canvas.restore_region(background)
+
+                    # redraw the line plots
+                    axisPlotHandle.draw_artist(linePlotHandle)
+                    axisPlotHandle.draw_artist(bestFocusPlotHandle)
+
+                    # fill in the axes rectangle
+                    fig.canvas.blit(axisPlotHandle.bbox)
+
+                # Lunch an updating event. This has to be executed in the main thread so we can't multithread it.
+                self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focusfps)
+
+            # Pack args
+            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focusfps, graph_x_data, graph_y_data, graph_data_lock
+
+            # Start the autofocus thread
+            self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
+
+            self.liveFocusThread.start()
+
+
         else:
             self._popup = WarningPopup(title="Autofocus", text='Focus requires: \n - a stage \n - a camera \n - camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-            self.autofocuscheckbox.state = 'normal'
+            self.livefocuscheckbox.state = 'normal'
 
+    
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
+        """Autofocus loop to be executed inside a thread.
 
-    def stopFocus(self):
-        # unschedule a focus routine
-        if self.focusevent:
-            Clock.unschedule(self.focusevent)
+        Args:
+            autoFocusPID (AutoFocusPID): Autofocus object
+            camera (basler.Camera): camera
+            stage (Stage): stage
+            dualColorMode (bool, optional): is the image dual-colored. Defaults to False.
+            capturedRadius (float, optional): radius from center of the image to square crop. Defaults to 0 means no cropping.
+            isShowGraph (bool, optional): Is the live focus graph enabled. Defaults to False.
+            fps (float, optional): Maximum frequency to perform autofocus per second. Defaults to 10.0.
+            graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
+            graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
+            graph_data_lock (Lock, optional): threading Lock object for modifying graph_data
+        """
+        app: GlowTrackerApp = App.get_running_app()
+        spf = 1.0 / fps
+        image = None
 
+        print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
-    def focus(self, z_step, unit, focus_step_factor, *args):
-        # run the actual focus routine - calculate the focus values and correct accordinly.
-        start = time.time()
-        app = App.get_running_app()
-        if not app.camera.IsGrabbing():
-            self.autofocuscheckbox.state = 'normal'
-            return
-        # calculate current value of focus
-        self.focus_history.append(macro.calculate_focus(app.image))
+        # Continuously running as long as these conditions are met.
+        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.livefocuscheckbox.state == 'down':
 
-        # calculate control variables if we have enough history
-        if len(self.focus_history)>1 and self.focus_motion != 0:
-            self.focus_motion = macro.calculate_focus_move(self.focus_motion, self.focus_history, z_step, focus_step_factor)
-        else:
-            self.focus_motion = z_step
-        print('Move (z)',self.focus_motion,unit)
-        app.stage.move_z(self.focus_motion, unit)
-        app.coords[2] += self.focus_motion/1000
-        # throw away stuff
-        self.focus_history = self.focus_history[-1:]
+            startTime = time.perf_counter()
 
-        #print('Saving time: ',time.time() - start)
-        return
+            # Get current image
+            if dualColorMode:
+                image = self.imageacquisitionmanager.dualColorMainSideImage
+            else:
+                image = self.imageacquisitionmanager.image
+
+            # Center-crop the image
+            h, w = image.shape
+            ymin, ymax, xmin, xmax = 0,h,0,w
+            
+            if capturedRadius > 0 :
+                ymin = np.max([0, h//2 - capturedRadius])
+                ymax = np.min([h, h//2 + capturedRadius])
+                xmin = np.max([0, w//2 - capturedRadius])
+                xmax = np.min([w, w//2 + capturedRadius])
+            
+            # Crop the region of interest.
+            #   Also, we have to copy. Otherwise, we would modified the original image.
+            croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
+
+            # Get current position
+            pos = app.coords[2]
+
+            # Perform one autofocus step
+            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
+
+            # Move relative z-position
+            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
+
+            # Update App's internal stage coordinate
+            app.coords[2] = app.coords[2] + relPosZ
+            
+            if isShowGraph:
+                # Update live graph data
+                with graph_data_lock:
+                    graph_x_data.append(len(autoFocusPID.focusLog) - 1)
+                    graph_y_data.append(autoFocusPID.focusLog[-1])
+            
+            endTime = time.perf_counter()
+
+            elapsedTime = endTime - startTime
+
+            waitTime = spf - elapsedTime
+
+            # Wait until matching spf
+            if waitTime > 0:
+                time.sleep(waitTime)
+        
+        # The live focus has stopped
+        self.livefocuscheckbox.state == 'normal'
+    
+
+    def stopLiveFocus(self):
+        """Callback to stop LiveFocus mode
+        """
+        app: GlowTrackerApp = App.get_running_app()
+        isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
+        if isshowgraph:
+            Clock.unschedule(self.updateLiveFocusGraphEvent)
+            plt.ioff()
 
 
     def trackingButtonCallback(self):
@@ -2965,6 +3206,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
+        self.updateFpsEvent = None
     
 
     def getDefaultUserConfigFilePath(self) -> str:
@@ -3030,18 +3272,27 @@ class GlowTrackerApp(App):
             'display_fps': '15',
             'rotation': '0',
             'imagenormaldir': '+Z',
-            'pixelsize': '1'
+            'pixelsize': '1',
+            'depthoffield': '0.0001'
         })
 
         config.setdefaults('Autofocus', {
-            'step_size': '0.5',
-            'nsteps': '10',
-            'step_units': 'um'
+            'kp': '0.00001',
+            'ki': '0.000000001',
+            'kd': '0.000000001',
+            'focusestimationmethod': 'SumOfHighDCT',
+            'smoothingwindow': '1',
+            'minstepbeforechangedir': '0',
+            'bestfocusvalue': 2000,
+            'focusfps': '15',
+            'isshowgraph': '0',
         })
 
         config.setdefaults('Calibration', {
             'step_size': '300',
-            'step_units': 'um'
+            'step_units': 'um',
+            'depthoffieldsearchdistance': '2',
+            'depthoffieldnumsampleimages' : '50'
         })
 
         config.setdefaults('DualColor', {
@@ -3052,13 +3303,6 @@ class GlowTrackerApp(App):
             'translation_x': '0',
             'translation_y': '0',
             'rotation': '0'
-        })
-
-        config.setdefaults('Livefocus', {
-            'min_step': '1',
-            'step_units': 'um',
-            'focus_fps': '4',
-            'factor': '3'
         })
 
         config.setdefaults('Tracking', {
@@ -3088,6 +3332,10 @@ class GlowTrackerApp(App):
 
         config.setdefaults('MacroScript', {
             'recentscript': ''
+        })
+
+        config.setdefaults('Developer', {
+            'showfps': 'false'
         })
 
 
@@ -3124,7 +3372,18 @@ class GlowTrackerApp(App):
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
 
         return layout
+    
 
+    def on_start(self):
+        '''Event handler for the `on_start` event which is fired after
+        initialization (after build() has been called) but before the
+        application has started running.
+        '''
+        # Display FPS label if enabled
+        showfps = self.config.getboolean('Developer', 'showfps')
+        if showfps:
+            self.startShowFpsEvent()
+    
     
     # use custom settings for our GUI
     def build_settings(self, settings):
@@ -3239,7 +3498,7 @@ class GlowTrackerApp(App):
         if self.stage is None:
             return
         
-        print(key, scancode, codepoint, modifier)
+        # print(key, scancode, codepoint, modifier)
 
         if 'shift' in modifier:
             v = self.vlow
@@ -3453,6 +3712,20 @@ class GlowTrackerApp(App):
 
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
+
+        elif section == 'Developer':
+
+            if key == 'showfps':
+                # Convert from text to boolean
+                showfps = bool(int(value))
+                if showfps:
+                    self.startShowFpsEvent()
+
+                else:
+                    self.stopShowFpsEvent()
+
+                updateSettingsWidgetFlag = True
+
             
         # Update setting widget value to reflect the setting file
         if updateSettingsWidgetFlag:
@@ -3469,6 +3742,33 @@ class GlowTrackerApp(App):
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
         
+
+    def startShowFpsEvent(self):
+        # Bring up the FPS label
+        self.root.ids.fpslabel.disabled = False
+        self.root.ids.fpslabel.opacity = 1
+
+        if self.updateFpsEvent is not None:
+            # Stop current event first
+            Clock.unschedule(self.updateFpsEvent)
+            self.updateFpsEvent = None
+
+        def updateFpsText(dt):
+            self.root.ids.fpslabel.text = f'FPS: {Clock.get_fps():.1f}'
+
+        # Start an update event
+        self.updateFpsEvent = Clock.schedule_interval(
+            updateFpsText
+            , 1.0
+        )
+
+    def stopShowFpsEvent(self):
+        self.root.ids.fpslabel.disabled = True
+        self.root.ids.fpslabel.opacity = 0
+        # Stop an update event
+        Clock.unschedule(self.updateFpsEvent)
+        self.updateFpsEvent = None
+
 
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
@@ -3522,13 +3822,17 @@ class GlowTrackerApp(App):
         # disconnect hardware
         # stop remaining stage motion
         if self.stage is not None:
+            print('Disconnecting Stage')
             self.stage.stop()
             self.stage.disconnect()
+        
         if self.camera is not None:
-            print('disconnecting')
+            print('Disconnecting Camera')
             self.camera.Close()
+
         # stop the app
         self.stop()
+        
         # close the window
         self.root_window.close()
     

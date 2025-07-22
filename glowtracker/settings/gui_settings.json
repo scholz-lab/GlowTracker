@@ -131,6 +131,13 @@
     },
     {
         "type": "numeric",
+        "title": "Depth of Field (mm)",
+        "desc": "Camera depth of field. Can be estimated in Depth of Field calibration tab.",
+        "section": "Camera",
+        "key": "depthoffield"
+    },
+    {
+        "type": "numeric",
         "title": "Pixelsize",
         "desc": "Use calibration to calculate (um/px)",
         "section": "Camera",
@@ -142,25 +149,67 @@
     },
     {
         "type": "numeric",
-        "title": "Steps",
-        "desc": "how many images to take for autofocusing",
+        "title": "Proportional gain (P)",
+        "desc": "How strongly the controller reacts to the current error.",
         "section": "Autofocus",
-        "key": "nsteps"
+        "key": "kp"
     },
     {
         "type": "numeric",
-        "title": "Stepsize",
-        "desc": "how large are the steps",
+        "title": "Integral gain (I)",
+        "desc": "How much the controller compensates for accumulated past errors.",
         "section": "Autofocus",
-        "key": "step_size"
+        "key": "ki"
     },
-     {
-        "type": "options",
-        "title": "Focus step units",
-        "desc": "micrometer or millimeter",
+    {
+        "type": "numeric",
+        "title": "Differential gain (D)",
+        "desc": "How rapidly changing errors are dampened.",
         "section": "Autofocus",
-        "key": "step_units",
-        "options": ["mm", "um"]
+        "key": "kd"
+    },
+    {
+        "type": "options",
+        "title": "Focus Estimation Method",
+        "desc": "The method which uses to estimate the focus value from an image.",
+        "section": "Autofocus",
+        "key": "focusestimationmethod",
+        "options": ["VarianceOfLaplace", "Tenengrad", "Brenners", "EnergyOfLaplacian", "ModifiedLaplace", "SumOfHighDCT"]
+    },
+    {
+        "type": "numeric",
+        "title": "Smoothing window size",
+        "desc": "How far back (iterations) do we perform a linear, weighted average smoothing to the estimated focus value (PV). Defaults to 1, which means only consider the current value -- no smoothing.",
+        "section": "Autofocus",
+        "key": "smoothingwindow"
+    },
+    {
+        "type": "numeric",
+        "title": "Min steps before change dir",
+        "desc": "Minimum step before allowin chaning direction. Defaults to 0, which means can change direction at any time.",
+        "section": "Autofocus",
+        "key": "minstepbeforechangedir"
+    },
+    {
+        "type": "numeric",
+        "title": "Best focus value",
+        "desc": "Current best focus value. Use as a target value for autofocusing. Automatically filled in from DoF calibration.",
+        "section": "Autofocus",
+        "key": "bestfocusvalue"
+    },
+    {
+        "type": "numeric",
+        "title": "Focus FPS",
+        "desc": "How frequent to perform autofocusing.",
+        "section": "Autofocus",
+        "key": "focusfps"
+    },
+    {
+        "type": "bool",
+        "title": "Show graph",
+        "desc": "Display graph of focus values. Useful for tuning constants.",
+        "section": "Autofocus",
+        "key": "isshowgraph"
     },
     {
         "type": "title",
@@ -180,6 +229,20 @@
         "section": "Calibration",
         "key": "step_units",
         "options": ["mm", "um"]
+    },
+    {
+        "type": "numeric",
+        "title": "Depth of Field search distance.",
+        "desc": "Distance (mm) range about current position to estimate Depth of Field from.",
+        "section": "Calibration",
+        "key": "depthoffieldsearchdistance"
+    },
+    {
+        "type": "numeric",
+        "title": "Depth of Field number of sample images.",
+        "desc": "Number of sample images to take to estimate Depth of Field from.",
+        "section": "Calibration",
+        "key": "depthoffieldnumsampleimages"
     },
     {
         "type": "title",
@@ -239,39 +302,6 @@
     },
     {
         "type": "title",
-        "title": "Live Focus"
-    },
-    {
-        "type": "numeric",
-        "title": "Minimal focussing step",
-        "desc": "what is the smallest step during live focus?",
-        "section": "Livefocus",
-        "key": "min_step"
-    },
-     {
-        "type": "options",
-        "title": "step units",
-        "desc": "micrometer/sec",
-        "section": "Livefocus",
-        "key": "step_units",
-        "options": ["um"]
-    },
-    {
-        "type": "numeric",
-        "title": "Update rate",
-        "desc": "how often is focused?",
-        "section": "Livefocus",
-        "key": "focus_fps"
-    },
-    {
-        "type": "numeric",
-        "title": "Conversion factor",
-        "desc": "how many times larger than the min step is the maximum step?",
-        "section": "Livefocus",
-        "key": "factor"
-    },
-    {
-        "type": "title",
         "title": "Tracking"
     },
     {
@@ -317,11 +347,11 @@
         "key": "threshold"
     },
     {
-    "type": "numeric",
-    "title": "Area (px)",
-    "desc": "What is the relevant area that changes?",
-    "section": "Tracking",
-    "key": "area"
+        "type": "numeric",
+        "title": "Area (px)",
+        "desc": "What is the relevant area that changes?",
+        "section": "Tracking",
+        "key": "area"
     },
     {
         "type": "numeric",
@@ -358,6 +388,17 @@
         "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
         "section": "Tracking",
         "key": "max_brightness"
+    },
+    {
+        "type": "title",
+        "title": "Developer"
+    },
+    {
+        "type": "bool",
+        "title": "Show FPS",
+        "desc": "Display the FPS counter on the top right corner.",
+        "section": "Developer",
+        "key": "showfps"
     }
 ]
 

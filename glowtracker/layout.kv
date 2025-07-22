@@ -26,9 +26,38 @@ MainWindow:
         border: 0,0,0,0
         size_hint: (0.5, 0.12)
 
-    MyLabel:
+    BoxLayout:
         size_hint: (0.1, 0.12)
-        text: "v. 0.10.0"
+        FloatLayout:
+            Label:
+                size_hint: (1, 1)
+                font_size: 18
+                color: '#8e0045ff'
+
+                text: "v. 0.10.0"
+                id: versionlabel
+
+                pos_hint: {'x':.0, 'y':.0}
+                text_size: self.size
+                halign: 'center'
+                valign: 'middle'
+                
+            Label:
+                size_hint: (1, 1)
+                font_size: 18
+                color: '#ffffff'
+
+                text: "FPS:"
+                id: fpslabel
+
+                pos_hint: {'x':.0, 'y':.0}
+                text_size: self.size
+                halign: 'right'
+                valign: 'top'
+
+                disabled: app.config.getboolean('Developer', 'showfps') is False
+                opacity: 1 if app.config.getboolean('Developer', 'showfps') else 0
+
 
     LeftColumn:
         id: leftcolumn
@@ -72,7 +101,7 @@ MainWindow:
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
-        on_release: root.show_autofocus()
+        on_release: root.autoFocusButtonCallback()
     MyLabel: 
         text: 'Camera Settings'
     CameraProperties:
@@ -479,7 +508,7 @@ MainWindow:
 <RuntimeControls>:
     framecounter: framecounter
     buffer : buffer
-    autofocuscheckbox: autofocuscheckbox
+    livefocuscheckbox: livefocuscheckbox
     trackingcheckbox: trackingcheckbox
     imageacquisitionmanager: imageacquisitionmanager
 
@@ -499,11 +528,11 @@ MainWindow:
             color: '#ffffff'
             text: str(self.value)
         MyLabel:
-            text: 'Autofocus'
+            text: 'Livefocus'
             color: '#ffffff'
         CheckBox:
-            id: autofocuscheckbox
-            on_state: root.startFocus() if self.state=='down' else root.stopFocus()
+            id: livefocuscheckbox
+            on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
             
         MyLabel:
             text: 'Tracking'
@@ -826,6 +855,12 @@ MainWindow:
         
         DualColorCalibration:
             id: dualcolorcalibration
+    
+    TabbedPanelItem:
+        text: 'Depth of Field Calibration'
+
+        DepthOfFieldCalibration:
+            id: depthoffieldcalibration
 
 
 <CameraAndStageCalibration>:
@@ -936,6 +971,51 @@ MainWindow:
             id: rotation
             size_hint_x: .25
             text: f"Rotation (rad): {app.config.getfloat('DualColor', 'rotation'):.3f}"
+        Button:
+            text: "Calibrate"
+            size_hint_x: .35
+            on_release: root.calibrate()
+        Button:
+            text: "Close"
+            size_hint_x: .15
+            on_release: root.closeCallback()
+
+
+<DepthOfFieldCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    GridLayout:
+        cols: 2
+        spacing: 20
+
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            Label:
+                text: 'Best focus image'
+                size_hint_y: 0.1
+            Image:
+                id: bestfocusimage
+
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.6
+            Label:
+                text: 'Estimated Depth of Field plot'
+                size_hint_y: 0.1
+            Image:
+                id: estimateddofplot
+    
+    BoxLayout:
+        size_hint_y: .08
+
+        Label:
+            id: estimateddepthoffieldtext
+            # size_hint_x: .5
+            text: f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
         Button:
             text: "Calibrate"
             size_hint_x: .35
