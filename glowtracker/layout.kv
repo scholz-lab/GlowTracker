@@ -507,7 +507,6 @@ MainWindow:
 ### toggle tracking or autofocus
 <RuntimeControls>:
     framecounter: framecounter
-    buffer : buffer
     livefocuscheckbox: livefocuscheckbox
     trackingcheckbox: trackingcheckbox
     imageacquisitionmanager: imageacquisitionmanager
@@ -545,21 +544,18 @@ MainWindow:
         orientation: 'vertical'
 
         BoxLayout:
-            orientation: 'horizontal'
-            MyLabel:
-                text: 'Buffer'
-                color: '#ffffff'
-            MyCounter:
-                id: buffer
-                color: '#ffffff'
-                text: str(self.value)
-
-        BoxLayout:
             id: trackingoverlayquickbuttonlayout
             padding: [dp(5), 0, dp(5), dp(5)]
 
             TrackingOverlayQuickButton:
                 id: trackingoverlayquickbutton
+
+        BoxLayout:
+            id: liveanalysisquickbuttonlayout
+            padding: [dp(5), dp(5), dp(5), dp(5)]
+
+            LiveAnalysisQuickButton:
+                id: liveanalysisquickbutton
 
         DualColorViewModeQuickButtonLayout:
             id: dualcolorviewmodequickbuttonlayout

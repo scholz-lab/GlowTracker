@@ -312,6 +312,13 @@
         "key": "showtrackingoverlay"
     },
     {
+        "type": "bool",
+        "title": "Display live analysis",
+        "desc": "Display statistical and analytical values of the image.",
+        "section": "Tracking",
+        "key": "showliveanalysis"
+    },
+    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",

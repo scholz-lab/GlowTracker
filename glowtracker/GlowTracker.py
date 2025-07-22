@@ -1610,9 +1610,6 @@ class RecordButton(ImageAcquisitionButton):
         if self.savingthread:
             self.imageQueue.put(None)
             self.savingthread.join()
-        
-        # Update display buffer text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
         print("Stop recording")
 
@@ -1646,9 +1643,7 @@ class RecordButton(ImageAcquisitionButton):
         """Extended to further:
             - Save the coordinate data.
             - Put the image into an image saving queue.
-        """        
-        # Update buffer display text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
+        """
 
         # Write coordinate into file.
         #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
@@ -3001,6 +2996,54 @@ class TrackingOverlayQuickButton(ToggleButton):
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
+
+class LiveAnalysisQuickButton(ToggleButton):
+
+    normalText = 'Live analysis: [b][color=ff0000]Off[/color][/b]'
+    downText = 'Live analysis: [b][color=00ff00]On[/color][/b]'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.markup = True
+        self.background_down = self.background_normal
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        showliveanalysis = app.config.getboolean('Tracking', 'showliveanalysis')
+
+        if showliveanalysis:
+            self.state = 'down'
+            self.text = self.downText
+
+        else:
+            self.state = 'normal'
+            self.text = self.normalText
+        
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+        configValue = '0'
+
+        if state == 'normal':
+            self.text = self.normalText
+            configValue = '0'
+
+        else:
+            self.text = self.downText
+            configValue = '1'
+        
+        app.config.set('Tracking', 'showliveanalysis', configValue)
+        app.config.write()
+
+        # Update overlay
+        #   Prevent at startup
+        if app.root is not None:
+            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
+
 class DualColorViewModeQuickButtonLayout(BoxLayout):
     
     dualcolorviewmodequickbutton = ObjectProperty(None)
@@ -3256,15 +3299,15 @@ class GlowTrackerApp(App):
             'vhigh': '30.0',
             'vlow': '1.0',
             'port': '/dev/ttyUSB0',
-            'move_start': '0',
-            'homing': '0',
+            'move_start': 'False',
+            'homing': 'False',
             'stage_limits': '160,160,180',
             'start_loc': '0,0,0',
             'maxspeed': '20',
             'maxspeed_unit': 'mm/s',
             'acceleration': '60',
             'acceleration_unit': 'mm/s^2',
-            'move_image_space_mode': '0'
+            'move_image_space_mode': 'False'
         })
 
         config.setdefaults('Camera', {
@@ -3285,7 +3328,7 @@ class GlowTrackerApp(App):
             'minstepbeforechangedir': '0',
             'bestfocusvalue': 2000,
             'focusfps': '15',
-            'isshowgraph': '0',
+            'isshowgraph': 'False',
         })
 
         config.setdefaults('Calibration', {
@@ -3296,7 +3339,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('DualColor', {
-            'dualcolormode': '0',
+            'dualcolormode': 'False',
             'mainside': 'Right',
             'viewmode': 'Splitted',
             'recordingmode': 'Original',
@@ -3306,14 +3349,15 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Tracking', {
-            'showtrackingoverlay': '1',
+            'showtrackingoverlay': 'True',
+            'showliveanalysis': 'True',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
             'min_step': '1',
             'threshold': '30',
             'binning': '4',
-            'dark_bg': '1',
+            'dark_bg': 'True',
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
@@ -3324,7 +3368,7 @@ class GlowTrackerApp(App):
             'exppath': '',
             'nframes': '7500',
             'extension': 'tiff',
-            'iscontinuous': 'False',
+            'iscontinuous': 'True',
             'framerate': '50.0',
             'duration': '150.0',
             'buffersize': '3000'
@@ -3335,7 +3379,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Developer', {
-            'showfps': 'false'
+            'showfps': 'False'
         })
 
 
@@ -3680,6 +3724,16 @@ class GlowTrackerApp(App):
                 showtrackingoverlay = bool(int(value))
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
                     'down' if showtrackingoverlay else 'normal'
+                
+            
+            elif key == 'showliveanalysis':
+                updateOverlayFlag = True
+
+                # Also update the LiveAnalysis Quick Button
+                showliveanalysis = bool(int(value))
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
+                    'down' if showliveanalysis else 'normal'
+
             
             elif key == 'capture_radius':
                 updateOverlayFlag = True
