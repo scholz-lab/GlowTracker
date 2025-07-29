@@ -1781,10 +1781,10 @@ class ImageAcquisitionManager(BoxLayout):
                 print('An error occured when taking an image')
 
 
-class CutBoxLayout(BoxLayout, StencilView):
+class StencilFloatLayout(FloatLayout, StencilView):
 
     def on_touch_down(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
 
         if self.collide_point(*touch.pos):
@@ -1793,7 +1793,7 @@ class CutBoxLayout(BoxLayout, StencilView):
             return False
     
     def on_touch_up(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
         if self.collide_point(*touch.pos):
             return super().on_touch_up(touch)
@@ -1931,6 +1931,17 @@ class PreviewImage(Image):
                 # remove the circle 
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
+
+
+class LiveAnalysisLabel(Label):
+    
+    def __init__(self, **kwargs):
+        super(LiveAnalysisLabel, self).__init__(**kwargs)
+        self.updateText()
+
+
+    def updateText(self):
+        self.text = f"Self.size: {self.size} \nSelf.text_size: {self.text_size} \nSelf.pos: {self.pos}"
 
 
 class ImageOverlay(FloatLayout):
@@ -3025,24 +3036,28 @@ class LiveAnalysisQuickButton(ToggleButton):
         
         # Update config and setting
         app = App.get_running_app()
-        configValue = '0'
+
+        # Pass on start up
+        if app.root is None:
+            return
+        
+        liveanalysistext: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysistext
 
         if state == 'normal':
             self.text = self.normalText
-            configValue = '0'
+            app.config.set('Tracking', 'showliveanalysis', 0)
+            liveanalysistext.disabled = True
+            liveanalysistext.opacity = 0
 
         else:
             self.text = self.downText
-            configValue = '1'
+            app.config.set('Tracking', 'showliveanalysis', 1)
+            liveanalysistext.disabled = False
+            liveanalysistext.opacity = 1
+            liveanalysistext.updateText()
         
-        app.config.set('Tracking', 'showliveanalysis', configValue)
         app.config.write()
-
-        # Update overlay
-        #   Prevent at startup
-        if app.root is not None:
-            app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
-
+    
 
 class DualColorViewModeQuickButtonLayout(BoxLayout):
     
