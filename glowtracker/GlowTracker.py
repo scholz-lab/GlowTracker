@@ -42,7 +42,7 @@ from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
-from kivy.uix.settings import SettingsWithSidebar, SettingItem
+from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.slider import Slider
@@ -3179,6 +3179,35 @@ class ExitApp(BoxLayout):
 # set window size at startup
 
 
+class SettingsCustomNumeric(SettingNumeric):
+
+    @override
+    def _validate(self, instance):
+        # Close the popup
+        self._dismiss()
+        
+        value_float = float(0)
+
+        # Check if input is a number
+        try:
+            value_float = float(self.textinput.text)
+
+        except ValueError:
+            # The value is not a number
+            return
+        
+        # Check if should display text in integer style or floating point style
+        try:
+            value_int = int(self.textinput.text)
+            self.value = str(value_int)
+
+        except ValueError:
+            # We are here because we couldn't cast the value string to int, thus the value is a float
+            self.value = str(value_float)
+
+        return
+    
+
 # load the layout
 class GlowTrackerApp(App):
     # stage configuration properties - these will update when changed in config menu
@@ -3386,8 +3415,12 @@ class GlowTrackerApp(App):
     
     
     # use custom settings for our GUI
-    def build_settings(self, settings):
+    def build_settings(self, settings: SettingsWithSidebar):
         """build the settings window"""
+        # Register custom types
+        settings.register_type('custom_numeric', SettingsCustomNumeric)
+
+        # Create settings panel from json
         settings.add_json_panel('GlowTracker', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
 

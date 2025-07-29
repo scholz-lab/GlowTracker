@@ -148,21 +148,21 @@
         "title": "Autofocus"
     },
     {
-        "type": "numeric",
+        "type": "custom_numeric",
         "title": "Proportional gain (P)",
         "desc": "How strongly the controller reacts to the current error.",
         "section": "Autofocus",
         "key": "kp"
     },
     {
-        "type": "numeric",
+        "type": "custom_numeric",
         "title": "Integral gain (I)",
         "desc": "How much the controller compensates for accumulated past errors.",
         "section": "Autofocus",
         "key": "ki"
     },
     {
-        "type": "numeric",
+        "type": "custom_numeric",
         "title": "Differential gain (D)",
         "desc": "How rapidly changing errors are dampened.",
         "section": "Autofocus",
