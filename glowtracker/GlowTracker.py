@@ -3364,15 +3364,15 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Tracking', {
-            'showtrackingoverlay': 'True',
-            'showliveanalysis': 'True',
+            'showtrackingoverlay': '1',
+            'showliveanalysis': '1',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
             'min_step': '1',
             'threshold': '30',
             'binning': '4',
-            'dark_bg': 'True',
+            'dark_bg': '1',
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
@@ -3383,7 +3383,7 @@ class GlowTrackerApp(App):
             'exppath': '',
             'nframes': '7500',
             'extension': 'tiff',
-            'iscontinuous': 'True',
+            'iscontinuous': '1',
             'framerate': '50.0',
             'duration': '150.0',
             'buffersize': '3000'
