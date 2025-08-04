@@ -68,6 +68,7 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 # 
 # Own classes
@@ -85,6 +86,7 @@ import math
 import numpy as np
 from skimage.io import imsave
 import cv2
+from scipy.stats import skew
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -1102,6 +1104,17 @@ class CameraProperties(GridLayout):
             self.framerate = 0
 
 
+@dataclass
+class LiveAnalysisData():
+    minBrightness: float = 0
+    maxBrightness: float = 0
+    meanBrightness: float = 0
+    medianBrightness: float = 0
+    skewness: float = 0
+    percentile_5: float = 0
+    percentile_95: float = 0
+
+
 class ImageAcquisitionButton(ToggleButton):
     """A skeleton template class for a widget button that have image acquisition behavior.
     This class outline the common process of image acquisitions:
@@ -1308,6 +1321,30 @@ class ImageAcquisitionButton(ToggleButton):
         
         self.imageTimeStamp = imageTimeStamp
         self.imageRetrieveTimeStamp = imageRetrieveTimeStamp
+
+        # Compute live analysis data
+        showliveanalysis = self.app.config.getboolean('Tracking', 'showliveanalysis')
+        if showliveanalysis:
+            self.computeLiveAnalysisValues()
+    
+    
+    def computeLiveAnalysisValues(self):
+        """Compute the following values from the current image
+            - min
+            - max
+            - mean
+            - skew
+            - 5%, 95% percentiles
+        """
+        dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        image = self.image if not dualcolorMode else self.dualColorMainSideImage
+        self.parent.liveAnalysisData.minBrightness = np.min(image, axis= None)
+        self.parent.liveAnalysisData.maxBrightness = np.max(image, axis= None)
+        self.parent.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
+        self.parent.liveAnalysisData.medianBrightness = np.median(image, axis= None)
+        self.parent.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
+        self.parent.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
+        self.parent.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
@@ -1323,6 +1360,8 @@ class ImageAcquisitionButton(ToggleButton):
         self.parent.dualColorMainSideImage = self.dualColorMainSideImage
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
+        # Update live analysis data
+        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(self.parent.liveAnalysisData)
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -1747,6 +1786,8 @@ class ImageAcquisitionManager(BoxLayout):
     imageTimeStamp: float = 0
     imageRetrieveTimeStamp: float = 0
     dualColorMainSideImage: np.ndarray = np.zeros((1,1))
+    liveAnalysisData: LiveAnalysisData = LiveAnalysisData()
+
 
     def __init__(self,  **kwargs):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
@@ -1937,11 +1978,21 @@ class LiveAnalysisLabel(Label):
     
     def __init__(self, **kwargs):
         super(LiveAnalysisLabel, self).__init__(**kwargs)
-        self.updateText()
+        self.updateText(LiveAnalysisData())
 
 
-    def updateText(self):
-        self.text = f"Self.size: {self.size} \nSelf.text_size: {self.text_size} \nSelf.pos: {self.pos}"
+    def updateText(self, liveAnalysisData: LiveAnalysisData):
+
+        # Get LiveAnalysisData from ImageAcquisition
+        app: GlowTrackerApp = App.get_running_app()
+        
+        self.text = f"""Min: {liveAnalysisData.minBrightness:.2f}
+Max: {liveAnalysisData.maxBrightness:.2f}
+Mean: {liveAnalysisData.meanBrightness:.2f}
+Median: {liveAnalysisData.medianBrightness:.2f}
+Skewness: {liveAnalysisData.skewness:.2f}
+5 percentile: {liveAnalysisData.percentile_5:.2f}
+95 percentile: {liveAnalysisData.percentile_95:.2f}"""
 
 
 class ImageOverlay(FloatLayout):
@@ -3041,20 +3092,19 @@ class LiveAnalysisQuickButton(ToggleButton):
         if app.root is None:
             return
         
-        liveanalysistext: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysistext
+        liveanalysislabel: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysislabel
 
         if state == 'normal':
             self.text = self.normalText
             app.config.set('Tracking', 'showliveanalysis', 0)
-            liveanalysistext.disabled = True
-            liveanalysistext.opacity = 0
+            liveanalysislabel.disabled = True
+            liveanalysislabel.opacity = 0
 
         else:
             self.text = self.downText
             app.config.set('Tracking', 'showliveanalysis', 1)
-            liveanalysistext.disabled = False
-            liveanalysistext.opacity = 1
-            liveanalysistext.updateText()
+            liveanalysislabel.disabled = False
+            liveanalysislabel.opacity = 1
         
         app.config.write()
     
