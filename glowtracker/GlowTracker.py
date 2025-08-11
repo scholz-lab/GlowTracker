@@ -1338,15 +1338,19 @@ class ImageAcquisitionButton(ToggleButton):
             - skew
             - 5%, 95% percentiles
         """
+        # Get current image
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         image = self.image if not dualcolorMode else self.dualColorMainSideImage
-        self.parent.liveAnalysisData.minBrightness = np.min(image, axis= None)
-        self.parent.liveAnalysisData.maxBrightness = np.max(image, axis= None)
-        self.parent.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-        self.parent.liveAnalysisData.medianBrightness = np.median(image, axis= None)
-        self.parent.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
-        self.parent.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
-        self.parent.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
+
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        # Do we need to crop on tracking region? 
+        imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
+        imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
+        imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
