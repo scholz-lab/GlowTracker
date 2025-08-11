@@ -2,6 +2,8 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
+# Emulate camera
+# os.environ["PYLON_CAMEMU"] = "1"
 
 # 
 # Kivy Imports
