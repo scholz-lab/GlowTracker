@@ -1458,6 +1458,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
+        self.prevLiveAnalysisButtonState: str = ''
     
 
     @override
@@ -1478,15 +1479,28 @@ class RecordButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
 
+        # Store relevent states
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        
         # Stop camera if already running and disable the LiveView button
         # If the camera is already running it in live view button,
         #   put the transition "OnHold" flag, and restart camera in Recording mode
-        self.prevLiveViewButtonState = self.parent.liveviewbutton.state
+        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
+
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
-            self.parent.liveviewbutton.stopImageAcquisition()
-        self.parent.liveviewbutton.disabled = True
-        
+            imageAcquisitionManager.liveviewbutton.stopImageAcquisition()
+
+        # Disable LiveView
+        imageAcquisitionManager.liveviewbutton.disabled = True
+
+        # Store previous Live Analysis state and set to enable
+        liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
+
+        self.prevLiveAnalysisButtonState = liveanalysisquickbutton.state
+        if liveanalysisquickbutton.state == 'normal':
+            liveanalysisquickbutton.state = 'down'
+
         self.runtimeControls.framecounter.value = 0
 
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
@@ -1614,9 +1628,9 @@ class RecordButton(ImageAcquisitionButton):
         #   area
         area = self.app.config.getint('Tracking', 'area')
         coordinateFile.write(f'area {area}\n')
-
+        
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z \n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95\n")
 
         return coordinateFile
 
@@ -1661,11 +1675,15 @@ class RecordButton(ImageAcquisitionButton):
         #   within the same Kivy render timeframe as this thread. By calling it through Clock.schedule_once,
         #   we essentially schedule the on_state to be call in the next Kivy render timeframe, ensuring that
         #   it is not invoked from a thread but from the main thread always.
-        def updateLiveViewButton(*args):
+        def resumeButtonsState(*args):
+            # LiveView
             self.parent.liveviewbutton.disabled = False
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+            # LiveAnalysis
+            liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
+            liveanalysisquickbutton.state = self.prevLiveAnalysisButtonState
         
-        Clock.schedule_once( updateLiveViewButton )
+        Clock.schedule_once( resumeButtonsState )
     
 
     @override
@@ -1678,6 +1696,20 @@ class RecordButton(ImageAcquisitionButton):
 
     
     @override
+    def processImageCallback(self, image, imageTimeStamp, imageRetrieveTimeStamp) -> None:
+
+        super().processImageCallback(image, imageTimeStamp, imageRetrieveTimeStamp)
+
+        # Additionaly, we need to take care of computing the Live Analysis values, even if the:
+        #   - LiveAnalysisButton state is normal
+        #   - showliveanalysis flag in the Settings is False.
+        # In these cases, the base method would not have computed the Live Analysis values, so we just simply call it.
+        showliveanalysis = self.app.config.getboolean('Tracking', 'showliveanalysis')
+        if not showliveanalysis:
+            self.computeLiveAnalysisValues()
+
+    
+    @override
     def receiveImageCallback(self) -> None:
         """Extended to further:
             - Save the coordinate data.
@@ -1685,11 +1717,23 @@ class RecordButton(ImageAcquisitionButton):
         """
 
         # Write coordinate into file.
-        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
         try:
-            self.coordinateFile.write(f"{self.frameCounter} {self.imageTimeStamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
+            self.coordinateFile.write(f"{self.frameCounter} \
+{self.imageTimeStamp} \
+{self.app.coords[0]} \
+{self.app.coords[1]} \
+{self.app.coords[2]} \
+{self.parent.liveAnalysisData.minBrightness} \
+{self.parent.liveAnalysisData.maxBrightness} \
+{self.parent.liveAnalysisData.meanBrightness} \
+{self.parent.liveAnalysisData.medianBrightness} \
+{self.parent.liveAnalysisData.skewness} \
+{self.parent.liveAnalysisData.percentile_5} \
+{self.parent.liveAnalysisData.percentile_95} \n")
+
+        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
         except ValueError as e:
-            print(f'Receieve Image Callback: {e}')
+            print(f'Error writing coordinateFile: {e}')
 
         # Put image(s) into the saving queue
         if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
@@ -1778,9 +1822,9 @@ class ImageAcquisitionManager(BoxLayout):
     """An ImageAcquisition buttons holder widget. This class acts as a centralized contact
     point for accessing the acquired images.
     """    
-    recordbutton = ObjectProperty(None, rebind = True)
-    liveviewbutton = ObjectProperty(None, rebind = True)
-    snapbutton = ObjectProperty(None, rebind = True)
+    recordbutton: RecordButton = ObjectProperty(None, rebind = True)
+    liveviewbutton: LiveViewButton = ObjectProperty(None, rebind = True)
+    snapbutton: Button = ObjectProperty(None, rebind = True)
     # Class' attributes for centralized access of acquired images
     image: np.ndarray = np.zeros((1,1))
     imageTimeStamp: float = 0
