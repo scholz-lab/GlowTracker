@@ -2652,18 +2652,7 @@ class RuntimeControls(BoxLayout):
                 image = self.imageacquisitionmanager.image
 
             # Center-crop the image
-            h, w = image.shape
-            ymin, ymax, xmin, xmax = 0,h,0,w
-            
-            if capturedRadius > 0 :
-                ymin = np.max([0, h//2 - capturedRadius])
-                ymax = np.min([h, h//2 + capturedRadius])
-                xmin = np.max([0, w//2 - capturedRadius])
-                xmax = np.min([w, w//2 + capturedRadius])
-            
-            # Crop the region of interest.
-            #   Also, we have to copy. Otherwise, we would modified the original image.
-            croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
+            croppedImage = macro.cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
 
             # Get current position
             pos = app.coords[2]
@@ -3476,7 +3465,6 @@ class GlowTrackerApp(App):
 
         config.setdefaults('Tracking', {
             'showtrackingoverlay': '1',
-            'showliveanalysis': '1',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
