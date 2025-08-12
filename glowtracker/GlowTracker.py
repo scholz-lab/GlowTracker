@@ -3414,15 +3414,15 @@ class GlowTrackerApp(App):
             'vhigh': '30.0',
             'vlow': '1.0',
             'port': '/dev/ttyUSB0',
-            'move_start': 'False',
-            'homing': 'False',
+            'move_start': '0',
+            'homing': '0',
             'stage_limits': '160,160,180',
             'start_loc': '0,0,0',
             'maxspeed': '20',
             'maxspeed_unit': 'mm/s',
             'acceleration': '60',
             'acceleration_unit': 'mm/s^2',
-            'move_image_space_mode': 'False'
+            'move_image_space_mode': '0'
         })
 
         config.setdefaults('Camera', {
@@ -3443,7 +3443,7 @@ class GlowTrackerApp(App):
             'minstepbeforechangedir': '0',
             'bestfocusvalue': 2000,
             'focusfps': '15',
-            'isshowgraph': 'False',
+            'isshowgraph': '0',
         })
 
         config.setdefaults('Calibration', {
@@ -3454,7 +3454,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('DualColor', {
-            'dualcolormode': 'False',
+            'dualcolormode': '0',
             'mainside': 'Right',
             'viewmode': 'Splitted',
             'recordingmode': 'Original',
@@ -3498,7 +3498,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Developer', {
-            'showfps': 'False'
+            'showfps': '0'
         })
 
 
