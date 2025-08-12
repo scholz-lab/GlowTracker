@@ -532,11 +532,27 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     Returns:
         croppedImage (np.ndarray): the center cropped image
     """    
-    y, x = image.shape
-    startx = x//2-(cropWidth//2)
-    starty = y//2-(cropHeight//2)    
-    croppedImage = image[ starty:starty+cropHeight, startx:startx+cropWidth ]
-    return croppedImage
+
+    h,w = image.shape
+
+    ymin, ymax, xmin, xmax = 0, h, 0, w
+
+    halfCropWidth = cropWidth // 2
+    halfCropHeight = cropHeight // 2
+    
+    if halfCropWidth > 0 :
+        xmin = np.max([0, w//2 - halfCropWidth])
+        xmax = np.min([w, w//2 + halfCropWidth])
+
+    if halfCropHeight > 0 :
+        ymin = np.max([0, h//2 - halfCropHeight])
+        ymax = np.min([h, h//2 + halfCropHeight])
+    
+    # Crop the region of interest.
+    #   Also, we have to copy. Otherwise, we would modified the original image.
+    img1_sm = np.copy( image[ymin:ymax, xmin:xmax] )
+
+    return img1_sm
 
 
 def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:

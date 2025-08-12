@@ -1325,7 +1325,7 @@ class ImageAcquisitionButton(ToggleButton):
         self.imageRetrieveTimeStamp = imageRetrieveTimeStamp
 
         # Compute live analysis data
-        showliveanalysis = self.app.config.getboolean('Tracking', 'showliveanalysis')
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
         if showliveanalysis:
             self.computeLiveAnalysisValues()
     
@@ -1340,7 +1340,18 @@ class ImageAcquisitionButton(ToggleButton):
         """
         # Get current image
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        regionmode = self.app.config.get('LiveAnalysis', 'regionmode')
+
         image = self.image if not dualcolorMode else self.dualColorMainSideImage
+
+        if regionmode == 'Tracking':
+            # Crop to only the tracking region
+
+            # Get tracking configs
+            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+            
+            # Crop to tracking region
+            image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
 
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         # Do we need to crop on tracking region? 
@@ -1710,7 +1721,7 @@ class RecordButton(ImageAcquisitionButton):
         #   - LiveAnalysisButton state is normal
         #   - showliveanalysis flag in the Settings is False.
         # In these cases, the base method would not have computed the Live Analysis values, so we just simply call it.
-        showliveanalysis = self.app.config.getboolean('Tracking', 'showliveanalysis')
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
         if not showliveanalysis:
             self.computeLiveAnalysisValues()
 
@@ -3122,7 +3133,7 @@ class LiveAnalysisQuickButton(ToggleButton):
 
         # Bind starting state to be the same as the config
         app = App.get_running_app()
-        showliveanalysis = app.config.getboolean('Tracking', 'showliveanalysis')
+        showliveanalysis = app.config.getboolean('LiveAnalysis', 'showliveanalysis')
 
         if showliveanalysis:
             self.state = 'down'
@@ -3146,13 +3157,13 @@ class LiveAnalysisQuickButton(ToggleButton):
 
         if state == 'normal':
             self.text = self.normalText
-            app.config.set('Tracking', 'showliveanalysis', 0)
+            app.config.set('LiveAnalysis', 'showliveanalysis', 0)
             liveanalysislabel.disabled = True
             liveanalysislabel.opacity = 0
 
         else:
             self.text = self.downText
-            app.config.set('Tracking', 'showliveanalysis', 1)
+            app.config.set('LiveAnalysis', 'showliveanalysis', 1)
             liveanalysislabel.disabled = False
             liveanalysislabel.opacity = 1
         
@@ -3477,6 +3488,11 @@ class GlowTrackerApp(App):
             'area': '400',
             'min_brightness': '0',
             'max_brightness': '255'
+        })
+
+        config.setdefaults('LiveAnalysis', {
+            'showliveanalysis': '1',
+            'regionmode': 'Full'
         })
 
         config.setdefaults('Experiment', {
@@ -3840,16 +3856,6 @@ class GlowTrackerApp(App):
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
                     'down' if showtrackingoverlay else 'normal'
                 
-            
-            elif key == 'showliveanalysis':
-                updateOverlayFlag = True
-
-                # Also update the LiveAnalysis Quick Button
-                showliveanalysis = bool(int(value))
-                self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
-                    'down' if showliveanalysis else 'normal'
-
-            
             elif key == 'capture_radius':
                 updateOverlayFlag = True
 
@@ -3881,6 +3887,17 @@ class GlowTrackerApp(App):
 
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
+        
+        elif section == 'LiveAnalysis':
+
+            if key == 'showliveanalysis':
+                updateOverlayFlag = True
+
+                # Also update the LiveAnalysis Quick Button
+                showliveanalysis = bool(int(value))
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
+                    'down' if showliveanalysis else 'normal'
+            
 
         elif section == 'Developer':
 

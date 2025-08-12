@@ -312,13 +312,6 @@
         "key": "showtrackingoverlay"
     },
     {
-        "type": "bool",
-        "title": "Display live analysis",
-        "desc": "Display statistical and analytical values of the image.",
-        "section": "Tracking",
-        "key": "showliveanalysis"
-    },
-    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",
@@ -395,6 +388,25 @@
         "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
         "section": "Tracking",
         "key": "max_brightness"
+    },
+    {
+        "type": "title",
+        "title": "LiveAnalysis"
+    },
+    {
+        "type": "bool",
+        "title": "Display live analysis",
+        "desc": "Display statistical and analytical values of the image.",
+        "section": "LiveAnalysis",
+        "key": "showliveanalysis"
+    },
+    {
+        "type": "options",
+        "title": "Region mode",
+        "desc": "Compute the values over the full image or only on the tracking region",
+        "section": "LiveAnalysis",
+        "key": "regionmode",
+        "options": ["Full", "Tracking"]
     },
     {
         "type": "title",
