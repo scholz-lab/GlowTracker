@@ -3414,15 +3414,15 @@ class GlowTrackerApp(App):
             'vhigh': '30.0',
             'vlow': '1.0',
             'port': '/dev/ttyUSB0',
-            'move_start': '0',
-            'homing': '0',
+            'move_start': 'false',
+            'homing': 'false',
             'stage_limits': '160,160,180',
             'start_loc': '0,0,0',
             'maxspeed': '20',
             'maxspeed_unit': 'mm/s',
             'acceleration': '60',
             'acceleration_unit': 'mm/s^2',
-            'move_image_space_mode': '0'
+            'move_image_space_mode': 'false'
         })
 
         config.setdefaults('Camera', {
@@ -3443,7 +3443,7 @@ class GlowTrackerApp(App):
             'minstepbeforechangedir': '0',
             'bestfocusvalue': 2000,
             'focusfps': '15',
-            'isshowgraph': '0',
+            'isshowgraph': 'false',
         })
 
         config.setdefaults('Calibration', {
@@ -3454,7 +3454,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('DualColor', {
-            'dualcolormode': '0',
+            'dualcolormode': 'false',
             'mainside': 'Right',
             'viewmode': 'Splitted',
             'recordingmode': 'Original',
@@ -3464,14 +3464,14 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Tracking', {
-            'showtrackingoverlay': '1',
+            'showtrackingoverlay': 'true',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
             'min_step': '1',
             'threshold': '30',
             'binning': '4',
-            'dark_bg': '1',
+            'dark_bg': 'true',
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
@@ -3479,7 +3479,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('LiveAnalysis', {
-            'showliveanalysis': '1',
+            'showliveanalysis': 'true',
             'regionmode': 'Full'
         })
 
@@ -3487,7 +3487,7 @@ class GlowTrackerApp(App):
             'exppath': '',
             'nframes': '7500',
             'extension': 'tiff',
-            'iscontinuous': '1',
+            'iscontinuous': 'true',
             'framerate': '50.0',
             'duration': '150.0',
             'buffersize': '3000'
@@ -3498,7 +3498,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Developer', {
-            'showfps': '0'
+            'showfps': 'false'
         })
 
 
