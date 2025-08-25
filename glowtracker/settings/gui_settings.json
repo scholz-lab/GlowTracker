@@ -391,6 +391,25 @@
     },
     {
         "type": "title",
+        "title": "LiveAnalysis"
+    },
+    {
+        "type": "bool",
+        "title": "Display live analysis",
+        "desc": "Display statistical and analytical values of the image.",
+        "section": "LiveAnalysis",
+        "key": "showliveanalysis"
+    },
+    {
+        "type": "options",
+        "title": "Region mode",
+        "desc": "Compute the values over the full image or only on the tracking region",
+        "section": "LiveAnalysis",
+        "key": "regionmode",
+        "options": ["Full", "Tracking"]
+    },
+    {
+        "type": "title",
         "title": "Developer"
     },
     {
