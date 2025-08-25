@@ -473,8 +473,8 @@ MainWindow:
             size: stencil.size
             text_size: stencil.size
             pos: stencil.pos
-            disabled: app.config.getboolean('Tracking', 'showliveanalysis') is False
-            opacity: 1 if app.config.getboolean('Tracking', 'showliveanalysis') else 0
+            disabled: app.config.getboolean('LiveAnalysis', 'showliveanalysis') is False
+            opacity: 1 if app.config.getboolean('LiveAnalysis', 'showliveanalysis') else 0
     
 
     GridLayout:
