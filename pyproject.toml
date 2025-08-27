@@ -25,7 +25,7 @@ glowtracker = [
 [project]
 name = "glowtracker"
 version = "0.10.0"
-description = "GlowTracker provides a graphical user interface to operate a macroscope. The macroscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
+description = "GlowTracker provides a graphical user interface to operate a microscope. The microscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
 authors = [
     { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" }
 ]
@@ -62,7 +62,6 @@ classifiers = [
 keywords = [
     "python",
     "research",
-    "macroscope",
     "microscope",
     "tracking",
     "Zaber",
