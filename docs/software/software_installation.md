@@ -6,18 +6,35 @@ nav_order: 1
 ---
 # Software installation
 
-1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-2. Use Conda to create a new python environment `glowtracker`.
-    ```bash
-    conda create -n glowtracker 'python>=3.10,<3.12'
-    ```
+Supported Operating Systems
+- Windows 10, Windows 11
+- Ubuntu 16.04+
+- macOS Catalina+
 
-3. Activate the `glowtracker` environment 
-    ```bash
-    conda activate glowtracker
-    ```
-4. Install the GlowTracker inside the environment. Either via **pip** or cloning the package locally.
-    - Using **pip** to install from PyPI repository:
+1. Create and activate a python environment using **venv** or **Conda**.
+    - Using **venv**
+
+        GlowTracker requires python version of at least 3.10. If you do not have one, please download from [[Python]](https://www.python.org/downloads/).
+        1. Create the environment
+            ```bash
+            python -m venv glowtracker
+            ```
+        2. Activate the environment
+            ```bash
+            source glowtracker/Scripts/activate
+            ```
+    - Using **Conda**
+        1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
+        2. Use `conda` to create a new python environment named `glowtracker`.
+            ```bash
+            conda create -n glowtracker "python>=3.10,<3.12"
+            ```
+        3. Activate the `glowtracker` environment 
+            ```bash
+            conda activate glowtracker
+            ```
+2. Install the `glowtracker` package.
+    - Using `pip` to install from PyPI repository:
         ```bash
         python -m pip install glowtracker
         ```
@@ -32,14 +49,13 @@ nav_order: 1
             conda env update --file glowtracker/StageEnvironment.yml --prune
             ```
 
-
-4. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
+3. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
     - pylon Camera Software Suite
     - pylon runtime library
 
-5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
+4. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-6. After finished installation, the software can be started in serveral ways
+5. After finished installation, the software can be started in serveral ways
     - If you have installed via pip
         ```bash
         python -m glowtracker
