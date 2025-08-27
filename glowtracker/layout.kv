@@ -427,10 +427,9 @@ MainWindow:
     size: root.size
     pos: root.pos
     size_hint: (0.6,1)
-    #BoxLayout:
     orientation: 'vertical'
-    #size: root.size
-    CutBoxLayout:
+    
+    StencilFloatLayout:
         id: stencil
         size_hint: (1, 0.75)
         canvas:
@@ -464,6 +463,20 @@ MainWindow:
                 pos: previewimage.pos
                 size: previewimage.size
                 id: imageoverlay
+
+        LiveAnalysisLabel:
+            outline_width: 2
+            outline_colour: (0, 0, 0, 0.1)
+            id: liveanalysislabel
+            valign: 'top'
+            halign: 'left'
+            size: stencil.size
+            text_size: stencil.size
+            pos: stencil.pos
+            disabled: app.config.getboolean('LiveAnalysis', 'showliveanalysis') is False
+            opacity: 1 if app.config.getboolean('LiveAnalysis', 'showliveanalysis') else 0
+    
+
     GridLayout:
         cols: 2
         size_hint: (1, 0.05)
@@ -490,10 +503,6 @@ MainWindow:
         size_hint: (1, 0.2)
 
 
-<CutBoxLayout>:
-    orientation: 'horizontal'
-
-
 ### live camera image
 <PreviewImage>:
     canvas:
@@ -507,7 +516,6 @@ MainWindow:
 ### toggle tracking or autofocus
 <RuntimeControls>:
     framecounter: framecounter
-    buffer : buffer
     livefocuscheckbox: livefocuscheckbox
     trackingcheckbox: trackingcheckbox
     imageacquisitionmanager: imageacquisitionmanager
@@ -545,21 +553,18 @@ MainWindow:
         orientation: 'vertical'
 
         BoxLayout:
-            orientation: 'horizontal'
-            MyLabel:
-                text: 'Buffer'
-                color: '#ffffff'
-            MyCounter:
-                id: buffer
-                color: '#ffffff'
-                text: str(self.value)
-
-        BoxLayout:
             id: trackingoverlayquickbuttonlayout
             padding: [dp(5), 0, dp(5), dp(5)]
 
             TrackingOverlayQuickButton:
                 id: trackingoverlayquickbutton
+
+        BoxLayout:
+            id: liveanalysisquickbuttonlayout
+            padding: [dp(5), dp(5), dp(5), dp(5)]
+
+            LiveAnalysisQuickButton:
+                id: liveanalysisquickbutton
 
         DualColorViewModeQuickButtonLayout:
             id: dualcolorviewmodequickbuttonlayout
