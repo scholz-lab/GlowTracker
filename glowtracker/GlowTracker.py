@@ -1326,7 +1326,8 @@ class ImageAcquisitionButton(ToggleButton):
 
         # Compute live analysis data
         showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
-        if showliveanalysis:
+        saveanalysistorecording = self.app.config.getboolean('LiveAnalysis', 'saveanalysistorecording')
+        if showliveanalysis or saveanalysistorecording:
             self.computeLiveAnalysisValues()
     
     
@@ -3480,6 +3481,7 @@ class GlowTrackerApp(App):
 
         config.setdefaults('LiveAnalysis', {
             'showliveanalysis': 'true',
+            'saveanalysistorecording': 'false',
             'regionmode': 'Full'
         })
 

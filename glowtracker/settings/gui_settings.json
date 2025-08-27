@@ -401,6 +401,13 @@
         "key": "showliveanalysis"
     },
     {
+        "type": "bool",
+        "title": "Save to the recording",
+        "desc": "Save the live analysis data into the recording file.",
+        "section": "LiveAnalysis",
+        "key": "saveanalysistorecording"
+    },
+    {
         "type": "options",
         "title": "Region mode",
         "desc": "Compute the values over the full image or only on the tracking region",
