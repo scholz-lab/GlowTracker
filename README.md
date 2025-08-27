@@ -21,7 +21,7 @@
 1. Create and activate a python environment using **venv** or **Conda**.
     - Using **venv**
 
-        GlowTracker requires python version of at least 3.10. If you do not have one, please download so from [[Python]](https://www.python.org/downloads/).
+        GlowTracker requires python version of at least 3.10. If you do not have one, please download from [[Python]](https://www.python.org/downloads/).
         1. Create the environment
             ```bash
             python -m venv glowtracker
