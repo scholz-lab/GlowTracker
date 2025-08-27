@@ -99,4 +99,4 @@ The GUI functionality is implemented mostly in the Kivy file, whereas device fun
 ## Supported Operating Systems
 - Windows 10, Windows 11
 - Ubuntu 16.04+
-- macOS Catalina+
+- macOS Sonoma+
