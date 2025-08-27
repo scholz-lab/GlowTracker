@@ -7,10 +7,10 @@
         </colgroup>
         <tr>
             <td>
-                <img src="glowtracker/images/macroscope_logo.png" alt="photo macroscope" display="block">
+                <img src="glowtracker/images/microscope_logo.png" alt="photo microscope" display="block">
             </td>
             <td style="text-align: left; vertical-align: top;">   
-                GlowTracker is a macroscope tracking application that has the capability of tracking a small animal in bright-field, single or dual epi-fluorescence imaging. The application interface provides controls over linear Zaber stage movement and Basler camera properties. Please visit the documentation website on how to build the setup from scratch and how to operate the software at <a href="https://scholz-lab.github.io/GlowTracker/">https://scholz-lab.github.io/GlowTracker/</a>.
+                GlowTracker is a microscope tracking application that has the capability of tracking a small animal in bright-field, single or dual epi-fluorescence imaging. The application interface provides controls over linear Zaber stage movement and Basler camera properties. Please visit the documentation website on how to build the setup from scratch and how to operate the software at <a href="https://scholz-lab.github.io/GlowTracker/">https://scholz-lab.github.io/GlowTracker/</a>.
             </td>
         </tr>
     </table>
@@ -77,7 +77,7 @@ In **Settings > Camera > Default camera settings**, specify the path to your pyl
 
 ## Code overview
 
-The application is based on the Kivy framework which connects to the macroscope hardware.
+The application is based on the Kivy framework which connects to the microscope hardware.
 The GUI functionality is implemented mostly in the Kivy file, whereas device functionality is relayed to specific modules.
 
 ## Known issues

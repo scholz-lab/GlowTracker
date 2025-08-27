@@ -73,7 +73,7 @@ import matplotlib.pyplot as plt
 # Own classes
 # 
 from Zaber_control import Stage, AxisEnum
-import Macroscope_macros as macro
+import Microscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
