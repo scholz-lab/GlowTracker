@@ -9,7 +9,7 @@ nav_order: 4
 
 
 
-|       | Macroscope upgrade options | Description | Quantity | Price per unit € (08/2024) | Vendor | 
+|       | Microscope upgrade options | Description | Quantity | Price per unit € (08/2024) | Vendor | 
 | --- | --- | --- | --- | --- | --- |
 | Additional magnification | EO 12 mm objective  | Series Fixed Focal Length Lens  | 1 | 260 | [Edmund Optics](https://www.edmundoptics.eu/p/12mm-uc-series-fixed-focal-length-lens/2969/)
 |  | EO 16 mm objective | Series Fixed Focal Length Lens | 1 | 325 | [Edmund Optics](https://www.edmundoptics.com/p/16mm-c-series-fixed-focal-length-lens/16525/)

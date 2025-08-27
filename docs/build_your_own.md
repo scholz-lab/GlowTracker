@@ -21,14 +21,13 @@ nav_order: 4
       </tr>
     </table>
 
-## Steps for assembling your macroscope 
-<p align="justify">Assuming you have all the parts from the <a href="https://scholz-lab.github.io/GlowTracker/List%20of%20parts/List_of_parts.html"><i>parts list</i></a> available, you should be able to assemble the macroscope in about two hours and have a fully functional tool.</p>
+## Steps for assembling your microscope 
+<p align="justify">Assuming you have all the parts from the <a href="https://scholz-lab.github.io/GlowTracker/List%20of%20parts/List_of_parts.html"><i>parts list</i></a> available, you should be able to assemble the microscope in about two hours and have a fully functional tool.</p>
 
 1. [Stage and base](#stage-base)
 2. [Lightpath](#lightpath)
 3. [Filters](#filters)
 4. [Adjust field-of-view for dual color imaging ](#dualview-alignment) 
-5. [Install the software](#install-software) 
 
 ### Tools
 You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner wrench handy. A tiny flat-head screwdriver is useful for adjusting the camera orientation.
@@ -159,7 +158,7 @@ You should have a metric Thorlabs Balldriver & Hex Key Kits, and an SM1 spanner 
         <td>
           <figure class="center-figure">
             <img src="custom_assets/images/3 - Finish/complete - side.jpg" alt="After lightpath assembly" >
-            <figcaption>When you finish this section you should have the macroscope without filters fully assembled.</figcaption>
+            <figcaption>When you finish this section you should have the microscope without filters fully assembled.</figcaption>
           </figure>
         </td>
       </tr>
@@ -245,7 +244,7 @@ In this section, we assemble the white light LED. The optics are used to collima
 
 ### Image-splitter assembly
 <p align="justify">
-  The image splitter is the heart of the macroscope. Mechanics matter as a crooked assembly will lead to issues with the image quality. Before starting, lay out all the parts required. Pay attention to the cube orientations and follow the pictures exactly. 
+  The image splitter is the heart of the microscope. Mechanics matter as a crooked assembly will lead to issues with the image quality. Before starting, please install the GlowTracker application , lay out all the parts required. Pay attention to the cube orientations and follow the pictures exactly. 
 </p>
 
 
@@ -417,7 +416,7 @@ For this cube, you will need one 488/561 nm dichroic and a dualband excitation f
 </p>
 
 <p align="justify">
-  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the macroscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should follow the direction of the light, i.e. outward of the cube and toward the camera as depicted below.
+  Follow the steps above to secure the dichroic. Add the two filters, the red at the top and the green at the right side of the filter. The 'top' and 'right' orientation refers to the cube's placement when you are looking at it in the microscope. Since the filters are from Semrock and Edmund Optics, the direction of the arrows should follow the direction of the light, i.e. outward of the cube and toward the camera as depicted below.
 </p>
 
 <figure class="center-figure">
@@ -484,19 +483,4 @@ You will need dual colored samples. We found that fluorescent tape or even fluor
   <figcaption>Example process of slit alignment. Numbering refers to steps in instruction.</figcaption>
 </figure>
 Note: You can also manually change the calibration parameters in the settings, this can be helpful if you have problems with automatic calibration.
-</p>
-
-## Install the software <a name="install-software"></a>
-<p align="justify">
-  The Macroscope GUI is designed for manual and automated tracking, offering a Kivy app interface for two USB devices. Users are encouraged to adjust camera parameters using BASLER's pylon software to avoid duplicating configuration efforts. GUI functions are primarily in the Kivy file, while device functionality is delegated to specific modules. 
-
-  To work with the GUI, you will need to do the following:
-</p>
-1. Create an environment
-2. Install BASLER package
-3. Install Zaber Launcher <i>(optional)</i>
-4. Start the GUI by <code>python GlowTracker.py</code>
-
-<p align="justify">
-  You can find more detailed instructions in the <a><i>Software installation</i></a> section.
 </p>

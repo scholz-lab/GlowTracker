@@ -5,7 +5,7 @@ nav_order: 2
 ---
 
 # Getting Started 
-After you have finished constructing your macroscope, connect the camera and stage's USBs to your computer.
+After you have finished constructing your microscope, connect the camera and stage's USBs to your computer.
 1. [Opening up the GUI](#opening-the-gui) 
 2. [Connect to the stage](#connect-to-the-stage)
 3. [Connect to the camera](#connect-to-the-camera)
@@ -15,7 +15,7 @@ After you have finished constructing your macroscope, connect the camera and sta
 
 ## Opening up the GUI <a name="opening-the-gui"></a>
 <p align="center">
-  <img src="custom_assets/images/gui_annotation.png" id="gui_annotation" alt="macroscope" width="100%"/>
+  <img src="custom_assets/images/gui_annotation.png" id="gui_annotation" alt="glowtracker GUI" width="100%"/>
 </p>
 
 
