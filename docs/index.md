@@ -12,8 +12,8 @@ nav_order: 1
 </p>
 
 <div>
-    <img float="left" align ="middle" src="custom_assets/images/GlowTracker_introduction_small.gif" alt="macroscope" width="60%" />
-    <img float="left" align ="middle" src="custom_assets/images/macroscope_3d_4_shortstage.png" alt="macroscope" width="35%" />
+    <img float="left" align ="middle" src="custom_assets/images/GlowTracker_introduction_small.gif" alt="GlowTracker video" width="60%" />
+    <img float="left" align ="middle" src="custom_assets/images/macroscope_3d_4_shortstage.png" alt="microscope video" width="35%" />
 </div>
 
 ## (Epifluorescence + Tracking) / affordable = GlowTracker

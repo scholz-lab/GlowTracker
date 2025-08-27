@@ -8,8 +8,8 @@ nav_order: 1
 
 Supported Operating Systems
 - Windows 10, Windows 11
-- Ubuntu 16.04+
-- macOS Sonoma+
+- Ubuntu 16.04 or newer
+- macOS Sonoma or newer
 
 1. Create and activate a python environment using **venv** or **Conda**.
     - Using **venv**

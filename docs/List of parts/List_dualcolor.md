@@ -1,11 +1,11 @@
 ---
-title: 2.1 Dual color macroscope
+title: 2.1 Dual color microscope
 layout: default
 parent: 2. List of parts
 nav_order: 1
 ---
 
-# List of parts for the dual color macroscope
+# List of parts for the dual color microscope
 
 <p align="center">
     <img src="..\custom_assets\images\image.png" width="75%">
@@ -13,7 +13,7 @@ nav_order: 1
 
 <figure class="center-figure">
     <img src="..\custom_assets\images\2 - optics\all_parts_labeled.jpg" alt="dual color all parts" >
-    <figcaption>Dual color macroscope light-path parts labeled</figcaption>
+    <figcaption>Dual color microscope light-path parts labeled</figcaption>
 </figure>
 ## Light Path
 

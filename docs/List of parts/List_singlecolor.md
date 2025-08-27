@@ -1,11 +1,11 @@
 ---
-title: 2.2 Single color macroscope
+title: 2.2 Single color microscope
 layout: default
 parent: 2. List of parts
 nav_order: 2
 ---
 
-# List of parts for the single color macroscope
+# List of parts for the single color microscope
 
 <p align="center">
     <img src="..\custom_assets\images\single color.png" width="75%">
@@ -80,5 +80,5 @@ For example, a filter set for red fluorescent protein would be:
 | 29 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 40,00 |
 
 Please note that, the linear stages **X-LHM150A** (19) have a maximum centered load of 30 N and maximum moment of 50 N⋅cm. 
-If you decided to upgrade the setup to the dual color macroscope later on, this would not work as the light path of the dual color weighs roughly 2.2 kg and will produce moment of about 200 N⋅cm which exceeds the limit.
+If you decided to upgrade the setup to the dual color microscope later on, this would not work as the light path of the dual color weighs roughly 2.2 kg and will produce moment of about 200 N⋅cm which exceeds the limit.
 In that case, you should purchase the linear stages [**X-LSM150A**](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) directly.

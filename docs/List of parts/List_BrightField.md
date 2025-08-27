@@ -1,11 +1,11 @@
 ---
-title: 2.3 Bright field macroscope
+title: 2.3 Bright field microscope
 layout: default
 parent: 2. List of parts
 nav_order: 3
 ---
 
-# List of parts for the bright field macroscope
+# List of parts for the bright field microscope
 
 ## Light Path
 
@@ -67,5 +67,5 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 | 26 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 40,00 |
 
 Please note that, the linear stages **X-LHM150A** (16) have a maximum centered load of 30 N and maximum moment of 50 N⋅cm. 
-If you decided to upgrade the setup to the dual color macroscope later on, this would not work as the light path of the dual color weighs roughly 2.2 kg and will produce moment of about 200 N⋅cm which exceeds the limit.
+If you decided to upgrade the setup to the dual color microscope later on, this would not work as the light path of the dual color weighs roughly 2.2 kg and will produce moment of about 200 N⋅cm which exceeds the limit.
 In that case, you should purchase the stronger linear stages [**X-LSM150A**](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) directly.
