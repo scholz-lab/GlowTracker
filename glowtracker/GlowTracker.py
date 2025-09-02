@@ -2,6 +2,8 @@ import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
 os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
+# Emulate camera
+# os.environ["PYLON_CAMEMU"] = "1"
 
 # 
 # Kivy Imports
@@ -68,6 +70,7 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 # 
 # Own classes
@@ -85,6 +88,7 @@ import math
 import numpy as np
 from skimage.io import imsave
 import cv2
+from scipy.stats import skew
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -1102,6 +1106,17 @@ class CameraProperties(GridLayout):
             self.framerate = 0
 
 
+@dataclass
+class LiveAnalysisData():
+    minBrightness: float = 0
+    maxBrightness: float = 0
+    meanBrightness: float = 0
+    medianBrightness: float = 0
+    skewness: float = 0
+    percentile_5: float = 0
+    percentile_95: float = 0
+
+
 class ImageAcquisitionButton(ToggleButton):
     """A skeleton template class for a widget button that have image acquisition behavior.
     This class outline the common process of image acquisitions:
@@ -1308,6 +1323,46 @@ class ImageAcquisitionButton(ToggleButton):
         
         self.imageTimeStamp = imageTimeStamp
         self.imageRetrieveTimeStamp = imageRetrieveTimeStamp
+
+        # Compute live analysis data
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        saveanalysistorecording = self.app.config.getboolean('LiveAnalysis', 'saveanalysistorecording')
+        if showliveanalysis or saveanalysistorecording:
+            self.computeLiveAnalysisValues()
+    
+    
+    def computeLiveAnalysisValues(self):
+        """Compute the following values from the current image
+            - min
+            - max
+            - mean
+            - skew
+            - 5%, 95% percentiles
+        """
+        # Get current image
+        dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
+        regionmode = self.app.config.get('LiveAnalysis', 'regionmode')
+
+        image = self.image if not dualcolorMode else self.dualColorMainSideImage
+
+        if regionmode == 'Tracking':
+            # Crop to only the tracking region
+
+            # Get tracking configs
+            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+            
+            # Crop to tracking region
+            image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
+
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        # Do we need to crop on tracking region? 
+        imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
+        imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
+        imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
+        imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
@@ -1323,6 +1378,8 @@ class ImageAcquisitionButton(ToggleButton):
         self.parent.dualColorMainSideImage = self.dualColorMainSideImage
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
+        # Update live analysis data
+        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(self.parent.liveAnalysisData)
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -1419,6 +1476,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
+        self.prevLiveAnalysisButtonState: str = ''
     
 
     @override
@@ -1439,15 +1497,28 @@ class RecordButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
 
+        # Store relevent states
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        
         # Stop camera if already running and disable the LiveView button
         # If the camera is already running it in live view button,
         #   put the transition "OnHold" flag, and restart camera in Recording mode
-        self.prevLiveViewButtonState = self.parent.liveviewbutton.state
+        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
+
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
-            self.parent.liveviewbutton.stopImageAcquisition()
-        self.parent.liveviewbutton.disabled = True
-        
+            imageAcquisitionManager.liveviewbutton.stopImageAcquisition()
+
+        # Disable LiveView
+        imageAcquisitionManager.liveviewbutton.disabled = True
+
+        # Store previous Live Analysis state and set to enable
+        liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
+
+        self.prevLiveAnalysisButtonState = liveanalysisquickbutton.state
+        if liveanalysisquickbutton.state == 'normal':
+            liveanalysisquickbutton.state = 'down'
+
         self.runtimeControls.framecounter.value = 0
 
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
@@ -1575,9 +1646,9 @@ class RecordButton(ImageAcquisitionButton):
         #   area
         area = self.app.config.getint('Tracking', 'area')
         coordinateFile.write(f'area {area}\n')
-
+        
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z \n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95\n")
 
         return coordinateFile
 
@@ -1610,9 +1681,6 @@ class RecordButton(ImageAcquisitionButton):
         if self.savingthread:
             self.imageQueue.put(None)
             self.savingthread.join()
-        
-        # Update display buffer text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
 
         print("Stop recording")
 
@@ -1625,11 +1693,15 @@ class RecordButton(ImageAcquisitionButton):
         #   within the same Kivy render timeframe as this thread. By calling it through Clock.schedule_once,
         #   we essentially schedule the on_state to be call in the next Kivy render timeframe, ensuring that
         #   it is not invoked from a thread but from the main thread always.
-        def updateLiveViewButton(*args):
+        def resumeButtonsState(*args):
+            # LiveView
             self.parent.liveviewbutton.disabled = False
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+            # LiveAnalysis
+            liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
+            liveanalysisquickbutton.state = self.prevLiveAnalysisButtonState
         
-        Clock.schedule_once( updateLiveViewButton )
+        Clock.schedule_once( resumeButtonsState )
     
 
     @override
@@ -1642,20 +1714,44 @@ class RecordButton(ImageAcquisitionButton):
 
     
     @override
+    def processImageCallback(self, image, imageTimeStamp, imageRetrieveTimeStamp) -> None:
+
+        super().processImageCallback(image, imageTimeStamp, imageRetrieveTimeStamp)
+
+        # Additionaly, we need to take care of computing the Live Analysis values, even if the:
+        #   - LiveAnalysisButton state is normal
+        #   - showliveanalysis flag in the Settings is False.
+        # In these cases, the base method would not have computed the Live Analysis values, so we just simply call it.
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        if not showliveanalysis:
+            self.computeLiveAnalysisValues()
+
+    
+    @override
     def receiveImageCallback(self) -> None:
         """Extended to further:
             - Save the coordinate data.
             - Put the image into an image saving queue.
-        """        
-        # Update buffer display text
-        self.runtimeControls.buffer.value = self.camera.MaxNumBuffer() - self.camera.NumQueuedBuffers()
+        """
 
         # Write coordinate into file.
-        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
         try:
-            self.coordinateFile.write(f"{self.frameCounter} {self.imageTimeStamp} {self.app.coords[0]} {self.app.coords[1]} {self.app.coords[2]} \n")
+            self.coordinateFile.write(f"{self.frameCounter} \
+{self.imageTimeStamp} \
+{self.app.coords[0]} \
+{self.app.coords[1]} \
+{self.app.coords[2]} \
+{self.parent.liveAnalysisData.minBrightness} \
+{self.parent.liveAnalysisData.maxBrightness} \
+{self.parent.liveAnalysisData.meanBrightness} \
+{self.parent.liveAnalysisData.medianBrightness} \
+{self.parent.liveAnalysisData.skewness} \
+{self.parent.liveAnalysisData.percentile_5} \
+{self.parent.liveAnalysisData.percentile_95} \n")
+
+        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
         except ValueError as e:
-            print(f'Receieve Image Callback: {e}')
+            print(f'Error writing coordinateFile: {e}')
 
         # Put image(s) into the saving queue
         if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
@@ -1744,14 +1840,16 @@ class ImageAcquisitionManager(BoxLayout):
     """An ImageAcquisition buttons holder widget. This class acts as a centralized contact
     point for accessing the acquired images.
     """    
-    recordbutton = ObjectProperty(None, rebind = True)
-    liveviewbutton = ObjectProperty(None, rebind = True)
-    snapbutton = ObjectProperty(None, rebind = True)
+    recordbutton: RecordButton = ObjectProperty(None, rebind = True)
+    liveviewbutton: LiveViewButton = ObjectProperty(None, rebind = True)
+    snapbutton: Button = ObjectProperty(None, rebind = True)
     # Class' attributes for centralized access of acquired images
     image: np.ndarray = np.zeros((1,1))
     imageTimeStamp: float = 0
     imageRetrieveTimeStamp: float = 0
     dualColorMainSideImage: np.ndarray = np.zeros((1,1))
+    liveAnalysisData: LiveAnalysisData = LiveAnalysisData()
+
 
     def __init__(self,  **kwargs):
         super(ImageAcquisitionManager, self).__init__(**kwargs)
@@ -1786,10 +1884,10 @@ class ImageAcquisitionManager(BoxLayout):
                 print('An error occured when taking an image')
 
 
-class CutBoxLayout(BoxLayout, StencilView):
+class StencilFloatLayout(FloatLayout, StencilView):
 
     def on_touch_down(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
 
         if self.collide_point(*touch.pos):
@@ -1798,7 +1896,7 @@ class CutBoxLayout(BoxLayout, StencilView):
             return False
     
     def on_touch_up(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the CutBoxLayout
+        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
         if self.collide_point(*touch.pos):
             return super().on_touch_up(touch)
@@ -1936,6 +2034,27 @@ class PreviewImage(Image):
                 # remove the circle 
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
+
+
+class LiveAnalysisLabel(Label):
+    
+    def __init__(self, **kwargs):
+        super(LiveAnalysisLabel, self).__init__(**kwargs)
+        self.updateText(LiveAnalysisData())
+
+
+    def updateText(self, liveAnalysisData: LiveAnalysisData):
+
+        # Get LiveAnalysisData from ImageAcquisition
+        app: GlowTrackerApp = App.get_running_app()
+        
+        self.text = f"""Min: {liveAnalysisData.minBrightness:.2f}
+Max: {liveAnalysisData.maxBrightness:.2f}
+Mean: {liveAnalysisData.meanBrightness:.2f}
+Median: {liveAnalysisData.medianBrightness:.2f}
+Skewness: {liveAnalysisData.skewness:.2f}
+5 percentile: {liveAnalysisData.percentile_5:.2f}
+95 percentile: {liveAnalysisData.percentile_95:.2f}"""
 
 
 class ImageOverlay(FloatLayout):
@@ -2534,18 +2653,7 @@ class RuntimeControls(BoxLayout):
                 image = self.imageacquisitionmanager.image
 
             # Center-crop the image
-            h, w = image.shape
-            ymin, ymax, xmin, xmax = 0,h,0,w
-            
-            if capturedRadius > 0 :
-                ymin = np.max([0, h//2 - capturedRadius])
-                ymax = np.min([h, h//2 + capturedRadius])
-                xmin = np.max([0, w//2 - capturedRadius])
-                xmax = np.min([w, w//2 + capturedRadius])
-            
-            # Crop the region of interest.
-            #   Also, we have to copy. Otherwise, we would modified the original image.
-            croppedImage = np.copy( image[ymin:ymax, xmin:xmax] )
+            croppedImage = macro.cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
 
             # Get current position
             pos = app.coords[2]
@@ -3001,6 +3109,57 @@ class TrackingOverlayQuickButton(ToggleButton):
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
+
+class LiveAnalysisQuickButton(ToggleButton):
+
+    normalText = 'Live analysis: [b][color=ff0000]Off[/color][/b]'
+    downText = 'Live analysis: [b][color=00ff00]On[/color][/b]'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.markup = True
+        self.background_down = self.background_normal
+
+        # Bind starting state to be the same as the config
+        app = App.get_running_app()
+        showliveanalysis = app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+
+        if showliveanalysis:
+            self.state = 'down'
+            self.text = self.downText
+
+        else:
+            self.state = 'normal'
+            self.text = self.normalText
+        
+
+    def on_state(self, button: ToggleButton, state: 'str'):
+        
+        # Update config and setting
+        app = App.get_running_app()
+
+        # Pass on start up
+        if app.root is None:
+            return
+        
+        liveanalysislabel: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysislabel
+
+        if state == 'normal':
+            self.text = self.normalText
+            app.config.set('LiveAnalysis', 'showliveanalysis', 0)
+            liveanalysislabel.disabled = True
+            liveanalysislabel.opacity = 0
+
+        else:
+            self.text = self.downText
+            app.config.set('LiveAnalysis', 'showliveanalysis', 1)
+            liveanalysislabel.disabled = False
+            liveanalysislabel.opacity = 1
+        
+        app.config.write()
+    
+
 class DualColorViewModeQuickButtonLayout(BoxLayout):
     
     dualcolorviewmodequickbutton = ObjectProperty(None)
@@ -3285,15 +3444,15 @@ class GlowTrackerApp(App):
             'vhigh': '30.0',
             'vlow': '1.0',
             'port': '/dev/ttyUSB0',
-            'move_start': '0',
-            'homing': '0',
+            'move_start': 'false',
+            'homing': 'false',
             'stage_limits': '160,160,180',
             'start_loc': '0,0,0',
             'maxspeed': '20',
             'maxspeed_unit': 'mm/s',
             'acceleration': '60',
             'acceleration_unit': 'mm/s^2',
-            'move_image_space_mode': '0'
+            'move_image_space_mode': 'false'
         })
 
         config.setdefaults('Camera', {
@@ -3314,7 +3473,7 @@ class GlowTrackerApp(App):
             'minstepbeforechangedir': '0',
             'bestfocusvalue': 2000,
             'focusfps': '15',
-            'isshowgraph': '0',
+            'isshowgraph': 'false',
         })
 
         config.setdefaults('Calibration', {
@@ -3325,7 +3484,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('DualColor', {
-            'dualcolormode': '0',
+            'dualcolormode': 'false',
             'mainside': 'Right',
             'viewmode': 'Splitted',
             'recordingmode': 'Original',
@@ -3335,25 +3494,31 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('Tracking', {
-            'showtrackingoverlay': '1',
+            'showtrackingoverlay': 'true',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
             'min_step': '1',
             'threshold': '30',
             'binning': '4',
-            'dark_bg': '1',
+            'dark_bg': 'true',
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
             'max_brightness': '255'
         })
 
+        config.setdefaults('LiveAnalysis', {
+            'showliveanalysis': 'true',
+            'saveanalysistorecording': 'false',
+            'regionmode': 'Full'
+        })
+
         config.setdefaults('Experiment', {
             'exppath': '',
             'nframes': '7500',
             'extension': 'tiff',
-            'iscontinuous': 'False',
+            'iscontinuous': 'true',
             'framerate': '50.0',
             'duration': '150.0',
             'buffersize': '3000'
@@ -3713,7 +3878,7 @@ class GlowTrackerApp(App):
                 showtrackingoverlay = bool(int(value))
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
                     'down' if showtrackingoverlay else 'normal'
-            
+                
             elif key == 'capture_radius':
                 updateOverlayFlag = True
 
@@ -3745,6 +3910,17 @@ class GlowTrackerApp(App):
 
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
+        
+        elif section == 'LiveAnalysis':
+
+            if key == 'showliveanalysis':
+                updateOverlayFlag = True
+
+                # Also update the LiveAnalysis Quick Button
+                showliveanalysis = bool(int(value))
+                self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
+                    'down' if showliveanalysis else 'normal'
+            
 
         elif section == 'Developer':
 
