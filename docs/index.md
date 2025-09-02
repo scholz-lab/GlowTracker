@@ -48,6 +48,14 @@ nav_order: 1
         <td>
             585 nm (with Eo 12 mm objective) <br>
             471 (with Olympus 20x objective)
+        </td> 
+      </tr>
+     <tr>
+        <td>
+           Effective experimentation range (mm<sup>2</sup>)
+        </td>
+        <td>
+            100 x 144
         </td>
       </tr>
     </table>
