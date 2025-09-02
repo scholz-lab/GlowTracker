@@ -228,21 +228,9 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
-    # capture radius
-    # clip image
-    h,w = img1.shape
-    #to region of interest
-    ymin, ymax, xmin, xmax = 0,h,0,w
-    
-    if capture_radius > 0 :
-        ymin = np.max([0,h//2-capture_radius])
-        ymax = np.min([h,h//2+capture_radius])
-        xmin = np.max([0,w//2-capture_radius])
-        xmax = np.min([w,w//2+capture_radius])
-    
-    # Crop the region of interest.
-    #   Also, we have to copy. Otherwise, we would modified the original image.
-    img1_sm = np.copy( img1[ymin:ymax, xmin:xmax] )
+
+    # Crop to tracking region
+    img1_sm = cropCenterImage(img1, capture_radius * 2, capture_radius * 2)
 
     # Set pixels that are outside of the brightness range to 0
     img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
@@ -532,11 +520,27 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     Returns:
         croppedImage (np.ndarray): the center cropped image
     """    
-    y, x = image.shape
-    startx = x//2-(cropWidth//2)
-    starty = y//2-(cropHeight//2)    
-    croppedImage = image[ starty:starty+cropHeight, startx:startx+cropWidth ]
-    return croppedImage
+
+    h,w = image.shape
+
+    ymin, ymax, xmin, xmax = 0, h, 0, w
+
+    halfCropWidth = cropWidth // 2
+    halfCropHeight = cropHeight // 2
+    
+    if halfCropWidth > 0 :
+        xmin = np.max([0, w//2 - halfCropWidth])
+        xmax = np.min([w, w//2 + halfCropWidth])
+
+    if halfCropHeight > 0 :
+        ymin = np.max([0, h//2 - halfCropHeight])
+        ymax = np.min([h, h//2 + halfCropHeight])
+    
+    # Crop the region of interest.
+    #   Also, we have to copy. Otherwise, we would modified the original image.
+    img1_sm = np.copy( image[ymin:ymax, xmin:xmax] )
+
+    return img1_sm
 
 
 def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
@@ -1107,15 +1111,7 @@ class DepthOfFieldEstimator:
             
 
             # Center-crop the image
-            ymin, ymax, xmin, xmax = 0,h,0,w
-            
-            if capturedRadius > 0 :
-                ymin = np.max([0, h//2 - capturedRadius])
-                ymax = np.min([h, h//2 + capturedRadius])
-                xmin = np.max([0, w//2 - capturedRadius])
-                xmax = np.min([w, w//2 + capturedRadius])
-            
-            image = image[ymin:ymax, xmin:xmax]
+            image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
             
             # Estimate focus of the image
             estimatedFocus = estimateFocus(focusEstimationMethod, image)
