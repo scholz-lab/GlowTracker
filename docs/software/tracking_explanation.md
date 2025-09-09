@@ -117,3 +117,7 @@ nav_order: 2
     <img src="../custom_assets/images/tracking/good_vs_bad_lightening.gif" alt="Tracking performance under good & bad illumination">
     <figcaption>An example showing the performance of tracking under good and bad illumination</figcaption>
 </figure>
+
+## Discussion
+Due to the above explanations, this tracking procedure does not guaranteed to maintain it's course on the same animal if the animal is occluded or overlaped with other animals because it does not have a conceptual data of what an animal is, and rather treated eveything equally as intensities on an image.
+This problem can be partially mitigated by sparsely distribute animals on the plate, and is mostly entirely mitigated in dual-color experimentation.
