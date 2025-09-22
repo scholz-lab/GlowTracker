@@ -2043,6 +2043,10 @@ class LiveAnalysisLabel(Label):
         self.updateText(LiveAnalysisData())
 
 
+    def on_touch_down(self, touch):
+        return False
+
+
     def updateText(self, liveAnalysisData: LiveAnalysisData):
 
         # Get LiveAnalysisData from ImageAcquisition
