@@ -5,7 +5,21 @@ parent: 4. Software
 nav_order: 2
 ---
 
-# How does tracking work?
+# Start tracking
+Before tracking, first make sure to calibrate stage-camera [[Getting Started]]({{ site.baseurl }}{% link getting_started.md %}).
+This only need to be done once when the light path is modified. 
+Then simply click on the Tracking checkbox on the bottom right corner of the GUI.
+A short instructional dialog will appear.
+Then click on the part of an animal where you would like to be the center of tracking.
+The animal is now being track.
+
+<figure class="center-figure">
+    <video controls src="../custom_assets/images/tracking/tracking_instruction.mp4" width="75%" type="video/mp4"></video>
+    <figcaption>Tracking Instruction Video</figcaption>
+</figure>
+
+
+# The tracking algorithm
 
 <p align="justify">
     To effectively track the worm, ensuring it remains centered in the image, we must adjust the stage to compensate for the worm's movement. This involves comparing the worm's current position with its previous one and using the displacement to relocate the stage accordingly.
@@ -120,4 +134,4 @@ nav_order: 2
 
 ## Discussion
 Due to the above explanations, this tracking procedure does not guaranteed to maintain it's course on the same animal if the animal is occluded or overlaped with other animals because it does not have a conceptual data of what an animal is, and rather treated eveything equally as intensities on an image.
-This problem can be partially mitigated by sparsely distribute animals on the plate, and is mostly entirely mitigated in dual-color experimentation.
+This problem can be mitigated by: reducing the tracking radius, changing the intensity range, reducing population density, or performing the experiment in dual-color mode
