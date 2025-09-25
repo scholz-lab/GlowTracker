@@ -12,6 +12,7 @@ After you have finished constructing your microscope, connect the camera and sta
 4. [Calibrate the camera and stage relationship](#calibrate-the-camera-and-stage-relationship) 
 5. [Dual-color calibration (optional)](#dual-color-calibration) 
 6. [Recording settings](#recording-settings) 
+7. [Output data](#output-data) 
 
 ## Opening up the GUI <a name="opening-the-gui"></a>
 <p align="center">
@@ -123,6 +124,9 @@ The **Framerate (1/s)** refers to the camera's current frame rate as set and dis
 </figure>
 
 The recording output location can be set by clicking the file dialo in ![](custom_assets/images/buttons/six.png){: .inline-image}, or in the **Settings** ![](custom_assets/images/buttons/ten.png){: .inline-image}> **Experiment** > **Save Path**.
+
+## Output data <a name="output-data"></a>
+
 During a recording, a sequence of images and a recording log will be written to the directory.
 The images are saved in `tiff` format by default, and can be optionally changed to `png` or `jpg`.
 They are named in the following chronological convention `year-month-day-hour-minute-second-microsecond-basler_frame.tiff`, eg. 
@@ -169,6 +173,17 @@ area 400
 ...
 ```
 From the beginning section `# Recording` to `# Tracking` are meta data about that recordding session, and under the section `# Frame ...` contains the relevent data to each image frame.
-Each column of the line `# Frame ...` writes it's respective header, i.e. first column is the image frame number (matching with the image file name), second column is the image time stamp (from the camera's internal clock), third is the camera position in X-axis (which can be directly interpret as the animal's position), and so on.
+Each column of the line `# Frame ...` writes it's respective header:
+- `Frame`: image frame number matching with the image file name
+- `Time`: camera's internal clock time at the moment of capturing the image in millisecond
+- `X`, `Y`, `Z`: stage position at each corresponding axis in millimeter, which can be directly interpret as the animal's position
 
-However, the image analysis data `minBrightness, maxBrightness, ..., percentile_95` will not be recorded by default because the computation tooks ~30ms per frame and may affect recording at high speed. The option can be enabled through **Settings** ![](custom_assets/images/buttons/ten.png){: .inline-image} > **LiveAnalysis** > **Save to the recording**.
+The followings are additional data that will only be calculated and recorded if Live Analysis option is enabled at **Settings** ![](custom_assets/images/buttons/ten.png){: .inline-image} > **LiveAnalysis** > **Save to the recording**. However, please do note that the computation will take ~30ms per each frame and may affect the performance of overall recording at high framerate.
+- `minBrightness`: image's minimum brightness [0, 255]
+- `maxBrightness` : image's maximum brightness [0, 255]
+- `meanBrightness` : image's mean brightness [0, 255]
+- `medianBrightness` : image's median brightness [0, 255]
+- `skewness` : skewness of image-brightness histrogram [[scipy.stats.
+skew]](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.skew.html)
+- `percentile_5` : image brightness under 5 percentile [0, 255] [[numpy.percentile]](https://numpy.org/doc/2.3/reference/generated/numpy.percentile.html)
+- `percentile_95` : image brightness under 95 percentile [0, 255] [[numpy.percentile]](https://numpy.org/doc/2.3/reference/generated/numpy.percentile.html)
