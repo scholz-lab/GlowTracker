@@ -6,7 +6,7 @@ nav_order: 2
 ---
 
 # Start tracking
-Before tracking, first make sure to calibrate stage-camera [[Getting Started]]({{ site.baseurl }}{% link getting_started.md %}).
+Before tracking, first make sure to calibrate stage-camera [Getting Started](https://scholz-lab.github.io/GlowTracker/getting_started.html#calibrate-the-camera-and-stage-relationship).
 This only need to be done once when the light path is modified. 
 Then simply click on the Tracking checkbox on the bottom right corner of the GUI.
 A short instructional dialog will appear.
