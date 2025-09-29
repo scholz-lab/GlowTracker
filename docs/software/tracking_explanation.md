@@ -11,7 +11,7 @@ This only need to be done once when the light path is modified.
 Then simply click on the Tracking checkbox on the bottom right corner of the GUI.
 A short instructional dialog will appear.
 Then click on the part of an animal where you would like to be the center of tracking.
-The animal is now being track.
+The animal is now being tracked.
 
 <figure class="center-figure">
     <video controls src="../custom_assets/images/tracking/tracking_instruction.mp4" width="75%" type="video/mp4"></video>
