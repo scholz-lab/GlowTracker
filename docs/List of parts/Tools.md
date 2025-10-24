@@ -1,7 +1,7 @@
 ---
 title: 2.5 Tools
 layout: default
-parent: 2. Tools
+parent: 2. List of parts
 nav_order: 5
 ---
 
