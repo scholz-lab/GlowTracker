@@ -106,7 +106,15 @@ def imageToTexture(image: np.ndarray) -> Texture:
         texture (Texture): image as a Kivy Texture
     """    
     height, width = image.shape[0], image.shape[1]
-    colorfmt = 'luminance' if image.ndim == 2 else 'rgb'
+    
+    colorfmt = 'luminance'
+    if image.ndim == 2:
+        colorfmt = 'luminance'
+    elif image.ndim == 3:
+        colorfmt = 'rgb'
+    elif image.ndim == 4:
+        colorfmt = 'rgba'
+        
     bufferfmt = 'ubyte'
     
     # Create a new Kivy Texture
