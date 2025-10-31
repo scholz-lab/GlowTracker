@@ -38,7 +38,9 @@ jobs:
         # Generate the requirements.txt file listed in pyproject.toml
         # NOTE: This step overwrites any previously existing requirements.txt file
         run: |
-          python -m piptools compile -o requirements.txt ${{ github.workspace }}/pyproject.toml --upgrade
+          pip-compile ${{ github.workspace }}/pyproject.toml --output-file=requirements.txt --upgrade
+          # python -m piptools compile -o requirements.txt ${{ github.workspace }}/pyproject.toml --upgrade
+          # python -m piptools compile pyproject.toml -o requirements.txt --upgrade
       - name: Install dependencies Linux/macOS
         if: runner.os == 'Linux' || runner.os == 'macOS'
         run:
