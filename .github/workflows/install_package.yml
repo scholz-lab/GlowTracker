@@ -32,8 +32,8 @@ jobs:
           echo "runner os: ${{ runner.os }}"
           echo "matrix os: ${{ matrix.os }}"
       - name: Update pip
-        run: 
-          python -m pip install --upgrade pip 
+        run: |
+          python -m pip install --upgrade pip
           python -m pip install --upgrade setuptools wheel pip-tools
       - name: Compile requirements
         # Generate the requirements.txt file listed in pyproject.toml
