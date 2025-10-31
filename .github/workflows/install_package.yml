@@ -33,7 +33,7 @@ jobs:
           echo "matrix os: ${{ matrix.os }}"
       - name: Update pip
         run: 
-          python -m pip install --upgrade pip setuptools pip-tools
+          python -m pip install --upgrade pip setuptools wheel pip-tools
       - name: Compile requirements
         # Generate the requirements.txt file listed in pyproject.toml
         # NOTE: This step overwrites any previously existing requirements.txt file
