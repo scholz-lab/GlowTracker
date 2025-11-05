@@ -92,7 +92,9 @@ class MacroScriptExecutor:
         )
 
         print_arg = Suppress('(') \
-            + delimitedList( QuotedString('"', multiline= True, unquoteResults= False) | arithExpr ) \
+            + delimitedList( \
+                expr= QuotedString('"', multiline= True, unquoteResults= False) | arithExpr, \
+                delim=',' ) \
             + Suppress(')')
 
         # 
@@ -395,10 +397,24 @@ class MacroScriptExecutor:
                     raise ValueError(f"Expression {expression} is invalid.")
             
             else:
+                
+                left = right = 0
+                op = ''
 
-                left = self._resolveExpression(scopeVariableDict, expression[0])
-                op = expression[1]
-                right = self._resolveExpression(scopeVariableDict, expression[2])
+                if len(expression) == 3:
+                    left = self._resolveExpression(scopeVariableDict, expression[0])
+                    op = expression[1]
+                    # Recursively resolve right term
+                    right = self._resolveExpression(scopeVariableDict, expression[2])
+                    
+                else:
+                    # len >= 5
+                    # Resolve left operands first
+                    left = self._resolveExpression(scopeVariableDict, expression[:3])
+                    op = expression[3]
+                    # Recursively resolve right term
+                    right = self._resolveExpression(scopeVariableDict, expression[4:])
+
 
                 # Plus, Minus
                 if op == '+':
@@ -419,6 +435,10 @@ class MacroScriptExecutor:
                 # Exponent
                 elif op == '^':
                     return left ** right
+
+                else:
+                    raise ValueError(f"Expression {expression} is invalid.")
+            
                 
         else:
             raise ValueError(f"Expression {expression} is invalid.")
