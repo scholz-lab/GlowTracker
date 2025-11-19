@@ -25,6 +25,7 @@ nav_order: 1
 | 3 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 59,00 |
 | 4 | YN50mm F1.8: 50mm F1.8 Objective | [Yongnuo](https://th.hkyongnuo.com/products/yn50mm-f18) | 2 | 110,00 |
 | 5 | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | 2 | 25,82 |
+| 5 | SM1A71 - Adapter with External SM1 Threads and External SM2 Threads  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) | 2 | 30.9 |
 | 6 | DFM1/M: Kinematic Fluorescence Filter Cube for Ø25 mm Fluorescence Filters, 30 mm Cage Compatible | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=DFM1/M) | 3 | 385,34 |
 | 7 | SM1CP2M: Externally SM1-Threaded End Cap for Machining | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1CP2M) | 3 | 19,09 |
 | 8 | ER025: Cage Assembly Rod, 1/4" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER025) | 16 | 4,96 |
@@ -37,15 +38,16 @@ nav_order: 1
 | 15 | SM1NR1: Zoom Housing for Ø1" Optics, Non-Rotating, 2" travel | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1NR1) | 1 | 214,89 |
 | 16 | CDI11786: Precision slit 3500um ± 40um width. 10 mm length. 316 Stainless Steel | TBD from Thorlabs | 1 | 142,71 |
 | 17 | SM1S20: Lens Tube Spacer, 2" Long | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1S20) | 1 | 15,44 |
-| 18 | ACL25416U-A: Aspheric Condenser Lens, Ø1", f=16 mm, NA=0.79, ARC: 350-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ACL25416U-A) | 1 | 29,16 |
-| 19 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
-| 20 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
-| 21 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
-| 22 | SM2A53: Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A53) | 2 | 21,49 |
-| 23 | SM1RR: SM1 Retaining Ring Ø1" | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1RR) | 1 | 4,43 |
+| 18 | SM1L03 - SM1 Lens Tube, 0.30" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1L03) | 1 | 12.79 |
+| 19 | ACL25416U-A: Aspheric Condenser Lens, Ø1", f=16 mm, NA=0.79, ARC: 350-700 nm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ACL25416U-A) | 1 | 29,16 |
+| 20 | SM1L10: Lens Tube, 1.00" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L10) | 1 | 14,01 |
+| 21 | ERSCB-P4: Rod Adapter for Ø6 mm ER Rods, L = 0.27", 4 Pack | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=ERSCB-P4) | 1 | 58,41 |
+| 22 | ER1: Cage Assembly Rod, 1" Long, Ø6 mm | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=ER1) | 4 | 5,09 |
+
+
 
 Please note that the choice of objective dictates the adapters. 
-In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2**(5) and **SM2A53**(22) adapters to connect with the cage and the camera.
+In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2**(5) and **SM1A71**(5) adapters to connect with the cage and the camera.
 However, if you choose the objectives from other vendors, such as **Canon**, the appropriate adapters would be [SM1A71](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) and [SM2A26](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26), respectively.
 
 
@@ -54,11 +56,11 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 25 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072) | 1 | 405,00 |
-| 26 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
-| 27 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
-| 28 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
-| 29 | Di01-R488/561-25x36: 488/561 nm lasers BrightLine® dual-edge laser dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/di01_r488_561_25x36/fl-006697) | 1 | 555,00 |
+| 23 | FF01-618/50-25: 618/50 BrightLine® single-band bandpass filter (Red Emission Filter) | [Semrock](https://www.idex-hs.com/store/product-detail/ff01_618_50_25/fl-004072) | 1 | 405,00 |
+| 24 | 67-030: 520nm CWL, 25mm Dia, 36nm Bandwidth, OD 6 Fluorescence Filter (Green Emission Filter) | [Edmund Optics](https://www.edmundoptics.eu/p/520nm-cwl-25mm-dia-36nm-bandwidth-od-6-fluorescence-filter/21570/) | 1 | 313,00 |
+| 25 | 59011x: Dual-band-pass Excitation Filter | [Chroma](https://www.chroma.com/products/parts/59011x) | 1 | 400,00 |
+| 26 | FF562-Di03-25x36: 562 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff562_di03_25x36/fl-007122) | 2 | 305,00 |
+| 27 | Di01-R488/561-25x36: 488/561 nm lasers BrightLine® dual-edge laser dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/di01_r488_561_25x36/fl-006697) | 1 | 555,00 |
 
 
 ## Illumination
@@ -66,9 +68,9 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
+| 28 | LEDD1B: T-Cube LED Driver, 1200 mA Max Drive Current | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=LEDD1B) | 1 | 322,86 |
+| 29 | KPS201: 15 V, 2.66 A Power Supply Unit with 3.5 mm Jack Connector | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=KPS201) | 1 | 36,66 |
 | 30 | MNWHL4: White LED 4900 K, 740 mW | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=MNWHL4) | 1 | 158,81 |
-| 31 | LEDD1B: T-Cube LED Driver, 1200 mA Max Drive Current | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=LEDD1B) | 1 | 322,86 |
-| 32 | KPS201: 15 V, 2.66 A Power Supply Unit with 3.5 mm Jack Connector | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=KPS201) | 1 | 36,66 |
 
 
 ## Stage
@@ -76,11 +78,11 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (08/2024) |
 | --- | --- | --- | --- | --- |
-| 33 | X-LSM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A) | 3 | 2.397,00 |
-| 34 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
-| 35 | AP102C: X-LRM, X-LSM, and X-LHM Metric Top Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP102C) | 1 | 93,00 |
-| 36 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
-| 37 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 72,00 |
-| 38 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 35,00 |
-| 39 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 15,00 |
-| 40 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 44,00 |
+| 31 | X-LSM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A) | 3 | 2.397,00 |
+| 32 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
+| 33 | RB13P1/M - Adapter Plate with M6 and M4 Taps | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=RB13P1/M#ad-image-3) | 1 | 58,93 |
+| 34 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
+| 35 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 72,00 |
+| 36 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 35,00 |
+| 37 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 15,00 |
+| 38 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 44,00 |
