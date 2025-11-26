@@ -71,6 +71,7 @@ import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
+import pandas as pd
 
 # 
 # Own classes
@@ -2787,8 +2788,10 @@ class RuntimeControls(BoxLayout):
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
+        self.perfObj = {}
+
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.perfObj
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -2812,7 +2815,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, perfObj: dict) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -2833,6 +2836,20 @@ class RuntimeControls(BoxLayout):
         scale = 1.0
 
         estimated_next_timestamp: float | None = None
+
+        TrackingAlgTime = []
+        TrackingDist = []
+        CommunicateToStageTime = []
+        EstStageMovingTime = []
+        TrackingFrameTime = []
+        TrackingFrameTimeStamp = []
+
+        perfObj["TrackingAlgTime"] = TrackingAlgTime
+        perfObj["TrackingDist"] = TrackingDist
+        perfObj["CommunicateToStageTime"] = CommunicateToStageTime
+        perfObj["EstStageMovingTime"] = EstStageMovingTime
+        perfObj["TrackingFrameTime"] = TrackingFrameTime
+        perfObj["TrackingFrameTimeStamp"] = TrackingFrameTimeStamp
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
@@ -2877,6 +2894,7 @@ class RuntimeControls(BoxLayout):
 
             # Get the latest image
             tracking_frame_start_time = time.perf_counter()
+            TrackingAlgTime_begin = time.perf_counter()
 
             if dualColorMode:
                 image = self.imageacquisitionmanager.dualColorMainSideImage
@@ -2913,6 +2931,13 @@ class RuntimeControls(BoxLayout):
             ystep *= scale
             xstep *= scale
 
+            TrackingAlgTime_end = time.perf_counter()
+            TrackingAlgTime.append(TrackingAlgTime_end - TrackingAlgTime_begin)
+
+            TrackingDist.append(np.linalg.norm([xstep, ystep]))
+
+            CommunicateToStageTime_begin = time.perf_counter()
+
             # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
@@ -2925,6 +2950,9 @@ class RuntimeControls(BoxLayout):
 
             tracking_frame_end_time = time.perf_counter()
 
+            CommunicateToStageTime.append(tracking_frame_end_time - CommunicateToStageTime_begin)
+            TrackingFrameTimeStamp.append(tracking_frame_end_time)
+
             #   Wait for stage movement to finish to not get motion blur.
             #   This could be done by checking with stage.is_busy().
             #   However, that function call is very costly (~3 secs) 
@@ -2936,6 +2964,8 @@ class RuntimeControls(BoxLayout):
 
             #   Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
+            
+            TrackingFrameTime.append(computation_time)
 
             #   Communication delay from host to stage is 20 ms
             communication_delay = 20e-3 
@@ -2945,6 +2975,8 @@ class RuntimeControls(BoxLayout):
             #       is the maximum between the two.
             max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
             stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
+
+            EstStageMovingTime.append(stage_travel_time)
 
             #   Sums up all the waiting time ingredient
             tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
@@ -3025,6 +3057,10 @@ class RuntimeControls(BoxLayout):
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+
+        # Write tracking performance file
+        trackingPerfDf = pd.DataFrame(self.perfObj)
+        trackingPerfDf.to_csv("trackingPerfLog.log", sep=',', index= False)
     
 
     def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
