@@ -1520,13 +1520,6 @@ class RecordButton(ImageAcquisitionButton):
         # Disable LiveView
         imageAcquisitionManager.liveviewbutton.disabled = True
 
-        # Store previous Live Analysis state and set to enable
-        liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
-
-        self.prevLiveAnalysisButtonState = liveanalysisquickbutton.state
-        if liveanalysisquickbutton.state == 'normal':
-            liveanalysisquickbutton.state = 'down'
-
         self.runtimeControls.framecounter.value = 0
 
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
@@ -1705,9 +1698,6 @@ class RecordButton(ImageAcquisitionButton):
             # LiveView
             self.parent.liveviewbutton.disabled = False
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
-            # LiveAnalysis
-            liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
-            liveanalysisquickbutton.state = self.prevLiveAnalysisButtonState
         
         Clock.schedule_once( resumeButtonsState )
     
@@ -1730,9 +1720,9 @@ class RecordButton(ImageAcquisitionButton):
         #   - LiveAnalysisButton state is normal
         #   - showliveanalysis flag in the Settings is False.
         # In these cases, the base method would not have computed the Live Analysis values, so we just simply call it.
-        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
-        if not showliveanalysis:
-            self.computeLiveAnalysisValues()
+        # showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        # if not showliveanalysis:
+        #     self.computeLiveAnalysisValues()
 
     
     @override
