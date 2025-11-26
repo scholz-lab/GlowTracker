@@ -1088,7 +1088,7 @@ class CameraProperties(GridLayout):
     def change_gain(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.Gain = float(self.gain)
+            camera.Gain.Value = float(self.gain)
             self.gain = camera.Gain()
         else:
             self.gain = 0
@@ -1097,7 +1097,7 @@ class CameraProperties(GridLayout):
     def change_exposure(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.ExposureTime = float(self.exposure)
+            camera.ExposureTime.Value = float(self.exposure)
             self.exposure = camera.ExposureTime()
         else:
             self.exposure = 0
@@ -1107,8 +1107,8 @@ class CameraProperties(GridLayout):
         """update framerate"""
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.AcquisitionFrameRateEnable = True
-            camera.AcquisitionFrameRate = float(self.framerate)
+            camera.AcquisitionFrameRateEnable.Value = True
+            camera.AcquisitionFrameRate.Value = float(self.framerate)
             self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
@@ -3002,22 +3002,22 @@ class RuntimeControls(BoxLayout):
             # Wait for camera acquisition to fully stop.
             time.sleep(2/camera.AcquisitionFrameRate()) # Wait 2 frame
             # grab unlock
-            camera.TLParamsLocked = False
+            camera.TLParamsLocked.Value = False
 
             # The Basler's camera have a feature-persistence feature, where the camera offset and width/height
             #   are checked against each other all the time so that the sum does not exceed the sensor's limit.
             #   Relaxing the offsets first allows setting any valid widhth/height.
-            camera.OffsetX = 0
-            camera.OffsetY = 0
-            camera.Width = int(cameraConfig['Width'])
-            camera.Height = int(cameraConfig['Height'])
-            camera.CenterX = bool(int(cameraConfig['CenterX']))
-            camera.CenterY = bool(int(cameraConfig['CenterY']))
-            camera.OffsetX = int(cameraConfig['OffsetX'])
-            camera.OffsetY = int(cameraConfig['OffsetY'])
+            camera.OffsetX.Value = 0
+            camera.OffsetY.Value = 0
+            camera.Width.Value = int(cameraConfig['Width'])
+            camera.Height.Value = int(cameraConfig['Height'])
+            camera.CenterX.Value = bool(int(cameraConfig['CenterX']))
+            camera.CenterY.Value = bool(int(cameraConfig['CenterY']))
+            camera.OffsetX.Value = int(cameraConfig['OffsetX'])
+            camera.OffsetY.Value = int(cameraConfig['OffsetY'])
 
             # grab lock
-            camera.TLParamsLocked = True
+            camera.TLParamsLocked.Value = True
             # cam start
             camera.AcquisitionStart.Execute()
             # Set camera on hold flag
