@@ -1211,7 +1211,7 @@ class ImageAcquisitionButton(ToggleButton):
         self.state = 'normal'
     
 
-    def imageAcquisitionLoopingThread(self, grabArgs) -> None:
+    def imageAcquisitionLoopingThread(self, grabArgs, perfObj) -> None:
         """Image acquisition looping thread. This function should not be call directly 
         in the main thread but as a new thread instead for better performance.
         The procedure here is as follows:
@@ -1239,6 +1239,15 @@ class ImageAcquisitionButton(ToggleButton):
 
         returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
 
+        imageTimeStamp_ = []
+        imageRetrieveTimeStamp_ = []
+        timeProcessImage_ = []
+        AcquisitionTimeStamp_ = []
+        perfObj["imageTimeStamp"] = imageTimeStamp_
+        perfObj["imageRetrieveTimeStamp"] = imageRetrieveTimeStamp_
+        perfObj["timeProcessImage"] = timeProcessImage_
+        perfObj["AcquisitionTimeStamp"] = AcquisitionTimeStamp_
+
         # Start image acquisition loop
         while self.acquisitionCondition():
 
@@ -1247,12 +1256,20 @@ class ImageAcquisitionButton(ToggleButton):
 
             if isSuccess:
 
+                imageTimeStamp_.append(imageTimeStamp)
+                imageRetrieveTimeStamp_.append(imageRetrieveTimeStamp)
+                timeProcessImage_begin = time.perf_counter()
+                AcquisitionTimeStamp_.append(timeProcessImage_begin)
+
                 if returnCameraOnHoldFlag:
                     self.camera.setIsOnHold(False)
                     returnCameraOnHoldFlag = False
-
+                
                 # Process the received image
                 self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
+
+                timeProcessImage_end = time.perf_counter()
+                timeProcessImage_.append(timeProcessImage_end - timeProcessImage_begin)
 
                 # Trigger image callback
                 self.receiveImageCallback()
@@ -1442,7 +1459,8 @@ class LiveViewButton(ImageAcquisitionButton):
             target= self.imageAcquisitionLoopingThread,
             daemon= True,
             kwargs= {
-                'grabArgs' : grabArgs
+                'grabArgs' : grabArgs,
+                'perfObj' : {}
             }
         )
         self.imageAcquisitionThread.start()
@@ -1548,12 +1566,23 @@ class RecordButton(ImageAcquisitionButton):
         # open coordinate file
         self.coordinateFile = self.initCoordinateFile()
 
+        # Performance log
+        self.perfObj = {}
+
+        # Write metadata
+        self.perfObjFileName = '../imageAcquisitionPerfLog.log'
+        with open(self.perfObjFileName, "w") as file:
+            file.write(f"ExposureTime, {self.camera.ExposureTime()}\n")
+            file.write(f"AcquisitionFrameRate, {self.camera.AcquisitionFrameRate()}\n")
+            file.write(f"ResultingFrameRate, {self.camera.ResultingFrameRate()}\n")
+
         # Spawn image acquisition thread
         self.imageAcquisitionThread = Thread(
             target= self.imageAcquisitionLoopingThread,
             daemon= True,
             kwargs= {
                 'grabArgs' : grabArgs,
+                'perfObj' : self.perfObj
             }
         )
 
@@ -1685,6 +1714,10 @@ class RecordButton(ImageAcquisitionButton):
             self.savingthread.join()
 
         print("Stop recording")
+
+        # Save performance log
+        perfObjPD = pd.DataFrame(self.perfObj)
+        perfObjPD.to_csv(self.perfObjFileName, index=False, sep= ',', mode="a") 
 
         # Set LiveView button state back to enable.
         #   We need to do it here as a schedule event. Because this current function (stopImageAcquisition)
@@ -3060,7 +3093,7 @@ class RuntimeControls(BoxLayout):
 
         # Write tracking performance file
         trackingPerfDf = pd.DataFrame(self.perfObj)
-        trackingPerfDf.to_csv("trackingPerfLog.log", sep=',', index= False)
+        trackingPerfDf.to_csv("../trackingPerfLog.log", sep=',', index= False)
     
 
     def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
