@@ -56,7 +56,7 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (09/2024) |
 | --- | --- | --- | --- | --- |
-| 18 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 1.513,00 |
+| 18 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 2.397,00 |
 | 19 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
 | 20 | RB13P1/M - Adapter Plate with M6 and M4 Taps | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=RB13P1/M#ad-image-3) | 1 | 58.93 |
 | 21 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |

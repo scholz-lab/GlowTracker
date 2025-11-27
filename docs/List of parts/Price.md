@@ -9,6 +9,6 @@ nav_order: 6
 
 | **Microscope configuration**   | **Price €**  |
 | ------------- | ------------- | 
-| Dual color  |  14 524,37 |  
-| Single color  |  8 068,28 | 
-| Bright field     | 7 436,35 |  
+| Dual color  |  13 919,43 |  
+| Single color  |  10 695,24 | 
+| Bright field     | 10 061,81 |  
