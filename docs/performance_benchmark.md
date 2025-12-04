@@ -99,19 +99,15 @@ nav_order: 3
 <p align="justify">
     We benchmarked image acquisition and tracking rates using varying exposure times. By definition, the image acquisition rate is mainly an inverse of the exposure time with some constant factor. 
     We would like to know how fast our application can track with regard to image acquisition rate. 
-    The benchmarking is performed with maximum image ROI (3088 x 2064 pixels), no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 16 GB of RAM, and on a Windows 10 64-bit operating system. The results are shown in the plot below.
+    The benchmarking is performed with image size of 1800 x 1800 pixels, no binning, in a laptop with 12th Gen Intel(R) Core(TM) i7-1255U 1.70 GHz CPU, 16 GB of RAM, and on a Windows 11 64-bit operating system. The results are shown in the plot below.
 </p>
 
 <figure class="center-figure">
-    <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.png" alt="image acquisition vs tracking rate">
+    <img src="custom_assets/images/performance/image_acquisition_vs_tracking_rate.svg" alt="image acquisition vs tracking rate">
 </figure>
 
 <p align="justify">
-    Here we can observe that the relationship between the image acquisition rate and tracking rate is almost linearly proportional to each other. 
-    This makes sense as the faster we can acquire images, the faster we can track them. 
-    However, we notice that there is a spike in the tracking rate where the image acquisition rate is equal to 33.333 Hz, which is a result of setting the exposure time to 30 ms. 
-    We have yet to find a definitive answer to this. 
-    Our intuition for now is that there may be some acquisition rate that happens to synchronize perfectly with the tracking loop, which helps reduce the synchronization waiting time.
+    TODO:
 </p>
 
 <p align="justify">
@@ -122,17 +118,11 @@ nav_order: 3
 </p>
 
 <figure class="center-figure">
-    <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.png" alt="image_acquisition vs frames per track">
+    <img src="custom_assets/images/performance/image_acquisition_vs_frames_per_track.svg" alt="image_acquisition vs frames per track">
 </figure>
 
 <p align="justify">
-    Based on the plot above, a similar behavior to the previous plot can be observed. 
-    The frames-per-track ratio is mostly linearly proportionate to the image acquisition rate. 
-    This is because the compute-tracking time and communicate-to-stage time are independent of the image acquisition rate. 
-    Meaning no matter how fast we acquire images, we still have to wait for the same fixed amount of time to compute tracking, and so the frames-per-track ratio increases. 
-    The peak of tracking rate at 33.33 Hz image acquisition in the previous figure also now becomes a dip in this figure because it means that it has a higher tracking rate than its neighbors. 
-    The frames-per-track ratio has a lower bound of 2. 
-    This is because if the tracking scheme is so fast that it can be completed within an image acquisition cycle, it would still need to wait for a new acquisition cycle to receive a correct image to use for the next tracking.
+    TODO:
 </p>
 
 ## Conclusion
