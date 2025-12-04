@@ -1952,13 +1952,6 @@ class PreviewImage(Image):
         
         mouse_pos = np.array(pos, np.float32)
 
-        # Scale mouse position upto the display density factor.
-        #   This is usually 1 for normal monitor. 
-        #   But for higher density monitors like in modern laptop
-        #   or smartphone, this factor will be more than 1.
-        #   This is important because it affect the coordinate system down the line.
-        mouse_pos *= Metrics.dp
-
         previewImage = self
         scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage    # parent of the previewImage
 
