@@ -1,10 +1,10 @@
 import asyncio
 from zaber_motion import Library, Units, MotionLibException, MovementFailedException, CommandFailedException
-from zaber_motion.units import units_from_literals
+from zaber_motion.units import units_from_literals, LITERALS_TO_UNITS, UnitsAndLiterals, Units
 from zaber_motion.ascii import Connection, Axis, Device
 from dataclasses import dataclass
 import math
-from typing import List, Tuple, TypeAlias
+from typing import List, Tuple, TypeAlias, Literal
 from enum import Enum
 
 # Default settings
@@ -17,6 +17,19 @@ DEFAULT_ACCEL_UNIT = 'mm/s^2'
 Vec3: TypeAlias = Tuple[float, float, float]
 
 Library.enable_device_db_store()
+
+# Unit conversion
+UNITS_TO_LITERALS = {value: key for key, value in LITERALS_TO_UNITS.items()}
+
+def units_to_literals(units: UnitsAndLiterals) -> str:
+    if isinstance(units, str):
+        return units
+
+    converted = UNITS_TO_LITERALS.get(units)
+    if converted is None:
+        raise ValueError(f"Invalid units: {units}")
+
+    return converted
 
 @dataclass
 class StageState:
@@ -145,7 +158,7 @@ class Stage:
 
             # Retrieve actual axis max speed
             self.maxspeed = axis.settings.get("maxspeed", unit)
-            print(f'Maximum speed: {self.maxspeed}[{unit}]')
+            print(f'Maximum speed: {self.maxspeed:.4f} {units_to_literals(unit)}')
             
         return self.maxspeed
     
@@ -180,7 +193,7 @@ class Stage:
 
             # Retrieve actual axis acceleration 
             self.accel = axis.settings.get("accel", units_from_literals(unit))
-            print(f'Acceleration: {self.accel}[{unit}]')
+            print(f'Acceleration: {self.accel:.4f} {units_to_literals(unit)}')
 
         return self.accel
 

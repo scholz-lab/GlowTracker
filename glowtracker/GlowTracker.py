@@ -1980,7 +1980,7 @@ class PreviewImage(Image):
             # Get the pixel value. Need to flip Y as image coord is top-left.
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]}, {self.mouse_pos_in_tex_coord[1]}, {pixelVal})'
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'x: {self.mouse_pos_in_tex_coord[0]}, y: {self.mouse_pos_in_tex_coord[1]}, intensity: {pixelVal}'
 
         return  
 
@@ -3758,7 +3758,10 @@ class GlowTrackerApp(App):
                 self.stage.stop(stopAxis= AxisEnum.Z)
                 self.coords = self.stage.get_position()
 
-        print(f'Stage position: {self.coords}')
+        stagePosString = f'Stage position: {self.coords[0]:.3f}, {self.coords[1]:.3f}'
+        if len(self.coords) > 2:
+            stagePosString += f', {self.coords[2]:.3f}'
+        print(stagePosString)
 
 
     def unbind_keys(self):
