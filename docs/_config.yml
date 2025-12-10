@@ -8,3 +8,7 @@ logo: "custom_assets/images/macroscope_logo.png"
 aux_links:
   "GlowTracker on GitHub":
     - "https://github.com/scholz-lab/GlowTracker"
+
+sass:
+  quiet_deps: true # https://github.com/just-the-docs/just-the-docs/issues/1541
+  silence_deprecations: ['import'] # https://github.com/just-the-docs/just-the-docs/issues/1607

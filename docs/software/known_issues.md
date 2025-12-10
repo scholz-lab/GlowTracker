@@ -2,7 +2,7 @@
 title: 4.5 Known issues
 layout: default
 parent: 4. Software
-# nav_order: -1
+nav_order: 5
 ---
 
 # Known issues
