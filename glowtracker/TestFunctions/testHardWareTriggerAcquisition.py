@@ -172,26 +172,30 @@ def triggerSingleCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
     camera.TriggerActivation.Value = "RisingEdge"
 
     # Start camera aquisition one frame in a thread
-    def grabOneFrame(camera) -> pylon.GrabResult:
-        print("begin grabbing")
+    def grabOneFrame(camera: pylon.InstantCamera) -> pylon.GrabResult:
+
+        print("Start grabbing")
         grabResult = camera.GrabOne(pylon.waitForever)
-        print("end grabbing")
+        print("End grabbing")
+
         return grabResult
     
-    # There is some synchronization issue somewhere here...
-    
-    cameraThread = ThreadWithReturn(target=grabOneFrame, args=(camera, ))
+    cameraThread = ThreadWithReturn(target=grabOneFrame, args=(camera,))
     cameraThread.start()
 
+    print("Wait for trigger ready")
+    camera.WaitForFrameTriggerReady(1)
+
+    print("Begin send signal")
     # Send trigger signal
     daq.setDOState(ioNum= u3.FIO0, state= HIGH)
-    
-    time.sleep(0.01)
+    print("End send signal")
     
     # Stop the thread and get the result back
     grabResult: pylon.GrabResult = cameraThread.join()
+    print("Thread is joined")
 
-    if grabResult.GrabSucceeded():
+    if grabResult and grabResult.GrabSucceeded():
 
         print("Successful!")
 
@@ -204,8 +208,6 @@ def triggerSingleCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
         plt.figure()
         plt.imshow(img)
         plt.show()
-
-        x = 2
 
     else:
         print("Unsuccessful")
@@ -227,12 +229,11 @@ if __name__ == '__main__':
     # blinkLED(daq, 0.5)
     
     # Sine wave LED
-    sineWaveLed(daq= daq, mean= 1.5, amplitude= 1.5,  freq= 1, duration= 5, resolution= 0.00001)
+    # sineWaveLed(daq= daq, mean= 1.5, amplitude= 1.5,  freq= 1, duration= 5, resolution= 0.00001)
 
     # Trigger acquisition
-    # triggerSingleCameraAcquisition(daq, camera)
+    triggerSingleCameraAcquisition(daq, camera)
     
-    # daq.setDOState(ioNum= 0, state= 1)
 
 
 
