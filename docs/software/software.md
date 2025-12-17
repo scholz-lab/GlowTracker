@@ -13,6 +13,3 @@ nav_order: 5
 <p align="center">
     <img src="../custom_assets/images/gui_annotation.png" width="100%">
 </p>
----
-{: .no_toc }
-
