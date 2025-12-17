@@ -22,12 +22,24 @@
   {%- endif -%}
 {%- endif -%}
 
-<hr>
-{% include toc_heading_custom.html %}
-<ul>
-{% for child in sorted_pages %}
-  <li>
-    <a href="{{ child.url | relative_url }}">{{ child.title }}</a>{% if child.summary %} - {{ child.summary }}{% endif %}
-  </li>
-{% endfor %}
-</ul>
+{%- assign children = site.html_pages | where_exp:"item","item.parent == page.title" | sort: "nav_order" -%}
+
+{%- if children and children.size > 0 -%}
+
+  {%- if page.child_nav_order == 'desc' or page.child_nav_order == 'reversed' -%}
+    {%- assign children = children | reverse -%}
+  {%- endif -%}
+
+  <hr>
+  {% include toc_heading_custom.html %}
+  <ul>
+  {% for child in children %}
+    <li>
+      <a href="{{ child.url | relative_url }}">{{ child.title }}</a>
+      {% if child.summary %} - {{ child.summary }}
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+
+{%- endif -%}
