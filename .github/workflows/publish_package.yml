@@ -27,10 +27,10 @@ jobs:
     steps:
       # Checkout the repository
       - name: Checkout glowtracker
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
       # Set up Python environment
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
       # Updating pip and installing 'build'.

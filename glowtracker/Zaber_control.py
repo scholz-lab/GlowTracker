@@ -1,10 +1,10 @@
 import asyncio
 from zaber_motion import Library, Units, MotionLibException, MovementFailedException, CommandFailedException
-from zaber_motion.units import units_from_literals
+from zaber_motion.units import units_from_literals, LITERALS_TO_UNITS, UnitsAndLiterals, Units
 from zaber_motion.ascii import Connection, Axis, Device
 from dataclasses import dataclass
 import math
-from typing import List, Tuple, TypeAlias
+from typing import List, Tuple, TypeAlias, Literal
 from enum import Enum
 
 # Default settings
@@ -17,6 +17,19 @@ DEFAULT_ACCEL_UNIT = 'mm/s^2'
 Vec3: TypeAlias = Tuple[float, float, float]
 
 Library.enable_device_db_store()
+
+# Unit conversion
+UNITS_TO_LITERALS = {value: key for key, value in LITERALS_TO_UNITS.items()}
+
+def units_to_literals(units: UnitsAndLiterals) -> str:
+    if isinstance(units, str):
+        return units
+
+    converted = UNITS_TO_LITERALS.get(units)
+    if converted is None:
+        raise ValueError(f"Invalid units: {units}")
+
+    return converted
 
 @dataclass
 class StageState:
@@ -145,7 +158,7 @@ class Stage:
 
             # Retrieve actual axis max speed
             self.maxspeed = axis.settings.get("maxspeed", unit)
-            print(f'Maximum speed: {self.maxspeed}[{unit}]')
+            print(f'Maximum speed: {self.maxspeed:.4f} {units_to_literals(unit)}')
             
         return self.maxspeed
     
@@ -180,7 +193,7 @@ class Stage:
 
             # Retrieve actual axis acceleration 
             self.accel = axis.settings.get("accel", units_from_literals(unit))
-            print(f'Acceleration: {self.accel}[{unit}]')
+            print(f'Acceleration: {self.accel:.4f} {units_to_literals(unit)}')
 
         return self.accel
 
@@ -224,13 +237,13 @@ class Stage:
         
         try:
             if pos_len >= 1 and self.axis_x is not None and position[0] != 0:
-                self.axis_x.move_absolute(position[0], units_from_literals(unit), wait_until_idle)
+                self.axis_x.move_absolute(float(position[0]), units_from_literals(unit), wait_until_idle)
 
             if pos_len >= 2 and self.axis_y is not None and position[1] != 0:
-                self.axis_y.move_absolute(position[1], units_from_literals(unit), wait_until_idle)
+                self.axis_y.move_absolute(float(position[1]), units_from_literals(unit), wait_until_idle)
             
             if pos_len == 3 and self.axis_z is not None and position[2] != 0:
-                self.axis_z.move_absolute(position[2], units_from_literals(unit), wait_until_idle)
+                self.axis_z.move_absolute(float(position[2]), units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -247,7 +260,7 @@ class Stage:
         """        
         try:
             if self.axis_x is not None:
-                self.axis_x.move_relative(step, units_from_literals(unit), wait_until_idle)
+                self.axis_x.move_relative(float(step), units_from_literals(unit), wait_until_idle)
 
         except MotionLibException as e:
             print(e)
@@ -262,7 +275,7 @@ class Stage:
         """
         try:
             if self.axis_y is not None:
-                self.axis_y.move_relative(step, units_from_literals(unit), wait_until_idle)
+                self.axis_y.move_relative(float(step), units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -277,7 +290,7 @@ class Stage:
         """
         try:
             if self.axis_z is not None:
-                self.axis_z.move_relative(step, units_from_literals(unit), wait_until_idle)
+                self.axis_z.move_relative(float(step), units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
             print(e)
@@ -298,13 +311,13 @@ class Stage:
         pos_len = len(steps) 
        
         if pos_len >= 1 and steps[0] != 0:
-            self.move_x(steps[0], unit = unit, wait_until_idle=wait_until_idle)
+            self.move_x(float(steps[0]), unit = unit, wait_until_idle=wait_until_idle)
 
         if pos_len >= 2 and steps[1] != 0:
-            self.move_y(steps[1], unit = unit, wait_until_idle=wait_until_idle)
+            self.move_y(float(steps[1]), unit = unit, wait_until_idle=wait_until_idle)
         
         if pos_len == 3 and steps[2] != 0:
-            self.move_z(steps[2], unit = unit, wait_until_idle=wait_until_idle)
+            self.move_z(float(steps[2]), unit = unit, wait_until_idle=wait_until_idle)
         
 
     def start_move(self, velocity: Vec3, unit: str = 'um/s') -> None:
@@ -318,15 +331,15 @@ class Stage:
             # Move each axis simultaneously
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
                 self.state.isMoving_x = True
-                self.axis_x.move_velocity(velocity[0], units_from_literals(unit))
+                self.axis_x.move_velocity(float(velocity[0]), units_from_literals(unit))
             
             if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
                 self.state.isMoving_y = True
-                self.axis_y.move_velocity(velocity[1], units_from_literals(unit))
+                self.axis_y.move_velocity(float(velocity[1]), units_from_literals(unit))
 
             if self.axis_z is not None and not self.state.isMoving_z and velocity[2] != 0:
                 self.state.isMoving_z = True
-                self.axis_z.move_velocity(velocity[2], units_from_literals(unit))
+                self.axis_z.move_velocity(float(velocity[2]), units_from_literals(unit))
         except MovementFailedException as e:
             print(e)
 

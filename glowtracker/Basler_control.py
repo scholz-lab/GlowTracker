@@ -175,7 +175,7 @@ class Camera(pylon.InstantCamera):
             # cam stop
             self.AcquisitionStop.Execute()
             # grab unlock
-            self.TLParamsLocked = False
+            self.TLParamsLocked.Value = False
 
             prevCameraWidth = self.Width()
             prevCameraHeight = self.Height()
@@ -201,11 +201,11 @@ class Camera(pylon.InstantCamera):
                 offsetY = max(offsetY, 4)
 
                 # Set the camera offset
-                self.OffsetX = offsetX
-                self.OffsetY = offsetY
+                self.OffsetX.Value = offsetX
+                self.OffsetY.Value = offsetY
                 
             # grab lock
-            self.TLParamsLocked = True
+            self.TLParamsLocked.Value = True
             # cam start
             self.AcquisitionStart.Execute()
             # Set camera on hold flag
@@ -224,15 +224,15 @@ class Camera(pylon.InstantCamera):
         # cam stop
         self.AcquisitionStop.Execute()
         # grab unlock
-        self.TLParamsLocked = False
+        self.TLParamsLocked.Value = False
 
-        self.OffsetX = 0
+        self.OffsetX.Value = 0
         self.OffsetY = 0
         self.Width = self.Width.Max
         self.Height = self.Height.Max
 
         # grab lock
-        self.TLParamsLocked = True
+        self.TLParamsLocked.Value = True
         # cam start
         self.AcquisitionStart.Execute()
 
@@ -249,8 +249,8 @@ class Camera(pylon.InstantCamera):
             fps (float): the resulting framerate
         """
         
-        self.AcquisitionFrameRateEnable = True
-        self.AcquisitionFrameRate = float(fps)
+        self.AcquisitionFrameRateEnable.Value = True
+        self.AcquisitionFrameRate.Value = float(fps)
         return self.ResultingFrameRate()
     
 
