@@ -1,3 +1,4 @@
+from typing import List
 import u3
 from pypylon import pylon
 import numpy as np
@@ -160,6 +161,7 @@ def triggerSingleCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
     # 
     # Set camera to take trigger signal
     # 
+    camera.TriggerSelector.Value = "FrameStart"
     camera.TriggerMode.Value = "On"
 
     #   Set Line1 to be input
@@ -168,7 +170,6 @@ def triggerSingleCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
     
     #   Set trigger source to Line1
     camera.TriggerSource.Value = "Line1"
-    camera.TriggerSelector.Value = "FrameStart"
     camera.TriggerActivation.Value = "RisingEdge"
 
     # Start camera aquisition one frame in a thread
@@ -215,10 +216,109 @@ def triggerSingleCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
     # Reset signal back to low
     daq.setDOState(ioNum= u3.FIO0, state= LOW)
 
+def triggerBurstCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
+
+    # Prep control signal
+    # daq.configDigital(u3.FIO0)
+    # daq.setDOState(ioNum= u3.FIO0, state= LOW)
+
+    #   Set Line1 to be input
+    camera.AcquisitionMode.Value = "Continuous"
+
+    camera.TriggerSelector.SetValue("FrameStart")
+    print(camera.TriggerActivation.GetSymbolics())
+
+    camera.LineSelector.Value = "Line1"
+    camera.LineMode.Value = "Input"
+
+    # Set camera to take trigger signal at rising edge
+    camera.TriggerSelector.Value = "FrameStart"
+    camera.TriggerMode.Value = "On"
+    camera.TriggerSource.Value = "Line1"
+    camera.TriggerActivation.Value = "RisingEdge"
+
+
+    # Start camera aquisition one frame in a thread
+    def grabBurst(camera: pylon.InstantCamera) -> pylon.GrabResult:
+
+        print("Start grabbing")
+        grabResults = []
+        numGrabs = 10
+        i = 0
+
+        camera.StartGrabbing(pylon.GrabStrategy_LatestImages)
+
+        print("Started grabbing")
+
+        camera.WaitForFrameTriggerReady(10)
+        
+        while i < numGrabs and camera.IsGrabbing():
+
+            print("-------------v")
+
+            # Poll Line1 state
+            # camera.LineSelector.Value = "Line1"
+            line_state = camera.LineStatus.GetValue()
+            print(f"line_state {line_state}")
+
+            print("Grabbing an image")
+            grabResult = camera.RetrieveResult(100000, pylon.TimeoutHandling_ThrowException)
+
+            line_state = camera.LineStatus.GetValue()
+            print(f"line_state {line_state}")
+
+            if grabResult and grabResult.GrabSucceeded():
+
+                print(f"Successful {i}")
+                img = grabResult.Array
+                grabResults.append(grabResult)
+                grabResult.Release()
+
+            else:
+                print(f"Unsuccessful {i}")
+            
+
+            # Poll Line1 state
+            # camera.LineSelector.Value = "Line1"
+            line_state = camera.LineStatus.GetValue()
+            print(f"line_state {line_state}")
+
+            # if line_state == 0:  # falling edge → LOW
+            #     print("Line1 LOW -> stopping acquisition")
+            #     camera.StopGrabbing()
+            #     break
+
+            i += 1
+
+        print("End grabbing")
+
+        return grabResults
+    
+    cameraThread = ThreadWithReturn(target=grabBurst, args=(camera,))
+    cameraThread.start()
+
+    print("Wait for trigger ready")
+    # camera.WaitForFrameTriggerReady(10000)
+
+    print("Begin send signal")
+    # Send trigger signal
+    # daq.setDOState(ioNum= u3.FIO0, state= HIGH)
+    
+    # Stop the thread and get the result back
+    grabResults: List[pylon.GrabResult] = cameraThread.join()
+    print("Thread is joined")
+
+    if grabResults:
+        print(f"Num images: {len(grabResults)}")
+
+    # Reset signal back to low
+    # daq.setDOState(ioNum= u3.FIO0, state= LOW)
+
 
 if __name__ == '__main__':
 
-    daq = setupLabJackU3()
+    # daq = setupLabJackU3()
+    daq = None
     camera = setupCamera()
 
     # Try blinking LED 3 times
@@ -229,15 +329,12 @@ if __name__ == '__main__':
     # blinkLED(daq, 0.5)
     
     # Sine wave LED
-    # sineWaveLed(daq= daq, mean= 1.5, amplitude= 1.5,  freq= 1, duration= 5, resolution= 0.00001)
+    sineWaveLed(daq= daq, mean= 1.5, amplitude= 1.5,  freq= 1, duration= 5, resolution= 0.00001)
 
-    # Trigger acquisition
-    triggerSingleCameraAcquisition(daq, camera)
-    
+    # Trigger single frame acquisition
+    # triggerSingleCameraAcquisition(daq, camera)
 
-
-
-    
-
+    # Trigger frame burst acquisition
+    # triggerBurstCameraAcquisition(daq, camera)
 
     
