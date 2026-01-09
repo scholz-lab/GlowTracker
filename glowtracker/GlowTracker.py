@@ -1977,6 +1977,10 @@ class PreviewImage(Image):
             self.mouse_pos_in_tex_coord[1] *= image.shape[0]
             self.mouse_pos_in_tex_coord = np.floor(self.mouse_pos_in_tex_coord).astype(np.int32)
 
+            # Cap to image size
+            self.mouse_pos_in_tex_coord[0] = min( max( self.mouse_pos_in_tex_coord[0], 0), image.shape[1] - 1 )
+            self.mouse_pos_in_tex_coord[1] = min( max( self.mouse_pos_in_tex_coord[1], 0), image.shape[0] - 1 )
+
             # Get the pixel value. Need to flip Y as image coord is top-left.
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
@@ -3504,7 +3508,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('LiveAnalysis', {
-            'showliveanalysis': 'true',
+            'showliveanalysis': 'false',
             'saveanalysistorecording': 'false',
             'regionmode': 'Full'
         })
