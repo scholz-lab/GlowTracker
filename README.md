@@ -18,32 +18,30 @@
 
 ## Getting started
 ### Software Setup
-1. Create and activate a python environment using **venv** or **Conda**.
+1. Create a Python environment using **uv** (recommend) or **venv**.
+    - Using **uv** (Recommend)
+        1. Install uv [[Link]](https://docs.astral.sh/uv/getting-started/installation/).
+        2. Create a virtual environment
+            ```bash
+            uv venv glowtracker.venv
+            ```
     - Using **venv**
-
-        GlowTracker requires python version of at least 3.10. If you do not have one, please download from [[Python]](https://www.python.org/downloads/).
         1. Create the environment
             ```bash
-            python -m venv glowtracker
+            python -m venv glowtracker.venv
             ```
-        2. Activate the environment
-            ```bash
-            source glowtracker/Scripts/activate
-            ```
-    - Using **Conda**
-        1. Install **Conda** [[Link]](https://conda.io/projects/conda/en/latest/user-guide/install/index.html)
-        2. Use `conda` to create a new python environment named `glowtracker`.
-            ```bash
-            conda create -n glowtracker "python>=3.10,<3.12"
-            ```
-        3. Activate the `glowtracker` environment 
-            ```bash
-            conda activate glowtracker
-            ```
-2. Install the `glowtracker` package.
+
+2. Activate the environment
+    ```bash
+    source glowtracker.venv/Scripts/activate
+    ```
+
+3. Install GlowTracker
+    You can choose to either install GlowTracker from a distributed Python package from PyPI or clone the git repository and run them locally.
+
     - Using `pip` to install from PyPI repository:
         ```bash
-        python -m pip install glowtracker
+        uv pip install glowtracker
         ```
     - Or clone and run the package locally.
         1. Clone the pository
@@ -53,17 +51,17 @@
         2. Update the conda environment to download the dependencies
             ```bash
             cd Glowtracker;
-            conda env update --file glowtracker/StageEnvironment.yml --prune
+            uv pip install -r pyproject.toml;
             ```
 
 
-3. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
+4. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
     - pylon Camera Software Suite
     - pylon runtime library
 
-4. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
+5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-5. After finished installation, the software can be started in several ways
+6. After finished installation, the software can be started in several ways
     - If you have installed it via pip
         ```bash
         python -m glowtracker

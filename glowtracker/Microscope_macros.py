@@ -748,13 +748,13 @@ class CameraAndStageCalibrator:
         """        
 
         # Estimate camera basis X 
-        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
     
         camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
         camBasisXLen = np.linalg.norm(camBasisXVec)
 
         # Estimate camera basis Y
-        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', return_error= 0, overlap_ratio= 0.5)    
+        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
     
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
@@ -882,7 +882,9 @@ class CameraAndStageCalibrator:
         canvas = FigureCanvasAgg(fig)
         canvas.draw()
         width, height = fig.get_size_inches() * fig.get_dpi()
-        image_array = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+        image_array = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        # Remove alpha channel at the front
+        image_array = image_array[:,:,1:4]
 
         return image_array
 
@@ -1225,7 +1227,9 @@ class DepthOfFieldEstimator:
         canvas = FigureCanvasAgg(fig)
         canvas.draw()
         width, height = fig.get_size_inches() * fig.get_dpi()
-        plotImage = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
+        plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        # Remove alpha channel at the front
+        plotImage = plotImage[:,:,1:4]
 
         return plotImage
     
