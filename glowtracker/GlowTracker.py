@@ -1088,7 +1088,7 @@ class CameraProperties(GridLayout):
     def change_gain(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.Gain = float(self.gain)
+            camera.Gain.Value = float(self.gain)
             self.gain = camera.Gain()
         else:
             self.gain = 0
@@ -1097,7 +1097,7 @@ class CameraProperties(GridLayout):
     def change_exposure(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.ExposureTime = float(self.exposure)
+            camera.ExposureTime.Value = float(self.exposure)
             self.exposure = camera.ExposureTime()
         else:
             self.exposure = 0
@@ -1107,8 +1107,8 @@ class CameraProperties(GridLayout):
         """update framerate"""
         camera = App.get_running_app().camera
         if camera is not None:
-            camera.AcquisitionFrameRateEnable = True
-            camera.AcquisitionFrameRate = float(self.framerate)
+            camera.AcquisitionFrameRateEnable.Value = True
+            camera.AcquisitionFrameRate.Value = float(self.framerate)
             self.framerate = camera.ResultingFrameRate()
         else:
             self.framerate = 0
@@ -1520,13 +1520,6 @@ class RecordButton(ImageAcquisitionButton):
         # Disable LiveView
         imageAcquisitionManager.liveviewbutton.disabled = True
 
-        # Store previous Live Analysis state and set to enable
-        liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
-
-        self.prevLiveAnalysisButtonState = liveanalysisquickbutton.state
-        if liveanalysisquickbutton.state == 'normal':
-            liveanalysisquickbutton.state = 'down'
-
         self.runtimeControls.framecounter.value = 0
 
         self.saveFilePath = self.app.root.ids.leftcolumn.savefile
@@ -1705,9 +1698,6 @@ class RecordButton(ImageAcquisitionButton):
             # LiveView
             self.parent.liveviewbutton.disabled = False
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
-            # LiveAnalysis
-            liveanalysisquickbutton: LiveAnalysisQuickButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton
-            liveanalysisquickbutton.state = self.prevLiveAnalysisButtonState
         
         Clock.schedule_once( resumeButtonsState )
     
@@ -1730,9 +1720,9 @@ class RecordButton(ImageAcquisitionButton):
         #   - LiveAnalysisButton state is normal
         #   - showliveanalysis flag in the Settings is False.
         # In these cases, the base method would not have computed the Live Analysis values, so we just simply call it.
-        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
-        if not showliveanalysis:
-            self.computeLiveAnalysisValues()
+        # showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        # if not showliveanalysis:
+        #     self.computeLiveAnalysisValues()
 
     
     @override
@@ -1962,13 +1952,6 @@ class PreviewImage(Image):
         
         mouse_pos = np.array(pos, np.float32)
 
-        # Scale mouse position upto the display density factor.
-        #   This is usually 1 for normal monitor. 
-        #   But for higher density monitors like in modern laptop
-        #   or smartphone, this factor will be more than 1.
-        #   This is important because it affect the coordinate system down the line.
-        mouse_pos *= Metrics.dp
-
         previewImage = self
         scalableImage = self.app.root.ids.middlecolumn.ids.scalableimage    # parent of the previewImage
 
@@ -1997,7 +1980,7 @@ class PreviewImage(Image):
             # Get the pixel value. Need to flip Y as image coord is top-left.
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
-            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'({self.mouse_pos_in_tex_coord[0]}, {self.mouse_pos_in_tex_coord[1]}, {pixelVal})'
+            self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'x: {self.mouse_pos_in_tex_coord[0]}, y: {self.mouse_pos_in_tex_coord[1]}, intensity: {pixelVal}'
 
         return  
 
@@ -3012,22 +2995,22 @@ class RuntimeControls(BoxLayout):
             # Wait for camera acquisition to fully stop.
             time.sleep(2/camera.AcquisitionFrameRate()) # Wait 2 frame
             # grab unlock
-            camera.TLParamsLocked = False
+            camera.TLParamsLocked.Value = False
 
             # The Basler's camera have a feature-persistence feature, where the camera offset and width/height
             #   are checked against each other all the time so that the sum does not exceed the sensor's limit.
             #   Relaxing the offsets first allows setting any valid widhth/height.
-            camera.OffsetX = 0
-            camera.OffsetY = 0
-            camera.Width = int(cameraConfig['Width'])
-            camera.Height = int(cameraConfig['Height'])
-            camera.CenterX = bool(int(cameraConfig['CenterX']))
-            camera.CenterY = bool(int(cameraConfig['CenterY']))
-            camera.OffsetX = int(cameraConfig['OffsetX'])
-            camera.OffsetY = int(cameraConfig['OffsetY'])
+            camera.OffsetX.Value = 0
+            camera.OffsetY.Value = 0
+            camera.Width.Value = int(cameraConfig['Width'])
+            camera.Height.Value = int(cameraConfig['Height'])
+            camera.CenterX.Value = bool(int(cameraConfig['CenterX']))
+            camera.CenterY.Value = bool(int(cameraConfig['CenterY']))
+            camera.OffsetX.Value = int(cameraConfig['OffsetX'])
+            camera.OffsetY.Value = int(cameraConfig['OffsetY'])
 
             # grab lock
-            camera.TLParamsLocked = True
+            camera.TLParamsLocked.Value = True
             # cam start
             camera.AcquisitionStart.Execute()
             # Set camera on hold flag
@@ -3775,7 +3758,10 @@ class GlowTrackerApp(App):
                 self.stage.stop(stopAxis= AxisEnum.Z)
                 self.coords = self.stage.get_position()
 
-        print(f'Stage position: {self.coords}')
+        stagePosString = f'Stage position: {self.coords[0]:.3f}, {self.coords[1]:.3f}'
+        if len(self.coords) > 2:
+            stagePosString += f', {self.coords[2]:.3f}'
+        print(stagePosString)
 
 
     def unbind_keys(self):
