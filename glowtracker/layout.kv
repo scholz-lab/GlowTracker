@@ -645,6 +645,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'LEDs'
+        on_release: root.open_leds()
     MyLabel:
         text: 'Hardware'
         size_hint: (1, 0.1)
@@ -1030,6 +1031,55 @@ MainWindow:
             size_hint_x: .15
             on_release: root.closeCallback()
 
+
+<LedsControlWidget>:
+    size: root.size
+    pos: root.pos
+    
+    orientation: 'vertical'
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: 0.1
+
+        TextInput:
+            id: macroscriptfile
+            text: app.config.get('MacroScript', 'recentscript')
+            size_hint_x: 0.8
+        
+        Button:
+            text: "Load"
+            on_release: root.openLoadLedsControlWidget()
+            size_hint_x: None
+
+        Button:
+            text: "Save"
+            on_release: root.saveScript()
+            size_hint_x: None
+
+    BoxLayout:
+        orientation: 'horizontal'
+
+        CodeInput:
+            id: macroscripttext
+            text: ''
+            size_hint_x: 0.9
+            do_wrap: False
+            auto_indent: True
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: None
+            
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.9
+
+            Button:
+                text: "Close"
+                on_release: root.closeCallback()
+                size_hint_y: 0.1
+                
 
 ### display if hardware is connected successfully     
 <Connections>:

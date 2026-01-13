@@ -396,6 +396,25 @@ class RightColumn(BoxLayout):
                             size_hint=(0.5, 0.25))
             self._popup.open()
 
+    
+    def open_leds(self):
+        """Open the LEDs Control Sequence widget popup.
+        """
+        
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+        # Unbind keyboard events
+        self.app.unbind_keys()
+
+        # Create LedsControlWidget Draggable Popup
+        widget = LedsControlWidget(app = self.app)
+        widget.closeCallback = self.dismiss_popup
+        self._popup = MacroScriptWidgetPopup(title= "LEDs Control Sequence", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
+        self._popup.closeCallback = self.dismiss_popup
+
+        # Open the widget
+        self._popup.open()
+
 
 class MacroScriptWidgetPopup(DragBehavior, Popup):
 
@@ -934,6 +953,132 @@ class DepthOfFieldCalibration(BoxLayout):
         # Resume the camera to previous state
         liveViewButton.state = prevLiveViewButtonState
 
+
+class LedsControlWidget(BoxLayout):
+    """MacroScriptExecutor widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+
+        # Intercept GlowTrackerApp reference object.
+        #   There is a bug that if we call to get reference directly by App().get_running_app(),
+        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc. 
+        #   like a completely new object.
+        self.app: GlowTrackerApp = kwargs.pop('app', None)
+        
+        super(LedsControlWidget, self).__init__(**kwargs)
+
+        # Attributes
+        self.macroScriptFile: str = self.ids.macroscriptfile.text
+        self.macroScript: str = ''
+        self._popup: Popup = None
+
+        # Initialize MacroScriptExecutor
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self.recordButton: RecordButton = self.imageAcquisitionManager.recordbutton
+        position_unit = 'mm'
+
+        # Register appropriate function handler
+        
+
+        # Load the recent script
+        if self.macroScriptFile != '':
+            self.loadMacroScript(self.macroScriptFile)
+
+
+    def openLoadLedsControlWidget(self):
+        """Open a popup to load the macro script.
+        """
+        
+        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
+        self._popup = Popup(title= "Load macro script file", content= loadWidget,
+            size_hint= (0.9, 0.9), auto_dismiss= False)
+
+        loadWidget.cancel = self._popup.dismiss
+        self._popup.open()
+
+    
+    def _loadScriptWidgetCallback(self, selection: list[str]):
+        """Load the macro script from a list of given file path. Will choose only the first file.
+        Used for handler of LoadMacroScriptWidget.
+
+        Args:
+            selection (list[str]): list of script file path
+        """
+        # Close the loading widget
+        if self._popup is not None:
+            self._popup.dismiss()
+
+        if len(selection) == 0:
+            return
+        
+        self.loadMacroScript(selection[0])
+    
+    
+    def loadMacroScript(self, filePath: str):
+        """Load the macro script from a given file path.
+
+        Args:
+            filePath (str): _description_
+        """
+        # Get the absolute file path
+        self.macroScriptFile = os.path.abspath(filePath)
+        
+        # Load the script text
+        print(f'Loading the macro script {self.macroScriptFile}')
+
+        try:
+            with open(self.macroScriptFile, 'r') as file:
+                self.macroScript = file.read()
+
+        except FileNotFoundError:
+            print(f'The file {self.macroScriptFile} was not found.')
+
+        except IOError:
+            print(f'An error occurred while reading the file {self.macroScriptFile}.')
+        
+        # Set display text
+        self.ids.macroscriptfile.text = self.macroScriptFile
+        self.ids.macroscripttext.text = self.macroScript
+
+        # Set as recent script
+        self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
+        self.app.config.write()
+    
+
+    def saveScript(self):
+        """Save the current macro script into the same file (overwrite if exists).
+        """
+        file_path = self.ids.macroscriptfile.text
+        script = self.ids.macroscripttext.text
+
+        try:
+            # Convert to absolute path if it's a relative path
+            abs_file_path = os.path.abspath(file_path)
+            
+            # Ensure the directory exists
+            directory = os.path.dirname(abs_file_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            
+            # Open the file in overwrite mode, creating it if it doesn't exist
+            with open(abs_file_path, 'w') as file:
+                file.write(script)
+
+            # Set as recent script
+            self.app.config.set('MacroScript', 'recentscript', self.ids.macroscriptfile.text)
+
+            print(f"Saved the script {file_path}")
+
+        except IOError as e:
+            print(f"Error saving to {file_path}: {e}")
+
+        except Exception as e:
+            print(f"Error saving macro script: {e}")
+    
 
 class StageAxisController(BoxLayout):
     """Template class for stage axis controller widget.

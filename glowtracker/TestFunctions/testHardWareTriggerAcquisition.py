@@ -317,8 +317,7 @@ def triggerBurstCameraAcquisition(daq: u3.U3, camera: pylon.InstantCamera):
 
 if __name__ == '__main__':
 
-    # daq = setupLabJackU3()
-    daq = None
+    daq = setupLabJackU3()
     camera = setupCamera()
 
     # Try blinking LED 3 times
