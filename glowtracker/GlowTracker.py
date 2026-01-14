@@ -71,8 +71,6 @@ import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
-import re
-import u3
 
 
 # 
@@ -83,6 +81,7 @@ import Microscope_macros as macro
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
+from DAQ_control import DAQControl
 
 # 
 # Math
@@ -1047,23 +1046,9 @@ class LedsControlWidget(BoxLayout):
         self.app.config.set('LedsControl', 'recentscript', self.ledsScriptFile)
         self.app.config.write()
 
-        # Parse text to dict
-        try:
-            
-            # Remove empty lines and surrounding whitespace
-            lines = [line.strip() for line in self.ledsScript.splitlines() if line.strip()]
-
-            # Remove trailing commas from each line
-            lines = [re.sub(r',$', '', line) for line in lines]
-
-            # Wrap into a dict literal
-            preprocessdText = "{\n" + ",\n".join(lines) + "\n}"
-            
-            # Parse the text to be a dict object. Highlight keywords "on", "off"
-            self.ledsSequnceDict = eval(preprocessdText, globals= {"on": "on", "off": "off"})
-            
-        except Exception as e:
-            raise ValueError(f"Failed to parse input text: {e}") from None
+        # Parse text to command
+        if self.app.daqControl is not None:
+            self.app.daqControl.parseTextScript(self.ledsScript)
         
 
     def saveScript(self):
@@ -1094,7 +1079,7 @@ class LedsControlWidget(BoxLayout):
             print(f"Error saving to {file_path}: {e}")
 
         except Exception as e:
-            print(f"Error saving macro script: {e}")
+            print(f"Error saving LED script: {e}")
     
 
 class StageAxisController(BoxLayout):
@@ -1550,6 +1535,10 @@ class ImageAcquisitionButton(ToggleButton):
         self.runtimeControls.framecounter.value += 1
         # Update live analysis data
         self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(self.parent.liveAnalysisData)
+
+        # Trigger DAQ Control command
+        # Actually, is framecounter.value affected when frame skip?
+        self.app.daqControl.triggerCommand(self.runtimeControls.framecounter.value)
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -3404,8 +3393,11 @@ class Connections(BoxLayout):
 
 
     def _do_setup(self, *l):
+        """Try connecting to all devices
+        """
         self.stage_connection.state = 'down'
         self.cam_connection.state = 'down'
+        self.daq_connection.state = 'down'
 
 
     def connectCamera(self):
@@ -3485,35 +3477,24 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
     
 
-    def connectDac(self):
-        print('Connecting DAC')
+    def connectDaq(self):
+        print('Connecting DAQ')
         app: GlowTrackerApp = App.get_running_app()
 
         # Connect to device
-        try:
-            device = u3.U3(debug= False)
-
-        except Exception as e:
-            print(e)
-            self.dac_connection.state = 'normal'
-
-        else:
-            print(f"Using {device.deviceName}, serial: {device.serialNumber}")
-            # Set to factory default
-            device.setDefaults()
-            # Calibrate
-            device.getCalibrationData()
-            # Save to App's attr
-            app.dac = device
+        app.daqControl = DAQControl.createAndConnectDaq()
+        
+        if app.daqControl is None:
+            self.daq_connection.state = 'normal'
 
 
-    def disconnectDac(self):
-        print('Disconnecting DAC')
+    def disconnectDaq(self):
+        print('Disconnecting DAQ')
         app: GlowTrackerApp = App.get_running_app()
 
-        if app.dac is not None:
-            app.dac.close()
-            app.dac = None
+        if app.daqControl is not None:
+            app.daqControl.close()
+            app.daqControl = None
 
 
 class MyCounter():
@@ -3582,7 +3563,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
-        self.dac: u3.U3 | None = None
+        self.daqControl: DAQControl | None = None
         self.updateFpsEvent = None
     
 
@@ -4234,6 +4215,10 @@ class GlowTrackerApp(App):
         if self.camera is not None:
             print('Disconnecting Camera')
             self.camera.Close()
+        
+        if self.daqControl is not None:
+            print('Disconnecting DAQ')
+            self.daqControl.close()
 
         # stop the app
         self.stop()

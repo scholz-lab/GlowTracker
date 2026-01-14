@@ -1088,7 +1088,7 @@ MainWindow:
     size_hint: (0.3, 1)
     cam_connection: cam_connection
     stage_connection: stage_connection
-    dac_connection: dac_connection
+    daq_connection: daq_connection
     
     Label:
         text: 'Camera'
@@ -1119,10 +1119,10 @@ MainWindow:
         on_state: root.connectStage() if self.state=='down' else root.disconnectStage()
 
     Label:
-        text: 'DAC'
+        text: 'DAQ'
         size_hint: (1,0.33)
     OnOffButton:
-        id: dac_connection 
+        id: daq_connection 
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
@@ -1130,7 +1130,7 @@ MainWindow:
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
-        on_state: root.connectDac() if self.state=='down' else root.disconnectDac()
+        on_state: root.connectDaq() if self.state=='down' else root.disconnectDaq()
     
         
       

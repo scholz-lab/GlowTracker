@@ -49,7 +49,7 @@ class Camera(pylon.InstantCamera):
             camera.Open()
             
             # Print the model name of the camera.
-            print("Using device ", camera.GetDeviceInfo().GetModelName())
+            print("Using device", camera.GetDeviceInfo().GetModelName())
 
             return camera
 
