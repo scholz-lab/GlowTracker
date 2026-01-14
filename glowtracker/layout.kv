@@ -765,7 +765,7 @@ MainWindow:
         orientation: 'horizontal'
 
         CodeInput:
-            id: macroscripttext
+            id: scripttext
             text: ''
             size_hint_x: 0.9
             do_wrap: False
@@ -821,7 +821,7 @@ MainWindow:
                 size_hint_y: 0.1
                 
 
-<LoadMacroScriptWidget>:
+<LoadScriptWidget>:
     BoxLayout:
         size: root.size
         pos: root.pos
@@ -843,6 +843,7 @@ MainWindow:
             Button:
                 text: "Load"
                 on_release: root.load(filechooser.selection)
+
 
 <CalibrationTabPanel>:
     size: root.size
@@ -1043,8 +1044,8 @@ MainWindow:
         size_hint_y: 0.1
 
         TextInput:
-            id: macroscriptfile
-            text: app.config.get('MacroScript', 'recentscript')
+            id: ledsscriptfile
+            text: app.config.get('LedsControl', 'recentscript')
             size_hint_x: 0.8
         
         Button:
@@ -1061,7 +1062,7 @@ MainWindow:
         orientation: 'horizontal'
 
         CodeInput:
-            id: macroscripttext
+            id: scripttext
             text: ''
             size_hint_x: 0.9
             do_wrap: False

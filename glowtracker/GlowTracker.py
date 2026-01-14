@@ -71,6 +71,7 @@ import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
+import re
 
 # 
 # Own classes
@@ -450,7 +451,7 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
         Returns:
             has_been_handled(bool): Flag to indicate if the touch event has been handled or not to stop propagation.
         """
-        discardRegion: CodeInput = self.content.ids.macroscripttext
+        discardRegion: CodeInput = self.content.ids.scripttext
         
         if discardRegion.collide_point(*touch.pos):
             return discardRegion.on_touch_down(touch)
@@ -568,7 +569,7 @@ class MacroScriptWidget(BoxLayout):
         """Open a popup to load the macro script.
         """
         
-        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
+        loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
@@ -578,7 +579,7 @@ class MacroScriptWidget(BoxLayout):
     
     def _loadScriptWidgetCallback(self, selection: list[str]):
         """Load the macro script from a list of given file path. Will choose only the first file.
-        Used for handler of LoadMacroScriptWidget.
+        Used for handler of LoadScriptWidget.
 
         Args:
             selection (list[str]): list of script file path
@@ -617,7 +618,7 @@ class MacroScriptWidget(BoxLayout):
         
         # Set display text
         self.ids.macroscriptfile.text = self.macroScriptFile
-        self.ids.macroscripttext.text = self.macroScript
+        self.ids.scripttext.text = self.macroScript
 
         # Set as recent script
         self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
@@ -628,7 +629,7 @@ class MacroScriptWidget(BoxLayout):
         """Save the current macro script into the same file (overwrite if exists).
         """
         file_path = self.ids.macroscriptfile.text
-        script = self.ids.macroscripttext.text
+        script = self.ids.scripttext.text
 
         try:
             # Convert to absolute path if it's a relative path
@@ -661,7 +662,7 @@ class MacroScriptWidget(BoxLayout):
 
         print(f'Running the macro script {self.macroScriptFile}.')
         try:
-            self.macroScriptExecutor.executeScript(self.ids.macroscripttext.text, self.finishedMacroScript)
+            self.macroScriptExecutor.executeScript(self.ids.scripttext.text, self.finishedMacroScript)
 
             # Disable the run button
             self.ids.runbutton.disabled = True
@@ -686,7 +687,7 @@ class MacroScriptWidget(BoxLayout):
         self.macroScriptExecutor.stop()
 
 
-class LoadMacroScriptWidget(BoxLayout):
+class LoadScriptWidget(BoxLayout):
     """Camera settings loading widget
     """
     load = ObjectProperty(None)
@@ -955,7 +956,7 @@ class DepthOfFieldCalibration(BoxLayout):
 
 
 class LedsControlWidget(BoxLayout):
-    """MacroScriptExecutor widget that holds the parser and the function handler
+    """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
 
@@ -968,32 +969,28 @@ class LedsControlWidget(BoxLayout):
         self.app: GlowTrackerApp = kwargs.pop('app', None)
         
         super(LedsControlWidget, self).__init__(**kwargs)
-
+        
         # Attributes
-        self.macroScriptFile: str = self.ids.macroscriptfile.text
-        self.macroScript: str = ''
+        self.ledsScriptFile: str = self.ids.ledsscriptfile.text
+        self.ledsScript: str = ''
+        self.ledsSequnceDict: dict = dict()
         self._popup: Popup = None
 
         # Initialize MacroScriptExecutor
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
-        self.recordButton: RecordButton = self.imageAcquisitionManager.recordbutton
-        position_unit = 'mm'
-
-        # Register appropriate function handler
-        
 
         # Load the recent script
-        if self.macroScriptFile != '':
-            self.loadMacroScript(self.macroScriptFile)
+        if self.ledsScriptFile != '':
+            self.loadScript(self.ledsScriptFile)
 
 
     def openLoadLedsControlWidget(self):
-        """Open a popup to load the macro script.
+        """Open a popup to load the script.
         """
         
-        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
+        loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
@@ -1003,7 +1000,7 @@ class LedsControlWidget(BoxLayout):
     
     def _loadScriptWidgetCallback(self, selection: list[str]):
         """Load the macro script from a list of given file path. Will choose only the first file.
-        Used for handler of LoadMacroScriptWidget.
+        Used for handler of LoadScriptWidget.
 
         Args:
             selection (list[str]): list of script file path
@@ -1015,45 +1012,63 @@ class LedsControlWidget(BoxLayout):
         if len(selection) == 0:
             return
         
-        self.loadMacroScript(selection[0])
+        self.loadScript(selection[0])
     
     
-    def loadMacroScript(self, filePath: str):
-        """Load the macro script from a given file path.
+    def loadScript(self, filePath: str):
+        """Load the script from a given file path.
 
         Args:
             filePath (str): _description_
         """
         # Get the absolute file path
-        self.macroScriptFile = os.path.abspath(filePath)
+        self.ledsScriptFile = os.path.abspath(filePath)
         
         # Load the script text
-        print(f'Loading the macro script {self.macroScriptFile}')
+        print(f'Loading the LEDs control script {self.ledsScriptFile}')
 
         try:
-            with open(self.macroScriptFile, 'r') as file:
-                self.macroScript = file.read()
+            with open(self.ledsScriptFile, 'r') as file:
+                self.ledsScript = file.read()
 
         except FileNotFoundError:
-            print(f'The file {self.macroScriptFile} was not found.')
+            print(f'The file {self.ledsScriptFile} was not found.')
 
         except IOError:
-            print(f'An error occurred while reading the file {self.macroScriptFile}.')
+            print(f'An error occurred while reading the file {self.ledsScriptFile}.')
         
         # Set display text
-        self.ids.macroscriptfile.text = self.macroScriptFile
-        self.ids.macroscripttext.text = self.macroScript
+        self.ids.ledsscriptfile.text = self.ledsScriptFile
+        self.ids.scripttext.text = self.ledsScript
 
         # Set as recent script
-        self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
+        self.app.config.set('LedsControl', 'recentscript', self.ledsScriptFile)
         self.app.config.write()
-    
+
+        # Parse text to dict
+        try:
+            
+            # Remove empty lines and surrounding whitespace
+            lines = [line.strip() for line in self.ledsScript.splitlines() if line.strip()]
+
+            # Remove trailing commas from each line
+            lines = [re.sub(r',$', '', line) for line in lines]
+
+            # Wrap into a dict literal
+            preprocessdText = "{\n" + ",\n".join(lines) + "\n}"
+            
+            # Parse the text to be a dict object. Highlight keywords "on", "off"
+            self.ledsSequnceDict = eval(preprocessdText, globals= {"on": "on", "off": "off"})
+            
+        except Exception as e:
+            raise ValueError(f"Failed to parse input text: {e}") from None
+        
 
     def saveScript(self):
         """Save the current macro script into the same file (overwrite if exists).
         """
-        file_path = self.ids.macroscriptfile.text
-        script = self.ids.macroscripttext.text
+        file_path = self.ids.ledsscriptfile.text
+        script = self.ids.scripttext.text
 
         try:
             # Convert to absolute path if it's a relative path
@@ -1069,7 +1084,7 @@ class LedsControlWidget(BoxLayout):
                 file.write(script)
 
             # Set as recent script
-            self.app.config.set('MacroScript', 'recentscript', self.ids.macroscriptfile.text)
+            self.app.config.set('LedsControl', 'recentscript', self.ids.ledsscriptfile.text)
 
             print(f"Saved the script {file_path}")
 
@@ -3665,6 +3680,10 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('MacroScript', {
+            'recentscript': ''
+        })
+
+        config.setdefaults('LedsControl', {
             'recentscript': ''
         })
 
