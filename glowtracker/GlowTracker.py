@@ -72,6 +72,8 @@ from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 import re
+import u3
+
 
 # 
 # Own classes
@@ -3423,12 +3425,12 @@ class Connections(BoxLayout):
     def disconnectCamera(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            print('disconnecting')
+            print('Disconnecting camera')
             camera.Close()
 
 
     def connectStage(self):
-        print('connecting Stage')
+        print('Connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
         maxspeed = float( app.config.get('Stage', 'maxspeed') )
@@ -3470,7 +3472,7 @@ class Connections(BoxLayout):
             
 
     def disconnectStage(self):
-        print('disconnecting Stage')
+        print('Disconnecting Stage')
         app = App.get_running_app()
         if app.stage is None:
             self.stage_connection.state = 'normal'
@@ -3481,6 +3483,37 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+    
+
+    def connectDac(self):
+        print('Connecting DAC')
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Connect to device
+        try:
+            device = u3.U3(debug= False)
+
+        except Exception as e:
+            print(e)
+            self.dac_connection.state = 'normal'
+
+        else:
+            print(f"Using {device.deviceName}, serial: {device.serialNumber}")
+            # Set to factory default
+            device.setDefaults()
+            # Calibrate
+            device.getCalibrationData()
+            # Save to App's attr
+            app.dac = device
+
+
+    def disconnectDac(self):
+        print('Disconnecting DAC')
+        app: GlowTrackerApp = App.get_running_app()
+
+        if app.dac is not None:
+            app.dac.close()
+            app.dac = None
 
 
 class MyCounter():
@@ -3549,6 +3582,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
+        self.dac: u3.U3 | None = None
         self.updateFpsEvent = None
     
 

@@ -50,7 +50,8 @@ dependencies = [
     "pypylon",
     "itk-elastix",
     "platformdirs",
-    "pyparsing"
+    "pyparsing",
+    "labjackpython"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
