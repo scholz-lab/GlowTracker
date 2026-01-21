@@ -1071,16 +1071,28 @@ MainWindow:
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: None
+
+            Label:
+                text: 'Enable'
+                size_hint_y: 0.1
+                
+            LedsEnableSwitch:
+                id: ledsenableswitch
+                size_hint_y: 0.1
             
             BoxLayout:
                 # Filler
-                size_hint_y: 0.9
+                size_hint_y: 0.7
 
             Button:
                 text: "Close"
                 on_release: root.closeCallback()
                 size_hint_y: 0.1
-                
+
+
+<LedsEnableSwitch>:
+    size: root.size
+    pos: root.pos
 
 ### display if hardware is connected successfully     
 <Connections>:

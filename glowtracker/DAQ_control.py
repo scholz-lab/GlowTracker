@@ -10,11 +10,11 @@ class DAQControl():
 
     @classmethod
     def createAndConnectDaq(cls) -> DAQControl | None:
-        """Create a Camera class object. Return the object if the connection to the actual camera
+        """Create a DAQControl class object. Return the object if the connection to the actual DAQ
         is successful. Otherwise, return None.
 
         Returns:
-            camera (Camera|None): Camera(pylon.InstantCamera) class if successful, otherwise None.
+            DAQControl (DAQControl|None): DAQControl class if successful, otherwise None.
         """
         try:
             # Connect to DAQ
@@ -42,12 +42,18 @@ class DAQControl():
     def __init__(self):
         self.daq: u3.U3 | None = None
         self.ledsSequnceDict : dict | None = None
+        self.isEnable: bool = False
 
     
     def close(self):
         # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
         self.daq.close()
         self.daq = None
+
+    
+    def reset(self):
+        # Set to factory default
+        self.daq.setDefaults()
 
         
     def parseTextScript(self, text: str) -> None:
@@ -71,7 +77,7 @@ class DAQControl():
 
     def triggerCommand(self, frameNum: int) -> None:
         
-        if self.ledsSequnceDict is None:
+        if self.ledsSequnceDict is None or not self.isEnable:
             return
         
         frameCommand = self.ledsSequnceDict.get(frameNum)

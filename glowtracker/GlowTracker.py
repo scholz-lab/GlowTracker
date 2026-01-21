@@ -1082,6 +1082,27 @@ class LedsControlWidget(BoxLayout):
             print(f"Error saving LED script: {e}")
     
 
+class LedsEnableSwitch(Switch):
+
+    def __init__(self, **kwargs):
+        super(LedsEnableSwitch, self).__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.active = self.app.config.getboolean('LedsControl', 'isenable')
+    
+
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'isenable',
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        super(LedsEnableSwitch, self).on_touch_up(touch)
+
+        self.app.daqControl.isEnable = self.active
+        self.app.config.set('LedsControl', 'isenable', int(self.active))
+        self.app.config.write()
+
+
 class StageAxisController(BoxLayout):
     """Template class for stage axis controller widget.
     """    
@@ -1222,6 +1243,8 @@ class ContinuousSwitch(Switch):
             self.app.config.set('Experiment', 'iscontinuous', False)
             recordingSettings.ids.duration.disabled = False
             recordingSettings.ids.frames.disabled = False
+        
+        self.app.config.write()
 
 
 class CameraProperties(GridLayout):
@@ -1544,7 +1567,9 @@ class ImageAcquisitionButton(ToggleButton):
     def finishAcquisitionCallback(self) -> None:
         """Finished the acquisition looping callback. Needs to be overridden.
         """        
-        pass
+        # Reset the DAQ state
+        if self.app.daqControl is not None:
+            self.app.daqControl.reset()
 
 
     def updateDisplayImage(self, dt) -> None:
@@ -3486,6 +3511,8 @@ class Connections(BoxLayout):
         
         if app.daqControl is None:
             self.daq_connection.state = 'normal'
+        
+        app.daqControl.isEnable = app.config.getboolean("LedsControl", "isenable")
 
 
     def disconnectDaq(self):
@@ -3699,7 +3726,8 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('LedsControl', {
-            'recentscript': ''
+            'recentscript': '',
+            'isenable': 'false'
         })
 
         config.setdefaults('Developer', {
@@ -4098,6 +4126,16 @@ class GlowTrackerApp(App):
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
                     'down' if showliveanalysis else 'normal'
             
+
+        elif section == 'LedsControl':
+
+            if key == 'isenable':
+                updateOverlayFlag = True
+
+                # Also update the TrackingOverlay Quick Button
+                isenable = bool(int(value))
+                self.daqControl.isEnable = isenable
+
 
         elif section == 'Developer':
 

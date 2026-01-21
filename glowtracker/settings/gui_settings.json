@@ -417,6 +417,17 @@
     },
     {
         "type": "title",
+        "title": "LedsControl"
+    },
+    {
+        "type": "bool",
+        "title": "Enable",
+        "desc": "Enable the LED control sequence.",
+        "section": "LedsControl",
+        "key": "isenable"
+    },
+    {
+        "type": "title",
         "title": "Developer"
     },
     {
