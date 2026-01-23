@@ -1377,10 +1377,6 @@ class ImageAcquisitionButton(ToggleButton):
 
         # Set self button state to normal
         self.state = 'normal'
-
-        # Reset the DAQ state
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
-            self.app.daqControl.reset()
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -1414,8 +1410,6 @@ class ImageAcquisitionButton(ToggleButton):
         # Register start acquisition time
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         imageAcquisitionManager.startTime = time.perf_counter()
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
-            self.app.daqControl.start()
 
         # Start image acquisition loop
         while self.acquisitionCondition():
@@ -1572,18 +1566,11 @@ class ImageAcquisitionButton(ToggleButton):
         # Update live analysis data
         self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(imageAcquisitionManager.liveAnalysisData)
 
-        # Trigger DAQ Control command
-        # Actually, is framecounter.value effected when frame skip?
-        if self.app.daqControl is not None:
-            self.app.daqControl.triggerCommand(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime)
-
 
     def finishAcquisitionCallback(self) -> None:
         """Finished the acquisition looping callback. Needs to be overridden.
         """        
-        # Reset the DAQ state
-        if self.app.daqControl is not None:
-            self.app.daqControl.reset()
+        pass
 
 
     def updateDisplayImage(self, dt) -> None:
@@ -1722,6 +1709,10 @@ class RecordButton(ImageAcquisitionButton):
         # Start a thread for saving images
         self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
         self.savingthread.start()
+
+        # Prep DAQ control
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+            self.app.daqControl.start()
 
         # Setup image acquisition thread parameters
         self.initRecordingParams()
@@ -1890,6 +1881,10 @@ class RecordButton(ImageAcquisitionButton):
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
         
         Clock.schedule_once( resumeButtonsState )
+
+        # Reset the DAQ state
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+            self.app.daqControl.reset()
     
 
     @override
@@ -1984,6 +1979,15 @@ class RecordButton(ImageAcquisitionButton):
                 
             self.camera.setIsOnHold(True)
 
+
+        # Trigger DAQ Control command
+        # Actually, is framecounter.value effected when frame skip?
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+
+            imageAcquisitionManager: ImageAcquisitionManager = self.parent
+
+            self.app.daqControl.triggerCommand(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime)
+
         super().receiveImageCallback()
     
 
@@ -1995,6 +1999,10 @@ class RecordButton(ImageAcquisitionButton):
         self.imageQueue.put(None)
 
         print(f'Recorded {self.numberRecordframes} frames.')
+
+        # Reset the DAQ state
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+            self.app.daqControl.reset()
 
         # Call to recording-stopping procedure
         self.stopImageAcquisition()
@@ -3525,10 +3533,25 @@ class Connections(BoxLayout):
         # Connect to device
         app.daqControl = DAQControl.createAndConnectDaq()
         
+        # If no device
         if app.daqControl is None:
             self.daq_connection.state = 'normal'
+            return
         
         app.daqControl.isEnable = app.config.getboolean("LedsControl", "isenable")
+
+        # Load recent script
+        try:
+            recentScriptFile = app.config.get('LedsControl', 'recentscript')
+            # Read the file
+            with open(recentScriptFile, 'r') as file:
+                recentScript = file.read()
+                # Parse the script
+                app.daqControl.parseTextScript(recentScript)
+                print(f'Loaded LEDs control script {recentScriptFile}')
+
+        except Exception as e:
+            print(f'Loading recent LEDs control script: {e}')
 
 
     def disconnectDaq(self):
