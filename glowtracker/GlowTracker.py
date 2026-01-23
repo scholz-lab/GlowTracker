@@ -974,7 +974,6 @@ class LedsControlWidget(BoxLayout):
         # Attributes
         self.ledsScriptFile: str = self.ids.ledsscriptfile.text
         self.ledsScript: str = ''
-        self.ledsSequnceDict: dict = dict()
         self._popup: Popup = None
 
         # Initialize MacroScriptExecutor
@@ -1378,6 +1377,10 @@ class ImageAcquisitionButton(ToggleButton):
 
         # Set self button state to normal
         self.state = 'normal'
+
+        # Reset the DAQ state
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+            self.app.daqControl.reset()
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -1399,14 +1402,20 @@ class ImageAcquisitionButton(ToggleButton):
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
         fps = self.camera.ResultingFrameRate()
-        print("Grabbing Framerate:", fps)
+        print(f'Grabbing Framerate: {fps:.3f} fps')
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
         self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
-        print(f'Displaying at {fps} fps')
+        print(f'Displaying at {fps:.3f} fps')
 
         returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+
+        # Register start acquisition time
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        imageAcquisitionManager.startTime = time.perf_counter()
+        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+            self.app.daqControl.start()
 
         # Start image acquisition loop
         while self.acquisitionCondition():
@@ -1550,18 +1559,23 @@ class ImageAcquisitionButton(ToggleButton):
         """    
 
         # Update parent (ImageAcquisitionManager) images
-        self.parent.image = self.image
-        self.parent.imageTimeStamp = self.imageTimeStamp
-        self.parent.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
-        self.parent.dualColorMainSideImage = self.dualColorMainSideImage
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        imageAcquisitionManager.image = self.image
+        imageAcquisitionManager.imageTimeStamp = self.imageTimeStamp
+        imageAcquisitionManager.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
+        imageAcquisitionManager.dualColorMainSideImage = self.dualColorMainSideImage
+        imageAcquisitionManager.currentTime = time.perf_counter()
+        
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
+
         # Update live analysis data
-        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(self.parent.liveAnalysisData)
+        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(imageAcquisitionManager.liveAnalysisData)
 
         # Trigger DAQ Control command
-        # Actually, is framecounter.value affected when frame skip?
-        self.app.daqControl.triggerCommand(self.runtimeControls.framecounter.value)
+        # Actually, is framecounter.value effected when frame skip?
+        if self.app.daqControl is not None:
+            self.app.daqControl.triggerCommand(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime)
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -2023,6 +2037,8 @@ class ImageAcquisitionManager(BoxLayout):
     imageRetrieveTimeStamp: float = 0
     dualColorMainSideImage: np.ndarray = np.zeros((1,1))
     liveAnalysisData: LiveAnalysisData = LiveAnalysisData()
+    startTime: float = 0
+    currentTime: float = 0
 
 
     def __init__(self,  **kwargs):
