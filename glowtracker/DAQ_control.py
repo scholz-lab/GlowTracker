@@ -13,9 +13,6 @@ class TriggerUpdateMode(StrEnum):
 
 class DAQControl():
 
-    HIGH = 1
-    LOW = 0
-
     @classmethod
     def createAndConnectDaq(cls) -> DAQControl | None:
         """Create a DAQControl class object. Return the object if the connection to the actual DAQ
