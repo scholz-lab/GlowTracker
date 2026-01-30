@@ -408,13 +408,11 @@ class RightColumn(BoxLayout):
         # Unbind keyboard events
         self.app.unbind_keys()
 
-        # Create LedsControlWidget Draggable Popup
-        widget = LedsControlWidget(app = self.app)
-        widget.closeCallback = self.dismiss_popup
-        self._popup = MacroScriptWidgetPopup(title= "LEDs Control Sequence", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
-        self._popup.closeCallback = self.dismiss_popup
-
-        # Open the widget
+        # Create LedsControlTabPanel Widget
+        ledsControlTabPanel = LedsControlTabPanel()
+        ledsControlTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
+        # Launch the widget inside a popup window
+        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanel, size_hint= (0.9, 0.75))
         self._popup.open()
 
 
@@ -956,34 +954,59 @@ class DepthOfFieldCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
+class LedsControlTabPanel(TabbedPanel):
+    """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
+    """    
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ids.ledssequencer.init()
+        self.ids.ledsstageprogram.init()
+    
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event for children' tab.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self.closeCallback = closeCallback
+        self.ids.ledssequencer.setCloseCallback( closeCallback )
+        self.ids.ledsstageprogram.setCloseCallback( closeCallback )
+
+
 class LedsControlWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-
-        # Intercept GlowTrackerApp reference object.
-        #   There is a bug that if we call to get reference directly by App().get_running_app(),
-        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc. 
-        #   like a completely new object.
-        self.app: GlowTrackerApp = kwargs.pop('app', None)
-        
         super(LedsControlWidget, self).__init__(**kwargs)
-        
-        # Attributes
-        self.ledsScriptFile: str = self.ids.ledsscriptfile.text
-        self.ledsScript: str = ''
-        self._popup: Popup = None
 
+
+    def init(self):
+        
         # Initialize MacroScriptExecutor
+        self.app: GlowTrackerApp = App.get_running_app()
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
 
+        self.ledsScript: str = ''
+        self._popup: Popup = None
+        self.ledsScriptFile: str = self.ids.ledsscriptfile.text
         # Load the recent script
         if self.ledsScriptFile != '':
             self.loadScript(self.ledsScriptFile)
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
 
 
     def openLoadLedsControlWidget(self):
@@ -1081,24 +1104,73 @@ class LedsControlWidget(BoxLayout):
             print(f"Error saving LED script: {e}")
     
 
-class LedsEnableSwitch(Switch):
+class LedsStageProgramWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-        super(LedsEnableSwitch, self).__init__(**kwargs)
+        super(LedsStageProgramWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize MacroScriptExecutor
         self.app: GlowTrackerApp = App.get_running_app()
-        self.active = self.app.config.getboolean('LedsControl', 'isenable')
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self._popup: Popup = None
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+    
+
+class LedsSequencerEnableSwitch(Switch):
+
+    def __init__(self, **kwargs):
+        super(LedsSequencerEnableSwitch, self).__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.active = self.app.config.getboolean('LedsControl', 'isenablesequencer')
     
 
     def on_touch_up(self, touch): 
-        """On switch touch up callback. Update the config value 'isenable',
+        """On switch touch up callback. Update the config value 'isenablesequencer',
 
         Args:
             touch (Touch): touch input data.
         """
-        super(LedsEnableSwitch, self).on_touch_up(touch)
+        super(LedsSequencerEnableSwitch, self).on_touch_up(touch)
 
         self.app.daqControl.isEnable = self.active
-        self.app.config.set('LedsControl', 'isenable', int(self.active))
+        self.app.config.set('LedsControl', 'isenablesequencer', int(self.active))
+        self.app.config.write()
+
+
+class LedsStageProgramEnableSwitch(Switch):
+
+    def __init__(self, **kwargs):
+        super(LedsStageProgramEnableSwitch, self).__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.active = self.app.config.getboolean('LedsControl', 'isenablestageprogram')
+    
+
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'isenablestageprogram',
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        super(LedsStageProgramEnableSwitch, self).on_touch_up(touch)
+
+        self.app.daqControl.isEnable = self.active
+        self.app.config.set('LedsControl', 'isenablestageprogram', int(self.active))
         self.app.config.write()
 
 
@@ -3766,7 +3838,8 @@ class GlowTrackerApp(App):
 
         config.setdefaults('LedsControl', {
             'recentscript': '',
-            'isenable': 'false'
+            'isenablesequencer': 'false',
+            'isenablestageprogram': 'false'
         })
 
         config.setdefaults('Developer', {
@@ -4168,12 +4241,12 @@ class GlowTrackerApp(App):
 
         elif section == 'LedsControl':
 
-            if key == 'isenable':
-                updateOverlayFlag = True
+            if key == 'isenablesequencer':
+                self.daqControl.isEnable = bool(int(value))
 
-                # Also update the TrackingOverlay Quick Button
-                isenable = bool(int(value))
-                self.daqControl.isEnable = isenable
+
+            if key == 'isenablestageprogram':
+                self.daqControl.isEnable = bool(int(value))
 
 
         elif section == 'Developer':

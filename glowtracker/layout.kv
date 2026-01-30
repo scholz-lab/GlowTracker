@@ -1033,6 +1033,25 @@ MainWindow:
             on_release: root.closeCallback()
 
 
+<LedsControlTabPanel>:
+    size: root.size
+    pos: root.pos
+    do_default_tab: False
+    tab_width: 260
+            
+    TabbedPanelItem:
+        text: 'Leds Sequencer'
+
+        LedsControlWidget:
+            id: ledssequencer
+
+    TabbedPanelItem:
+        text: 'Leds-Stage program'
+        
+        LedsStageProgramWidget:
+            id: ledsstageprogram
+
+
 <LedsControlWidget>:
     size: root.size
     pos: root.pos
@@ -1076,8 +1095,8 @@ MainWindow:
                 text: 'Enable'
                 size_hint_y: 0.1
                 
-            LedsEnableSwitch:
-                id: ledsenableswitch
+            LedsSequencerEnableSwitch:
+                id: ledssequencerenableswitch
                 size_hint_y: 0.1
             
             BoxLayout:
@@ -1090,7 +1109,69 @@ MainWindow:
                 size_hint_y: 0.1
 
 
-<LedsEnableSwitch>:
+<LedsStageProgramWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    GridLayout:
+        cols: 2
+        spacing: 20
+
+        StackLayout:
+            orientation: 'tb-lr'
+            size_hint_x: 0.6
+
+            BoxLayout:
+                orientation: 'horizontal'
+                # size_hint_y: 0.1
+
+                Label:
+                    text: 'Enable'
+                
+                LedsStageProgramEnableSwitch:
+                    id: ledsstageprogramenableswitch
+            
+            Label:
+                text: 'Some Text'
+            
+            Label:
+                text: 'Some More Text'
+
+
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            Label:
+                text: 'Visualization'
+                size_hint_y: 0.1
+            Image:
+                id: visualizationplot
+    
+    BoxLayout:
+        size_hint_y: .08
+
+        Button:
+            text: "Update"
+            size_hint_x: .2
+            on_release: root.update()
+        
+        BoxLayout:
+            size_hint_x: .6
+
+        Button:
+            text: "Close"
+            size_hint_x: .2
+            on_release: root.closeCallback()
+
+
+<LedsSequencerEnableSwitch>:
+    size: root.size
+    pos: root.pos
+
+
+<LedsStageProgramEnableSwitch>:
     size: root.size
     pos: root.pos
 
