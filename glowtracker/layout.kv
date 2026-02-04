@@ -1037,7 +1037,7 @@ MainWindow:
     size: root.size
     pos: root.pos
     do_default_tab: False
-    tab_width: 260
+    tab_width: 220
             
     TabbedPanelItem:
         text: 'Leds Sequencer'
@@ -1113,36 +1113,218 @@ MainWindow:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    spacing: 20
+    spacing: dp(10)
+    p1x: p1x
+    p1y: p1y
+    p1v: p1v
 
     GridLayout:
         cols: 2
-        spacing: 20
+        spacing: dp(10)
 
         StackLayout:
             orientation: 'tb-lr'
-            size_hint_x: 0.6
-
+            size_hint_x: 0.5
+            spacing: [0, dp(5)]
+            
             BoxLayout:
                 orientation: 'horizontal'
-                # size_hint_y: 0.1
+                size_hint_y: 0.1
 
                 Label:
                     text: 'Enable'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
                 
                 LedsStageProgramEnableSwitch:
+                    size_hint_x: None
+                    width: dp(100)
                     id: ledsstageprogramenableswitch
             
-            Label:
-                text: 'Some Text'
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+
+                Label:
+                    text: 'Exterior'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+                
+                Spinner:
+                    text: 'Zero'
+                    values: 'Zero', 'Nearest', 'Constant'
+                    on_text: print("The Exterior value spinner {} has text {}".format(self, self.text))
+                    size_hint_x: None
+                    width: dp(100)
+                
+                TextInput:
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                    disabled: True
+                    size_hint_x: None
+                    width: dp(100)
             
-            Label:
-                text: 'Some More Text'
 
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.8
 
+                BoxLayout:
+                    size_hint_x: None
+                    width: dp(100)
+
+                Label:
+                    text: 'x (mm)'
+                    # size_hint_x: 0.333
+                
+                Label:
+                    text: 'y (mm)'
+                    # size_hint_x: 0.333
+                
+                Label:
+                    text: 'z (mm)'
+                    # size_hint_x: 0.333
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.8
+
+                Label:
+                    text: 'Point 1'
+
+                TextInput:
+                    id: p1x
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p1y
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p1v
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.8
+
+                Label:
+                    text: 'Point 2'
+
+                TextInput:
+                    id: p2x
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p2y
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p2v
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+            
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.8
+
+                Label:
+                    text: 'Point 3'
+
+                TextInput:
+                    id: p3x
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p3y
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p3v
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.8
+
+                Label:
+                    text: 'Point 4'
+
+                TextInput:
+                    id: p4x
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p4y
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+                
+                TextInput:
+                    id: p4v
+                    multiline: False
+                    text: ''
+                    input_filter: 'float'
+                    base_direction: 'rtl'
+                    on_text_validate: root.updateLedStageProgram()
+            
         BoxLayout:
             orientation: 'vertical'
-            size_hint_x: 0.4
+            size_hint_x: 0.5
             Label:
                 text: 'Visualization'
                 size_hint_y: 0.1

@@ -412,7 +412,7 @@ class RightColumn(BoxLayout):
         ledsControlTabPanel = LedsControlTabPanel()
         ledsControlTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
         # Launch the widget inside a popup window
-        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanel, size_hint= (0.9, 0.75))
+        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanel, size_hint= (0.7, 0.7))
         self._popup.open()
 
 
@@ -1108,6 +1108,7 @@ class LedsStageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
+    p1x: TextInput; p1y: TextInput; p1v: TextInput
 
     def __init__(self, **kwargs):
         super(LedsStageProgramWidget, self).__init__(**kwargs)
@@ -1132,6 +1133,11 @@ class LedsStageProgramWidget(BoxLayout):
         self.closeCallback = closeCallback
     
 
+    def updateLedStageProgram(self) -> None:
+        self.p1x.te
+        pass
+    
+
 class LedsSequencerEnableSwitch(Switch):
 
     def __init__(self, **kwargs):
@@ -1146,11 +1152,15 @@ class LedsSequencerEnableSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        super(LedsSequencerEnableSwitch, self).on_touch_up(touch)
+        # Check if responsible
+        if super(LedsSequencerEnableSwitch, self).on_touch_up(touch):
 
-        self.app.daqControl.isEnable = self.active
-        self.app.config.set('LedsControl', 'isenablesequencer', int(self.active))
-        self.app.config.write()
+            if self.app.daqControl is not None:
+                self.app.daqControl.isEnable = self.active
+            self.app.config.set('LedsControl', 'isenablesequencer', int(self.active))
+            self.app.config.write()
+            
+            return True
 
 
 class LedsStageProgramEnableSwitch(Switch):
@@ -1167,11 +1177,15 @@ class LedsStageProgramEnableSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        super(LedsStageProgramEnableSwitch, self).on_touch_up(touch)
+        # Check if responsible
+        if super(LedsStageProgramEnableSwitch, self).on_touch_up(touch):
 
-        self.app.daqControl.isEnable = self.active
-        self.app.config.set('LedsControl', 'isenablestageprogram', int(self.active))
-        self.app.config.write()
+            if self.app.daqControl is not None:
+                self.app.daqControl.isEnable = self.active
+            self.app.config.set('LedsControl', 'isenablestageprogram', int(self.active))
+            self.app.config.write()
+            
+            return True
 
 
 class StageAxisController(BoxLayout):
@@ -1301,21 +1315,17 @@ class ContinuousSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        super(ContinuousSwitch, self).on_touch_up(touch)
+        if super(ContinuousSwitch, self).on_touch_up(touch):
 
-        recordingSettings: RecordingSettings = self.parent.parent
+            recordingSettings: RecordingSettings = self.parent.parent
 
-        if self.active:
-            self.app.config.set('Experiment', 'iscontinuous', True) 
-            recordingSettings.ids.duration.disabled = True
-            recordingSettings.ids.frames.disabled = True
+            self.app.config.set('Experiment', 'iscontinuous', int(self.active))
+            recordingSettings.ids.duration.disabled = self.active
+            recordingSettings.ids.frames.disabled = self.active
+            
+            self.app.config.write()
 
-        else:
-            self.app.config.set('Experiment', 'iscontinuous', False)
-            recordingSettings.ids.duration.disabled = False
-            recordingSettings.ids.frames.disabled = False
-        
-        self.app.config.write()
+            return True
 
 
 class CameraProperties(GridLayout):
@@ -1990,8 +2000,9 @@ class RecordButton(ImageAcquisitionButton):
         """
 
         # Write coordinate into file.
-        try:
-            self.coordinateFile.write(f"{self.frameCounter} \
+        if not self.coordinateFile.closed:
+            try:
+                self.coordinateFile.write(f"{self.frameCounter} \
 {self.imageTimeStamp} \
 {self.app.coords[0]} \
 {self.app.coords[1]} \
@@ -2004,9 +2015,9 @@ class RecordButton(ImageAcquisitionButton):
 {self.parent.liveAnalysisData.percentile_5} \
 {self.parent.liveAnalysisData.percentile_95} \n")
 
-        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
-        except ValueError as e:
-            print(f'Error writing coordinateFile: {e}')
+            #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
+            except ValueError as e:
+                print(f'Error writing coordinateFile: {e}')
 
         # Put image(s) into the saving queue
         if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
