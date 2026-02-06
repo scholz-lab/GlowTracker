@@ -48,8 +48,9 @@ from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.slider import Slider
-from kivy.uix.behaviors import DragBehavior
+from kivy.uix.behaviors import DragBehavior, FocusBehavior
 from kivy.uix.switch import Switch
+from kivy.uix.spinner import Spinner
 
 # 
 # IO, Utils
@@ -1108,6 +1109,7 @@ class LedsStageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
+    exterior: Spinner
     constanttextinput: TextInput
     p1x: TextInput; p1y: TextInput; p1v: TextInput
     p2x: TextInput; p2y: TextInput; p2v: TextInput
@@ -1137,7 +1139,18 @@ class LedsStageProgramWidget(BoxLayout):
         self.closeCallback = closeCallback
     
 
+    def updateExteriorChoice(self, *args) ->None:
+        # Enable constanttextinput if choice is Constant
+        if self.exterior.text == 'Constant':
+            self.constanttextinput.disabled = False
+        else:
+            self.constanttextinput.disabled = True
+        
+        self.updateLedStageProgram()
+
+
     def updateLedStageProgram(self) -> None:
+        print('Update value')
         pass
     
 
@@ -1189,6 +1202,43 @@ class LedsStageProgramEnableSwitch(Switch):
             self.app.config.write()
             
             return True
+
+
+class LedsStageTextInput(TextInput):
+    configKey = StringProperty()
+
+    @override
+    def on_kv_post(self, *args):
+        app = App.get_running_app()
+        self.text = app.config.get('LedsControl', self.configKey)
+
+
+    @override
+    def on_text_validate(self, *args):
+        """Save value to config
+        """
+        app = App.get_running_app()
+        app.config.set('LedsControl', self.configKey, float(self.text))
+        app.config.write()
+    
+
+    @override
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        """Intercept Tab to also validate the value
+        """
+        if keycode[1] == 'tab':
+            # Validate (same as pressing Enter)
+            self.dispatch('on_text_validate')
+
+            # Move focus to next widget
+            self.focus = False
+            next_focus = self.get_focus_next()
+            if next_focus:
+                next_focus.focus = True
+
+            return True
+
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 
 class StageAxisController(BoxLayout):
@@ -3857,7 +3907,21 @@ class GlowTrackerApp(App):
         config.setdefaults('LedsControl', {
             'recentscript': '',
             'isenablesequencer': 'false',
-            'isenablestageprogram': 'false'
+            'isenablestageprogram': 'false',
+            'exterior': 'Zero',
+            'constanttextinput': 0,
+            'p1x': 0,
+            'p1y': 0,
+            'p1v': 0,
+            'p2x': 0,
+            'p2y': 0,
+            'p2v': 0,
+            'p3x': 0,
+            'p3y': 0,
+            'p3v': 0,
+            'p4x': 0,
+            'p4y': 0,
+            'p4v': 0,
         })
 
         config.setdefaults('Developer', {

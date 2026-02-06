@@ -1114,6 +1114,7 @@ MainWindow:
     pos: root.pos
     orientation: 'vertical'
     spacing: dp(10)
+    exterior: exterior
     constanttextinput: constanttextinput
     p1x: p1x
     p1y: p1y
@@ -1167,21 +1168,18 @@ MainWindow:
                     text_size: [dp(100), root.height]
                 
                 Spinner:
+                    id: exterior
                     text: 'Zero'
                     values: 'Zero', 'Nearest', 'Constant'
-                    on_text: print("The Exterior value spinner {} has text {}".format(self, self.text))
+                    on_kv_post: root.updateExteriorChoice()
+                    on_text: root.updateExteriorChoice()
                     size_hint_x: None
                     width: dp(100)
                 
-                TextInput:
+                LedsStageTextInput:
                     id: constanttextinput
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
                     on_text_validate: root.updateLedStageProgram()
-                    disabled: True
-                    size_hint_x: 1
+                    configKey: 'constanttextinput'
 
             BoxLayout:
                 orientation: 'horizontal'
@@ -1214,28 +1212,19 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                TextInput:
+                LedsStageTextInput:
                     id: p1x
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p1x'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p1y
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p1y'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p1v
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p1v'
                     on_text_validate: root.updateLedStageProgram()
 
             BoxLayout:
@@ -1250,28 +1239,19 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                TextInput:
+                LedsStageTextInput:
                     id: p2x
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p2x'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p2y
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p2y'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p2v
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p2v'
                     on_text_validate: root.updateLedStageProgram()
             
             BoxLayout:
@@ -1286,28 +1266,19 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                TextInput:
+                LedsStageTextInput:
                     id: p3x
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p3x'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p3y
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p3y'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p3v
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p3v'
                     on_text_validate: root.updateLedStageProgram()
 
             BoxLayout:
@@ -1322,28 +1293,19 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                TextInput:
+                LedsStageTextInput:
                     id: p4x
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p4x'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p4y
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p4y'
                     on_text_validate: root.updateLedStageProgram()
                 
-                TextInput:
+                LedsStageTextInput:
                     id: p4v
-                    multiline: False
-                    text: ''
-                    input_filter: 'float'
-                    base_direction: 'rtl'
+                    configKey: 'p4v'
                     on_text_validate: root.updateLedStageProgram()
             
         BoxLayout:
@@ -1388,6 +1350,14 @@ MainWindow:
 <LedsStageProgramEnableSwitch>:
     size: root.size
     pos: root.pos
+
+
+<LedsStageTextInput>:
+    multiline: False
+    input_filter: 'float'
+    base_direction: 'rtl'
+    size_hint_x: 1
+    write_tab: False
 
 ### display if hardware is connected successfully     
 <Connections>:
