@@ -1114,12 +1114,22 @@ MainWindow:
     pos: root.pos
     orientation: 'vertical'
     spacing: dp(10)
+    constanttextinput: constanttextinput
     p1x: p1x
     p1y: p1y
     p1v: p1v
+    p2x: p2x
+    p2y: p2y
+    p2v: p2v
+    p3x: p3x
+    p3y: p3y
+    p3v: p3v
+    p4x: p4x
+    p4y: p4y
+    p4v: p4v
 
-    GridLayout:
-        cols: 2
+    BoxLayout:
+        orientation: 'horizontal'
         spacing: dp(10)
 
         StackLayout:
@@ -1147,6 +1157,7 @@ MainWindow:
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
+                size_hint_x: 0.9
 
                 Label:
                     text: 'Exterior'
@@ -1163,44 +1174,45 @@ MainWindow:
                     width: dp(100)
                 
                 TextInput:
+                    id: constanttextinput
                     multiline: False
                     text: ''
                     input_filter: 'float'
                     base_direction: 'rtl'
                     on_text_validate: root.updateLedStageProgram()
                     disabled: True
-                    size_hint_x: None
-                    width: dp(100)
-            
+                    size_hint_x: 1
 
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
-                size_hint_x: 0.8
+                size_hint_x: 0.9
 
                 BoxLayout:
+                    id: padder
                     size_hint_x: None
                     width: dp(100)
 
                 Label:
                     text: 'x (mm)'
-                    # size_hint_x: 0.333
                 
                 Label:
                     text: 'y (mm)'
-                    # size_hint_x: 0.333
                 
                 Label:
                     text: 'z (mm)'
-                    # size_hint_x: 0.333
 
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
-                size_hint_x: 0.8
+                size_hint_x: 0.9
 
                 Label:
                     text: 'Point 1'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
 
                 TextInput:
                     id: p1x
@@ -1229,10 +1241,14 @@ MainWindow:
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
-                size_hint_x: 0.8
+                size_hint_x: 0.9
 
                 Label:
                     text: 'Point 2'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
 
                 TextInput:
                     id: p2x
@@ -1261,10 +1277,14 @@ MainWindow:
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
-                size_hint_x: 0.8
+                size_hint_x: 0.9
 
                 Label:
                     text: 'Point 3'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
 
                 TextInput:
                     id: p3x
@@ -1293,10 +1313,14 @@ MainWindow:
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
-                size_hint_x: 0.8
+                size_hint_x: 0.9
 
                 Label:
                     text: 'Point 4'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
 
                 TextInput:
                     id: p4x
@@ -1334,13 +1358,21 @@ MainWindow:
     BoxLayout:
         size_hint_y: .08
 
-        Button:
-            text: "Update"
-            size_hint_x: .2
-            on_release: root.update()
+        BoxLayout:
+            size_hint_x: .5
+
+            AnchorLayout:
+                anchor_x: 'center'
+                anchor_y: 'center'
+                
+                Button:
+                    size_hint_x: 0.5
+                    text: "Update"
+                    on_release: root.updateLedStageProgram()
+                    background_color: [94.0/255, 190.0/255, 88.0/255, 1]
         
         BoxLayout:
-            size_hint_x: .6
+            size_hint_x: .3
 
         Button:
             text: "Close"

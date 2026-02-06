@@ -1108,7 +1108,11 @@ class LedsStageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
+    constanttextinput: TextInput
     p1x: TextInput; p1y: TextInput; p1v: TextInput
+    p2x: TextInput; p2y: TextInput; p2v: TextInput
+    p3x: TextInput; p3y: TextInput; p3v: TextInput
+    p4x: TextInput; p4y: TextInput; p4v: TextInput
 
     def __init__(self, **kwargs):
         super(LedsStageProgramWidget, self).__init__(**kwargs)
@@ -1134,7 +1138,6 @@ class LedsStageProgramWidget(BoxLayout):
     
 
     def updateLedStageProgram(self) -> None:
-        self.p1x.te
         pass
     
 
