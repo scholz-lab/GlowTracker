@@ -1207,7 +1207,6 @@ class LedsStageProgramEnableSwitch(Switch):
 class LedsStageTextInput(TextInput):
     configKey = StringProperty()
 
-    @override
     def on_kv_post(self, *args):
         app = App.get_running_app()
         self.text = app.config.get('LedsControl', self.configKey)
