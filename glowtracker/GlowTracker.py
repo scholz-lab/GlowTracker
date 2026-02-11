@@ -71,6 +71,7 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
 
 
@@ -79,6 +80,7 @@ from dataclasses import dataclass
 # 
 from Zaber_control import Stage, AxisEnum
 import Microscope_macros as macro
+from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
@@ -1109,7 +1111,7 @@ class LedsStageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
-    exterior: Spinner
+    exteriorSpinner: Spinner
     constanttextinput: TextInput
     p1x: TextInput; p1y: TextInput; p1v: TextInput
     p2x: TextInput; p2y: TextInput; p2v: TextInput
@@ -1127,6 +1129,7 @@ class LedsStageProgramWidget(BoxLayout):
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self.exterior = macro.Exterior.Zero
         self._popup: Popup = None
 
     
@@ -1139,19 +1142,113 @@ class LedsStageProgramWidget(BoxLayout):
         self.closeCallback = closeCallback
     
 
-    def updateExteriorChoice(self, *args) ->None:
+    def updateExteriorChoice(self) ->None:
+
+        # Parse choice text to enum
+        if self.exteriorSpinner.text == 'Constant':
+            self.exterior = macro.Exterior.Constant
+            
+        elif self.exteriorSpinner.text == 'Zero':
+            self.exterior = macro.Exterior.Zero
+            
+        else:
+            self.exterior = macro.Exterior.Nearest
+
         # Enable constanttextinput if choice is Constant
-        if self.exterior.text == 'Constant':
+        if self.exterior == macro.Exterior.Constant:
             self.constanttextinput.disabled = False
         else:
             self.constanttextinput.disabled = True
         
-        self.updateLedStageProgram()
-
 
     def updateLedStageProgram(self) -> None:
-        print('Update value')
-        pass
+        # Parse values
+        p1x = float(self.p1x.text)
+        p1y = float(self.p1y.text)
+        p1v = float(self.p1v.text)
+        p2x = float(self.p2x.text)
+        p2y = float(self.p2y.text)
+        p2v = float(self.p2v.text)
+        p3x = float(self.p3x.text)
+        p3y = float(self.p3y.text)
+        p3v = float(self.p3v.text)
+        p4x = float(self.p4x.text)
+        p4y = float(self.p4y.text)
+        p4v = float(self.p4v.text)
+        exteriorConstant = float(self.constanttextinput.text)
+
+        p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
+        p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
+        p3 = Vertex2D(np.array([p3x, p3y], np.float32), p3v, 'P3')
+        p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
+
+        # Sort points by its angle
+        vertices = [p1, p2, p3, p4]
+        vertices.sort(key= lambda vertex: math.atan2(vertex.point[1], vertex.point[0]))
+        # Now the points are sorted in this order:
+        #   btmLeft = points[0]
+        #   btmRight = points[1]
+        #   topLeft = points[3]
+        #   topRight = points[2]
+        
+        # Compute value map
+        valMap = np.zeros([160 + 1, 160 + 1], np.float32)
+        for y in range(valMap.shape[0]):
+            for x in range(valMap.shape[1]):
+
+                val = Vertex2D.bilerp(vertices[0], vertices[1], vertices[2], vertices[3], np.array([x, y], np.float32), self.exterior, exteriorConstant)
+
+                # Clamp between 0, 5 vol
+                val = min(max(0, x), 5)
+                
+                valMap[y, x] = val
+
+
+        # Plot value map
+        plottedImage = self._genPlotVizImg(vertices, valMap)
+        
+        # Show the plot
+        self.ids.visualizationplot.texture = imageToTexture(plottedImage)
+    
+
+    def _genPlotVizImg(self, vertices: List[Vertex2D], map: np.ndarray) -> np.ndarray:
+        
+        # Create the plot
+        fig = plt.figure(figsize=(6, 6))
+        
+        # Plot map
+        plt.imshow(map, vmin= np.min(map), vmax= np.max(map))
+        
+        # Plot 4 points
+        def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
+            plt.scatter(point[0], point[1], c= color)
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
+                            ha= 'center', fontsize= 12, color= 'black')
+        
+        drawPointWithAnnotation(vertices[0].point, 'r', vertices[0].name)
+        drawPointWithAnnotation(vertices[1].point, 'r', vertices[1].name)
+        drawPointWithAnnotation(vertices[2].point, 'r', vertices[2].name)
+        drawPointWithAnnotation(vertices[3].point, 'r', vertices[3].name)
+
+        # Set plot limits and labels
+        plt.xlim(0, 160)
+        plt.ylim(0, 160)
+        plt.xlabel('X')
+        plt.ylabel('Y')
+
+        # Add grid and legend
+        plt.grid(True)
+        plt.legend()
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        imageArr = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        # Remove alpha channel at the front
+        imageArr = imageArr[:,:,1:4]
+
+        return imageArr
     
 
 class LedsSequencerEnableSwitch(Switch):

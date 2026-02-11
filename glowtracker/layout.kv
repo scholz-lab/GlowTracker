@@ -1114,7 +1114,7 @@ MainWindow:
     pos: root.pos
     orientation: 'vertical'
     spacing: dp(10)
-    exterior: exterior
+    exteriorSpinner: exteriorSpinner
     constanttextinput: constanttextinput
     p1x: p1x
     p1y: p1y
@@ -1168,16 +1168,16 @@ MainWindow:
                     text_size: [dp(100), root.height]
                 
                 Spinner:
-                    id: exterior
+                    id: exteriorSpinner
                     text: 'Zero'
                     values: 'Zero', 'Nearest', 'Constant'
-                    on_kv_post: root.updateExteriorChoice()
-                    on_text: root.updateExteriorChoice()
+                    on_text: root.updateExteriorChoice(); root.updateLedStageProgram()
                     size_hint_x: None
                     width: dp(100)
                 
                 LedsStageTextInput:
                     id: constanttextinput
+                    on_kv_post: root.updateExteriorChoice()
                     on_text_validate: root.updateLedStageProgram()
                     configKey: 'constanttextinput'
 
