@@ -1131,6 +1131,7 @@ class LedsStageProgramWidget(BoxLayout):
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
         self.exterior = macro.Exterior.Zero
         self._popup: Popup = None
+        self.updateLedStageProgram()
 
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1148,15 +1149,13 @@ class LedsStageProgramWidget(BoxLayout):
         if self.exteriorSpinner.text == 'Constant':
             self.exterior = macro.Exterior.Constant
             
-        elif self.exteriorSpinner.text == 'Zero':
+        else:
             self.exterior = macro.Exterior.Zero
             
-        else:
-            self.exterior = macro.Exterior.Nearest
-
         # Enable constanttextinput if choice is Constant
         if self.exterior == macro.Exterior.Constant:
             self.constanttextinput.disabled = False
+
         else:
             self.constanttextinput.disabled = True
         
@@ -1186,14 +1185,10 @@ class LedsStageProgramWidget(BoxLayout):
         vertices = [p1, p2, p3, p4]
         center = (p1.point + p2.point + p3.point + p4.point) / 4
         vertices.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
-        # Now the points are sorted in this order:
-        #   btmLeft = points[0]
-        #   btmRight = points[1]
-        #   topLeft = points[3]
-        #   topRight = points[2]
+        # Now the points are sorted in anti-clockwise order starting from btmLeft: btmLeft ,btmRight ,topRight ,topRight
         
         # Compute value map
-        valMap = np.zeros([160 + 1, 160 + 1], np.float32)
+        valMap = np.zeros([160 + 1, 160 + 1, 1], np.float32)
         for y in range(valMap.shape[0]):
             for x in range(valMap.shape[1]):
 
@@ -1218,7 +1213,8 @@ class LedsStageProgramWidget(BoxLayout):
         fig = plt.figure(figsize=(6, 6))
         
         # Plot map
-        plt.imshow(map, vmin= np.min(map), vmax= np.max(map), cmap= 'magma')
+        im = plt.imshow(map, cmap= 'magma')
+        plt.colorbar(im)
         
         # Plot 4 points
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
@@ -1239,7 +1235,6 @@ class LedsStageProgramWidget(BoxLayout):
 
         # Add grid and legend
         plt.grid(True)
-        plt.legend()
 
         # Render the plot to a numpy array
         canvas = FigureCanvasAgg(fig)

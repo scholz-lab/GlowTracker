@@ -1255,7 +1255,6 @@ class DepthOfFieldEstimator:
 
 class Exterior(Enum):
     Zero = 'Zero'
-    Nearest = 'Nearest'
     Constant = 'Constant'
 
 
@@ -1316,12 +1315,71 @@ class Vertex2D:
             and isOnLeftSide(v1.point, v2.point, p) \
             and isOnLeftSide(v2.point, v3.point, p) \
             and isOnLeftSide(v3.point, v0.point, p)
+    
+    
+    @staticmethod
+    def invBilinear( a, b, c, d, p ) -> np.ndarray:
+        """Solve for u,v parameter in quadrilateral through bilinear.
+        Ref: https://iquilezles.org/articles/ibilinear/
 
+        Args:
+            a (np.ndarray): _description_
+            b (np.ndarray): _description_
+            c (np.ndarray): _description_
+            d (np.ndarray): _description_
+            p (np.ndarray): _description_
+
+        Returns:
+            np.ndarray: u,v parameters
+        """
+        uv = np.array([0,0], np.float32)
+        
+        e = b-a
+        f = d-a
+        g = a-b+c-d
+        h = p-a
+            
+        k2 = Vertex2D.cross( g, f )
+        k1 = Vertex2D.cross( e, f ) + Vertex2D.cross( h, g )
+        k0 = Vertex2D.cross( h, e )
+        
+        w = k1*k1 - 4.0*k0*k2
+        
+        if w<=0.001:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+
+        w = np.sqrt( w )
+        
+        # will fail for k0=0, which is only on the ba edge 
+        if k0<=0.001 and k0>=-0.001:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+        
+        v = 2.0*k0/(-k1 - w) 
+
+        if v<0.0 or v>1.0:
+            v = 2.0*k0/(-k1 + w)
+
+        ta = (e[0] + g[0]*v)
+        ta = ta + 0.001*(1 - np.abs(math.copysign(1,ta)))
+        
+        u = (h[0] - f[0]*v)/ta
+        if u<0.0 or u>1.0 or v<0.0 or v>1.0:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+            
+        uv[0] = u
+        uv[1] = v
+        return uv
+    
 
     @staticmethod
     def bilerp(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray, exterior: Exterior = Exterior.Zero, exteriorConstant: float = 0) -> float:
-        """Bilinear interpolate value of a point P if P lies within the four points. The four points must form a convex in its input order i.e. v0 -> v1 -> v2 -> v3
-
+        """Bilinear interpolate value of a point P if P lies within the four points. The four points must form a quadrilateral convex in its input order, i.e. v0 -> v1 -> v2 -> v3
         Args:
             v0 (Vertex2D): V0
             v1 (Vertex2D): V1
@@ -1334,41 +1392,30 @@ class Vertex2D:
         Returns:
             float: Interpolated value
         """
+        val = 0
+
         # Check if inside four points
         if Vertex2D.isInsideFourPoints(v0, v1, v2, v3, p):
 
-            # return 1
+            # Compute normalized uv corrdinate of p
+            uv = Vertex2D.invBilinear(v0.point, v1.point, v2.point, v3.point, p)
 
-            # Project p onto line segment p0 <-> p1
-            proj_p01 = Vertex2D.projPointToLineSegment(v0, v1, p)
-            # Project p onto line segment p2 <-> p3
-            proj_p32 = Vertex2D.projPointToLineSegment(v3, v2, p)
-            
-            # Lerp between p01 and p32 by distance
-            v_p_p01 = proj_p01.point - p
-            d_p_p01 = np.linalg.norm(v_p_p01)
+            # Bilinear-interpolate p on four points using uv coordinate
+            v01_p = Vertex2D.lerp2d(v0, v1, uv[0])
+            v32_p = Vertex2D.lerp2d(v3, v2, uv[0])
+            lerpedP =  Vertex2D.lerp2d(v01_p, v32_p, uv[1])
+            val = lerpedP.value
 
-            v_p_p23 = proj_p32.point - p
-            d_p_p23 = np.linalg.norm(v_p_p23)
-
-            total_dist = d_p_p01 + d_p_p23
-
-            val =  proj_p01.value + (d_p_p01 / total_dist) * (proj_p32.value - proj_p01.value)
-
-            if np.isnan(val):
+            if np.isnan(val) or np.isinf(val):
                 val = 0
-
-            return val
 
         else:
             
             if exterior == Exterior.Zero:
-                return 0
+                val = 0
 
-            elif exterior == Exterior.Constant:
-                return exteriorConstant
-            
             else:
-                # TODO: Project to closest edge and interpolate from it
-                return 0
+                val = exteriorConstant
+            
+        return val
         
