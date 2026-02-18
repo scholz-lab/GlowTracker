@@ -1219,8 +1219,7 @@ class LedsStageProgramWidget(BoxLayout):
         # Plot 4 points
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
             plt.scatter(point[0], point[1], c= color)
-            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
-                            ha= 'center', fontsize= 12, color= 'black')
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
         
         drawPointWithAnnotation(vertices[0].point, 'r', vertices[0].name)
         drawPointWithAnnotation(vertices[1].point, 'r', vertices[1].name)
