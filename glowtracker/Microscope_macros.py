@@ -1268,33 +1268,54 @@ class Vertex2D:
     
 
     @staticmethod
-    def lerp2dVal(a: Vertex2D, b: Vertex2D, t: float) -> Vertex2D:
+    def lerp2d(a: Vertex2D, b: Vertex2D, t: float) -> Vertex2D:
             point = a.point + (b.point - a.point) * t
-            value = a.value * t + b.value * (1 - t)
+            value = a.value + (b.value - a.value) * t
             return Vertex2D(point, value)
 
 
     @staticmethod
     def projPointToLineSegment(a: Vertex2D, b: Vertex2D, p: np.ndarray) -> Vertex2D:
 
-        segmentLength = np.linalg.norm(a.point - b.point)
+        ab = b.point - a.point
+        len_ab = np.linalg.norm(ab)
 
-        if segmentLength == 0:
+        ap = p - a.point
+
+        if len_ab == 0:
             return Vertex2D(a.point, a.value)
-
+        
         # Compute projection
-        t = np.sum((p - a.point) * (b.point - a.point)) / segmentLength
+        proj_ap_on_ab = np.dot(ab, ap) / len_ab
 
-        if t > 1 or t < 0:
+        t = proj_ap_on_ab / len_ab
+
+        if t < 0 or t > 1:
             # The projection lies outside the segment
             return Vertex2D(a.point, a.value)
 
-        return Vertex2D.lerp2dVal(a, b, t)
+        return Vertex2D.lerp2d(a, b, t)
     
 
     @staticmethod
-    def isInsideFourPoint(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray) -> bool:
-        return True
+    def cross(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        return x[..., 0] * y[..., 1] - x[..., 1] * y[..., 0]
+    
+
+    @staticmethod
+    def isInsideFourPoints(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray) -> bool:
+        
+        def isOnLeftSide(a: np.ndarray, b: np.ndarray, p: np.ndarray) -> bool:
+            vab = b - a
+            vap = p - a
+            if Vertex2D.cross(vab, vap) >= 0:
+                return True
+            return False
+        
+        return isOnLeftSide(v0.point, v1.point, p) \
+            and isOnLeftSide(v1.point, v2.point, p) \
+            and isOnLeftSide(v2.point, v3.point, p) \
+            and isOnLeftSide(v3.point, v0.point, p)
 
 
     @staticmethod
@@ -1314,20 +1335,25 @@ class Vertex2D:
             float: Interpolated value
         """
         # Check if inside four points
-        if Vertex2D.isInsideFourPoint(v0, v1, v2, v3, p):
+        if Vertex2D.isInsideFourPoints(v0, v1, v2, v3, p):
+
+            # return 1
 
             # Project p onto line segment p0 <-> p1
             proj_p01 = Vertex2D.projPointToLineSegment(v0, v1, p)
             # Project p onto line segment p2 <-> p3
-            proj_p23 = Vertex2D.projPointToLineSegment(v2, v3, p)
+            proj_p32 = Vertex2D.projPointToLineSegment(v3, v2, p)
             
-            # Lerp between p01 and p23 by distance
+            # Lerp between p01 and p32 by distance
             v_p_p01 = proj_p01.point - p
             d_p_p01 = np.linalg.norm(v_p_p01)
-            v_p_p23 = proj_p23.point - p
+
+            v_p_p23 = proj_p32.point - p
             d_p_p23 = np.linalg.norm(v_p_p23)
-            total_dist = d_p_p01 + d_p_p01
-            val =  proj_p01.value * (d_p_p01 / total_dist) + proj_p23.value * (d_p_p23 / total_dist)
+
+            total_dist = d_p_p01 + d_p_p23
+
+            val =  proj_p01.value + (d_p_p01 / total_dist) * (proj_p32.value - proj_p01.value)
 
             if np.isnan(val):
                 val = 0

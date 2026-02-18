@@ -1184,7 +1184,8 @@ class LedsStageProgramWidget(BoxLayout):
 
         # Sort points by its angle
         vertices = [p1, p2, p3, p4]
-        vertices.sort(key= lambda vertex: math.atan2(vertex.point[1], vertex.point[0]))
+        center = (p1.point + p2.point + p3.point + p4.point) / 4
+        vertices.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
         # Now the points are sorted in this order:
         #   btmLeft = points[0]
         #   btmRight = points[1]
@@ -1199,7 +1200,7 @@ class LedsStageProgramWidget(BoxLayout):
                 val = Vertex2D.bilerp(vertices[0], vertices[1], vertices[2], vertices[3], np.array([x, y], np.float32), self.exterior, exteriorConstant)
 
                 # Clamp between 0, 5 vol
-                val = min(max(0, x), 5)
+                val = min(max(0, val), 5)
                 
                 valMap[y, x] = val
 
@@ -1217,7 +1218,7 @@ class LedsStageProgramWidget(BoxLayout):
         fig = plt.figure(figsize=(6, 6))
         
         # Plot map
-        plt.imshow(map, vmin= np.min(map), vmax= np.max(map))
+        plt.imshow(map, vmin= np.min(map), vmax= np.max(map), cmap= 'magma')
         
         # Plot 4 points
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
