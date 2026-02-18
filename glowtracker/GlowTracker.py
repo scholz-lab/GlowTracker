@@ -1068,7 +1068,7 @@ class LedsControlWidget(BoxLayout):
         self.ids.scripttext.text = self.ledsScript
 
         # Set as recent script
-        self.app.config.set('LedsControl', 'recentscript', self.ledsScriptFile)
+        self.app.config.set('LedsControl', 'ledsequencescript', self.ledsScriptFile)
         self.app.config.write()
 
         # Parse text to command
@@ -1096,7 +1096,7 @@ class LedsControlWidget(BoxLayout):
                 file.write(script)
 
             # Set as recent script
-            self.app.config.set('LedsControl', 'recentscript', self.ids.ledsscriptfile.text)
+            self.app.config.set('LedsControl', 'ledsequencescript', self.ids.ledsscriptfile.text)
 
             print(f"Saved the script {file_path}")
 
@@ -3774,7 +3774,7 @@ class Connections(BoxLayout):
 
         # Load recent script
         try:
-            recentScriptFile = app.config.get('LedsControl', 'recentscript')
+            recentScriptFile = app.config.get('LedsControl', 'ledsequencescript')
             # Read the file
             with open(recentScriptFile, 'r') as file:
                 recentScript = file.read()
@@ -3997,7 +3997,7 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('LedsControl', {
-            'recentscript': '',
+            'ledsequencescript': '',
             'isenablesequencer': 'false',
             'isenablestageprogram': 'false',
             'exterior': 'Zero',

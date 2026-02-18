@@ -1271,29 +1271,6 @@ class Vertex2D:
             point = a.point + (b.point - a.point) * t
             value = a.value + (b.value - a.value) * t
             return Vertex2D(point, value)
-
-
-    @staticmethod
-    def projPointToLineSegment(a: Vertex2D, b: Vertex2D, p: np.ndarray) -> Vertex2D:
-
-        ab = b.point - a.point
-        len_ab = np.linalg.norm(ab)
-
-        ap = p - a.point
-
-        if len_ab == 0:
-            return Vertex2D(a.point, a.value)
-        
-        # Compute projection
-        proj_ap_on_ab = np.dot(ab, ap) / len_ab
-
-        t = proj_ap_on_ab / len_ab
-
-        if t < 0 or t > 1:
-            # The projection lies outside the segment
-            return Vertex2D(a.point, a.value)
-
-        return Vertex2D.lerp2d(a, b, t)
     
 
     @staticmethod
@@ -1320,14 +1297,14 @@ class Vertex2D:
     @staticmethod
     def invBilinear( a, b, c, d, p ) -> np.ndarray:
         """Solve for u,v parameter in quadrilateral through bilinear.
-        Ref: https://iquilezles.org/articles/ibilinear/
+        Refs: https://iquilezles.org/articles/ibilinear/, https://www.shadertoy.com/view/lsBSDm
 
         Args:
-            a (np.ndarray): _description_
-            b (np.ndarray): _description_
-            c (np.ndarray): _description_
-            d (np.ndarray): _description_
-            p (np.ndarray): _description_
+            a (np.ndarray): v0
+            b (np.ndarray): v1
+            c (np.ndarray): v2
+            d (np.ndarray): v3
+            p (np.ndarray): point to find the uv coordinate
 
         Returns:
             np.ndarray: u,v parameters
@@ -1343,7 +1320,7 @@ class Vertex2D:
         k1 = Vertex2D.cross( e, f ) + Vertex2D.cross( h, g )
         k0 = Vertex2D.cross( h, e )
         
-        w = k1*k1 - 4.0*k0*k2
+        w = k1*k1 - 4*k0*k2
         
         if w<=0.001:
             uv[0] = -1
@@ -1353,21 +1330,21 @@ class Vertex2D:
         w = np.sqrt( w )
         
         # will fail for k0=0, which is only on the ba edge 
-        if k0<=0.001 and k0>=-0.001:
+        if k0 <= 0.001 and k0 >= -0.001:
             uv[0] = -1
             uv[1] = -1
             return uv
         
-        v = 2.0*k0/(-k1 - w) 
+        v = 2*k0/(-k1 - w) 
 
-        if v<0.0 or v>1.0:
-            v = 2.0*k0/(-k1 + w)
+        if v < 0 or v > 1:
+            v = 2*k0 / (-k1 + w)
 
-        ta = (e[0] + g[0]*v)
-        ta = ta + 0.001*(1 - np.abs(math.copysign(1,ta)))
+        ta = e[0] + g[0]*v
+        ta = ta + 0.001 * (1 - np.abs(math.copysign(1,ta)))
         
         u = (h[0] - f[0]*v)/ta
-        if u<0.0 or u>1.0 or v<0.0 or v>1.0:
+        if u < 0 or u > 1 or v < 0 or v > 1:
             uv[0] = -1
             uv[1] = -1
             return uv

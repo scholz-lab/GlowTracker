@@ -421,10 +421,24 @@
     },
     {
         "type": "bool",
-        "title": "Enable",
-        "desc": "Enable the LED control sequence.",
+        "title": "Enable LED Sequencer",
+        "desc": "Enable the LED sequencer during recording.",
         "section": "LedsControl",
-        "key": "isenable"
+        "key": "isenablesequencer"
+    },
+    {
+        "type": "path",
+        "title": "LED sequence file",
+        "desc": "The file path of LED sequence",
+        "section": "LedsControl",
+        "key": "ledsequencescript"
+    },
+    {
+        "type": "bool",
+        "title": "Enable LED-Stage program",
+        "desc": "Enable the LED-Stage program during recording",
+        "section": "LedsControl",
+        "key": "isenablestageprogram"
     },
     {
         "type": "title",
