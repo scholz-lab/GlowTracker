@@ -1033,6 +1033,41 @@ MainWindow:
             on_release: root.closeCallback()
 
 
+<LedsControlTabPanelHolder>:
+
+    mode: mode
+
+    LedsControlTabPanel:
+        id: ledscontroltabpanel
+        size_hint: 1, 1
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint: None, None
+        size: self.minimum_size
+        spacing: '6dp'
+        pos_hint: {"right": 1, "top": 1}
+
+        Label:
+            text: '[b][color=018EFF]LEDs Mode[/color][/b]'
+            size_hint_x: None
+            width: self.texture_size[0]
+            markup: True
+
+
+        Spinner:
+            size_hint: None, None
+            size: '100dp', '40dp'
+            id: mode
+            text: 'Off'
+            values: 'Off', 'Sequencer', 'StageProgram'
+            on_text: root.updateMode()
+            on_kv_post: self.text = app.config.get('LedsControl', 'mode')
+
+
+
 <LedsControlTabPanel>:
     size: root.size
     pos: root.pos
@@ -1091,17 +1126,9 @@ MainWindow:
             orientation: 'vertical'
             size_hint_x: None
 
-            Label:
-                text: 'Enable'
-                size_hint_y: 0.1
-                
-            LedsSequencerEnableSwitch:
-                id: ledssequencerenableswitch
-                size_hint_y: 0.1
-            
             BoxLayout:
                 # Filler
-                size_hint_y: 0.7
+                size_hint_y: 0.9
 
             Button:
                 text: "Close"
@@ -1143,18 +1170,20 @@ MainWindow:
                 size_hint_y: 0.1
 
                 Label:
-                    text: 'Enable'
+                    text: 'Mode'
                     halign: 'center'
                     valign: 'middle'
                     size_hint_x: None
                     text_size: [dp(100), root.height]
                 
-                LedsStageProgramEnableSwitch:
+                Spinner:
+                    id: modeSpinner
+                    text: 'FourPoint'
+                    values: 'FourPoint', 'Gaussian'
+                    # on_text: root.updateExteriorChoice(); root.updateLedStageProgram()
                     size_hint_x: None
                     width: dp(100)
-                    id: ledsstageprogramenableswitch
-            
-
+                
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
@@ -1340,16 +1369,6 @@ MainWindow:
             text: "Close"
             size_hint_x: .2
             on_release: root.closeCallback()
-
-
-<LedsSequencerEnableSwitch>:
-    size: root.size
-    pos: root.pos
-
-
-<LedsStageProgramEnableSwitch>:
-    size: root.size
-    pos: root.pos
 
 
 <LedsStageTextInput>:

@@ -420,11 +420,12 @@
         "title": "LedsControl"
     },
     {
-        "type": "bool",
-        "title": "Enable LED Sequencer",
-        "desc": "Enable the LED sequencer during recording.",
+        "type": "options",
+        "title": "Mode",
+        "desc": "Modes of controlling LED",
         "section": "LedsControl",
-        "key": "isenablesequencer"
+        "key": "mode",
+        "options": ["Off", "Sequencer", "StageProgram"]
     },
     {
         "type": "path",
@@ -434,11 +435,12 @@
         "key": "ledsequencescript"
     },
     {
-        "type": "bool",
-        "title": "Enable LED-Stage program",
-        "desc": "Enable the LED-Stage program during recording",
+        "type": "options",
+        "title": "StageProgramMode",
+        "desc": "Modes of controlling LED as Stage-Program",
         "section": "LedsControl",
-        "key": "isenablestageprogram"
+        "key": "stageprogrammode",
+        "options": ["FourPoint", "Gaussian"]
     },
     {
         "type": "title",

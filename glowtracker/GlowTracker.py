@@ -74,7 +74,6 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
 
-
 # 
 # Own classes
 # 
@@ -84,7 +83,7 @@ from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
-from DAQ_control import DAQControl
+from DAQ_control import DAQControl, LEDsMode, SequencerMode, StageProgramMode
 
 # 
 # Math
@@ -412,10 +411,11 @@ class RightColumn(BoxLayout):
         self.app.unbind_keys()
 
         # Create LedsControlTabPanel Widget
-        ledsControlTabPanel = LedsControlTabPanel()
-        ledsControlTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
+        ledsControlTabPanelHolder = LedsControlTabPanelHolder()
+        ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
         # Launch the widget inside a popup window
-        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanel, size_hint= (0.7, 0.7))
+        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+
         self._popup.open()
 
 
@@ -957,12 +957,46 @@ class DepthOfFieldCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
+class LedsControlTabPanelHolder(FloatLayout):
+
+    mode: Spinner
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ids.ledscontroltabpanel.init()
+
+    
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event for children' tab.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self.closeCallback = closeCallback
+        self.ids.ledscontroltabpanel.setCloseCallback( closeCallback )
+    
+    def updateMode(self):
+        print(self.mode.text)
+
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Update to config
+        app.config.set('LedsControl', 'mode', self.mode.text)
+        app.config.write()
+
+        # Update DAQControl
+        app.daqControl.ledsMode = LEDsMode[self.mode.text]
+
+
 class LedsControlTabPanel(TabbedPanel):
     """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
     """    
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+    
+    
+    def init(self):
         self.ids.ledssequencer.init()
         self.ids.ledsstageprogram.init()
     
@@ -1131,6 +1165,8 @@ class LedsStageProgramWidget(BoxLayout):
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
         self.exterior = macro.Exterior.Zero
         self._popup: Popup = None
+        self.quadVertex: List[Vertex2D] = []
+        self.exteriorConstant: float = 0
         self.updateLedStageProgram()
 
     
@@ -1174,7 +1210,7 @@ class LedsStageProgramWidget(BoxLayout):
         p4x = float(self.p4x.text)
         p4y = float(self.p4y.text)
         p4v = float(self.p4v.text)
-        exteriorConstant = float(self.constanttextinput.text)
+        self.exteriorConstant = float(self.constanttextinput.text)
 
         p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
         p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
@@ -1182,17 +1218,17 @@ class LedsStageProgramWidget(BoxLayout):
         p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
 
         # Sort points by its angle
-        vertices = [p1, p2, p3, p4]
+        self.quadVertex = [p1, p2, p3, p4]
         center = (p1.point + p2.point + p3.point + p4.point) / 4
-        vertices.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
+        self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
         # Now the points are sorted in anti-clockwise order starting from btmLeft: btmLeft ,btmRight ,topRight ,topRight
-        
+
         # Compute value map
         valMap = np.zeros([160 + 1, 160 + 1, 1], np.float32)
         for y in range(valMap.shape[0]):
             for x in range(valMap.shape[1]):
 
-                val = Vertex2D.bilerp(vertices[0], vertices[1], vertices[2], vertices[3], np.array([x, y], np.float32), self.exterior, exteriorConstant)
+                val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
 
                 # Clamp between 0, 5 vol
                 val = min(max(0, val), 5)
@@ -1201,7 +1237,7 @@ class LedsStageProgramWidget(BoxLayout):
 
 
         # Plot value map
-        plottedImage = self._genPlotVizImg(vertices, valMap)
+        plottedImage = self._genPlotVizImg(self.quadVertex, valMap)
         
         # Show the plot
         self.ids.visualizationplot.texture = imageToTexture(plottedImage)
@@ -1245,56 +1281,6 @@ class LedsStageProgramWidget(BoxLayout):
 
         return imageArr
     
-
-class LedsSequencerEnableSwitch(Switch):
-
-    def __init__(self, **kwargs):
-        super(LedsSequencerEnableSwitch, self).__init__(**kwargs)
-        self.app: GlowTrackerApp = App.get_running_app()
-        self.active = self.app.config.getboolean('LedsControl', 'isenablesequencer')
-    
-
-    def on_touch_up(self, touch): 
-        """On switch touch up callback. Update the config value 'isenablesequencer',
-
-        Args:
-            touch (Touch): touch input data.
-        """
-        # Check if responsible
-        if super(LedsSequencerEnableSwitch, self).on_touch_up(touch):
-
-            if self.app.daqControl is not None:
-                self.app.daqControl.isEnable = self.active
-            self.app.config.set('LedsControl', 'isenablesequencer', int(self.active))
-            self.app.config.write()
-            
-            return True
-
-
-class LedsStageProgramEnableSwitch(Switch):
-
-    def __init__(self, **kwargs):
-        super(LedsStageProgramEnableSwitch, self).__init__(**kwargs)
-        self.app: GlowTrackerApp = App.get_running_app()
-        self.active = self.app.config.getboolean('LedsControl', 'isenablestageprogram')
-    
-
-    def on_touch_up(self, touch): 
-        """On switch touch up callback. Update the config value 'isenablestageprogram',
-
-        Args:
-            touch (Touch): touch input data.
-        """
-        # Check if responsible
-        if super(LedsStageProgramEnableSwitch, self).on_touch_up(touch):
-
-            if self.app.daqControl is not None:
-                self.app.daqControl.isEnable = self.active
-            self.app.config.set('LedsControl', 'isenablestageprogram', int(self.active))
-            self.app.config.write()
-            
-            return True
-
 
 class LedsStageTextInput(TextInput):
     configKey = StringProperty()
@@ -1937,7 +1923,7 @@ class RecordButton(ImageAcquisitionButton):
         self.savingthread.start()
 
         # Prep DAQ control
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.start()
 
         # Setup image acquisition thread parameters
@@ -2109,7 +2095,7 @@ class RecordButton(ImageAcquisitionButton):
         Clock.schedule_once( resumeButtonsState )
 
         # Reset the DAQ state
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.reset()
     
 
@@ -2209,7 +2195,7 @@ class RecordButton(ImageAcquisitionButton):
 
         # Trigger DAQ Control command
         # Actually, is framecounter.value effected when frame skip?
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
@@ -2228,7 +2214,7 @@ class RecordButton(ImageAcquisitionButton):
         print(f'Recorded {self.numberRecordframes} frames.')
 
         # Reset the DAQ state
-        if self.app.daqControl is not None and self.app.daqControl.isEnable:
+        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.reset()
 
         # Call to recording-stopping procedure
@@ -3769,7 +3755,7 @@ class Connections(BoxLayout):
             self.daq_connection.state = 'normal'
             return
         
-        app.daqControl.isEnable = app.config.getboolean("LedsControl", "isenable")
+        app.daqControl.ledsMode = LEDsMode[app.config.get("LedsControl", "mode")]
 
         # Load recent script
         try:
@@ -3996,9 +3982,9 @@ class GlowTrackerApp(App):
         })
 
         config.setdefaults('LedsControl', {
+            'mode': 'Off',
             'ledsequencescript': '',
-            'isenablesequencer': 'false',
-            'isenablestageprogram': 'false',
+            'stageprogrammode': 'FourPoint',
             'exterior': 'Zero',
             'constanttextinput': 0,
             'p1x': 0,
@@ -4414,12 +4400,9 @@ class GlowTrackerApp(App):
 
         elif section == 'LedsControl':
 
-            if key == 'isenablesequencer':
-                self.daqControl.isEnable = bool(int(value))
+            if key == 'mode':
 
-
-            if key == 'isenablestageprogram':
-                self.daqControl.isEnable = bool(int(value))
+                self.daqControl.ledsMode = LEDsMode[value]
 
 
         elif section == 'Developer':

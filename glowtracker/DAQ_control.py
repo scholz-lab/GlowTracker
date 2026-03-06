@@ -6,9 +6,20 @@ from enum import StrEnum
 from collections import OrderedDict
 from copy import deepcopy
 
-class TriggerUpdateMode(StrEnum):
+class LEDsMode(StrEnum):
+    Off = 'Off'
+    Sequencer = 'Sequencer'
+    StageProgram = 'StageProgram'
+
+
+class SequencerMode(StrEnum):
     Frame = 'Frame'
     Time = 'Time'
+
+
+class StageProgramMode(StrEnum):
+    FourPoint = 'FourPoint'
+    Gaussian = 'Gaussian'
 
 
 class DAQControl():
@@ -48,10 +59,18 @@ class DAQControl():
         self.daq: u3.U3 | None = None
         self.ledsSequnceDict : OrderedDict = OrderedDict()
         self.ledsSequnceDictRunning : OrderedDict = OrderedDict()
-        self.isEnable: bool = False
-        self.mode: TriggerUpdateMode = TriggerUpdateMode.Frame
+        # self.isEnable: bool = False
+        self.ledsMode: LEDsMode = LEDsMode.Off
+        self.sequencerMode: SequencerMode = SequencerMode.Frame
+        self.stageProgramMode: StageProgramMode = StageProgramMode.FourPoint
 
-    
+        # LedsStageProgramWidget ?
+        #   We want to evalute this
+        #       val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+        #       Or even
+        #       val = Gaussian distance or something
+        #
+
     def close(self):
         # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
         self.daq.close()
@@ -110,10 +129,10 @@ class DAQControl():
             self.ledsSequnceDict = OrderedDict( {key:val for key, val in sorted(processedDict.items(), key= lambda x: x[0])} )
 
             if mode == 'frame':
-                self.mode = TriggerUpdateMode.Frame
+                self.sequencerMode = SequencerMode.Frame
 
             elif mode == 'time':
-                self.mode = TriggerUpdateMode.Time
+                self.sequencerMode = SequencerMode.Time
                 
             else:
                 raise ValueError(f"Failed to parse LED script text: Invalid 'mode' argument. Options are ['frame', 'time']")
@@ -124,10 +143,10 @@ class DAQControl():
 
     def triggerCommand(self, frameNum: int = 0, frameTime: float = 0) -> None:
         
-        if len(self.ledsSequnceDictRunning) == 0 or not self.isEnable:
+        if len(self.ledsSequnceDictRunning) == 0 or not self.ledsMode == LEDsMode.Sequencer:
             return
 
-        if self.mode == TriggerUpdateMode.Frame:
+        if self.sequencerMode == SequencerMode.Frame:
         
             # Get the exact frame command
             frameCommand = self.ledsSequnceDictRunning.pop(frameNum, default= None)
@@ -136,7 +155,7 @@ class DAQControl():
                 print(f"Frame {frameNum}:")
                 self._executeCommand(frameCommand)
         
-        elif self.mode == TriggerUpdateMode.Time:
+        elif self.sequencerMode == SequencerMode.Time:
             
             # Get the first (lowest frame time) command in queue
             commandFrameTime = next(iter(self.ledsSequnceDictRunning))
