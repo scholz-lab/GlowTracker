@@ -5,6 +5,13 @@ import re
 from enum import StrEnum
 from collections import OrderedDict
 from copy import deepcopy
+from typing import List
+from Microscope_macros import Vertex2D, Exterior
+import numpy as np
+import math
+from matplotlib import pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+
 
 class LEDsMode(StrEnum):
     Off = 'Off'
@@ -63,13 +70,8 @@ class DAQControl():
         self.ledsMode: LEDsMode = LEDsMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.stageProgramMode: StageProgramMode = StageProgramMode.FourPoint
+        self.daqStageProgram: DAQStageProgram = DAQStageProgram()
 
-        # LedsStageProgramWidget ?
-        #   We want to evalute this
-        #       val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
-        #       Or even
-        #       val = Gaussian distance or something
-        #
 
     def close(self):
         # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
@@ -141,8 +143,21 @@ class DAQControl():
             raise ValueError(f"Failed to parse LED script text: {e}")
     
 
-    def triggerCommand(self, frameNum: int = 0, frameTime: float = 0) -> None:
+    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = []) -> None:
+        if self.ledsMode == LEDsMode.Off:
+            return
         
+        elif self.ledsMode == LEDsMode.Sequencer:
+            self.updateSequencer(frameNum= frameNum, frameTime= frameTime)
+        
+        elif self.ledsMode == LEDsMode.StageProgram:
+            self.updateStageProgram(stagePosition)
+
+
+    def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
+
+        # Seperate this into two cases, one for each LEDsMode
+        #   Also need stage position input
         if len(self.ledsSequnceDictRunning) == 0 or not self.ledsMode == LEDsMode.Sequencer:
             return
 
@@ -189,6 +204,13 @@ class DAQControl():
                     self._executeCommand(frameCommand)
 
 
+    def updateStageProgram(self, stagePosition: List[float]) -> None:
+        #   We want to evalute this
+        vol = self.daqStageProgram.getValue(stagePosition[0], stagePosition[1])
+        
+        self._executeCommand(frameCommand= ['on', vol])
+    
+
     def _executeCommand(self, frameCommand: list) -> None:
         
         command: list = frameCommand[0]
@@ -219,3 +241,103 @@ class DAQControl():
             dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
             dac0Command = u3.DAC0_8(dac0Val)
             self.daq.getFeedback(dac0Command)
+
+
+class DAQStageProgram():
+
+    def __init__(self):
+        self.quadVertex: List[Vertex2D] = []
+        self.exterior = Exterior.Zero
+        self.exteriorConstant: float = 0
+    
+    
+    def update(self, quadVertex: List[Vertex2D], exterior: Exterior, exteriorConstant: float) -> None:
+        """Parse variables and sort vertices in anti-clockwise order.
+
+        Args:
+            quadVertex (List[Vertex2D]): _description_
+            exterior (Exterior): _description_
+            exteriorConstant (float): _description_
+        """
+
+        self.quadVertex = quadVertex
+        self.exterior = exterior
+        self.exteriorConstant = exteriorConstant
+
+        center = np.zeros([2], np.float32)
+        for vert in quadVertex:
+            center = center + vert.point
+        center = center / 4
+
+        # Sort points in anti-clockwise order starting from btmLeft: btmLeft, btmRight, topRight, topRight
+        self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
+    
+    
+    def getValue(self, x: float, y: float) -> float:
+        """Get an interpolated signal value at a given stage position.
+
+        Args:
+            x (float): stage x-position
+            y (float): stage y-position
+
+        Returns:
+            float: bilinear-interpolated voltage
+        """
+
+        val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+
+        # Clamp between 0, 5 vol
+        val = min(max(0, val), 5)
+
+        return val
+
+
+    def generateValueMapPlot(self)-> np.ndarray:
+        """Generate a heat-map plot of possible values on the stage area.
+
+        Returns:
+            np.ndarray: RGB image of the plot
+        """
+        
+        # Compute value map
+        valMap = np.zeros([160 + 1, 160 + 1, 1], np.float32)
+        for y in range(valMap.shape[0]):
+            for x in range(valMap.shape[1]):
+                valMap[y, x] = self.getValue(x, y)
+            
+        
+        # Create the plot
+        fig = plt.figure(figsize=(6, 6))
+        
+        # Plot map
+        im = plt.imshow(valMap, cmap= 'magma')
+        plt.colorbar(im)
+        
+        # Plot 4 points
+        def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
+            plt.scatter(point[0], point[1], c= color)
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
+        
+        drawPointWithAnnotation(self.quadVertex[0].point, 'r', self.quadVertex[0].name)
+        drawPointWithAnnotation(self.quadVertex[1].point, 'r', self.quadVertex[1].name)
+        drawPointWithAnnotation(self.quadVertex[2].point, 'r', self.quadVertex[2].name)
+        drawPointWithAnnotation(self.quadVertex[3].point, 'r', self.quadVertex[3].name)
+
+        # Set plot limits and labels
+        plt.xlim(0, 160)
+        plt.ylim(0, 160)
+        plt.xlabel('X')
+        plt.ylabel('Y')
+
+        # Add grid and legend
+        plt.grid(True)
+
+        # Render the plot to a numpy array
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        imageArr = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        # Remove alpha channel at the front
+        imageArr = imageArr[:,:,1:4]
+
+        return imageArr

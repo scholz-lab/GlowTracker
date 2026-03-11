@@ -71,7 +71,6 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
 
 # 
@@ -1165,8 +1164,6 @@ class LedsStageProgramWidget(BoxLayout):
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
         self.exterior = macro.Exterior.Zero
         self._popup: Popup = None
-        self.quadVertex: List[Vertex2D] = []
-        self.exteriorConstant: float = 0
         self.updateLedStageProgram()
 
     
@@ -1182,11 +1179,7 @@ class LedsStageProgramWidget(BoxLayout):
     def updateExteriorChoice(self) ->None:
 
         # Parse choice text to enum
-        if self.exteriorSpinner.text == 'Constant':
-            self.exterior = macro.Exterior.Constant
-            
-        else:
-            self.exterior = macro.Exterior.Zero
+        self.exterior = macro.Exterior[self.exteriorSpinner.text]
             
         # Enable constanttextinput if choice is Constant
         if self.exterior == macro.Exterior.Constant:
@@ -1210,76 +1203,23 @@ class LedsStageProgramWidget(BoxLayout):
         p4x = float(self.p4x.text)
         p4y = float(self.p4y.text)
         p4v = float(self.p4v.text)
-        self.exteriorConstant = float(self.constanttextinput.text)
+        exteriorConstant = float(self.constanttextinput.text)
 
         p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
         p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
         p3 = Vertex2D(np.array([p3x, p3y], np.float32), p3v, 'P3')
         p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
 
-        # Sort points by its angle
-        self.quadVertex = [p1, p2, p3, p4]
-        center = (p1.point + p2.point + p3.point + p4.point) / 4
-        self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
-        # Now the points are sorted in anti-clockwise order starting from btmLeft: btmLeft ,btmRight ,topRight ,topRight
+        quadVertex = [p1, p2, p3, p4]
 
-        # Compute value map
-        valMap = np.zeros([160 + 1, 160 + 1, 1], np.float32)
-        for y in range(valMap.shape[0]):
-            for x in range(valMap.shape[1]):
+        # Update DAQStageProgram variables
+        self.app.daqControl.daqStageProgram.update(quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= exteriorConstant)
 
-                val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
-
-                # Clamp between 0, 5 vol
-                val = min(max(0, val), 5)
-                
-                valMap[y, x] = val
-
-
-        # Plot value map
-        plottedImage = self._genPlotVizImg(self.quadVertex, valMap)
+        # Generate value map plot
+        valMapPlot = self.app.daqControl.daqStageProgram.generateValueMapPlot()
         
         # Show the plot
-        self.ids.visualizationplot.texture = imageToTexture(plottedImage)
-    
-
-    def _genPlotVizImg(self, vertices: List[Vertex2D], map: np.ndarray) -> np.ndarray:
-        
-        # Create the plot
-        fig = plt.figure(figsize=(6, 6))
-        
-        # Plot map
-        im = plt.imshow(map, cmap= 'magma')
-        plt.colorbar(im)
-        
-        # Plot 4 points
-        def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
-            plt.scatter(point[0], point[1], c= color)
-            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
-        
-        drawPointWithAnnotation(vertices[0].point, 'r', vertices[0].name)
-        drawPointWithAnnotation(vertices[1].point, 'r', vertices[1].name)
-        drawPointWithAnnotation(vertices[2].point, 'r', vertices[2].name)
-        drawPointWithAnnotation(vertices[3].point, 'r', vertices[3].name)
-
-        # Set plot limits and labels
-        plt.xlim(0, 160)
-        plt.ylim(0, 160)
-        plt.xlabel('X')
-        plt.ylabel('Y')
-
-        # Add grid and legend
-        plt.grid(True)
-
-        # Render the plot to a numpy array
-        canvas = FigureCanvasAgg(fig)
-        canvas.draw()
-        width, height = fig.get_size_inches() * fig.get_dpi()
-        imageArr = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
-        # Remove alpha channel at the front
-        imageArr = imageArr[:,:,1:4]
-
-        return imageArr
+        self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
     
 
 class LedsStageTextInput(TextInput):
@@ -2199,7 +2139,8 @@ class RecordButton(ImageAcquisitionButton):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
-            self.app.daqControl.triggerCommand(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime)
+            self.app.coords
+            self.app.daqControl.update(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, stagePosition= self.app.coords)
 
         super().receiveImageCallback()
     
