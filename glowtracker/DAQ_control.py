@@ -69,7 +69,6 @@ class DAQControl():
         # self.isEnable: bool = False
         self.ledsMode: LEDsMode = LEDsMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
-        self.stageProgramMode: StageProgramMode = StageProgramMode.FourPoint
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
 
 
@@ -246,31 +245,43 @@ class DAQControl():
 class DAQStageProgram():
 
     def __init__(self):
+        self.mode: StageProgramMode = StageProgramMode.FourPoint
         self.quadVertex: List[Vertex2D] = []
         self.exterior = Exterior.Zero
         self.exteriorConstant: float = 0
     
     
-    def update(self, quadVertex: List[Vertex2D], exterior: Exterior, exteriorConstant: float) -> None:
-        """Parse variables and sort vertices in anti-clockwise order.
+    def update(self, mode: StageProgramMode = None, quadVertex: List[Vertex2D] = None, exterior: Exterior = None, exteriorConstant: float = None) -> None:
+        """Parse variables and process them.
 
         Args:
-            quadVertex (List[Vertex2D]): _description_
-            exterior (Exterior): _description_
-            exteriorConstant (float): _description_
+            mode (StageProgramMode): StageProgram mode
+            quadVertex (List[Vertex2D]): A list of four Vertex2D
+            exterior (Exterior): Exterior mode
+            exteriorConstant (float): Constant exterior value in case Exterior mode is Constant.
         """
 
-        self.quadVertex = quadVertex
-        self.exterior = exterior
-        self.exteriorConstant = exteriorConstant
+        if mode:
+            self.mode = mode
+        
+        if quadVertex:
+            self.quadVertex = quadVertex
 
-        center = np.zeros([2], np.float32)
-        for vert in quadVertex:
-            center = center + vert.point
-        center = center / 4
+            # Sort points in anti-clockwise order starting from btmLeft: btmLeft, btmRight, topRight, topRight
+            #   Compute center
+            center = np.zeros([2], np.float32)
+            for vert in quadVertex:
+                center = center + vert.point
+            center = center / 4
 
-        # Sort points in anti-clockwise order starting from btmLeft: btmLeft, btmRight, topRight, topRight
-        self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
+            #   Sort
+            self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
+        
+        if exterior:
+            self.exterior = exterior
+        
+        if exteriorConstant:
+            self.exteriorConstant = exteriorConstant
     
     
     def getValue(self, x: float, y: float) -> float:
@@ -284,7 +295,14 @@ class DAQStageProgram():
             float: bilinear-interpolated voltage
         """
 
-        val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+        val = 0
+
+        if self.mode == StageProgramMode.FourPoint:
+            val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+        
+        elif self.mode == StageProgramMode.Gaussian:
+            # TODO:
+            pass
 
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
@@ -339,5 +357,8 @@ class DAQStageProgram():
         imageArr = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
         # Remove alpha channel at the front
         imageArr = imageArr[:,:,1:4]
+
+        # Finally close the figure
+        plt.close(fig= fig)
 
         return imageArr

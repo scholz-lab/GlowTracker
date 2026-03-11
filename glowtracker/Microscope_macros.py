@@ -890,6 +890,9 @@ class CameraAndStageCalibrator:
         # Remove alpha channel at the front
         image_array = image_array[:,:,1:4]
 
+        # Close the figure
+        plt.close(fig= fig)
+
         return image_array
 
 
@@ -1234,6 +1237,9 @@ class DepthOfFieldEstimator:
         plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
         # Remove alpha channel at the front
         plotImage = plotImage[:,:,1:4]
+
+        # Close the figure
+        plt.close(fig= fig)
 
         return plotImage
     

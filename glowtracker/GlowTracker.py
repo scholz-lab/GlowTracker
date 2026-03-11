@@ -3711,6 +3711,33 @@ class Connections(BoxLayout):
         except Exception as e:
             print(f'Loading recent LEDs control script: {e}')
 
+        # Load StageProgram properties
+        stageprogrammode = StageProgramMode[app.config.get('LedsControl', 'stageprogrammode')]
+        exterior = macro.Exterior[app.config.get('LedsControl', 'exterior')]
+        exteriorConstant = app.config.getfloat('LedsControl', 'constanttextinput')
+        p1x = app.config.getfloat('LedsControl', 'p1x')
+        p1y = app.config.getfloat('LedsControl', 'p1y')
+        p1v = app.config.getfloat('LedsControl', 'p1v')
+        p2x = app.config.getfloat('LedsControl', 'p2x')
+        p2y = app.config.getfloat('LedsControl', 'p2y')
+        p2v = app.config.getfloat('LedsControl', 'p2v')
+        p3x = app.config.getfloat('LedsControl', 'p3x')
+        p3y = app.config.getfloat('LedsControl', 'p3y')
+        p3v = app.config.getfloat('LedsControl', 'p3v')
+        p4x = app.config.getfloat('LedsControl', 'p4x')
+        p4y = app.config.getfloat('LedsControl', 'p4y')
+        p4v = app.config.getfloat('LedsControl', 'p4v')
+
+        p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
+        p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
+        p3 = Vertex2D(np.array([p3x, p3y], np.float32), p3v, 'P3')
+        p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
+
+        quadVertex = [p1, p2, p3, p4]
+
+        # Update DAQStageProgram variables
+        app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant)
+
 
     def disconnectDaq(self):
         print('Disconnecting DAQ')
