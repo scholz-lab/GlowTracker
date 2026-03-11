@@ -10,13 +10,13 @@ nav_order: 3
 ## Light Path
 
 {:.parts-table}
-| Part No. | Description | Link | Quantity | Price per unit € (09/2024) |
+| Part No. | Description | Link | Quantity | Price per unit € (02/2025) |
 | --- | --- | --- | --- | --- |
 | 1 | USB 3.0 Micro B | [Kabelmeister](https://www.kabelmeister.de/USB-3.0-Kabel-Stecker-A-an-Stecker-Micro-B-Premium-AWG28-AWG24-UL-KUPFER-schwarz-1m/UK30P-AMB-010S) | 1 | 7,90 |
 | 2 | acA3088-57um: USB 3.0 Camera, monochrome | [Basler](https://www.baslerweb.com/en/shop/aca3088-57um/) | 1 | 389,00 |
-| 3 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 59,00 |
-| 4 | YN50mm F1.8: 50mm F1.8 Objective | [Yongnuo](https://th.hkyongnuo.com/products/yn50mm-f18) | 2 | 110,00 |
-| 5 | SM1A2: Adapter with External SM1 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=SM1A2) | 2 | 25,82 |
+| 3 | Kipon Canon EOS to C-Mount | [Kipon](https://kipon.de/shop/adapter/mechanische-adapter/canon-eos-c/) or [B&H](https://www.bhphotovideo.com/c/product/1458022-REG/kipon_canon_eos_c_canon_eos_to_c.html)  | 1 | 46,50 |
+| 4 | YN50mm F1.8: 50mm F1.8 Objective | [Yongnuo](https://th.hkyongnuo.com/products/yn50mm-f18) | 2 | 80,32 |
+| 5 | SM2A53 - Adapter with External M52 x 0.75 Threads and Internal SM2 Threads | [Thorlabs](https://www.thorlabs.com/item/SM2A53?aID=e30a03e54e68b9e03588f19d6eaae998&aC=1) | 2 | 22,99 |
 | 6 | SM1A71 - Adapter with External SM1 Threads and External SM2 Threads | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) | 2 | 30.9 |
 | 7 | DFM1/M: Kinematic Fluorescence Filter Cube for Ø25 mm Fluorescence Filters, 30 mm Cage Compatible | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=DFM1/M) | 1 | 385,34 |
 | 8 | SM1L05: Lens Tube, 0.50" Thread Depth, One Retaining Ring Included | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1L05) | 1 | 12,38 |
@@ -29,22 +29,22 @@ nav_order: 3
 
 
 Please note that the choice of objective dictates the adapters. 
-In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM1A2** (5) and **SM1A71**(6) adapter to connect with the cage and the camera.
+In our case, we chose the objectives from **Yongnuo**(4), which requires the **SM2A53** (5) and **SM1A71**(6) adapter to connect with the cage and the camera.
 However, if you choose the objectives from other vendors, such as **Canon**, the appropriate adapters would be [SM1A71](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM1A71) and [SM2A26](https://www.thorlabs.de/thorproduct.cfm?partnumber=SM2A26), respectively.
 
 
 ## Filters
 
 {:.parts-table}
-| Part No. | Description | Link | Quantity | Price per unit € (09/2024) |
+| Part No. | Description | Link | Quantity | Price per unit € (02/2025) |
 | --- | --- | --- | --- | --- |
-| 14 | BSW26R: 25 mm x 36 mm 50:50 UVFS Plate Beamsplitter, Coating: 350 - 1100 nm, t = 1 mm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=BSW26R) | 1 | 312,07 |
+| 14 | BSW26R: 25 mm x 36 mm 50:50 UVFS Plate Beamsplitter, Coating: 350 - 1100 nm, t = 1 mm  | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=BSW26R) | 1 | 333,91 |
 
 
 ## Illumination
 
 {:.parts-table}
-| Part No. | Description | Link | Quantity | Price per unit € (09/2024) |
+| Part No. | Description | Link | Quantity | Price per unit € (02/2025) |
 | --- | --- | --- | --- | --- |
 | 15 | M660L4: 660 nm, 940 mW (Min) Mounted LED, 1200 mA | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=M660L4) | 1 | 233,24 |
 | 16 | LEDD1B: T-Cube LED Driver, 1200 mA Max Drive Current | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=LEDD1B) | 1 | 322,86 |
@@ -54,17 +54,14 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 ## Stage
 
 {:.parts-table}
-| Part No. | Description | Link | Quantity | Price per unit € (09/2024) |
+| Part No. | Description | Link | Quantity | Price per unit € (02/2025) |
 | --- | --- | --- | --- | --- |
-| 18 | X-LHM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) | 3 | 2.397,00 |
+| 18 | X-LSM150A: Motorized linear stages with built-in controllers | [Zaber](https://www.zaber.com/products/linear-stages/X-LSM/specs?part=X-LSM150A) | 3 | 2363,33 |
 | 19 | MSB2328/M: Aluminum Breadboard for LCC7201B, 230 mm x 280 mm x 9.5 mm, Ø50 mm Access Hole, M4 and M6 Taps  | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=MSB2328/M) | 1 | 175,24 |
-| 20 | RB13P1/M - Adapter Plate with M6 and M4 Taps | [Thorlabs](https://www.thorlabs.de/thorproduct.cfm?partnumber=RB13P1/M#ad-image-3) | 1 | 58.93 |
-| 21 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
-| 22 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 66,00 |
-| 23 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 32,00 |
-| 24 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 14,00 |
-| 25 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 40,00 |
+| 20 | RS25/M: Ø25.0 mm Pillar Post, M6 Taps, L = 25 mm | [Thorlabs](https://www.thorlabs.com/thorproduct.cfm?partnumber=RS25/M) | 4 | 21,43 |
+| 21 | AP101: X-LSM Bottom Adaptor Plate | [Zaber](https://www.zaber.com/products/accessories/AP101) | 1 | 70,53 |
+| 22 | PS13S-48V12: Power Supply, 48 V 1.25 A, Compatible with X-Series Products | [Zaber](https://www.zaber.com/products/accessories/PS13S-48V12) | 1 | 34,31 |
+| 23 | X-DC02: Data Cable, 2 ft (0.6 m), for Use with all X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-DC02) | 2 | 14,30 |
+| 24 | X-USBDC: USB to Serial Converter Cable with M8 Female Plug for X-Series Products | [Zaber](https://www.zaber.com/products/accessories/X-USBDC) | 1 | 42,89 |
 
-Please note that, the linear stages **X-LHM150A** (18) have a maximum centered load of 30 N and maximum moment of 50 N⋅cm. 
-If you decided to upgrade the setup to the dual color microscope later on, this would not work as the light path of the dual color weighs roughly 2.2 kg and will produce moment of about 200 N⋅cm which exceeds the limit.
-In that case, you should purchase the stronger linear stages [**X-LSM150A**](https://www.zaber.com/products/linear-stages/X-LHM/specs?part=X-LHM150A) directly.
+Please note that, the alternative linear stage **X-LHM150A** was not selected for two reasons: it requires an additional adapter plate for mounting, and it has a maximum centered load of 30 N with a maximum moment of 50 N⋅cm. Should the setup be upgraded to a dual-color microscope in the future, the light path (~2.2 kg, ~200 N⋅cm) would exceed these limits, making the **X-LSM150A** (item 18) the more suitable choice from the outset.
