@@ -11,6 +11,7 @@ import numpy as np
 import math
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from dataclasses import dataclass
 
 
 class LEDsMode(StrEnum):
@@ -242,6 +243,15 @@ class DAQControl():
             self.daq.getFeedback(dac0Command)
 
 
+@dataclass
+class GaussianParams():
+    amplitude: float = 0
+    x_mean: float = 0
+    x_sigma: float = 0
+    y_mean: float = 0
+    y_sigma: float = 0
+
+
 class DAQStageProgram():
 
     def __init__(self):
@@ -249,9 +259,10 @@ class DAQStageProgram():
         self.quadVertex: List[Vertex2D] = []
         self.exterior = Exterior.Zero
         self.exteriorConstant: float = 0
+        self.gaussianParams = GaussianParams()
     
     
-    def update(self, mode: StageProgramMode = None, quadVertex: List[Vertex2D] = None, exterior: Exterior = None, exteriorConstant: float = None) -> None:
+    def update(self, mode: StageProgramMode = None, quadVertex: List[Vertex2D] = None, exterior: Exterior = None, exteriorConstant: float = None, gaussianParams: GaussianParams = None) -> None:
         """Parse variables and process them.
 
         Args:
@@ -282,6 +293,9 @@ class DAQStageProgram():
         
         if exteriorConstant:
             self.exteriorConstant = exteriorConstant
+        
+        if gaussianParams:
+            self.gaussianParams = gaussianParams
     
     
     def getValue(self, x: float, y: float) -> float:
@@ -298,11 +312,21 @@ class DAQStageProgram():
         val = 0
 
         if self.mode == StageProgramMode.FourPoint:
+
             val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+
         
         elif self.mode == StageProgramMode.Gaussian:
-            # TODO:
-            pass
+
+            if not (math.isclose(self.gaussianParams.x_sigma, 0.0) or math.isclose(self.gaussianParams.y_sigma, 0.0)):
+                val = (
+                    self.gaussianParams.amplitude
+                    / (2 * np.pi * self.gaussianParams.x_sigma * self.gaussianParams.y_sigma)
+                    * np.exp(
+                        -((x - self.gaussianParams.x_mean)**2 / (2 * (self.gaussianParams.x_sigma**2)))
+                        -((y - self.gaussianParams.y_mean)**2 / (2 * (self.gaussianParams.y_sigma**2)))
+                    )
+                )
 
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
@@ -325,6 +349,7 @@ class DAQStageProgram():
             
         
         # Create the plot
+        plt.ioff()
         fig = plt.figure(figsize=(6, 6))
         
         # Plot map
@@ -336,16 +361,21 @@ class DAQStageProgram():
             plt.scatter(point[0], point[1], c= color)
             plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
         
-        drawPointWithAnnotation(self.quadVertex[0].point, 'r', self.quadVertex[0].name)
-        drawPointWithAnnotation(self.quadVertex[1].point, 'r', self.quadVertex[1].name)
-        drawPointWithAnnotation(self.quadVertex[2].point, 'r', self.quadVertex[2].name)
-        drawPointWithAnnotation(self.quadVertex[3].point, 'r', self.quadVertex[3].name)
+        if self.mode == StageProgramMode.FourPoint:
+            drawPointWithAnnotation(self.quadVertex[0].point, 'r', self.quadVertex[0].name)
+            drawPointWithAnnotation(self.quadVertex[1].point, 'r', self.quadVertex[1].name)
+            drawPointWithAnnotation(self.quadVertex[2].point, 'r', self.quadVertex[2].name)
+            drawPointWithAnnotation(self.quadVertex[3].point, 'r', self.quadVertex[3].name)
+        
+        elif self.mode == StageProgramMode.Gaussian:
+            drawPointWithAnnotation([self.gaussianParams.x_mean, self.gaussianParams.y_mean], 'r', 'Mean')
 
         # Set plot limits and labels
         plt.xlim(0, 160)
         plt.ylim(0, 160)
-        plt.xlabel('X')
-        plt.ylabel('Y')
+        plt.xlabel('Stage X (mm)')
+        plt.ylabel('Stage Y (mm)')
+        plt.title("Stage position to Voltage map")
 
         # Add grid and legend
         plt.grid(True)
@@ -360,5 +390,6 @@ class DAQStageProgram():
 
         # Finally close the figure
         plt.close(fig= fig)
+        plt.ion()
 
         return imageArr

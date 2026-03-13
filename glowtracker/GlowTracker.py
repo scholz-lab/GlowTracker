@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
@@ -51,6 +53,7 @@ from kivy.uix.slider import Slider
 from kivy.uix.behaviors import DragBehavior, FocusBehavior
 from kivy.uix.switch import Switch
 from kivy.uix.spinner import Spinner
+from kivy.uix.stacklayout import StackLayout
 
 # 
 # IO, Utils
@@ -82,7 +85,7 @@ from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
-from DAQ_control import DAQControl, LEDsMode, SequencerMode, StageProgramMode
+from DAQ_control import DAQControl, LEDsMode, StageProgramMode, GaussianParams
 
 # 
 # Math
@@ -92,6 +95,9 @@ import numpy as np
 from skimage.io import imsave
 import cv2
 from scipy.stats import skew
+
+import gc
+
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -1145,11 +1151,30 @@ class LedsStageProgramWidget(BoxLayout):
     """
     closeCallback = ObjectProperty(None)
     exteriorSpinner: Spinner
-    constanttextinput: TextInput
-    p1x: TextInput; p1y: TextInput; p1v: TextInput
-    p2x: TextInput; p2y: TextInput; p2v: TextInput
-    p3x: TextInput; p3y: TextInput; p3v: TextInput
-    p4x: TextInput; p4y: TextInput; p4v: TextInput
+    modeSpinner: Spinner
+    # FourPoint params
+    constanttextinput: LedsStageTextInput
+    p1x: LedsStageTextInput; p1y: LedsStageTextInput; p1v: LedsStageTextInput
+    p2x: LedsStageTextInput; p2y: LedsStageTextInput; p2v: LedsStageTextInput
+    p3x: LedsStageTextInput; p3y: LedsStageTextInput; p3v: LedsStageTextInput
+    p4x: LedsStageTextInput; p4y: LedsStageTextInput; p4v: LedsStageTextInput
+    exterior_layout: BoxLayout
+    fourpoint_header_layout: BoxLayout
+    p1_layout: BoxLayout
+    p2_layout: BoxLayout
+    p3_layout: BoxLayout
+    p4_layout: BoxLayout
+    # Gaussian Params
+    g_amplitude: LedsStageTextInput
+    g_x_mean: LedsStageTextInput
+    g_x_sigma: LedsStageTextInput
+    g_y_mean: LedsStageTextInput
+    g_y_sigma: LedsStageTextInput
+    g_amplitude_layout: BoxLayout
+    g_x_mean_layout: BoxLayout
+    g_x_sigma_layout: BoxLayout
+    g_y_mean_layout: BoxLayout
+    g_y_sigma_layout: BoxLayout
 
     def __init__(self, **kwargs):
         super(LedsStageProgramWidget, self).__init__(**kwargs)
@@ -1157,13 +1182,17 @@ class LedsStageProgramWidget(BoxLayout):
 
     def init(self):
         
-        # Initialize MacroScriptExecutor
+        # Initialize 
         self.app: GlowTrackerApp = App.get_running_app()
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
         self.exterior = macro.Exterior.Zero
+        self.mode = StageProgramMode.FourPoint
         self._popup: Popup = None
+        self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout]
+        self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout]
+        self.initModeWidget()
         self.updateLedStageProgram()
 
     
@@ -1174,9 +1203,25 @@ class LedsStageProgramWidget(BoxLayout):
             closeCallback (callable): the closing callback.
         """        
         self.closeCallback = closeCallback
-    
 
-    def updateExteriorChoice(self) ->None:
+    
+    def initModeWidget(self) -> None:
+        """On startup gui, remove other modes' unrelated widgets
+        """
+        stacklayout: StackLayout = self.ids.stacklayout
+
+        if self.mode == StageProgramMode.FourPoint:
+            # Remove Gaussian params widgets
+            for widget in self.gaussianPointParamsWidgets:
+                stacklayout.remove_widget(widget= widget)
+            
+        elif self.mode == StageProgramMode.Gaussian:
+            # Remove FourPoint params widgets
+            for widget in self.fourPointParamWidgets:
+                stacklayout.remove_widget(widget= widget)
+        
+
+    def updateExteriorChoice(self) -> None:
 
         # Parse choice text to enum
         self.exterior = macro.Exterior[self.exteriorSpinner.text]
@@ -1188,32 +1233,68 @@ class LedsStageProgramWidget(BoxLayout):
         else:
             self.constanttextinput.disabled = True
         
+    
+    def updateMode(self) -> None:
+
+        # Parse choice text to enum
+        prevMode = self.mode
+        self.mode = StageProgramMode[self.modeSpinner.text]
+
+        # Update GUI
+        if prevMode != self.mode:
+
+            stacklayout: StackLayout = self.ids.stacklayout
+
+            if self.mode == StageProgramMode.FourPoint:
+                # Remove Gaussian params widgets
+                for widget in self.gaussianPointParamsWidgets:
+                    stacklayout.remove_widget(widget= widget)
+                
+                # Add FourPoint params widgets
+                for widget in self.fourPointParamWidgets:
+                    stacklayout.add_widget(widget= widget)
+
+            elif self.mode == StageProgramMode.Gaussian:
+                
+                # Remove FourPoint params widgets
+                for widget in self.fourPointParamWidgets:
+                    stacklayout.remove_widget(widget= widget)
+                
+                # Add Gaussian params widgets
+                for widget in self.gaussianPointParamsWidgets:
+                    stacklayout.add_widget(widget= widget)
+        
+        # Save to config
+        self.app.config.set('LedsControl', 'stageprogrammode', self.modeSpinner.text)
+        self.app.config.write()
+
 
     def updateLedStageProgram(self) -> None:
-        # Parse values
-        p1x = float(self.p1x.text)
-        p1y = float(self.p1y.text)
-        p1v = float(self.p1v.text)
-        p2x = float(self.p2x.text)
-        p2y = float(self.p2y.text)
-        p2v = float(self.p2v.text)
-        p3x = float(self.p3x.text)
-        p3y = float(self.p3y.text)
-        p3v = float(self.p3v.text)
-        p4x = float(self.p4x.text)
-        p4y = float(self.p4y.text)
-        p4v = float(self.p4v.text)
-        exteriorConstant = float(self.constanttextinput.text)
 
-        p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
-        p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
-        p3 = Vertex2D(np.array([p3x, p3y], np.float32), p3v, 'P3')
-        p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
+        if self.mode == StageProgramMode.FourPoint:
+            # Parse values
+            p1 = Vertex2D(np.array([self.p1x.value, self.p1y.value], np.float32), self.p1v.value, 'P1')
+            p2 = Vertex2D(np.array([self.p2x.value, self.p2y.value], np.float32), self.p2v.value, 'P2')
+            p3 = Vertex2D(np.array([self.p3x.value, self.p3y.value], np.float32), self.p3v.value, 'P3')
+            p4 = Vertex2D(np.array([self.p4x.value, self.p4y.value], np.float32), self.p4v.value, 'P4')
 
-        quadVertex = [p1, p2, p3, p4]
+            quadVertex = [p1, p2, p3, p4]
 
-        # Update DAQStageProgram variables
-        self.app.daqControl.daqStageProgram.update(quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= exteriorConstant)
+            # Update DAQStageProgram variables
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= self.constanttextinput.value)
+
+        elif self.mode == StageProgramMode.Gaussian: 
+            # Parse values
+            gaussianParams = GaussianParams(
+                amplitude= self.g_amplitude.value,
+                x_mean= self.g_x_mean.value,
+                x_sigma= self.g_x_sigma.value,
+                y_mean= self.g_y_mean.value,
+                y_sigma= self.g_y_sigma.value
+            )
+
+            # Update DAQStageProgram variables
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, gaussianParams= gaussianParams)
 
         # Generate value map plot
         valMapPlot = self.app.daqControl.daqStageProgram.generateValueMapPlot()
@@ -1224,19 +1305,53 @@ class LedsStageProgramWidget(BoxLayout):
 
 class LedsStageTextInput(TextInput):
     configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
 
     def on_kv_post(self, *args):
-        app = App.get_running_app()
-        self.text = app.config.get('LedsControl', self.configKey)
+        self.app = App.get_running_app()
+        self.text = self.app.config.get('LedsControl', self.configKey)
+        self.value = float(self.text)
+
+
+    def _validate(self) -> bool:
+        """Validate if self.text can be interpreted as a numerical value. If successful, self.value is updated.
+        
+        Returns:
+            bool: True if a number. Otherwise, False.
+        """
+        value_float = float(0)
+
+        # Check if input is a number
+        try:
+            value_float = float(self.text)
+
+        except ValueError:
+            # The value is not a number
+            return False
+        
+        # Check if should display text in integer style or floating point style
+        try:
+            value_int = int(self.text)
+            self.value = value_int
+
+        except ValueError:
+            # We are here because we couldn't cast the value string to int, thus the value is a float
+            self.value = value_float
+
+        return True
 
 
     @override
     def on_text_validate(self, *args):
-        """Save value to config
+        """Validate self.text. Then save to config and update LedStageProgram.
         """
-        app = App.get_running_app()
-        app.config.set('LedsControl', self.configKey, float(self.text))
-        app.config.write()
+        if self._validate():
+            self.app.config.set('LedsControl', self.configKey, self.value)
+            self.app.config.write()
+            self.root.updateLedStageProgram()
+        
+        else:
+            self.text = str(self.value)
     
 
     @override
@@ -3727,6 +3842,12 @@ class Connections(BoxLayout):
         p4x = app.config.getfloat('LedsControl', 'p4x')
         p4y = app.config.getfloat('LedsControl', 'p4y')
         p4v = app.config.getfloat('LedsControl', 'p4v')
+        g_amplitude = app.config.getfloat('LedsControl', 'g_amplitude')
+        g_x_mean = app.config.getfloat('LedsControl', 'g_x_mean')
+        g_x_sigma = app.config.getfloat('LedsControl', 'g_x_sigma')
+        g_y_mean = app.config.getfloat('LedsControl', 'g_y_mean')
+        g_y_sigma = app.config.getfloat('LedsControl', 'g_y_sigma')
+        gaussianParams = GaussianParams(amplitude= g_amplitude, x_mean= g_x_mean, x_sigma= g_x_sigma, y_mean= g_y_mean, y_sigma= g_y_sigma)
 
         p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
         p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
@@ -3736,7 +3857,7 @@ class Connections(BoxLayout):
         quadVertex = [p1, p2, p3, p4]
 
         # Update DAQStageProgram variables
-        app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant)
+        app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
 
     def disconnectDaq(self):
@@ -3967,6 +4088,11 @@ class GlowTrackerApp(App):
             'p4x': 0,
             'p4y': 0,
             'p4v': 0,
+            'g_amplitude': 0,
+            'g_x_mean': 0,
+            'g_x_sigma': 0,
+            'g_y_mean': 0,
+            'g_y_sigma': 0
         })
 
         config.setdefaults('Developer', {
