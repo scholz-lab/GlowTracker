@@ -1187,8 +1187,9 @@ class LedsStageProgramWidget(BoxLayout):
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
-        self.exterior = macro.Exterior.Zero
-        self.mode = StageProgramMode.FourPoint
+        self.exterior = macro.Exterior[self.app.config.get('LedsControl', 'exterior')]
+        self.mode = StageProgramMode[self.app.config.get('LedsControl', 'stageprogrammode')]
+        self.modeSpinner.text = self.mode.value
         self._popup: Popup = None
         self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout]
         self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout]
