@@ -88,6 +88,8 @@ class DAQControl():
     def reset(self):
         """Set DAQ values to factory default. Should be call after finished executing a command list.
         """
+        if self.daq is None:
+            return
         # Set to factory default
         self.daq.setDefaults(SetToFactoryDefaults= True)
         # Manually set DAC0 to 0 (off)
@@ -319,15 +321,16 @@ class DAQStageProgram():
         elif self.mode == StageProgramMode.Gaussian:
 
             if not (math.isclose(self.gaussianParams.x_sigma, 0.0) or math.isclose(self.gaussianParams.y_sigma, 0.0)):
+
+                # Compute normalized gaussian distribution
                 val = (
                     self.gaussianParams.amplitude
-                    / (2 * np.pi * self.gaussianParams.x_sigma * self.gaussianParams.y_sigma)
                     * np.exp(
                         -((x - self.gaussianParams.x_mean)**2 / (2 * (self.gaussianParams.x_sigma**2)))
                         -((y - self.gaussianParams.y_mean)**2 / (2 * (self.gaussianParams.y_sigma**2)))
                     )
                 )
-
+                
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
 

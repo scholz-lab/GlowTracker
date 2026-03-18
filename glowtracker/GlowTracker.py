@@ -69,6 +69,8 @@ from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
+from zaber_motion.units import Units
+from zaber_motion.unit_table import UnitTable
 from pypylon import pylon
 import platformdirs 
 import shutil
@@ -4261,6 +4263,8 @@ class GlowTrackerApp(App):
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
         """Manage keyboard input for stage and focus"""
         
+        print(f"Keydown")
+
         if self.stage is None:
             return
         
@@ -4283,6 +4287,8 @@ class GlowTrackerApp(App):
         if key not in direction.keys():
             return
         
+        velocity = direction[key]
+
         # Stage movement mode
         if self.moveImageSpaceMode:
             move_img_space = direction[key]
@@ -4292,13 +4298,24 @@ class GlowTrackerApp(App):
             translation_vec_stage_space = self.imageToStageRotMat @ translation_vec_img_space
 
             # Convert back to a 3D tuple
-            translation_vec_stage_space = ( translation_vec_stage_space[1], translation_vec_stage_space[0], move_img_space[2] )
-            
-            self.stage.start_move(translation_vec_stage_space, self.unit)
+            velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
         
-        else:
-            # Move 
-            self.stage.start_move(direction[key], self.unit)
+        # Move 
+        self.stage.start_move(velocity, self.unit)
+
+        # Update stage position app.coords 
+        #   Extrapolated position by speed
+        #   Convert speed to cm/s
+        velocity_cm_per_sec = np.zeros(shape= (3), dtype= np.float32)
+        velocity_cm_per_sec[0] = UnitTable.convert_units(value= velocity[0], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+        velocity_cm_per_sec[1] = UnitTable.convert_units(value= velocity[1], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+        velocity_cm_per_sec[2] = UnitTable.convert_units(value= velocity[2], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+
+        # Very crude estimation. Need to consult Monika
+        spf = 1 / 30.0
+        print(f"velocity_cm_per_sec {velocity_cm_per_sec}")
+        extrapolatedPos = np.array(self.coords) + spf * velocity_cm_per_sec * 10
+        self.coords = extrapolatedPos.tolist()
 
 
     def _keyup(self, instance, key, scancode) -> None:
