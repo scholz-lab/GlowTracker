@@ -992,7 +992,8 @@ class LedsControlTabPanelHolder(FloatLayout):
         app.config.write()
 
         # Update DAQControl
-        app.daqControl.ledsMode = LEDsMode[self.mode.text]
+        if app.daqControl:
+            app.daqControl.ledsMode = LEDsMode[self.mode.text]
 
 
 class LedsControlTabPanel(TabbedPanel):
@@ -1058,7 +1059,13 @@ class LedsControlWidget(BoxLayout):
         """
         
         loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
-        self._popup = Popup(title= "Load macro script file", content= loadWidget,
+
+        # Check if current file path is not empty then go to that path at the beginning,
+        #  and set loadWidget.ids.filechooser.path = ...
+        if self.ledsScriptFile != '':
+            loadWidget.ids.filechooser.path = self.ledsScriptFile
+
+        self._popup = Popup(title= "Load sequence file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
         loadWidget.cancel = self._popup.dismiss
@@ -1114,7 +1121,13 @@ class LedsControlWidget(BoxLayout):
 
         # Parse text to command
         if self.app.daqControl is not None:
-            self.app.daqControl.parseTextScript(self.ledsScript)
+            
+            try:
+                self.app.daqControl.parseTextScript(self.ledsScript)
+
+            except Exception as e:
+                print(e)
+                return None
         
 
     def saveScript(self):
@@ -4514,7 +4527,8 @@ class GlowTrackerApp(App):
 
             if key == 'mode':
 
-                self.daqControl.ledsMode = LEDsMode[value]
+                if self.daqControl:
+                    self.daqControl.ledsMode = LEDsMode[value]
 
 
         elif section == 'Developer':
