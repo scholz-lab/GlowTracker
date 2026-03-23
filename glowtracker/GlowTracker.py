@@ -403,27 +403,31 @@ class RightColumn(BoxLayout):
             self._popup.open()
         
         else:
-            self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
-                            size_hint=(0.5, 0.25))
+            self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.', size_hint=(0.5, 0.25), closeTime= 5)
             self._popup.open()
 
     
     def open_leds(self):
         """Open the LEDs Control Sequence widget popup.
         """
-        
-        # Disabled interaction with preview image widget
-        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
-        # Unbind keyboard events
-        self.app.unbind_keys()
+        if self.app.daqControl is not None:
 
-        # Create LedsControlTabPanel Widget
-        ledsControlTabPanelHolder = LedsControlTabPanelHolder()
-        ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
-        # Launch the widget inside a popup window
-        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+            # Disabled interaction with preview image widget
+            self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+            # Unbind keyboard events
+            self.app.unbind_keys()
 
-        self._popup.open()
+            # Create LedsControlTabPanel Widget
+            ledsControlTabPanelHolder = LedsControlTabPanelHolder()
+            ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
+            
+            # Launch the widget inside a popup window
+            self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+            self._popup.open()
+
+        else:
+            self._popup = WarningPopup(title="LEDs", text='LEDs Control Panel requires a connection to a DAQ device.', size_hint=(0.5, 0.25), closeTime= 5)
+            self._popup.open()
 
 
 class MacroScriptWidgetPopup(DragBehavior, Popup):
@@ -4444,8 +4448,8 @@ class GlowTrackerApp(App):
                 imageNormalDir = 1 if imageNormalDir == '+Z' else -1
                 rotation = self.config.getfloat('Camera', 'rotation')
 
-                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(pixelsize, imageNormalDir, rotation)
-        
+                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation= rotation, imageNormalDir= imageNormalDir, pixelSize= pixelsize)
+
         elif section == 'DualColor':
             
             if key == 'dualcolormode':
