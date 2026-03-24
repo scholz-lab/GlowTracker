@@ -1579,6 +1579,8 @@ class LiveAnalysisData():
     skewness: float = 0
     percentile_5: float = 0
     percentile_95: float = 0
+    # We need a locking mechanism here to manage race-condition of modifying LiveAnalysisData from both MainThread and SubThread e.g. when Main want to reset values while subthread is still computing them.
+    lock: Lock = Lock()
 
 
 class ImageAcquisitionButton(ToggleButton):
@@ -1642,6 +1644,7 @@ class ImageAcquisitionButton(ToggleButton):
             - Stop the update display event.
             - Stop camera grabbing.
             - Stop the acquisition looping thread if not already.
+            - Reset GUI back 
         """        
         if self.camera is None:
             return
@@ -1664,6 +1667,17 @@ class ImageAcquisitionButton(ToggleButton):
 
         # Set self button state to normal.
         self.state = 'normal'
+
+        # Reset liveAnalysisData
+        liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
+        with liveAnalysisData.lock:
+            liveAnalysisData.minBrightness = 0
+            liveAnalysisData.maxBrightness = 0
+            liveAnalysisData.meanBrightness = 0
+            liveAnalysisData.medianBrightness = 0
+            liveAnalysisData.skewness = 0
+            liveAnalysisData.percentile_5 = 0
+            liveAnalysisData.percentile_95 = 0
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -1822,15 +1836,17 @@ class ImageAcquisitionButton(ToggleButton):
             # Crop to tracking region
             image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
 
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
         # Do we need to crop on tracking region? 
-        imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
-        imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
-        imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        liveAnalysisData = imageAcquisitionManager.liveAnalysisData
+        with liveAnalysisData.lock:
+            imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
+            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
+            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
@@ -1916,7 +1932,7 @@ class LiveViewButton(ImageAcquisitionButton):
 
         super().stopImageAcquisition()
 
-        print('Stop live view')
+        print('Stop Live view')
 
 
     @override
@@ -2232,7 +2248,8 @@ class RecordButton(ImageAcquisitionButton):
         # Write coordinate into file.
         if not self.coordinateFile.closed:
             try:
-                self.coordinateFile.write(f"{self.frameCounter} \
+                with self.parent.liveAnalysisData.lock:
+                    self.coordinateFile.write(f"{self.frameCounter} \
 {self.imageTimeStamp} \
 {self.app.coords[0]} \
 {self.app.coords[1]} \
@@ -3638,8 +3655,8 @@ class LiveAnalysisQuickButton(ToggleButton):
         self.background_down = self.background_normal
 
         # Bind starting state to be the same as the config
-        app = App.get_running_app()
-        showliveanalysis = app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        self.app: GlowTrackerApp = App.get_running_app()
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
 
         if showliveanalysis:
             self.state = 'down'
@@ -3653,27 +3670,39 @@ class LiveAnalysisQuickButton(ToggleButton):
     def on_state(self, button: ToggleButton, state: 'str'):
         
         # Update config and setting
-        app = App.get_running_app()
-
         # Pass on start up
-        if app.root is None:
+        if self.app.root is None:
             return
         
-        liveanalysislabel: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysislabel
+        liveanalysislabel: LiveAnalysisLabel = self.app.root.ids.middlecolumn.ids.liveanalysislabel
 
         if state == 'normal':
+            # Switch off
             self.text = self.normalText
-            app.config.set('LiveAnalysis', 'showliveanalysis', 0)
+            self.app.config.set('LiveAnalysis', 'showliveanalysis', 0)
             liveanalysislabel.disabled = True
             liveanalysislabel.opacity = 0
 
+            # Clear LiveAnalysis data
+            liveAnalysisData: LiveAnalysisData = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.liveAnalysisData
+            with liveAnalysisData.lock:
+                liveAnalysisData.minBrightness = 0
+                liveAnalysisData.maxBrightness = 0
+                liveAnalysisData.meanBrightness = 0
+                liveAnalysisData.medianBrightness = 0
+                liveAnalysisData.skewness = 0
+                liveAnalysisData.percentile_5 = 0
+                liveAnalysisData.percentile_95 = 0
+            
+
         else:
+            # Switch on
             self.text = self.downText
-            app.config.set('LiveAnalysis', 'showliveanalysis', 1)
+            self.app.config.set('LiveAnalysis', 'showliveanalysis', 1)
             liveanalysislabel.disabled = False
             liveanalysislabel.opacity = 1
         
-        app.config.write()
+        self.app.config.write()
     
 
 class DualColorViewModeQuickButtonLayout(BoxLayout):
