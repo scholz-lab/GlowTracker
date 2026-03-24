@@ -1138,7 +1138,8 @@ class LedsControlWidget(BoxLayout):
         """Save the current macro script into the same file (overwrite if exists).
         """
         file_path = self.ids.ledsscriptfile.text
-        script = self.ids.scripttext.text
+        # Copy text from inputtext to self
+        self.ledsScript = self.ids.scripttext.text
 
         try:
             # Convert to absolute path if it's a relative path
@@ -1151,7 +1152,7 @@ class LedsControlWidget(BoxLayout):
             
             # Open the file in overwrite mode, creating it if it doesn't exist
             with open(abs_file_path, 'w') as file:
-                file.write(script)
+                file.write(self.ledsScript)
 
             # Set as recent script
             self.app.config.set('LedsControl', 'ledsequencescript', self.ids.ledsscriptfile.text)
@@ -1163,6 +1164,16 @@ class LedsControlWidget(BoxLayout):
 
         except Exception as e:
             print(f"Error saving LED script: {e}")
+
+        # Then update the current script to daqControl
+        if self.app.daqControl is not None:
+            
+            try:
+                self.app.daqControl.parseTextScript(self.ledsScript)
+
+            except Exception as e:
+                print(e)
+                return None
     
 
 class LedsStageProgramWidget(BoxLayout):
