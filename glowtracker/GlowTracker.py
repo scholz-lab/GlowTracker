@@ -1596,7 +1596,7 @@ class ImageAcquisitionButton(ToggleButton):
         - startImageAcuisition()
         - acquisitionCondition()
 
-    in order to be functionable.
+    in order to be functional.
     """    
     
     def __init__(self, **kwargs):
@@ -1662,7 +1662,7 @@ class ImageAcquisitionButton(ToggleButton):
         # reset scale of image
         self.app.root.ids.middlecolumn.ids.scalableimage.reset()
 
-        # Set self button state to normal
+        # Set self button state to normal.
         self.state = 'normal'
     
 
@@ -1949,7 +1949,29 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = ''
         self.prevLiveAnalysisButtonState: str = ''
-    
+        
+
+    @override
+    def on_state(self, widget: Widget, state: str):
+        """On state change callback
+
+        Args:
+            widget (Widget): the kivy widget, in this case is the same as the class instance itself.
+            state (str): the new state
+        """        
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.camera = self.app.camera
+
+        if self.camera is None:
+            return
+
+        if state == 'down':
+            self.startImageAcquisition()
+            
+        else:
+            if self.camera.IsGrabbing():
+                self.stopImageAcquisition()
+            
 
     @override
     def startImageAcquisition(self) -> None:
@@ -2140,8 +2162,12 @@ class RecordButton(ImageAcquisitionButton):
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
 
+        print(f'Recorded {self.runtimeControls.framecounter.value} frames')
+
         # Stop the camera and clear values
         super().stopImageAcquisition()
+
+        print('Stopped recording')
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
@@ -2151,7 +2177,6 @@ class RecordButton(ImageAcquisitionButton):
             self.imageQueue.put(None)
             self.savingthread.join()
 
-        print("Stop recording")
 
         # Set LiveView button state back to enable.
         #   We need to do it here as a schedule event. Because this current function (stopImageAcquisition)
@@ -2287,14 +2312,17 @@ class RecordButton(ImageAcquisitionButton):
         # Send signal to terminate recording workers
         self.imageQueue.put(None)
 
-        print(f'Recorded {self.numberRecordframes} frames.')
-
         # Reset the DAQ state
         if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.reset()
 
-        # Call to recording-stopping procedure
-        self.stopImageAcquisition()
+        # There are two ways to reach this point:
+        #   a. Manually stop recording by clicking the Record button
+        #   b. Automatically after recorded target number of frames.
+        # We can distinguish between them by checking self.state
+        # In case b.) the button state will still be 'down' and therefore we need to call stopImageAcquisition() procedure.
+        if self.state == 'down':
+            self.stopImageAcquisition()
     
 
     def initRecordingParams(self):
