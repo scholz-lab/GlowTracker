@@ -1938,9 +1938,9 @@ class LiveViewButton(ImageAcquisitionButton):
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None \
+        return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.state == 'down'
+            and (self.state == 'down')
 
 
 class RecordButton(ImageAcquisitionButton):
@@ -2218,9 +2218,9 @@ class RecordButton(ImageAcquisitionButton):
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None \
+        return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.isContinuous or (self.frameCounter < self.numberRecordframes) \
+            and (self.isContinuous or (self.frameCounter < self.numberRecordframes)) \
             and self.state == 'down'
 
     
