@@ -120,10 +120,10 @@ MainWindow:
         height: 30
         multiline: False
         text: root.savefile
-        on_text_validate: root.path_validate()
+        on_text_validate: root.createRecordingPath()
         on_focus: app.toggle_key_binding(self.focus)
         on_focus: 
-            if not self.focus: root.path_validate()  
+            if not self.focus: root.createRecordingPath()  
                 
     MyButton:
         text: 'Save Location'

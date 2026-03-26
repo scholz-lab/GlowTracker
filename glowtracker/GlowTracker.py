@@ -182,28 +182,30 @@ class LeftColumn(BoxLayout):
 
     def _do_setup(self, *l):
         self.savefile = self.app.config.get("Experiment", "exppath")
-        self.path_validate()
+        self.createRecordingPath()
         self.cameraConfigFile = self.app.config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
 
-    def path_validate(self):
-        p = Path(self.saveloc.text)
-        if p.exists() and p.is_dir():
-            self.app.config.set("Experiment", "exppath", self.saveloc.text)
-            self.app.config.write()
-        # check if the parent dir exists, then create the folder
-        elif p.parent.exists():
-            p.mkdir(mode=0o777, parents=False, exist_ok=True)
-        else:
-            self.saveloc.text = self.savefile
-        self.app.config.set("Experiment", "exppath", self.saveloc.text)
+    def createRecordingPath(self) -> None:
+
+        relativePath = self.saveloc.text
+        absPath = os.path.abspath(relativePath)
+
+        # Create the path if not yet exists
+        if not os.path.exists(absPath) or not os.path.isdir(absPath):
+            os.makedirs(name= absPath, mode=777, exist_ok= True)
+
+        # Save to config
+        self.app.config.set("Experiment", "exppath", absPath)
         self.app.config.write()
-        self.savefile = self.app.config.get("Experiment", "exppath")
+
+        self.savefile = absPath
+        print(f'Set recording path to {self.savefile}')
+        
         # reset the stage keys
         self.app.bind_keys()
-        print('saving path changed')
-
+    
 
     def dismiss_popup(self):
         self.app.bind_keys()
@@ -241,7 +243,7 @@ class LeftColumn(BoxLayout):
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
         self.saveloc.text = (self.savefile)
-        self.path_validate()
+        self.createRecordingPath()
         self.dismiss_popup()
 
 
@@ -1974,8 +1976,8 @@ class RecordButton(ImageAcquisitionButton):
         self.dualColorRecordingMode: str = ''
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
-        self.prevLiveViewButtonState: str = ''
-        self.prevLiveAnalysisButtonState: str = ''
+        self.prevLiveViewButtonState: str = 'normal'
+        self.prevLiveAnalysisButtonState: str = 'normal'
         
 
     @override
@@ -2014,17 +2016,25 @@ class RecordButton(ImageAcquisitionButton):
         self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
+        self.saveFilePath = self.app.root.ids.leftcolumn.savefile
+
+        # Store relevent states in case needs to turn back
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
+
+        # If there is no camera or recording file path doesn't exists
         if self.camera is None:
             self.state = 'normal'
             return
-
-        # Store relevent states
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
         
+        if not os.path.exists(self.saveFilePath):
+            print("The recording path doesn't exist. Can't start recording.")
+            self.state = 'normal'
+            return
+
         # Stop camera if already running and disable the LiveView button
         # If the camera is already running it in live view button,
         #   put the transition "OnHold" flag, and restart camera in Recording mode
-        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
 
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
@@ -2035,7 +2045,6 @@ class RecordButton(ImageAcquisitionButton):
 
         self.runtimeControls.framecounter.value = 0
 
-        self.saveFilePath = self.app.root.ids.leftcolumn.savefile
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
@@ -2181,7 +2190,7 @@ class RecordButton(ImageAcquisitionButton):
             - Un-disabled (enable if) the LiveView button
         """        
 
-        if self.camera is None:
+        if self.camera is None or self.frameCounter == 0:
             return
         
         # If the live view button was previously running, 
@@ -2189,7 +2198,10 @@ class RecordButton(ImageAcquisitionButton):
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
 
-        print(f'Recorded {self.runtimeControls.framecounter.value} frames')
+        print(f'Recorded {self.frameCounter} frames')
+
+        # Reset frame counter
+        self.frameCounter = 0
 
         # Stop the camera and clear values
         super().stopImageAcquisition()
