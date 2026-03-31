@@ -113,7 +113,7 @@ class DAQControl():
             preprocessdText = "{\n" + ",\n".join(lines) + "\n}"
             
             # Parse the text to be a dict object. Highlight keywords "on", "off"
-            processedDict = eval(preprocessdText, globals= {
+            processedDict = eval(preprocessdText, {
                 "on": "on", 
                 "off": "off", 
                 "mode": "mode",

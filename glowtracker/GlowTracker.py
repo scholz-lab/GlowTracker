@@ -194,7 +194,7 @@ class LeftColumn(BoxLayout):
 
         # Create the path if not yet exists
         if not os.path.exists(absPath) or not os.path.isdir(absPath):
-            os.makedirs(name= absPath, mode=777, exist_ok= True)
+            os.makedirs(name= absPath, mode=0o777, exist_ok= True)
 
         # Save to config
         self.app.config.set("Experiment", "exppath", absPath)
@@ -396,7 +396,8 @@ class RightColumn(BoxLayout):
         camera = self.app.camera
         stage: Stage = self.app.stage
 
-        if camera is not None and stage is not None:
+        if True:
+        # if camera is not None and stage is not None:
             # Create the calibration widget
             calibrationTabPanel = CalibrationTabPanel()
             calibrationTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
