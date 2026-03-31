@@ -343,15 +343,13 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
                 if line.startswith('#'):
                     continue
 
-                parts = line.split(None, 1)
-                if len(parts) == 2:
-                    key, value = parts
-                    parsedDict[key] = value
+                # Split words (separate by blanks)
+                parts = line.split()
                 
-                else:
-                    print(f'Error: Parsing {filepath}. Format is not supported')
-                    return None
-        
+                key = parts[0]
+                value = parts[-1]
+                parsedDict[key] = value
+
             return parsedDict
 
     except FileNotFoundError:
