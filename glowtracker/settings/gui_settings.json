@@ -443,6 +443,13 @@
         "options": ["FourPoint", "Gaussian"]
     },
     {
+        "type": "bool",
+        "title": "Gaussian Relative Position",
+        "desc": "Are the gaussian means relative to the start-Recording position",
+        "section": "LedsControl",
+        "key": "g_relative"
+    },
+    {
         "type": "title",
         "title": "Developer"
     },

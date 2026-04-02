@@ -268,9 +268,18 @@ class DAQStageProgram():
         self.exterior = Exterior.Zero
         self.exteriorConstant: float = 0
         self.gaussianParams = GaussianParams()
+        self.isGaussianRelative = False
     
     
-    def update(self, mode: StageProgramMode = None, quadVertex: List[Vertex2D] = None, exterior: Exterior = None, exteriorConstant: float = None, gaussianParams: GaussianParams = None) -> None:
+    def update(
+            self, 
+            mode: StageProgramMode | None = None, 
+            quadVertex: List[Vertex2D] | None = None, 
+            exterior: Exterior | None = None, 
+            exteriorConstant: float | None = None, 
+            gaussianParams: GaussianParams | None = None, 
+            isGaussianRelative: bool | None = None
+        ) -> None:
         """Parse variables and process them.
 
         Args:
@@ -304,6 +313,9 @@ class DAQStageProgram():
         
         if gaussianParams:
             self.gaussianParams = gaussianParams
+        
+        if isGaussianRelative:
+            self.isGaussianRelative = isGaussianRelative
     
     
     def getValue(self, x: float, y: float) -> float:

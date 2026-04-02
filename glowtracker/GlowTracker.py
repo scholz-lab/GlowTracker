@@ -1194,11 +1194,13 @@ class LedsStageProgramWidget(BoxLayout):
     g_x_sigma: LedsStageTextInput
     g_y_mean: LedsStageTextInput
     g_y_sigma: LedsStageTextInput
+    g_relative: Switch
     g_amplitude_layout: BoxLayout
     g_x_mean_layout: BoxLayout
     g_x_sigma_layout: BoxLayout
     g_y_mean_layout: BoxLayout
     g_y_sigma_layout: BoxLayout
+    g_relative_layout: BoxLayout
 
     def __init__(self, **kwargs):
         super(LedsStageProgramWidget, self).__init__(**kwargs)
@@ -1215,8 +1217,11 @@ class LedsStageProgramWidget(BoxLayout):
         self.mode = StageProgramMode[self.app.config.get('LedsControl', 'stageprogrammode')]
         self.modeSpinner.text = self.mode.value
         self._popup: Popup = None
+        
         self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout]
-        self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout]
+        
+        self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout, self.g_relative_layout]
+        
         self.initModeWidget()
         self.updateLedStageProgram()
 
@@ -1319,13 +1324,40 @@ class LedsStageProgramWidget(BoxLayout):
             )
 
             # Update DAQStageProgram variables
-            self.app.daqControl.daqStageProgram.update(mode= self.mode, gaussianParams= gaussianParams)
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, gaussianParams= gaussianParams, isGaussianRelative= self.g_relative.active)
 
         # Generate value map plot
         valMapPlot = self.app.daqControl.daqStageProgram.generateValueMapPlot()
         
         # Show the plot
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
+
+
+class GaussianRelativePositionSwitch(Switch):
+    configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
+
+    def on_kv_post(self, *args):
+        self.app = App.get_running_app()
+        self.active = self.app.config.getboolean('LedsControl', self.configKey)
+
+    
+    @override
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'self.configKey',
+            and call root.updateLedStageProgram()
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        if super(GaussianRelativePositionSwitch, self).on_touch_up(touch):
+
+            self.app.config.set('LedsControl', self.configKey, int(self.active))
+            self.app.config.write()
+
+            self.root.updateLedStageProgram()
+
+            return True
     
 
 class LedsStageTextInput(TextInput):
@@ -4198,7 +4230,8 @@ class GlowTrackerApp(App):
             'g_x_mean': 0,
             'g_x_sigma': 0,
             'g_y_mean': 0,
-            'g_y_sigma': 0
+            'g_y_sigma': 0,
+            'g_relative': 'true'
         })
 
         config.setdefaults('Developer', {

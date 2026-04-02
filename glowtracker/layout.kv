@@ -1167,11 +1167,13 @@ MainWindow:
     g_x_sigma: g_x_sigma
     g_y_mean: g_y_mean
     g_y_sigma: g_y_sigma
+    g_relative: g_relative
     g_amplitude_layout: g_amplitude_layout
     g_x_mean_layout: g_x_mean_layout
     g_x_sigma_layout: g_x_sigma_layout
     g_y_mean_layout: g_y_mean_layout
     g_y_sigma_layout: g_y_sigma_layout
+    g_relative_layout: g_relative_layout
 
     BoxLayout:
         orientation: 'horizontal'
@@ -1453,6 +1455,34 @@ MainWindow:
                     configKey: 'g_y_sigma'
                     root: root
             
+            BoxLayout:
+                id: g_relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Is relative to start Recording position'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    GaussianRelativePositionSwitch:
+                        id: g_relative
+                        configKey: 'g_relative'
+                        root: root
             
         BoxLayout:
             orientation: 'vertical'
