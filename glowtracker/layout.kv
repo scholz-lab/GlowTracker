@@ -1534,7 +1534,7 @@ MainWindow:
     Label:
         text: 'DAQ'
         size_hint: (1,0.33)
-    OnOffButton:
+    DAQConnectionButton:
         id: daq_connection 
         border: 0,0,0,0
         size_hint_x: 0.3
@@ -1543,8 +1543,6 @@ MainWindow:
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
-        on_state: root.connectDaq() if self.state=='down' else root.disconnectDaq()
-    
         
       
 #################################

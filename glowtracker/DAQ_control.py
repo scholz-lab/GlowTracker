@@ -40,17 +40,13 @@ class DAQControl():
         Returns:
             DAQControl (DAQControl|None): DAQControl class if successful, otherwise None.
         """
+        daqControl = DAQControl()
+
         try:
             # Connect to DAQ
             daq = u3.U3(debug= False)
 
-        except Exception as e:
-            print(e)
-            return None
-
-        else:
             # Instantiate DAQConatrol object
-            daqControl = DAQControl()
             daqControl.daq = daq
             
             print(f"Using {daqControl.daq.deviceName}, serial: {daqControl.daq.serialNumber}")
@@ -60,6 +56,10 @@ class DAQControl():
             # Calibrate
             daqControl.daq.getCalibrationData()
 
+        except Exception as e:
+            print(e)
+        
+        finally:
             return daqControl
 
 
@@ -71,12 +71,17 @@ class DAQControl():
         self.ledsMode: LEDsMode = LEDsMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
+    
+
+    def isConnected(self) -> bool:
+        return self.daq is not None
 
 
     def close(self):
-        # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
-        self.daq.close()
-        self.daq = None
+        if self.isConnected():
+            # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
+            self.daq.close()
+            self.daq = None
 
     
     def start(self):
@@ -88,8 +93,9 @@ class DAQControl():
     def reset(self):
         """Set DAQ values to factory default. Should be call after finished executing a command list.
         """
-        if self.daq is None:
+        if not self.isConnected():
             return
+
         # Set to factory default
         self.daq.setDefaults(SetToFactoryDefaults= True)
         # Manually set DAC0 to 0 (off)

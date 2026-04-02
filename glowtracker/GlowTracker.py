@@ -396,8 +396,7 @@ class RightColumn(BoxLayout):
         camera = self.app.camera
         stage: Stage = self.app.stage
 
-        if True:
-        # if camera is not None and stage is not None:
+        if camera is not None and stage is not None:
             # Create the calibration widget
             calibrationTabPanel = CalibrationTabPanel()
             calibrationTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
@@ -413,24 +412,20 @@ class RightColumn(BoxLayout):
     def open_leds(self):
         """Open the LEDs Control Sequence widget popup.
         """
-        if self.app.daqControl is not None:
 
-            # Disabled interaction with preview image widget
-            self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
-            # Unbind keyboard events
-            self.app.unbind_keys()
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
 
-            # Create LedsControlTabPanel Widget
-            ledsControlTabPanelHolder = LedsControlTabPanelHolder()
-            ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
-            
-            # Launch the widget inside a popup window
-            self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
-            self._popup.open()
+        # Unbind keyboard events
+        self.app.unbind_keys()
 
-        else:
-            self._popup = WarningPopup(title="LEDs", text='LEDs Control Panel requires a connection to a DAQ device.', size_hint=(0.5, 0.25), closeTime= 5)
-            self._popup.open()
+        # Create LedsControlTabPanel Widget
+        ledsControlTabPanelHolder = LedsControlTabPanelHolder()
+        ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
+        
+        # Launch the widget inside a popup window
+        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup.open()
 
 
 class MacroScriptWidgetPopup(DragBehavior, Popup):
@@ -999,8 +994,7 @@ class LedsControlTabPanelHolder(FloatLayout):
         app.config.write()
 
         # Update DAQControl
-        if app.daqControl:
-            app.daqControl.ledsMode = LEDsMode[self.mode.text]
+        app.daqControl.ledsMode = LEDsMode[self.mode.text]
 
 
 class LedsControlTabPanel(TabbedPanel):
@@ -1106,11 +1100,12 @@ class LedsControlWidget(BoxLayout):
         self.ledsScriptFile = os.path.abspath(filePath)
         
         # Load the script text
-        print(f'Loading the LEDs control script {self.ledsScriptFile}')
 
         try:
             with open(self.ledsScriptFile, 'r') as file:
                 self.ledsScript = file.read()
+
+            print(f'Loaded LEDs control script {self.ledsScriptFile}')
 
         except FileNotFoundError:
             print(f'The file {self.ledsScriptFile} was not found.')
@@ -1127,14 +1122,12 @@ class LedsControlWidget(BoxLayout):
         self.app.config.write()
 
         # Parse text to command
-        if self.app.daqControl is not None:
-            
-            try:
-                self.app.daqControl.parseTextScript(self.ledsScript)
+        try:
+            self.app.daqControl.parseTextScript(self.ledsScript)
 
-            except Exception as e:
-                print(e)
-                return None
+        except Exception as e:
+            print(e)
+            return None
         
 
     def saveScript(self):
@@ -1169,14 +1162,12 @@ class LedsControlWidget(BoxLayout):
             print(f"Error saving LED script: {e}")
 
         # Then update the current script to daqControl
-        if self.app.daqControl is not None:
-            
-            try:
-                self.app.daqControl.parseTextScript(self.ledsScript)
+        try:
+            self.app.daqControl.parseTextScript(self.ledsScript)
 
-            except Exception as e:
-                print(e)
-                return None
+        except Exception as e:
+            print(e)
+            return None
     
 
 class LedsStageProgramWidget(BoxLayout):
@@ -2057,7 +2048,7 @@ class RecordButton(ImageAcquisitionButton):
         self.savingthread.start()
 
         # Prep DAQ control
-        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.start()
 
         # Setup image acquisition thread parameters
@@ -2235,7 +2226,7 @@ class RecordButton(ImageAcquisitionButton):
         Clock.schedule_once( resumeButtonsState )
 
         # Reset the DAQ state
-        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.reset()
     
 
@@ -2336,7 +2327,7 @@ class RecordButton(ImageAcquisitionButton):
 
         # Trigger DAQ Control command
         # Actually, is framecounter.value effected when frame skip?
-        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
@@ -2354,7 +2345,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageQueue.put(None)
 
         # Reset the DAQ state
-        if self.app.daqControl is not None and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
             self.app.daqControl.reset()
 
         # There are two ways to reach this point:
@@ -3820,7 +3811,6 @@ class Connections(BoxLayout):
         """
         self.stage_connection.state = 'down'
         self.cam_connection.state = 'down'
-        self.daq_connection.state = 'down'
 
 
     def connectCamera(self):
@@ -3900,7 +3890,21 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
     
 
+class DAQConnectionButton(ToggleButton):
+
+    def on_state(self, widget: Widget, state: str):
+
+        if state == 'down':
+            self.connectDaq()
+        
+        else:
+            self.disconnectDaq()
+
+
     def connectDaq(self):
+        """Connect to a DAQ device.
+        """
+
         print('Connecting DAQ')
         app: GlowTrackerApp = App.get_running_app()
 
@@ -3908,8 +3912,8 @@ class Connections(BoxLayout):
         app.daqControl = DAQControl.createAndConnectDaq()
         
         # If no device
-        if app.daqControl is None:
-            self.daq_connection.state = 'normal'
+        if not app.daqControl.isConnected():
+            self.state = 'normal'
             return
         
         app.daqControl.ledsMode = LEDsMode[app.config.get("LedsControl", "mode")]
@@ -3925,7 +3929,7 @@ class Connections(BoxLayout):
                 print(f'Loaded LEDs control script {recentScriptFile}')
 
         except Exception as e:
-            print(f'Loading recent LEDs control script: {e}')
+            print(f'Error loading recent LEDs control script: {e}')
 
         # Load StageProgram properties
         stageprogrammode = StageProgramMode[app.config.get('LedsControl', 'stageprogrammode')]
@@ -3960,14 +3964,15 @@ class Connections(BoxLayout):
         # Update DAQStageProgram variables
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
+        return
+
 
     def disconnectDaq(self):
         print('Disconnecting DAQ')
         app: GlowTrackerApp = App.get_running_app()
 
-        if app.daqControl is not None:
+        if app.daqControl.isConnected():
             app.daqControl.close()
-            app.daqControl = None
 
 
 class MyCounter():
@@ -4036,7 +4041,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
-        self.daqControl: DAQControl | None = None
+        self.daqControl: DAQControl = DAQControl()
         self.updateFpsEvent = None
     
 
@@ -4612,8 +4617,7 @@ class GlowTrackerApp(App):
 
             if key == 'mode':
 
-                if self.daqControl:
-                    self.daqControl.ledsMode = LEDsMode[value]
+                self.daqControl.ledsMode = LEDsMode[value]
 
 
         elif section == 'Developer':
@@ -4733,7 +4737,7 @@ class GlowTrackerApp(App):
             print('Disconnecting Camera')
             self.camera.Close()
         
-        if self.daqControl is not None:
+        if self.daqControl.isConnected():
             print('Disconnecting DAQ')
             self.daqControl.close()
 
