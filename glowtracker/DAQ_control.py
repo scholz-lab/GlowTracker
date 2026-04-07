@@ -84,10 +84,11 @@ class DAQControl():
             self.daq = None
 
     
-    def start(self):
+    def start(self, startRecordPosition: np.ndarray):
         """Reset internal command dict to original to prepare for running.
         """
         self.ledsSequnceDictRunning = deepcopy(self.ledsSequnceDict)
+        self.daqStageProgram.startRecordPosition = startRecordPosition
     
     
     def reset(self):
@@ -104,6 +105,7 @@ class DAQControl():
         self.daq.getFeedback(dac0Command)
         # Clean running command queue
         self.ledsSequnceDictRunning.clear()
+        self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
 
         
     def parseTextScript(self, text: str) -> None:
@@ -269,6 +271,7 @@ class DAQStageProgram():
         self.exteriorConstant: float = 0
         self.gaussianParams = GaussianParams()
         self.isGaussianRelative = False
+        self.startRecordPosition = np.zeros([2], np.float32)
     
     
     def update(
@@ -314,7 +317,7 @@ class DAQStageProgram():
         if gaussianParams:
             self.gaussianParams = gaussianParams
         
-        if isGaussianRelative:
+        if isGaussianRelative is not None: 
             self.isGaussianRelative = isGaussianRelative
     
     
@@ -340,12 +343,21 @@ class DAQStageProgram():
 
             if not (math.isclose(self.gaussianParams.x_sigma, 0.0) or math.isclose(self.gaussianParams.y_sigma, 0.0)):
 
+                currentPosition = np.array([x, y], np.float32)
+
+                if self.isGaussianRelative:
+                    currentPosition = currentPosition - self.startRecordPosition
+
+                gMeans = np.array([self.gaussianParams.x_mean, self.gaussianParams.y_mean], np.float32)
+
+                distance = currentPosition - gMeans
+
                 # Compute normalized gaussian distribution
                 val = (
                     self.gaussianParams.amplitude
                     * np.exp(
-                        -((x - self.gaussianParams.x_mean)**2 / (2 * (self.gaussianParams.x_sigma**2)))
-                        -((y - self.gaussianParams.y_mean)**2 / (2 * (self.gaussianParams.y_sigma**2)))
+                        -((distance[0])**2 / (2 * (self.gaussianParams.x_sigma**2)))
+                        -((distance[1])**2 / (2 * (self.gaussianParams.y_sigma**2)))
                     )
                 )
                 
@@ -361,23 +373,44 @@ class DAQStageProgram():
         Returns:
             np.ndarray: RGB image of the plot
         """
+        stageRange = [160, 160]
         
+        # Allocate value map
+        valMapShape = [stageRange[0] + 1, stageRange[1] + 1, 1]
+        if self.isGaussianRelative:
+            valMapShape = [stageRange[0]*2 + 1, stageRange[1]*2 + 1, 1]
+        
+        valMap = np.zeros(valMapShape)
+
         # Compute value map
-        valMap = np.zeros([160 + 1, 160 + 1, 1], np.float32)
-        for y in range(valMap.shape[0]):
-            for x in range(valMap.shape[1]):
-                valMap[y, x] = self.getValue(x, y)
-            
+        for j in range(valMap.shape[0]):
+
+            y = j
+            if self.isGaussianRelative:
+                y = y - stageRange[0]
+                
+            for i in range(valMap.shape[1]):
+
+                x = i
+                if self.isGaussianRelative:
+                    x = x - stageRange[1]
+
+                valMap[j, i] = self.getValue(x, y)
         
         # Create the plot
         plt.ioff()
         fig = plt.figure(figsize=(6, 6))
         
         # Plot map
-        im = plt.imshow(valMap, cmap= 'magma')
+        extent = None
+        if self.isGaussianRelative:
+            extent = (-stageRange[0], stageRange[0], stageRange[1], -stageRange[1])
+
+        im = plt.imshow(valMap, cmap= 'magma', extent= extent)
         plt.colorbar(im)
+        plt.gca().set_facecolor("yellow")
         
-        # Plot 4 points
+        # Plot landmarks
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
             plt.scatter(point[0], point[1], c= color)
             plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
@@ -390,10 +423,19 @@ class DAQStageProgram():
         
         elif self.mode == StageProgramMode.Gaussian:
             drawPointWithAnnotation([self.gaussianParams.x_mean, self.gaussianParams.y_mean], 'r', 'Mean')
+        
+        if self.isGaussianRelative:
+            drawPointWithAnnotation([0, 0], 'r', 'Start Pos')
 
         # Set plot limits and labels
-        plt.xlim(0, 160)
-        plt.ylim(0, 160)
+        if self.isGaussianRelative:
+            plt.xlim(-stageRange[0], stageRange[0])
+            plt.ylim(-stageRange[1], stageRange[1])
+
+        else:
+            plt.xlim(0, stageRange[0])
+            plt.ylim(0, stageRange[1])
+
         plt.xlabel('Stage X (mm)')
         plt.ylabel('Stage Y (mm)')
         plt.title("Stage position to Voltage map")

@@ -2081,7 +2081,7 @@ class RecordButton(ImageAcquisitionButton):
 
         # Prep DAQ control
         if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
-            self.app.daqControl.start()
+            self.app.daqControl.start( np.array(self.app.coords[:2]) )
 
         # Setup image acquisition thread parameters
         self.initRecordingParams()
