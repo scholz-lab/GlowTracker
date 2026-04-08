@@ -1142,6 +1142,7 @@ MainWindow:
     orientation: 'vertical'
     spacing: dp(10)
     exteriorSpinner: exteriorSpinner
+
     modeSpinner: modeSpinner
     constanttextinput: constanttextinput
     p1x: p1x
@@ -1156,12 +1157,15 @@ MainWindow:
     p4x: p4x
     p4y: p4y
     p4v: p4v
+    relative: relative
     exterior_layout: exterior_layout
     fourpoint_header_layout: fourpoint_header_layout
     p1_layout: p1_layout
     p2_layout: p2_layout
     p3_layout: p3_layout
     p4_layout: p4_layout
+    relative_layout: relative_layout
+
     g_amplitude: g_amplitude
     g_x_mean: g_x_mean
     g_x_sigma: g_x_sigma
@@ -1364,6 +1368,35 @@ MainWindow:
                     root: root
             
             BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Is relative to start Recording position'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    RelativePositionSwitch:
+                        id: relative
+                        configKey: 'relative'
+                        root: root
+            
+            BoxLayout:
                 id: g_amplitude_layout
                 orientation: 'horizontal'
                 size_hint_y: 0.1
@@ -1479,7 +1512,7 @@ MainWindow:
                     size_hint_y: 1
                     size_hint_x: 0.2
 
-                    GaussianRelativePositionSwitch:
+                    RelativePositionSwitch:
                         id: g_relative
                         configKey: 'g_relative'
                         root: root

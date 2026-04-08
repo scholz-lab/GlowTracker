@@ -269,6 +269,7 @@ class DAQStageProgram():
         self.quadVertex: List[Vertex2D] = []
         self.exterior = Exterior.Zero
         self.exteriorConstant: float = 0
+        self.isFourPointRelative = False
         self.gaussianParams = GaussianParams()
         self.isGaussianRelative = False
         self.startRecordPosition = np.zeros([2], np.float32)
@@ -280,6 +281,7 @@ class DAQStageProgram():
             quadVertex: List[Vertex2D] | None = None, 
             exterior: Exterior | None = None, 
             exteriorConstant: float | None = None, 
+            isFourPointRelative: bool | None = None,
             gaussianParams: GaussianParams | None = None, 
             isGaussianRelative: bool | None = None
         ) -> None:
@@ -314,6 +316,9 @@ class DAQStageProgram():
         if exteriorConstant:
             self.exteriorConstant = exteriorConstant
         
+        if isFourPointRelative is not None:
+            self.isFourPointRelative = isFourPointRelative
+        
         if gaussianParams:
             self.gaussianParams = gaussianParams
         
@@ -336,7 +341,20 @@ class DAQStageProgram():
 
         if self.mode == StageProgramMode.FourPoint:
 
-            val = Vertex2D.bilerp(self.quadVertex[0], self.quadVertex[1], self.quadVertex[2], self.quadVertex[3], np.array([x, y], np.float32), self.exterior, self.exteriorConstant)
+            currentPosition = np.array([x, y], np.float32)
+            if self.isFourPointRelative:
+                currentPosition = currentPosition - self.startRecordPosition
+                self.quadVertex[0].point
+            
+            val = Vertex2D.bilerp(
+                self.quadVertex[0], 
+                self.quadVertex[1], 
+                self.quadVertex[2], 
+                self.quadVertex[3], 
+                currentPosition, 
+                self.exterior, 
+                self.exteriorConstant
+            )
 
         
         elif self.mode == StageProgramMode.Gaussian:
@@ -374,10 +392,12 @@ class DAQStageProgram():
             np.ndarray: RGB image of the plot
         """
         stageRange = [160, 160]
+
+        isRelativeToStart = self.isFourPointRelative or self.isGaussianRelative
         
         # Allocate value map
         valMapShape = [stageRange[0] + 1, stageRange[1] + 1, 1]
-        if self.isGaussianRelative:
+        if isRelativeToStart:
             valMapShape = [stageRange[0]*2 + 1, stageRange[1]*2 + 1, 1]
         
         valMap = np.zeros(valMapShape)
@@ -386,13 +406,13 @@ class DAQStageProgram():
         for j in range(valMap.shape[0]):
 
             y = j
-            if self.isGaussianRelative:
+            if isRelativeToStart:
                 y = y - stageRange[0]
                 
             for i in range(valMap.shape[1]):
 
                 x = i
-                if self.isGaussianRelative:
+                if isRelativeToStart:
                     x = x - stageRange[1]
 
                 valMap[j, i] = self.getValue(x, y)
@@ -403,7 +423,7 @@ class DAQStageProgram():
         
         # Plot map
         extent = None
-        if self.isGaussianRelative:
+        if isRelativeToStart:
             extent = (-stageRange[0], stageRange[0], stageRange[1], -stageRange[1])
 
         im = plt.imshow(valMap, cmap= 'magma', extent= extent)
@@ -424,11 +444,11 @@ class DAQStageProgram():
         elif self.mode == StageProgramMode.Gaussian:
             drawPointWithAnnotation([self.gaussianParams.x_mean, self.gaussianParams.y_mean], 'r', 'Mean')
         
-        if self.isGaussianRelative:
+        if isRelativeToStart:
             drawPointWithAnnotation([0, 0], 'r', 'Start Pos')
 
         # Set plot limits and labels
-        if self.isGaussianRelative:
+        if isRelativeToStart:
             plt.xlim(-stageRange[0], stageRange[0])
             plt.ylim(-stageRange[1], stageRange[1])
 

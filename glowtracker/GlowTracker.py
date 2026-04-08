@@ -1175,19 +1175,23 @@ class LedsStageProgramWidget(BoxLayout):
     """
     closeCallback = ObjectProperty(None)
     exteriorSpinner: Spinner
-    modeSpinner: Spinner
+
     # FourPoint params
+    modeSpinner: Spinner
     constanttextinput: LedsStageTextInput
     p1x: LedsStageTextInput; p1y: LedsStageTextInput; p1v: LedsStageTextInput
     p2x: LedsStageTextInput; p2y: LedsStageTextInput; p2v: LedsStageTextInput
     p3x: LedsStageTextInput; p3y: LedsStageTextInput; p3v: LedsStageTextInput
     p4x: LedsStageTextInput; p4y: LedsStageTextInput; p4v: LedsStageTextInput
+    relative: Switch
     exterior_layout: BoxLayout
     fourpoint_header_layout: BoxLayout
     p1_layout: BoxLayout
     p2_layout: BoxLayout
     p3_layout: BoxLayout
     p4_layout: BoxLayout
+    relative_layout: BoxLayout
+
     # Gaussian Params
     g_amplitude: LedsStageTextInput
     g_x_mean: LedsStageTextInput
@@ -1218,7 +1222,7 @@ class LedsStageProgramWidget(BoxLayout):
         self.modeSpinner.text = self.mode.value
         self._popup: Popup = None
         
-        self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout]
+        self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout, self.relative_layout]
         
         self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout, self.g_relative_layout]
         
@@ -1311,7 +1315,7 @@ class LedsStageProgramWidget(BoxLayout):
             quadVertex = [p1, p2, p3, p4]
 
             # Update DAQStageProgram variables
-            self.app.daqControl.daqStageProgram.update(mode= self.mode, quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= self.constanttextinput.value)
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= self.constanttextinput.value, isFourPointRelative= self.relative.active)
 
         elif self.mode == StageProgramMode.Gaussian: 
             # Parse values
@@ -1333,7 +1337,7 @@ class LedsStageProgramWidget(BoxLayout):
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
 
 
-class GaussianRelativePositionSwitch(Switch):
+class RelativePositionSwitch(Switch):
     configKey = StringProperty()
     root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
 
@@ -1350,7 +1354,7 @@ class GaussianRelativePositionSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        if super(GaussianRelativePositionSwitch, self).on_touch_up(touch):
+        if super(RelativePositionSwitch, self).on_touch_up(touch):
 
             self.app.config.set('LedsControl', self.configKey, int(self.active))
             self.app.config.write()
@@ -4226,6 +4230,7 @@ class GlowTrackerApp(App):
             'p4x': 0,
             'p4y': 0,
             'p4v': 0,
+            'relative': 'true',
             'g_amplitude': 0,
             'g_x_mean': 0,
             'g_x_sigma': 0,

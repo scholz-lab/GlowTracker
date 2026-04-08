@@ -444,6 +444,13 @@
     },
     {
         "type": "bool",
+        "title": "FourPoint Relative Position",
+        "desc": "Is the bottom-left corner of the FourPoint relative to the start-Recording position",
+        "section": "LedsControl",
+        "key": "relative"
+    },
+    {
+        "type": "bool",
         "title": "Gaussian Relative Position",
         "desc": "Are the gaussian means relative to the start-Recording position",
         "section": "LedsControl",
