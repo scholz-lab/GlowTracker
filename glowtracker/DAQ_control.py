@@ -393,7 +393,8 @@ class DAQStageProgram():
         """
         stageRange = [160, 160]
 
-        isRelativeToStart = self.isFourPointRelative or self.isGaussianRelative
+        isRelativeToStart = (self.mode == StageProgramMode.FourPoint and self.isFourPointRelative) \
+                            or (self.mode == StageProgramMode.Gaussian and self.isGaussianRelative)
         
         # Allocate value map
         valMapShape = [stageRange[0] + 1, stageRange[1] + 1, 1]

@@ -1225,6 +1225,9 @@ class LedsStageProgramWidget(BoxLayout):
         self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout, self.relative_layout]
         
         self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout, self.g_relative_layout]
+
+        # Temporary containing to keep the removed widget alive
+        self._tempContainer = BoxLayout()
         
         self.initModeWidget()
         self.updateLedStageProgram()
@@ -1248,11 +1251,13 @@ class LedsStageProgramWidget(BoxLayout):
             # Remove Gaussian params widgets
             for widget in self.gaussianPointParamsWidgets:
                 stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
             
         elif self.mode == StageProgramMode.Gaussian:
             # Remove FourPoint params widgets
             for widget in self.fourPointParamWidgets:
                 stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
         
 
     def updateExteriorChoice(self) -> None:
@@ -1283,9 +1288,11 @@ class LedsStageProgramWidget(BoxLayout):
                 # Remove Gaussian params widgets
                 for widget in self.gaussianPointParamsWidgets:
                     stacklayout.remove_widget(widget= widget)
-                
+                    self._tempContainer.add_widget(widget= widget)
+
                 # Add FourPoint params widgets
                 for widget in self.fourPointParamWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
                     stacklayout.add_widget(widget= widget)
 
             elif self.mode == StageProgramMode.Gaussian:
@@ -1293,9 +1300,11 @@ class LedsStageProgramWidget(BoxLayout):
                 # Remove FourPoint params widgets
                 for widget in self.fourPointParamWidgets:
                     stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
                 
                 # Add Gaussian params widgets
                 for widget in self.gaussianPointParamsWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
                     stacklayout.add_widget(widget= widget)
         
         # Save to config
