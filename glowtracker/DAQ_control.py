@@ -429,7 +429,6 @@ class DAQStageProgram():
 
         im = plt.imshow(valMap, cmap= 'magma', extent= extent)
         plt.colorbar(im)
-        plt.gca().set_facecolor("yellow")
         
         # Plot landmarks
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
@@ -450,16 +449,51 @@ class DAQStageProgram():
 
         # Set plot limits and labels
         if isRelativeToStart:
-            plt.xlim(-stageRange[0], stageRange[0])
-            plt.ylim(-stageRange[1], stageRange[1])
 
+            # Find min, max
+            btmLeft = np.zeros([2], np.float32)
+            topRight = np.zeros([2], np.float32)
+
+            if self.mode == StageProgramMode.FourPoint:
+                
+                for vertex in self.quadVertex:
+                    btmLeft = np.where(btmLeft > vertex.point, vertex.point, btmLeft)
+                    topRight = np.where(topRight < vertex.point, vertex.point, topRight)
+
+
+            elif self.mode == StageProgramMode.Gaussian:
+
+                span = 2
+
+                btmLeft[0] = -self.gaussianParams.x_sigma * span + self.gaussianParams.x_mean
+                btmLeft[1] = -self.gaussianParams.y_sigma * span + self.gaussianParams.y_mean
+                topRight[0] = self.gaussianParams.x_sigma * span + self.gaussianParams.x_mean
+                topRight[1] = self.gaussianParams.y_sigma * span + self.gaussianParams.y_mean
+
+                # Also check bound with origin
+                btmLeft = np.where(btmLeft > np.zeros([2]), np.zeros([2]), btmLeft)
+                topRight = np.where(topRight < np.zeros([2]), np.zeros([2]), topRight)
+                
+
+            # Add padding
+            btmLeft = btmLeft - 10
+            topRight = topRight + 10
+            
+            plt.xlim(btmLeft[0], topRight[0])
+            plt.ylim(btmLeft[1], topRight[1])
+            
         else:
             plt.xlim(0, stageRange[0])
             plt.ylim(0, stageRange[1])
 
         plt.xlabel('Stage X (mm)')
         plt.ylabel('Stage Y (mm)')
-        plt.title("Stage position to Voltage map")
+
+        title = "Stage position to Voltage map"
+        if isRelativeToStart:
+            title = "Relative stage-position to Voltage map"
+
+        plt.title(title)
 
         # Add grid and legend
         plt.grid(True)

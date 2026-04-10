@@ -4463,7 +4463,6 @@ class GlowTrackerApp(App):
 
         # Very crude estimation. Need to consult Monika
         spf = 1 / 30.0
-        print(f"velocity_cm_per_sec {velocity_cm_per_sec}")
         extrapolatedPos = np.array(self.coords) + spf * velocity_cm_per_sec * 10
         self.coords = extrapolatedPos.tolist()
 
