@@ -2,7 +2,7 @@ from __future__ import annotations
 import LabJackPython
 import u3
 import re
-from enum import StrEnum
+from enum import Enum
 from collections import OrderedDict
 from copy import deepcopy
 from typing import List
@@ -14,18 +14,18 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
 
 
-class LEDsMode(StrEnum):
+class LEDsMode(Enum):
     Off = 'Off'
     Sequencer = 'Sequencer'
     StageProgram = 'StageProgram'
 
 
-class SequencerMode(StrEnum):
+class SequencerMode(Enum):
     Frame = 'Frame'
     Time = 'Time'
 
 
-class StageProgramMode(StrEnum):
+class StageProgramMode(Enum):
     FourPoint = 'FourPoint'
     Gaussian = 'Gaussian'
 

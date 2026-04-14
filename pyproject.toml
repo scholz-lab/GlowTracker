@@ -35,7 +35,7 @@ maintainers = [
 ]
 readme = "README.md"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "kivy>=2.2.0",
     "matplotlib",
