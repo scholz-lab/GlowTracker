@@ -47,7 +47,7 @@ dependencies = [
     "zaber-motion",
     "overrides",
     "pandas",
-    "pypylon",
+    "pypylon>=26.1.0",
     "itk-elastix",
     "platformdirs",
     "pyparsing",
