@@ -4224,7 +4224,7 @@ class GlowTrackerApp(App):
         config.setdefaults('LedsControl', {
             'mode': 'Off',
             'ledsequencescript': '',
-            'stageprogrammode': 'FourPoint',
+            'stageprogrammode': 'Gaussian',
             'exterior': 'Zero',
             'constanttextinput': 0,
             'p1x': 0,
@@ -4248,6 +4248,7 @@ class GlowTrackerApp(App):
             'g_relative': 'true'
         })
 
+        
         config.setdefaults('Developer', {
             'showfps': 'false'
         })

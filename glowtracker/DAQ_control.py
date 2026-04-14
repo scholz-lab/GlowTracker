@@ -265,7 +265,7 @@ class GaussianParams():
 class DAQStageProgram():
 
     def __init__(self):
-        self.mode: StageProgramMode = StageProgramMode.FourPoint
+        self.mode: StageProgramMode = StageProgramMode.Gaussian
         self.quadVertex: List[Vertex2D] = []
         self.exterior = Exterior.Zero
         self.exteriorConstant: float = 0
