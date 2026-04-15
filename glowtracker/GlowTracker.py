@@ -3845,6 +3845,7 @@ class DualColorViewModeQuickButton(ToggleButton):
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
     stage_connection = ObjectProperty(None)
+    daq_connection = ObjectProperty(None)
 
     def __init__(self,  **kwargs):
         super(Connections, self).__init__(**kwargs)
@@ -3856,6 +3857,7 @@ class Connections(BoxLayout):
         """
         self.stage_connection.state = 'down'
         self.cam_connection.state = 'down'
+        self.daq_connection.state = 'down'
 
 
     def connectCamera(self):
