@@ -3089,6 +3089,7 @@ class RuntimeControls(BoxLayout):
         self.liveFocusThread = None
         self.focus_motion = 0
         self.isTracking = False
+        self.isShowTrackingDialogueFirstTime = True
         self.coord_updateevent: ClockEvent | None = None
         # Center of Mass offset in current tracking frame
         self.cmsOffset_x: float | None = None
@@ -3298,14 +3299,19 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None and camera.IsGrabbing():
-             # get config values
-            # find an animal and center it once by moving the stage
-            self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
-                            size_hint=(0.5, 0.25))
-            self._popup.open()
-            # make a capture circle - all of this happens in Image Widget, and record offset from center, then dispatch the centering routine
-            #schedule a tracking loop
+        # if camera is not None and stage is not None and camera.IsGrabbing():
+        if True:
+
+            if self.isShowTrackingDialogueFirstTime:
+                self.isShowTrackingDialogueFirstTime = False
+
+                self._popup = WarningPopup(
+                    title="Click on animal", 
+                    text = 'Click on an animal to start tracking it.',
+                    closeTime= 4,
+                    size_hint=(0.5, 0.25)
+                )
+                self._popup.open()
             
         else:
             self._popup = WarningPopup(title="Tracking", text='Tracking requires a stage, a camera and the camera needs to be grabbing.',
