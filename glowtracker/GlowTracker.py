@@ -1605,6 +1605,14 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.ExposureTime.Value = float(self.exposure)
             self.exposure = camera.ExposureTime()
+
+            # If current framerate exceed the new maximum framerate, cap it
+            maxFramerate = camera.ResultingFrameRate()
+            if self.framerate > maxFramerate:
+                self.framerate = maxFramerate
+                camera.AcquisitionFrameRateEnable.Value = True
+                camera.AcquisitionFrameRate.Value = float(self.framerate)
+
         else:
             self.exposure = 0
 
