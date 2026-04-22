@@ -47,10 +47,11 @@ dependencies = [
     "zaber-motion",
     "overrides",
     "pandas",
-    "pypylon",
+    "pypylon>=26.1.0",
     "itk-elastix",
     "platformdirs",
-    "pyparsing"
+    "pyparsing",
+    "labjackpython"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",
