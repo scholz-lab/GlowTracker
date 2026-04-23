@@ -4548,6 +4548,18 @@ class GlowTrackerApp(App):
 
         if section == 'Stage':
 
+            # Special case for 'port' changed.
+            #   We would like switch to the new port regardless of having a current stage-connection or not.
+            if key == 'port':
+                if self.stage is not None:
+                    # Disconnect the current
+                    # self.root.ids.rightcolumn.ids.connections.disconnectStage()
+                    self.root.ids.rightcolumn.ids.connections.stage_connection.state = 'normal'
+                # Connect to the new port
+                # self.root.ids.rightcolumn.ids.connections.connectStage()
+                self.root.ids.rightcolumn.ids.connections.stage_connection.state = 'down'
+
+
             if self.stage is not None:
 
                 # Update the stage settings
