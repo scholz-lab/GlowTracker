@@ -17,6 +17,12 @@ We can test the package by install directly and locally form
 ```bash
 python -m pip install dist/glowtracker-[version].tar.gz
 ```
+or
+```bash
+uv pip install dist/glowtracker-[version].tar.gz
+```
+Add `--python 3.10` to select a specific python version e.g. 3.10
+
 
 # Running
 Once the package is installed, the application can be started by

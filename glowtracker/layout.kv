@@ -34,7 +34,7 @@ MainWindow:
                 font_size: 18
                 color: '#8e0045ff'
 
-                text: "v. 0.12.1"
+                text: "v. 1.0.0"
                 id: versionlabel
 
                 pos_hint: {'x':.0, 'y':.0}
@@ -120,10 +120,10 @@ MainWindow:
         height: 30
         multiline: False
         text: root.savefile
-        on_text_validate: root.path_validate()
+        on_text_validate: root.createRecordingPath()
         on_focus: app.toggle_key_binding(self.focus)
         on_focus: 
-            if not self.focus: root.path_validate()  
+            if not self.focus: root.createRecordingPath()  
                 
     MyButton:
         text: 'Save Location'
@@ -645,6 +645,7 @@ MainWindow:
     MyButton:
         size_hint: (1, 0.1)
         text: 'LEDs'
+        on_release: root.open_leds()
     MyLabel:
         text: 'Hardware'
         size_hint: (1, 0.1)
@@ -764,7 +765,7 @@ MainWindow:
         orientation: 'horizontal'
 
         CodeInput:
-            id: macroscripttext
+            id: scripttext
             text: ''
             size_hint_x: 0.9
             do_wrap: False
@@ -820,15 +821,15 @@ MainWindow:
                 size_hint_y: 0.1
                 
 
-<LoadMacroScriptWidget>:
+<LoadScriptWidget>:
     BoxLayout:
         size: root.size
         pos: root.pos
         orientation: "vertical"
         FileChooserListView:
             id: filechooser
+            dirselect: False
             path: ''
-            # dirselect: True
             # path: '/home'
             on_submit: root.load(self.selection)
 
@@ -842,6 +843,7 @@ MainWindow:
             Button:
                 text: "Load"
                 on_release: root.load(filechooser.selection)
+
 
 <CalibrationTabPanel>:
     size: root.size
@@ -1031,15 +1033,542 @@ MainWindow:
             on_release: root.closeCallback()
 
 
+<LedsControlTabPanelHolder>:
+
+    mode: mode
+
+    LedsControlTabPanel:
+        id: ledscontroltabpanel
+        size_hint: 1, 1
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint: None, None
+        size: self.minimum_size
+        spacing: '6dp'
+        pos_hint: {"right": 1, "top": 1}
+
+        Label:
+            text: '[b][color=018EFF]LEDs Mode[/color][/b]'
+            size_hint_x: None
+            width: self.texture_size[0]
+            markup: True
+
+
+        Spinner:
+            size_hint: None, None
+            size: '100dp', '40dp'
+            id: mode
+            text: 'Off'
+            values: 'Off', 'Sequencer', 'StageProgram'
+            on_text: root.updateMode()
+            on_kv_post: self.text = app.config.get('LedsControl', 'mode')
+
+
+
+<LedsControlTabPanel>:
+    size: root.size
+    pos: root.pos
+    do_default_tab: False
+    tab_width: 220
+            
+    TabbedPanelItem:
+        text: 'Leds Sequencer'
+
+        LedsControlWidget:
+            id: ledssequencer
+
+    TabbedPanelItem:
+        text: 'Leds-Stage program'
+        
+        LedsStageProgramWidget:
+            id: ledsstageprogram
+
+
+<LedsControlWidget>:
+    size: root.size
+    pos: root.pos
+    
+    orientation: 'vertical'
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: 0.1
+
+        TextInput:
+            id: ledsscriptfile
+            text: app.config.get('LedsControl', 'ledsequencescript')
+            size_hint_x: 0.8
+        
+        Button:
+            text: "Load"
+            on_release: root.openLoadLedsControlWidget()
+            size_hint_x: None
+
+        Button:
+            text: "Save"
+            on_release: root.saveScript()
+            size_hint_x: None
+
+    BoxLayout:
+        orientation: 'horizontal'
+
+        CodeInput:
+            id: scripttext
+            text: ''
+            size_hint_x: 0.9
+            do_wrap: False
+            auto_indent: True
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: None
+
+            BoxLayout:
+                # Filler
+                size_hint_y: 0.9
+
+            Button:
+                text: "Close"
+                on_release: root.closeCallback()
+                size_hint_y: 0.1
+
+
+<LedsStageProgramWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: dp(10)
+    exteriorSpinner: exteriorSpinner
+
+    modeSpinner: modeSpinner
+    constanttextinput: constanttextinput
+    p1x: p1x
+    p1y: p1y
+    p1v: p1v
+    p2x: p2x
+    p2y: p2y
+    p2v: p2v
+    p3x: p3x
+    p3y: p3y
+    p3v: p3v
+    p4x: p4x
+    p4y: p4y
+    p4v: p4v
+    relative: relative
+    exterior_layout: exterior_layout
+    fourpoint_header_layout: fourpoint_header_layout
+    p1_layout: p1_layout
+    p2_layout: p2_layout
+    p3_layout: p3_layout
+    p4_layout: p4_layout
+    relative_layout: relative_layout
+
+    g_amplitude: g_amplitude
+    g_x_mean: g_x_mean
+    g_x_sigma: g_x_sigma
+    g_y_mean: g_y_mean
+    g_y_sigma: g_y_sigma
+    g_relative: g_relative
+    g_amplitude_layout: g_amplitude_layout
+    g_x_mean_layout: g_x_mean_layout
+    g_x_sigma_layout: g_x_sigma_layout
+    g_y_mean_layout: g_y_mean_layout
+    g_y_sigma_layout: g_y_sigma_layout
+    g_relative_layout: g_relative_layout
+
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: dp(10)
+
+        StackLayout:
+            id: stacklayout
+            orientation: 'tb-lr'
+            size_hint_x: 0.5
+            spacing: [0, dp(5)]
+            
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+
+                Label:
+                    text: 'Mode'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+                
+                Spinner:
+                    id: modeSpinner
+                    text: 'Gaussian'
+                    values: 'Gaussian', 'FourPoint'
+                    on_text: root.updateMode(); root.updateLedStageProgram()
+                    size_hint_x: None
+                    width: dp(100)
+                
+            BoxLayout:
+                id: exterior_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Exterior'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+                
+                Spinner:
+                    id: exteriorSpinner
+                    text: 'Zero'
+                    values: 'Zero', 'Constant'
+                    on_text: root.updateExteriorChoice(); root.updateLedStageProgram()
+                    size_hint_x: None
+                    width: dp(100)
+                
+                LedsStageTextInput:
+                    id: constanttextinput
+                    on_kv_post: root.updateExteriorChoice()
+                    root: root
+                    configKey: 'constanttextinput'
+
+            BoxLayout:
+                id: fourpoint_header_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    id: padder
+                    size_hint_x: None
+                    width: dp(100)
+
+                Label:
+                    text: 'x (mm)'
+                
+                Label:
+                    text: 'y (mm)'
+                
+                Label:
+                    text: 'Voltage'
+
+            BoxLayout:
+                id: p1_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Point 1'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: p1x
+                    configKey: 'p1x'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p1y
+                    configKey: 'p1y'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p1v
+                    configKey: 'p1v'
+                    root: root
+
+            BoxLayout:
+                id: p2_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Point 2'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: p2x
+                    configKey: 'p2x'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p2y
+                    configKey: 'p2y'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p2v
+                    configKey: 'p2v'
+                    root: root
+            
+            BoxLayout:
+                id: p3_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Point 3'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: p3x
+                    configKey: 'p3x'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p3y
+                    configKey: 'p3y'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p3v
+                    configKey: 'p3v'
+                    root: root
+
+            BoxLayout:
+                id: p4_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Point 4'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: p4x
+                    configKey: 'p4x'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p4y
+                    configKey: 'p4y'
+                    root: root
+                
+                LedsStageTextInput:
+                    id: p4v
+                    configKey: 'p4v'
+                    root: root
+            
+            BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Is relative to start Recording position'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    RelativePositionSwitch:
+                        id: relative
+                        configKey: 'relative'
+                        root: root
+            
+            BoxLayout:
+                id: g_amplitude_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Amplitude'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: g_amplitude
+                    configKey: 'g_amplitude'
+                    root: root
+            
+            BoxLayout:
+                id: g_x_mean_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'X mean'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: g_x_mean
+                    configKey: 'g_x_mean'
+                    root: root
+            
+            BoxLayout:
+                id: g_x_sigma_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'X sigma'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: g_x_sigma
+                    configKey: 'g_x_sigma'
+                    root: root
+            
+
+            BoxLayout:
+                id: g_y_mean_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Y mean'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: g_y_mean
+                    configKey: 'g_y_mean'
+                    root: root
+            
+            
+            BoxLayout:
+                id: g_y_sigma_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Y sigma'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                LedsStageTextInput:
+                    id: g_y_sigma
+                    configKey: 'g_y_sigma'
+                    root: root
+            
+            BoxLayout:
+                id: g_relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Is relative to start Recording position'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    RelativePositionSwitch:
+                        id: g_relative
+                        configKey: 'g_relative'
+                        root: root
+            
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.5
+            Label:
+                text: 'Visualization'
+                size_hint_y: 0.1
+            Image:
+                id: visualizationplot
+    
+    BoxLayout:
+        size_hint_y: .08
+
+        BoxLayout:
+            size_hint_x: .5
+
+            AnchorLayout:
+                anchor_x: 'center'
+                anchor_y: 'center'
+                
+                Button:
+                    size_hint_x: 0.5
+                    text: "Update"
+                    on_release: root.updateLedStageProgram()
+                    background_color: [94.0/255, 190.0/255, 88.0/255, 1]
+        
+        BoxLayout:
+            size_hint_x: .3
+
+        Button:
+            text: "Close"
+            size_hint_x: .2
+            on_release: root.closeCallback()
+
+
+<LedsStageTextInput>:
+    multiline: False
+    input_filter: 'float'
+    base_direction: 'rtl'
+    size_hint_x: 1
+    write_tab: False
+
 ### display if hardware is connected successfully     
 <Connections>:
     orientation: 'vertical'
     size_hint: (0.3, 1)
     cam_connection: cam_connection
     stage_connection: stage_connection
+    daq_connection: daq_connection
+    
     Label:
         text: 'Camera'
-        size_hint: (1,0.5)
+        size_hint: (1,0.33)
     OnOffButton:
         id: cam_connection
         border: 0,0,0,0
@@ -1050,9 +1579,10 @@ MainWindow:
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
         on_state: root.connectCamera() if self.state=='down' else root.disconnectCamera()
+
     Label:
         text: 'Stage'
-        size_hint: (1,0.5)
+        size_hint: (1,0.33)
     OnOffButton:
         id: stage_connection 
         border: 0,0,0,0
@@ -1063,7 +1593,19 @@ MainWindow:
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
         on_state: root.connectStage() if self.state=='down' else root.disconnectStage()
-    
+
+    Label:
+        text: 'DAQ'
+        size_hint: (1,0.33)
+    DAQConnectionButton:
+        id: daq_connection 
+        border: 0,0,0,0
+        size_hint_x: 0.3
+        size_hint_y: None
+        height: self.width 
+        pos_hint: {'center_x': .5, 'center_y': .5}
+        background_normal: 'icons/connection_off.png'
+        background_down: 'icons/connection_on.png'
         
       
 #################################

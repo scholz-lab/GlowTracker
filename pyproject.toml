@@ -24,7 +24,7 @@ glowtracker = [
 
 [project]
 name = "glowtracker"
-version = "0.12.1"
+version = "1.0.0"
 description = "GlowTracker provides a graphical user interface to operate a microscope. The microscope is a hardware setup designed for tracking a small animal in bright field, single or dual epi-fluorescence imaging."
 authors = [
     { name="Monika Scholz", email="monika.scholz@mpinb.mpg.de" }
@@ -47,10 +47,11 @@ dependencies = [
     "zaber-motion",
     "overrides",
     "pandas",
-    "pypylon",
+    "pypylon>=26.1.0",
     "itk-elastix",
     "platformdirs",
-    "pyparsing"
+    "pyparsing",
+    "labjackpython"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

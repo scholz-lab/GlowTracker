@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 # Suppress kivy normal initialization logs in the beginning
 # for easier debugging
@@ -48,8 +50,10 @@ from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.slider import Slider
-from kivy.uix.behaviors import DragBehavior
+from kivy.uix.behaviors import DragBehavior, FocusBehavior
 from kivy.uix.switch import Switch
+from kivy.uix.spinner import Spinner
+from kivy.uix.stacklayout import StackLayout
 
 # 
 # IO, Utils
@@ -65,6 +69,8 @@ from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
+from zaber_motion.units import Units
+from zaber_motion.unit_table import UnitTable
 from pypylon import pylon
 import platformdirs 
 import shutil
@@ -77,9 +83,11 @@ from dataclasses import dataclass
 # 
 from Zaber_control import Stage, AxisEnum
 import Microscope_macros as macro
+from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
+from DAQ_control import DAQControl, LEDsMode, StageProgramMode, GaussianParams
 
 # 
 # Math
@@ -89,6 +97,9 @@ import numpy as np
 from skimage.io import imsave
 import cv2
 from scipy.stats import skew
+
+import gc
+
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -171,28 +182,30 @@ class LeftColumn(BoxLayout):
 
     def _do_setup(self, *l):
         self.savefile = self.app.config.get("Experiment", "exppath")
-        self.path_validate()
+        self.createRecordingPath()
         self.cameraConfigFile = self.app.config.get('Camera', 'default_settings')
         self.apply_cam_settings()
 
 
-    def path_validate(self):
-        p = Path(self.saveloc.text)
-        if p.exists() and p.is_dir():
-            self.app.config.set("Experiment", "exppath", self.saveloc.text)
-            self.app.config.write()
-        # check if the parent dir exists, then create the folder
-        elif p.parent.exists():
-            p.mkdir(mode=0o777, parents=False, exist_ok=True)
-        else:
-            self.saveloc.text = self.savefile
-        self.app.config.set("Experiment", "exppath", self.saveloc.text)
+    def createRecordingPath(self) -> None:
+
+        relativePath = self.saveloc.text
+        absPath = os.path.abspath(relativePath)
+
+        # Create the path if not yet exists
+        if not os.path.exists(absPath) or not os.path.isdir(absPath):
+            os.makedirs(name= absPath, mode=0o777, exist_ok= True)
+
+        # Save to config
+        self.app.config.set("Experiment", "exppath", absPath)
         self.app.config.write()
-        self.savefile = self.app.config.get("Experiment", "exppath")
+
+        self.savefile = absPath
+        print(f'Set recording path to {self.savefile}')
+        
         # reset the stage keys
         self.app.bind_keys()
-        print('saving path changed')
-
+    
 
     def dismiss_popup(self):
         self.app.bind_keys()
@@ -230,7 +243,7 @@ class LeftColumn(BoxLayout):
     def save(self, path, filename):
         self.savefile = os.path.join(path, filename)
         self.saveloc.text = (self.savefile)
-        self.path_validate()
+        self.createRecordingPath()
         self.dismiss_popup()
 
 
@@ -392,9 +405,27 @@ class RightColumn(BoxLayout):
             self._popup.open()
         
         else:
-            self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.',
-                            size_hint=(0.5, 0.25))
+            self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.', size_hint=(0.5, 0.25), closeTime= 5)
             self._popup.open()
+
+    
+    def open_leds(self):
+        """Open the LEDs Control Sequence widget popup.
+        """
+
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+
+        # Unbind keyboard events
+        self.app.unbind_keys()
+
+        # Create LedsControlTabPanel Widget
+        ledsControlTabPanelHolder = LedsControlTabPanelHolder()
+        ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
+        
+        # Launch the widget inside a popup window
+        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup.open()
 
 
 class MacroScriptWidgetPopup(DragBehavior, Popup):
@@ -431,7 +462,7 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
         Returns:
             has_been_handled(bool): Flag to indicate if the touch event has been handled or not to stop propagation.
         """
-        discardRegion: CodeInput = self.content.ids.macroscripttext
+        discardRegion: CodeInput = self.content.ids.scripttext
         
         if discardRegion.collide_point(*touch.pos):
             return discardRegion.on_touch_down(touch)
@@ -549,7 +580,7 @@ class MacroScriptWidget(BoxLayout):
         """Open a popup to load the macro script.
         """
         
-        loadWidget = LoadMacroScriptWidget(load= self._loadScriptWidgetCallback)
+        loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
 
@@ -559,7 +590,7 @@ class MacroScriptWidget(BoxLayout):
     
     def _loadScriptWidgetCallback(self, selection: list[str]):
         """Load the macro script from a list of given file path. Will choose only the first file.
-        Used for handler of LoadMacroScriptWidget.
+        Used for handler of LoadScriptWidget.
 
         Args:
             selection (list[str]): list of script file path
@@ -598,7 +629,7 @@ class MacroScriptWidget(BoxLayout):
         
         # Set display text
         self.ids.macroscriptfile.text = self.macroScriptFile
-        self.ids.macroscripttext.text = self.macroScript
+        self.ids.scripttext.text = self.macroScript
 
         # Set as recent script
         self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
@@ -609,7 +640,7 @@ class MacroScriptWidget(BoxLayout):
         """Save the current macro script into the same file (overwrite if exists).
         """
         file_path = self.ids.macroscriptfile.text
-        script = self.ids.macroscripttext.text
+        script = self.ids.scripttext.text
 
         try:
             # Convert to absolute path if it's a relative path
@@ -642,7 +673,7 @@ class MacroScriptWidget(BoxLayout):
 
         print(f'Running the macro script {self.macroScriptFile}.')
         try:
-            self.macroScriptExecutor.executeScript(self.ids.macroscripttext.text, self.finishedMacroScript)
+            self.macroScriptExecutor.executeScript(self.ids.scripttext.text, self.finishedMacroScript)
 
             # Disable the run button
             self.ids.runbutton.disabled = True
@@ -667,7 +698,7 @@ class MacroScriptWidget(BoxLayout):
         self.macroScriptExecutor.stop()
 
 
-class LoadMacroScriptWidget(BoxLayout):
+class LoadScriptWidget(BoxLayout):
     """Camera settings loading widget
     """
     load = ObjectProperty(None)
@@ -935,6 +966,483 @@ class DepthOfFieldCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
+class LedsControlTabPanelHolder(FloatLayout):
+
+    mode: Spinner
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ids.ledscontroltabpanel.init()
+
+    
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event for children' tab.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self.closeCallback = closeCallback
+        self.ids.ledscontroltabpanel.setCloseCallback( closeCallback )
+    
+    def updateMode(self):
+        print(self.mode.text)
+
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Update to config
+        app.config.set('LedsControl', 'mode', self.mode.text)
+        app.config.write()
+
+        # Update DAQControl
+        app.daqControl.ledsMode = LEDsMode[self.mode.text]
+
+
+class LedsControlTabPanel(TabbedPanel):
+    """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
+    """    
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+    
+    
+    def init(self):
+        self.ids.ledssequencer.init()
+        self.ids.ledsstageprogram.init()
+    
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event for children' tab.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self.closeCallback = closeCallback
+        self.ids.ledssequencer.setCloseCallback( closeCallback )
+        self.ids.ledsstageprogram.setCloseCallback( closeCallback )
+
+
+class LedsControlWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        super(LedsControlWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize MacroScriptExecutor
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+
+        self.ledsScript: str = ''
+        self._popup: Popup = None
+        self.ledsScriptFile: str = self.ids.ledsscriptfile.text
+        # Load the recent script
+        if self.ledsScriptFile != '':
+            self.loadScript(self.ledsScriptFile)
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+
+
+    def openLoadLedsControlWidget(self):
+        """Open a popup to load the script.
+        """
+        
+        loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
+
+        # Check if current file path is not empty then go to that path at the beginning,
+        #  and set loadWidget.ids.filechooser.path = ...
+        if self.ledsScriptFile != '':
+            loadWidget.ids.filechooser.path = self.ledsScriptFile
+
+        self._popup = Popup(title= "Load sequence file", content= loadWidget,
+            size_hint= (0.9, 0.9), auto_dismiss= False)
+
+        loadWidget.cancel = self._popup.dismiss
+        self._popup.open()
+
+    
+    def _loadScriptWidgetCallback(self, selection: list[str]):
+        """Load the macro script from a list of given file path. Will choose only the first file.
+        Used for handler of LoadScriptWidget.
+
+        Args:
+            selection (list[str]): list of script file path
+        """
+        # Close the loading widget
+        if self._popup is not None:
+            self._popup.dismiss()
+
+        if len(selection) == 0:
+            return
+        
+        self.loadScript(selection[0])
+    
+    
+    def loadScript(self, filePath: str):
+        """Load the script from a given file path.
+
+        Args:
+            filePath (str): _description_
+        """
+        # Get the absolute file path
+        self.ledsScriptFile = os.path.abspath(filePath)
+        
+        # Load the script text
+
+        try:
+            with open(self.ledsScriptFile, 'r') as file:
+                self.ledsScript = file.read()
+
+            print(f'Loaded LEDs control script {self.ledsScriptFile}')
+
+        except FileNotFoundError:
+            print(f'The file {self.ledsScriptFile} was not found.')
+
+        except IOError:
+            print(f'An error occurred while reading the file {self.ledsScriptFile}.')
+        
+        # Set display text
+        self.ids.ledsscriptfile.text = self.ledsScriptFile
+        self.ids.scripttext.text = self.ledsScript
+
+        # Set as recent script
+        self.app.config.set('LedsControl', 'ledsequencescript', self.ledsScriptFile)
+        self.app.config.write()
+
+        # Parse text to command
+        try:
+            self.app.daqControl.parseTextScript(self.ledsScript)
+
+        except Exception as e:
+            print(e)
+            return None
+        
+
+    def saveScript(self):
+        """Save the current macro script into the same file (overwrite if exists).
+        """
+        file_path = self.ids.ledsscriptfile.text
+        # Copy text from inputtext to self
+        self.ledsScript = self.ids.scripttext.text
+
+        try:
+            # Convert to absolute path if it's a relative path
+            abs_file_path = os.path.abspath(file_path)
+            
+            # Ensure the directory exists
+            directory = os.path.dirname(abs_file_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            
+            # Open the file in overwrite mode, creating it if it doesn't exist
+            with open(abs_file_path, 'w') as file:
+                file.write(self.ledsScript)
+
+            # Set as recent script
+            self.app.config.set('LedsControl', 'ledsequencescript', self.ids.ledsscriptfile.text)
+
+            print(f"Saved the script {file_path}")
+
+        except IOError as e:
+            print(f"Error saving to {file_path}: {e}")
+
+        except Exception as e:
+            print(f"Error saving LED script: {e}")
+
+        # Then update the current script to daqControl
+        try:
+            self.app.daqControl.parseTextScript(self.ledsScript)
+
+        except Exception as e:
+            print(e)
+            return None
+    
+
+class LedsStageProgramWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+    exteriorSpinner: Spinner
+
+    # FourPoint params
+    modeSpinner: Spinner
+    constanttextinput: LedsStageTextInput
+    p1x: LedsStageTextInput; p1y: LedsStageTextInput; p1v: LedsStageTextInput
+    p2x: LedsStageTextInput; p2y: LedsStageTextInput; p2v: LedsStageTextInput
+    p3x: LedsStageTextInput; p3y: LedsStageTextInput; p3v: LedsStageTextInput
+    p4x: LedsStageTextInput; p4y: LedsStageTextInput; p4v: LedsStageTextInput
+    relative: Switch
+    exterior_layout: BoxLayout
+    fourpoint_header_layout: BoxLayout
+    p1_layout: BoxLayout
+    p2_layout: BoxLayout
+    p3_layout: BoxLayout
+    p4_layout: BoxLayout
+    relative_layout: BoxLayout
+
+    # Gaussian Params
+    g_amplitude: LedsStageTextInput
+    g_x_mean: LedsStageTextInput
+    g_x_sigma: LedsStageTextInput
+    g_y_mean: LedsStageTextInput
+    g_y_sigma: LedsStageTextInput
+    g_relative: Switch
+    g_amplitude_layout: BoxLayout
+    g_x_mean_layout: BoxLayout
+    g_x_sigma_layout: BoxLayout
+    g_y_mean_layout: BoxLayout
+    g_y_sigma_layout: BoxLayout
+    g_relative_layout: BoxLayout
+
+    def __init__(self, **kwargs):
+        super(LedsStageProgramWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize 
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+        self.exterior = macro.Exterior[self.app.config.get('LedsControl', 'exterior')]
+        self.mode = StageProgramMode[self.app.config.get('LedsControl', 'stageprogrammode')]
+        self.modeSpinner.text = self.mode.value
+        self._popup: Popup = None
+        
+        self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout, self.relative_layout]
+        
+        self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout, self.g_relative_layout]
+
+        # Temporary containing to keep the removed widget alive
+        self._tempContainer = BoxLayout()
+        
+        self.initModeWidget()
+        self.updateLedStageProgram()
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+
+    
+    def initModeWidget(self) -> None:
+        """On startup gui, remove other modes' unrelated widgets
+        """
+        stacklayout: StackLayout = self.ids.stacklayout
+
+        if self.mode == StageProgramMode.FourPoint:
+            # Remove Gaussian params widgets
+            for widget in self.gaussianPointParamsWidgets:
+                stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+            
+        elif self.mode == StageProgramMode.Gaussian:
+            # Remove FourPoint params widgets
+            for widget in self.fourPointParamWidgets:
+                stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+        
+
+    def updateExteriorChoice(self) -> None:
+
+        # Parse choice text to enum
+        self.exterior = macro.Exterior[self.exteriorSpinner.text]
+            
+        # Enable constanttextinput if choice is Constant
+        if self.exterior == macro.Exterior.Constant:
+            self.constanttextinput.disabled = False
+
+        else:
+            self.constanttextinput.disabled = True
+        
+    
+    def updateMode(self) -> None:
+
+        # Parse choice text to enum
+        prevMode = self.mode
+        self.mode = StageProgramMode[self.modeSpinner.text]
+
+        # Update GUI
+        if prevMode != self.mode:
+
+            stacklayout: StackLayout = self.ids.stacklayout
+
+            if self.mode == StageProgramMode.FourPoint:
+                # Remove Gaussian params widgets
+                for widget in self.gaussianPointParamsWidgets:
+                    stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+
+                # Add FourPoint params widgets
+                for widget in self.fourPointParamWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    stacklayout.add_widget(widget= widget)
+
+            elif self.mode == StageProgramMode.Gaussian:
+                
+                # Remove FourPoint params widgets
+                for widget in self.fourPointParamWidgets:
+                    stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+                
+                # Add Gaussian params widgets
+                for widget in self.gaussianPointParamsWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    stacklayout.add_widget(widget= widget)
+        
+        # Save to config
+        self.app.config.set('LedsControl', 'stageprogrammode', self.modeSpinner.text)
+        self.app.config.write()
+
+
+    def updateLedStageProgram(self) -> None:
+
+        if self.mode == StageProgramMode.FourPoint:
+            # Parse values
+            p1 = Vertex2D(np.array([self.p1x.value, self.p1y.value], np.float32), self.p1v.value, 'P1')
+            p2 = Vertex2D(np.array([self.p2x.value, self.p2y.value], np.float32), self.p2v.value, 'P2')
+            p3 = Vertex2D(np.array([self.p3x.value, self.p3y.value], np.float32), self.p3v.value, 'P3')
+            p4 = Vertex2D(np.array([self.p4x.value, self.p4y.value], np.float32), self.p4v.value, 'P4')
+
+            quadVertex = [p1, p2, p3, p4]
+
+            # Update DAQStageProgram variables
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= self.constanttextinput.value, isFourPointRelative= self.relative.active)
+
+        elif self.mode == StageProgramMode.Gaussian: 
+            # Parse values
+            gaussianParams = GaussianParams(
+                amplitude= self.g_amplitude.value,
+                x_mean= self.g_x_mean.value,
+                x_sigma= self.g_x_sigma.value,
+                y_mean= self.g_y_mean.value,
+                y_sigma= self.g_y_sigma.value
+            )
+
+            # Update DAQStageProgram variables
+            self.app.daqControl.daqStageProgram.update(mode= self.mode, gaussianParams= gaussianParams, isGaussianRelative= self.g_relative.active)
+
+        # Generate value map plot
+        valMapPlot = self.app.daqControl.daqStageProgram.generateValueMapPlot()
+        
+        # Show the plot
+        self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
+
+
+class RelativePositionSwitch(Switch):
+    configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
+
+    def on_kv_post(self, *args):
+        self.app = App.get_running_app()
+        self.active = self.app.config.getboolean('LedsControl', self.configKey)
+
+    
+    @override
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'self.configKey',
+            and call root.updateLedStageProgram()
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        if super(RelativePositionSwitch, self).on_touch_up(touch):
+
+            self.app.config.set('LedsControl', self.configKey, int(self.active))
+            self.app.config.write()
+
+            self.root.updateLedStageProgram()
+
+            return True
+    
+
+class LedsStageTextInput(TextInput):
+    configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
+
+    def on_kv_post(self, *args):
+        self.app = App.get_running_app()
+        self.text = self.app.config.get('LedsControl', self.configKey)
+        self.value = float(self.text)
+
+
+    def _validate(self) -> bool:
+        """Validate if self.text can be interpreted as a numerical value. If successful, self.value is updated.
+        
+        Returns:
+            bool: True if a number. Otherwise, False.
+        """
+        value_float = float(0)
+
+        # Check if input is a number
+        try:
+            value_float = float(self.text)
+
+        except ValueError:
+            # The value is not a number
+            return False
+        
+        # Check if should display text in integer style or floating point style
+        try:
+            value_int = int(self.text)
+            self.value = value_int
+
+        except ValueError:
+            # We are here because we couldn't cast the value string to int, thus the value is a float
+            self.value = value_float
+
+        return True
+
+
+    @override
+    def on_text_validate(self, *args):
+        """Validate self.text. Then save to config and update LedStageProgram.
+        """
+        if self._validate():
+            self.app.config.set('LedsControl', self.configKey, self.value)
+            self.app.config.write()
+            self.root.updateLedStageProgram()
+        
+        else:
+            self.text = str(self.value)
+    
+
+    @override
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        """Intercept Tab to also validate the value
+        """
+        if keycode[1] == 'tab':
+            # Validate (same as pressing Enter)
+            self.dispatch('on_text_validate')
+
+            # Move focus to next widget
+            self.focus = False
+            next_focus = self.get_focus_next()
+            if next_focus:
+                next_focus.focus = True
+
+            return True
+
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
 class StageAxisController(BoxLayout):
     """Template class for stage axis controller widget.
     """    
@@ -1062,19 +1570,17 @@ class ContinuousSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        super(ContinuousSwitch, self).on_touch_up(touch)
+        if super(ContinuousSwitch, self).on_touch_up(touch):
 
-        recordingSettings: RecordingSettings = self.parent.parent
+            recordingSettings: RecordingSettings = self.parent.parent
 
-        if self.active:
-            self.app.config.set('Experiment', 'iscontinuous', True) 
-            recordingSettings.ids.duration.disabled = True
-            recordingSettings.ids.frames.disabled = True
+            self.app.config.set('Experiment', 'iscontinuous', int(self.active))
+            recordingSettings.ids.duration.disabled = self.active
+            recordingSettings.ids.frames.disabled = self.active
+            
+            self.app.config.write()
 
-        else:
-            self.app.config.set('Experiment', 'iscontinuous', False)
-            recordingSettings.ids.duration.disabled = False
-            recordingSettings.ids.frames.disabled = False
+            return True
 
 
 class CameraProperties(GridLayout):
@@ -1099,6 +1605,14 @@ class CameraProperties(GridLayout):
         if camera is not None:
             camera.ExposureTime.Value = float(self.exposure)
             self.exposure = camera.ExposureTime()
+
+            # If current framerate exceed the new maximum framerate, cap it
+            maxFramerate = camera.ResultingFrameRate()
+            if self.framerate > maxFramerate:
+                self.framerate = maxFramerate
+                camera.AcquisitionFrameRateEnable.Value = True
+                camera.AcquisitionFrameRate.Value = float(self.framerate)
+
         else:
             self.exposure = 0
 
@@ -1123,6 +1637,8 @@ class LiveAnalysisData():
     skewness: float = 0
     percentile_5: float = 0
     percentile_95: float = 0
+    # We need a locking mechanism here to manage race-condition of modifying LiveAnalysisData from both MainThread and SubThread e.g. when Main want to reset values while subthread is still computing them.
+    lock: Lock = Lock()
 
 
 class ImageAcquisitionButton(ToggleButton):
@@ -1140,7 +1656,7 @@ class ImageAcquisitionButton(ToggleButton):
         - startImageAcuisition()
         - acquisitionCondition()
 
-    in order to be functionable.
+    in order to be functional.
     """    
     
     def __init__(self, **kwargs):
@@ -1186,6 +1702,7 @@ class ImageAcquisitionButton(ToggleButton):
             - Stop the update display event.
             - Stop camera grabbing.
             - Stop the acquisition looping thread if not already.
+            - Reset GUI back 
         """        
         if self.camera is None:
             return
@@ -1206,8 +1723,19 @@ class ImageAcquisitionButton(ToggleButton):
         # reset scale of image
         self.app.root.ids.middlecolumn.ids.scalableimage.reset()
 
-        # Set self button state to normal
+        # Set self button state to normal.
         self.state = 'normal'
+
+        # Reset liveAnalysisData
+        liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
+        with liveAnalysisData.lock:
+            liveAnalysisData.minBrightness = 0
+            liveAnalysisData.maxBrightness = 0
+            liveAnalysisData.meanBrightness = 0
+            liveAnalysisData.medianBrightness = 0
+            liveAnalysisData.skewness = 0
+            liveAnalysisData.percentile_5 = 0
+            liveAnalysisData.percentile_95 = 0
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -1229,14 +1757,18 @@ class ImageAcquisitionButton(ToggleButton):
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
             
         fps = self.camera.ResultingFrameRate()
-        print("Grabbing Framerate:", fps)
+        print(f'Grabbing Framerate: {fps:.3f} fps')
 
         # Schedule a display update
         fps = self.app.config.getfloat('Camera', 'display_fps')
         self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
-        print(f'Displaying at {fps} fps')
+        print(f'Displaying at {fps:.3f} fps')
 
         returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+
+        # Register start acquisition time
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        imageAcquisitionManager.startTime = time.perf_counter()
 
         # Start image acquisition loop
         while self.acquisitionCondition():
@@ -1362,15 +1894,17 @@ class ImageAcquisitionButton(ToggleButton):
             # Crop to tracking region
             image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
 
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
         # Do we need to crop on tracking region? 
-        imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
-        imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
-        imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
-        imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        liveAnalysisData = imageAcquisitionManager.liveAnalysisData
+        with liveAnalysisData.lock:
+            imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
+            imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
+            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
+            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
@@ -1380,14 +1914,18 @@ class ImageAcquisitionButton(ToggleButton):
         """    
 
         # Update parent (ImageAcquisitionManager) images
-        self.parent.image = self.image
-        self.parent.imageTimeStamp = self.imageTimeStamp
-        self.parent.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
-        self.parent.dualColorMainSideImage = self.dualColorMainSideImage
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        imageAcquisitionManager.image = self.image
+        imageAcquisitionManager.imageTimeStamp = self.imageTimeStamp
+        imageAcquisitionManager.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
+        imageAcquisitionManager.dualColorMainSideImage = self.dualColorMainSideImage
+        imageAcquisitionManager.currentTime = time.perf_counter()
+        
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
+
         # Update live analysis data
-        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(self.parent.liveAnalysisData)
+        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(imageAcquisitionManager.liveAnalysisData)
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -1452,15 +1990,15 @@ class LiveViewButton(ImageAcquisitionButton):
 
         super().stopImageAcquisition()
 
-        print('Stop live view')
+        print('Stop Live view')
 
 
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None \
+        return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.state == 'down'
+            and (self.state == 'down')
 
 
 class RecordButton(ImageAcquisitionButton):
@@ -1483,9 +2021,31 @@ class RecordButton(ImageAcquisitionButton):
         self.dualColorRecordingMode: str = ''
         self.imageFilenameFormat: str = ''
         self.imageFilenameExtension: str = ''
-        self.prevLiveViewButtonState: str = ''
-        self.prevLiveAnalysisButtonState: str = ''
-    
+        self.prevLiveViewButtonState: str = 'normal'
+        self.prevLiveAnalysisButtonState: str = 'normal'
+        
+
+    @override
+    def on_state(self, widget: Widget, state: str):
+        """On state change callback
+
+        Args:
+            widget (Widget): the kivy widget, in this case is the same as the class instance itself.
+            state (str): the new state
+        """        
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.camera = self.app.camera
+
+        if self.camera is None:
+            return
+
+        if state == 'down':
+            self.startImageAcquisition()
+            
+        else:
+            if self.camera.IsGrabbing():
+                self.stopImageAcquisition()
+            
 
     @override
     def startImageAcquisition(self) -> None:
@@ -1501,17 +2061,25 @@ class RecordButton(ImageAcquisitionButton):
         self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
+        self.saveFilePath = self.app.root.ids.leftcolumn.savefile
+
+        # Store relevent states in case needs to turn back
+        imageAcquisitionManager: ImageAcquisitionManager = self.parent
+        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
+
+        # If there is no camera or recording file path doesn't exists
         if self.camera is None:
             self.state = 'normal'
             return
-
-        # Store relevent states
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
         
+        if not os.path.exists(self.saveFilePath):
+            print("The recording path doesn't exist. Can't start recording.")
+            self.state = 'normal'
+            return
+
         # Stop camera if already running and disable the LiveView button
         # If the camera is already running it in live view button,
         #   put the transition "OnHold" flag, and restart camera in Recording mode
-        self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
 
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
@@ -1522,7 +2090,6 @@ class RecordButton(ImageAcquisitionButton):
 
         self.runtimeControls.framecounter.value = 0
 
-        self.saveFilePath = self.app.root.ids.leftcolumn.savefile
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
@@ -1532,6 +2099,10 @@ class RecordButton(ImageAcquisitionButton):
         # Start a thread for saving images
         self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
         self.savingthread.start()
+
+        # Prep DAQ control
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+            self.app.daqControl.start( np.array(self.app.coords[:2]) )
 
         # Setup image acquisition thread parameters
         self.initRecordingParams()
@@ -1664,7 +2235,7 @@ class RecordButton(ImageAcquisitionButton):
             - Un-disabled (enable if) the LiveView button
         """        
 
-        if self.camera is None:
+        if self.camera is None or self.frameCounter == 0:
             return
         
         # If the live view button was previously running, 
@@ -1672,8 +2243,15 @@ class RecordButton(ImageAcquisitionButton):
         if self.prevLiveViewButtonState == 'down':
             self.camera.setIsOnHold(True)
 
+        print(f'Recorded {self.frameCounter} frames')
+
+        # Reset frame counter
+        self.frameCounter = 0
+
         # Stop the camera and clear values
         super().stopImageAcquisition()
+
+        print('Stopped recording')
 
         # Schedule closing coordinate file a bit later
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
@@ -1683,7 +2261,6 @@ class RecordButton(ImageAcquisitionButton):
             self.imageQueue.put(None)
             self.savingthread.join()
 
-        print("Stop recording")
 
         # Set LiveView button state back to enable.
         #   We need to do it here as a schedule event. Because this current function (stopImageAcquisition)
@@ -1700,14 +2277,18 @@ class RecordButton(ImageAcquisitionButton):
             self.parent.liveviewbutton.state = self.prevLiveViewButtonState
         
         Clock.schedule_once( resumeButtonsState )
+
+        # Reset the DAQ state
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+            self.app.daqControl.reset()
     
 
     @override
     def acquisitionCondition(self) -> bool:
 
-        return self.camera is not None \
+        return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
-            and self.isContinuous or (self.frameCounter < self.numberRecordframes) \
+            and (self.isContinuous or (self.frameCounter < self.numberRecordframes)) \
             and self.state == 'down'
 
     
@@ -1733,8 +2314,10 @@ class RecordButton(ImageAcquisitionButton):
         """
 
         # Write coordinate into file.
-        try:
-            self.coordinateFile.write(f"{self.frameCounter} \
+        if not self.coordinateFile.closed:
+            try:
+                with self.parent.liveAnalysisData.lock:
+                    self.coordinateFile.write(f"{self.frameCounter} \
 {self.imageTimeStamp} \
 {self.app.coords[0]} \
 {self.app.coords[1]} \
@@ -1747,9 +2330,9 @@ class RecordButton(ImageAcquisitionButton):
 {self.parent.liveAnalysisData.percentile_5} \
 {self.parent.liveAnalysisData.percentile_95} \n")
 
-        #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
-        except ValueError as e:
-            print(f'Error writing coordinateFile: {e}')
+            #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
+            except ValueError as e:
+                print(f'Error writing coordinateFile: {e}')
 
         # Put image(s) into the saving queue
         if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
@@ -1794,6 +2377,16 @@ class RecordButton(ImageAcquisitionButton):
                 
             self.camera.setIsOnHold(True)
 
+
+        # Trigger DAQ Control command
+        # Actually, is framecounter.value effected when frame skip?
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+
+            imageAcquisitionManager: ImageAcquisitionManager = self.parent
+
+            self.app.coords
+            self.app.daqControl.update(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, stagePosition= self.app.coords)
+
         super().receiveImageCallback()
     
 
@@ -1804,10 +2397,17 @@ class RecordButton(ImageAcquisitionButton):
         # Send signal to terminate recording workers
         self.imageQueue.put(None)
 
-        print(f'Recorded {self.numberRecordframes} frames.')
+        # Reset the DAQ state
+        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+            self.app.daqControl.reset()
 
-        # Call to recording-stopping procedure
-        self.stopImageAcquisition()
+        # There are two ways to reach this point:
+        #   a. Manually stop recording by clicking the Record button
+        #   b. Automatically after recorded target number of frames.
+        # We can distinguish between them by checking self.state
+        # In case b.) the button state will still be 'down' and therefore we need to call stopImageAcquisition() procedure.
+        if self.state == 'down':
+            self.stopImageAcquisition()
     
 
     def initRecordingParams(self):
@@ -1847,6 +2447,8 @@ class ImageAcquisitionManager(BoxLayout):
     imageRetrieveTimeStamp: float = 0
     dualColorMainSideImage: np.ndarray = np.zeros((1,1))
     liveAnalysisData: LiveAnalysisData = LiveAnalysisData()
+    startTime: float = 0
+    currentTime: float = 0
 
 
     def __init__(self,  **kwargs):
@@ -2495,6 +3097,7 @@ class RuntimeControls(BoxLayout):
         self.liveFocusThread = None
         self.focus_motion = 0
         self.isTracking = False
+        self.isShowTrackingDialogueFirstTime = True
         self.coord_updateevent: ClockEvent | None = None
         # Center of Mass offset in current tracking frame
         self.cmsOffset_x: float | None = None
@@ -2704,14 +3307,19 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        if camera is not None and stage is not None and camera.IsGrabbing():
-             # get config values
-            # find an animal and center it once by moving the stage
-            self._popup = WarningPopup(title="Click on animal", text = 'Click on an animal to start tracking it.',
-                            size_hint=(0.5, 0.25))
-            self._popup.open()
-            # make a capture circle - all of this happens in Image Widget, and record offset from center, then dispatch the centering routine
-            #schedule a tracking loop
+        # if camera is not None and stage is not None and camera.IsGrabbing():
+        if True:
+
+            if self.isShowTrackingDialogueFirstTime:
+                self.isShowTrackingDialogueFirstTime = False
+
+                self._popup = WarningPopup(
+                    title="Click on animal", 
+                    text = 'Click on an animal to start tracking it.',
+                    closeTime= 4,
+                    size_hint=(0.5, 0.25)
+                )
+                self._popup.open()
             
         else:
             self._popup = WarningPopup(title="Tracking", text='Tracking requires a stage, a camera and the camera needs to be grabbing.',
@@ -3121,8 +3729,8 @@ class LiveAnalysisQuickButton(ToggleButton):
         self.background_down = self.background_normal
 
         # Bind starting state to be the same as the config
-        app = App.get_running_app()
-        showliveanalysis = app.config.getboolean('LiveAnalysis', 'showliveanalysis')
+        self.app: GlowTrackerApp = App.get_running_app()
+        showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
 
         if showliveanalysis:
             self.state = 'down'
@@ -3136,27 +3744,39 @@ class LiveAnalysisQuickButton(ToggleButton):
     def on_state(self, button: ToggleButton, state: 'str'):
         
         # Update config and setting
-        app = App.get_running_app()
-
         # Pass on start up
-        if app.root is None:
+        if self.app.root is None:
             return
         
-        liveanalysislabel: LiveAnalysisLabel = app.root.ids.middlecolumn.ids.liveanalysislabel
+        liveanalysislabel: LiveAnalysisLabel = self.app.root.ids.middlecolumn.ids.liveanalysislabel
 
         if state == 'normal':
+            # Switch off
             self.text = self.normalText
-            app.config.set('LiveAnalysis', 'showliveanalysis', 0)
+            self.app.config.set('LiveAnalysis', 'showliveanalysis', 0)
             liveanalysislabel.disabled = True
             liveanalysislabel.opacity = 0
 
+            # Clear LiveAnalysis data
+            liveAnalysisData: LiveAnalysisData = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.liveAnalysisData
+            with liveAnalysisData.lock:
+                liveAnalysisData.minBrightness = 0
+                liveAnalysisData.maxBrightness = 0
+                liveAnalysisData.meanBrightness = 0
+                liveAnalysisData.medianBrightness = 0
+                liveAnalysisData.skewness = 0
+                liveAnalysisData.percentile_5 = 0
+                liveAnalysisData.percentile_95 = 0
+            
+
         else:
+            # Switch on
             self.text = self.downText
-            app.config.set('LiveAnalysis', 'showliveanalysis', 1)
+            self.app.config.set('LiveAnalysis', 'showliveanalysis', 1)
             liveanalysislabel.disabled = False
             liveanalysislabel.opacity = 1
         
-        app.config.write()
+        self.app.config.write()
     
 
 class DualColorViewModeQuickButtonLayout(BoxLayout):
@@ -3239,6 +3859,7 @@ class DualColorViewModeQuickButton(ToggleButton):
 class Connections(BoxLayout):
     cam_connection = ObjectProperty(None)
     stage_connection = ObjectProperty(None)
+    daq_connection = ObjectProperty(None)
 
     def __init__(self,  **kwargs):
         super(Connections, self).__init__(**kwargs)
@@ -3246,8 +3867,11 @@ class Connections(BoxLayout):
 
 
     def _do_setup(self, *l):
+        """Try connecting to all devices
+        """
         self.stage_connection.state = 'down'
         self.cam_connection.state = 'down'
+        self.daq_connection.state = 'down'
 
 
     def connectCamera(self):
@@ -3267,12 +3891,12 @@ class Connections(BoxLayout):
     def disconnectCamera(self):
         camera = App.get_running_app().camera
         if camera is not None:
-            print('disconnecting')
+            print('Disconnecting camera')
             camera.Close()
 
 
     def connectStage(self):
-        print('connecting Stage')
+        print('Connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
         maxspeed = float( app.config.get('Stage', 'maxspeed') )
@@ -3314,7 +3938,7 @@ class Connections(BoxLayout):
             
 
     def disconnectStage(self):
-        print('disconnecting Stage')
+        print('Disconnecting Stage')
         app = App.get_running_app()
         if app.stage is None:
             self.stage_connection.state = 'normal'
@@ -3325,6 +3949,91 @@ class Connections(BoxLayout):
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+    
+
+class DAQConnectionButton(ToggleButton):
+
+    def on_state(self, widget: Widget, state: str):
+
+        if state == 'down':
+            self.connectDaq()
+        
+        else:
+            self.disconnectDaq()
+
+
+    def connectDaq(self):
+        """Connect to a DAQ device.
+        """
+
+        print('Connecting DAQ')
+        app: GlowTrackerApp = App.get_running_app()
+
+        # Connect to device
+        app.daqControl = DAQControl.createAndConnectDaq()
+        
+        # If no device
+        if not app.daqControl.isConnected():
+            self.state = 'normal'
+            return
+        
+        app.daqControl.ledsMode = LEDsMode[app.config.get("LedsControl", "mode")]
+
+        # Load recent script
+        try:
+            recentScriptFile = app.config.get('LedsControl', 'ledsequencescript')
+            # Read the file
+            with open(recentScriptFile, 'r') as file:
+                recentScript = file.read()
+                # Parse the script
+                app.daqControl.parseTextScript(recentScript)
+                print(f'Loaded LEDs control script {recentScriptFile}')
+
+        except Exception as e:
+            print(f'Error loading recent LEDs control script: {e}')
+
+        # Load StageProgram properties
+        stageprogrammode = StageProgramMode[app.config.get('LedsControl', 'stageprogrammode')]
+        exterior = macro.Exterior[app.config.get('LedsControl', 'exterior')]
+        exteriorConstant = app.config.getfloat('LedsControl', 'constanttextinput')
+        p1x = app.config.getfloat('LedsControl', 'p1x')
+        p1y = app.config.getfloat('LedsControl', 'p1y')
+        p1v = app.config.getfloat('LedsControl', 'p1v')
+        p2x = app.config.getfloat('LedsControl', 'p2x')
+        p2y = app.config.getfloat('LedsControl', 'p2y')
+        p2v = app.config.getfloat('LedsControl', 'p2v')
+        p3x = app.config.getfloat('LedsControl', 'p3x')
+        p3y = app.config.getfloat('LedsControl', 'p3y')
+        p3v = app.config.getfloat('LedsControl', 'p3v')
+        p4x = app.config.getfloat('LedsControl', 'p4x')
+        p4y = app.config.getfloat('LedsControl', 'p4y')
+        p4v = app.config.getfloat('LedsControl', 'p4v')
+        g_amplitude = app.config.getfloat('LedsControl', 'g_amplitude')
+        g_x_mean = app.config.getfloat('LedsControl', 'g_x_mean')
+        g_x_sigma = app.config.getfloat('LedsControl', 'g_x_sigma')
+        g_y_mean = app.config.getfloat('LedsControl', 'g_y_mean')
+        g_y_sigma = app.config.getfloat('LedsControl', 'g_y_sigma')
+        gaussianParams = GaussianParams(amplitude= g_amplitude, x_mean= g_x_mean, x_sigma= g_x_sigma, y_mean= g_y_mean, y_sigma= g_y_sigma)
+
+        p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
+        p2 = Vertex2D(np.array([p2x, p2y], np.float32), p2v, 'P2')
+        p3 = Vertex2D(np.array([p3x, p3y], np.float32), p3v, 'P3')
+        p4 = Vertex2D(np.array([p4x, p4y], np.float32), p4v, 'P4')
+
+        quadVertex = [p1, p2, p3, p4]
+
+        # Update DAQStageProgram variables
+        app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
+
+        return
+
+
+    def disconnectDaq(self):
+        print('Disconnecting DAQ')
+        app: GlowTrackerApp = App.get_running_app()
+
+        if app.daqControl.isConnected():
+            app.daqControl.close()
 
 
 class MyCounter():
@@ -3393,6 +4102,7 @@ class GlowTrackerApp(App):
         # hardware
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
+        self.daqControl: DAQControl = DAQControl()
         self.updateFpsEvent = None
     
 
@@ -3527,6 +4237,34 @@ class GlowTrackerApp(App):
             'recentscript': ''
         })
 
+        config.setdefaults('LedsControl', {
+            'mode': 'Off',
+            'ledsequencescript': '',
+            'stageprogrammode': 'Gaussian',
+            'exterior': 'Zero',
+            'constanttextinput': 0,
+            'p1x': 0,
+            'p1y': 0,
+            'p1v': 0,
+            'p2x': 0,
+            'p2y': 0,
+            'p2v': 0,
+            'p3x': 0,
+            'p3y': 0,
+            'p3v': 0,
+            'p4x': 0,
+            'p4y': 0,
+            'p4v': 0,
+            'relative': 'true',
+            'g_amplitude': 0,
+            'g_x_mean': 0,
+            'g_x_sigma': 0,
+            'g_y_mean': 0,
+            'g_y_sigma': 0,
+            'g_relative': 'true'
+        })
+
+        
         config.setdefaults('Developer', {
             'showfps': 'false'
         })
@@ -3692,6 +4430,8 @@ class GlowTrackerApp(App):
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
         """Manage keyboard input for stage and focus"""
         
+        print(f"Keydown")
+
         if self.stage is None:
             return
         
@@ -3714,6 +4454,8 @@ class GlowTrackerApp(App):
         if key not in direction.keys():
             return
         
+        velocity = direction[key]
+
         # Stage movement mode
         if self.moveImageSpaceMode:
             move_img_space = direction[key]
@@ -3723,13 +4465,23 @@ class GlowTrackerApp(App):
             translation_vec_stage_space = self.imageToStageRotMat @ translation_vec_img_space
 
             # Convert back to a 3D tuple
-            translation_vec_stage_space = ( translation_vec_stage_space[1], translation_vec_stage_space[0], move_img_space[2] )
-            
-            self.stage.start_move(translation_vec_stage_space, self.unit)
+            velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
         
-        else:
-            # Move 
-            self.stage.start_move(direction[key], self.unit)
+        # Move 
+        self.stage.start_move(velocity, self.unit)
+
+        # Update stage position app.coords 
+        #   Extrapolated position by speed
+        #   Convert speed to cm/s
+        velocity_cm_per_sec = np.zeros(shape= (3), dtype= np.float32)
+        velocity_cm_per_sec[0] = UnitTable.convert_units(value= velocity[0], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+        velocity_cm_per_sec[1] = UnitTable.convert_units(value= velocity[1], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+        velocity_cm_per_sec[2] = UnitTable.convert_units(value= velocity[2], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
+
+        # Very crude estimation. Need to consult Monika
+        spf = 1 / 30.0
+        extrapolatedPos = np.array(self.coords) + spf * velocity_cm_per_sec * 10
+        self.coords = extrapolatedPos.tolist()
 
 
     def _keyup(self, instance, key, scancode) -> None:
@@ -3796,6 +4548,18 @@ class GlowTrackerApp(App):
 
         if section == 'Stage':
 
+            # Special case for 'port' changed.
+            #   We would like switch to the new port regardless of having a current stage-connection or not.
+            if key == 'port':
+                if self.stage is not None:
+                    # Disconnect the current
+                    # self.root.ids.rightcolumn.ids.connections.disconnectStage()
+                    self.root.ids.rightcolumn.ids.connections.stage_connection.state = 'normal'
+                # Connect to the new port
+                # self.root.ids.rightcolumn.ids.connections.connectStage()
+                self.root.ids.rightcolumn.ids.connections.stage_connection.state = 'down'
+
+
             if self.stage is not None:
 
                 # Update the stage settings
@@ -3845,8 +4609,8 @@ class GlowTrackerApp(App):
                 imageNormalDir = 1 if imageNormalDir == '+Z' else -1
                 rotation = self.config.getfloat('Camera', 'rotation')
 
-                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(pixelsize, imageNormalDir, rotation)
-        
+                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation= rotation, imageNormalDir= imageNormalDir, pixelSize= pixelsize)
+
         elif section == 'DualColor':
             
             if key == 'dualcolormode':
@@ -3923,6 +4687,13 @@ class GlowTrackerApp(App):
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
                     'down' if showliveanalysis else 'normal'
             
+
+        elif section == 'LedsControl':
+
+            if key == 'mode':
+
+                self.daqControl.ledsMode = LEDsMode[value]
+
 
         elif section == 'Developer':
 
@@ -4040,6 +4811,10 @@ class GlowTrackerApp(App):
         if self.camera is not None:
             print('Disconnecting Camera')
             self.camera.Close()
+        
+        if self.daqControl.isConnected():
+            print('Disconnecting DAQ')
+            self.daqControl.close()
 
         # stop the app
         self.stop()

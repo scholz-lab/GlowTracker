@@ -1,3 +1,7 @@
+# Python
+from __future__ import annotations
+from enum import Enum
+
 # 
 # IO, Utils
 # 
@@ -886,6 +890,9 @@ class CameraAndStageCalibrator:
         # Remove alpha channel at the front
         image_array = image_array[:,:,1:4]
 
+        # Close the figure
+        plt.close(fig= fig)
+
         return image_array
 
 
@@ -1231,6 +1238,9 @@ class DepthOfFieldEstimator:
         # Remove alpha channel at the front
         plotImage = plotImage[:,:,1:4]
 
+        # Close the figure
+        plt.close(fig= fig)
+
         return plotImage
     
 
@@ -1247,3 +1257,148 @@ class DepthOfFieldEstimator:
         bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
         bestFocusValue = self.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
         return bestFocusPosition, bestFocusImage, bestFocusValue
+
+
+class Exterior(Enum):
+    Zero = 'Zero'
+    Constant = 'Constant'
+
+
+class Vertex2D:
+
+    def __init__(self, point: np.ndarray, value: float, name: str = ''):
+        self.point = point
+        self.value = value
+        self.name = name
+    
+
+    @staticmethod
+    def lerp2d(a: Vertex2D, b: Vertex2D, t: float) -> Vertex2D:
+            point = a.point + (b.point - a.point) * t
+            value = a.value + (b.value - a.value) * t
+            return Vertex2D(point, value)
+    
+
+    @staticmethod
+    def cross(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        return x[..., 0] * y[..., 1] - x[..., 1] * y[..., 0]
+    
+
+    @staticmethod
+    def isInsideFourPoints(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray) -> bool:
+        
+        def isOnLeftSide(a: np.ndarray, b: np.ndarray, p: np.ndarray) -> bool:
+            vab = b - a
+            vap = p - a
+            if Vertex2D.cross(vab, vap) >= 0:
+                return True
+            return False
+        
+        return isOnLeftSide(v0.point, v1.point, p) \
+            and isOnLeftSide(v1.point, v2.point, p) \
+            and isOnLeftSide(v2.point, v3.point, p) \
+            and isOnLeftSide(v3.point, v0.point, p)
+    
+    
+    @staticmethod
+    def invBilinear( a, b, c, d, p ) -> np.ndarray:
+        """Solve for u,v parameter in quadrilateral through bilinear.
+        Refs: https://iquilezles.org/articles/ibilinear/, https://www.shadertoy.com/view/lsBSDm
+
+        Args:
+            a (np.ndarray): v0
+            b (np.ndarray): v1
+            c (np.ndarray): v2
+            d (np.ndarray): v3
+            p (np.ndarray): point to find the uv coordinate
+
+        Returns:
+            np.ndarray: u,v parameters
+        """
+        uv = np.array([0,0], np.float32)
+        
+        e = b-a
+        f = d-a
+        g = a-b+c-d
+        h = p-a
+            
+        k2 = Vertex2D.cross( g, f )
+        k1 = Vertex2D.cross( e, f ) + Vertex2D.cross( h, g )
+        k0 = Vertex2D.cross( h, e )
+        
+        w = k1*k1 - 4*k0*k2
+        
+        if w<=0.001:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+
+        w = np.sqrt( w )
+        
+        # will fail for k0=0, which is only on the ba edge 
+        if k0 <= 0.001 and k0 >= -0.001:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+        
+        v = 2*k0/(-k1 - w) 
+
+        if v < 0 or v > 1:
+            v = 2*k0 / (-k1 + w)
+
+        ta = e[0] + g[0]*v
+        ta = ta + 0.001 * (1 - np.abs(math.copysign(1,ta)))
+        
+        u = (h[0] - f[0]*v)/ta
+        if u < 0 or u > 1 or v < 0 or v > 1:
+            uv[0] = -1
+            uv[1] = -1
+            return uv
+            
+        uv[0] = u
+        uv[1] = v
+        return uv
+    
+
+    @staticmethod
+    def bilerp(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray, exterior: Exterior = Exterior.Zero, exteriorConstant: float = 0) -> float:
+        """Bilinear interpolate value of a point P if P lies within the four points. The four points must form a quadrilateral convex in its input order, i.e. v0 -> v1 -> v2 -> v3
+        Args:
+            v0 (Vertex2D): V0
+            v1 (Vertex2D): V1
+            v2 (Vertex2D): V2
+            v3 (Vertex2D): V3
+            p (np.ndarray): 2D point
+            exterior (Exterior, optional): Exterior condition of the value map. Defaults to Exterior.Zero.
+            exteriorConstant (float, optional): In case the exterior condition is Constant. Defaults to 0.
+
+        Returns:
+            float: Interpolated value
+        """
+        val = 0
+
+        # Check if inside four points
+        if Vertex2D.isInsideFourPoints(v0, v1, v2, v3, p):
+
+            # Compute normalized uv corrdinate of p
+            uv = Vertex2D.invBilinear(v0.point, v1.point, v2.point, v3.point, p)
+
+            # Bilinear-interpolate p on four points using uv coordinate
+            v01_p = Vertex2D.lerp2d(v0, v1, uv[0])
+            v32_p = Vertex2D.lerp2d(v3, v2, uv[0])
+            lerpedP =  Vertex2D.lerp2d(v01_p, v32_p, uv[1])
+            val = lerpedP.value
+
+            if np.isnan(val) or np.isinf(val):
+                val = 0
+
+        else:
+            
+            if exterior == Exterior.Zero:
+                val = 0
+
+            else:
+                val = exteriorConstant
+            
+        return val
+        
