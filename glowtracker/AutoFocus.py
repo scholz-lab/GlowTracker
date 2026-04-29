@@ -3,22 +3,25 @@ import cv2
 import numpy as np
 from enum import Enum
 
+
 class FocusEstimationMethod(Enum):
     # Variance of Laplace
-    VarianceOfLaplace = 'VarianceOfLaplace'
+    VarianceOfLaplace = "VarianceOfLaplace"
     # Tenengrad
-    Tenengrad = 'Tenengrad'
+    Tenengrad = "Tenengrad"
     # Brenner's
-    Brenners = 'Brenners'
+    Brenners = "Brenners"
     # Energy of Laplacian
-    EnergyOfLaplacian = 'EnergyOfLaplacian'
+    EnergyOfLaplacian = "EnergyOfLaplacian"
     # Modified Laplacian
-    ModifiedLaplace = 'ModifiedLaplace'
+    ModifiedLaplace = "ModifiedLaplace"
     # Sum of High-Frequency DCT Coefficient
-    SumOfHighDCT = 'SumOfHighDCT'
+    SumOfHighDCT = "SumOfHighDCT"
 
 
-def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarray) -> float:
+def estimateFocus(
+    focusEstimationMethod: FocusEstimationMethod, image: np.ndarray
+) -> float:
     """Estimate focus of an image.
 
     Args:
@@ -42,17 +45,17 @@ def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarra
 
     elif focusEstimationMethod == FocusEstimationMethod.Brenners:
         shifted = np.roll(image, -2, axis=1)
-        diff = (image - shifted)**2
+        diff = (image - shifted) ** 2
         estimatedFocus = np.sum(diff)
-    
+
     elif focusEstimationMethod == FocusEstimationMethod.EnergyOfLaplacian:
         lap = cv2.Laplacian(image, cv2.CV_64F)
         estimatedFocus = np.sum(np.abs(lap))
-    
+
     elif focusEstimationMethod == FocusEstimationMethod.ModifiedLaplace:
         mlap = cv2.Laplacian(image, cv2.CV_64F, ksize=3)
         estimatedFocus = np.sum(np.abs(mlap))
-    
+
     elif focusEstimationMethod == FocusEstimationMethod.SumOfHighDCT:
         resized = cv2.resize(image, (32, 32))  # Small for fast DCT
         dct = cv2.dct(np.float32(resized))
@@ -63,10 +66,9 @@ def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarra
 
 
 class AutoFocusPID:
-
     def __init__(
-        self, 
-        KP: float = 0.5, 
+        self,
+        KP: float = 0.5,
         KI: float = 0.01,
         KD: float = 0.1,
         SP: float = 1000,
@@ -75,7 +77,7 @@ class AutoFocusPID:
         integralLifeTime: int = 0,
         smoothingWindow: int = 1,
         minStepBeforeChangeDir: int = 0,
-        acceptableErrorPercentage: float = 0.05
+        acceptableErrorPercentage: float = 0.05,
     ) -> None:
         """Initialize attributes
 
@@ -105,15 +107,13 @@ class AutoFocusPID:
         self.WEIHT_MIN = 1
         self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
         self.acceptableErrorPercentage: float = acceptableErrorPercentage
-        
-        
+
         self.posLog: List[float] = []
         self.focusLog: List[float] = []
         self.errorLog: List[float] = []
 
         self.direction: int = 1
         self.directionResetCounter = 0
-
 
     def executePIDStep(self, image: np.ndarray, pos: float) -> float:
         """Perform one PID control step based on current image and lens position.
@@ -132,15 +132,16 @@ class AutoFocusPID:
         # Apply a linear, weighted average to PV with emphasis on recent data
         focuses = [PV]
         if self.smoothingWindow > 1:
-            focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+            focuses = self.focusLog[-(self.smoothingWindow - 1) :] + focuses
         focuses = np.array(focuses)
 
         # Compute linear weight
         t = np.array([1])
 
-        if (len(focuses) > 1):
-            t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
-        
+        if len(focuses) > 1:
+            # t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+            t = np.arange(len(focuses)) / float(len(focuses) - 1)
+
         weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
 
         PV = sum(focuses * weights) / sum(weights)
@@ -156,15 +157,14 @@ class AutoFocusPID:
         else:
             prevErr = self.errorLog[-1]
             # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
-            derivative = (err - prevErr)
+            derivative = err - prevErr
 
-            # If the PV is not close enough to the SP (percentage-wise), then execute 
-            errorRatio = abs( PV / self.SP - 1.0)
+            # If the PV is not close enough to the SP (percentage-wise), then execute
+            errorRatio = abs(PV / self.SP - 1.0)
             if errorRatio > self.acceptableErrorPercentage:
-                
                 # PID calculations
                 if self.integralLifeTime > 0:
-                    self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
+                    self.integral = np.sum(self.errorLog[-self.integralLifeTime :])
                 else:
                     self.integral = np.sum(self.errorLog)
 
@@ -172,21 +172,20 @@ class AutoFocusPID:
 
                 # Decide direction. If the error is increasing then we should flip direction.
                 if self.directionResetCounter > self.minStepBeforeChangeDir:
-                    
                     # Compute derivative of past error up to histLength
-                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
-                    diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
+                    pastErrs = list(zip(self.errorLog[1:], self.errorLog))[
+                        -(self.minStepBeforeChangeDir + 1) :
+                    ]
+                    diffs = list(map(lambda x: x[0] - x[1], pastErrs))
 
                     # The averaing error is increasing
                     if sum(diffs) > 0:
-                        
                         self.direction = self.direction * -1
                         self.directionResetCounter = 0
-                
+
                 self.directionResetCounter += 1
 
                 U = U * self.direction
-                
 
         # Record
         self.focusLog.append(PV)
@@ -194,4 +193,3 @@ class AutoFocusPID:
         self.posLog.append(pos)
 
         return U
-
