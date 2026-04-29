@@ -3391,9 +3391,10 @@ class RuntimeControls(BoxLayout):
         threshold = app.config.getfloat('Tracking', 'threshold')
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
+        scale = app.config.getfloat('Tracking', 'scale')
 
-        # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
+        # make a tracking thread
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, scale
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -3417,7 +3418,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, scale: float = 1.0) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -3426,16 +3427,15 @@ class RuntimeControls(BoxLayout):
 
         # Compute second per frame to determine the lower bound waiting time
         camera_spf = 1 / camera.ResultingFrameRate()
-        
+
 
         # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-        
+
         self.isTracking = True
         image: np.ndarray | None = None
         retrieveTimestamp: float = 0
         prevImage: np.ndarray | None = None
-        scale = 1.0
 
         estimated_next_timestamp: float | None = None
 
@@ -4214,7 +4214,8 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '255'
+            'max_brightness': '255',
+            'scale': '1.0'
         })
 
         config.setdefaults('LiveAnalysis', {

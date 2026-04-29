@@ -340,6 +340,13 @@
         "key": "min_step"
     },
     {
+        "type": "string",
+        "title": "Step scale",
+        "desc": "Multiplier applied to each tracking step (1.0 = full move, <1 dampens jitter, >1 amplifies). Try 0.5-0.7 to smooth tracking.",
+        "section": "Tracking",
+        "key": "scale"
+    },
+    {
         "type": "numeric",
         "title": "threshold (bits)",
         "desc": "What is considered a relevant change in the image (e.g., grayscale out of 255)?",
