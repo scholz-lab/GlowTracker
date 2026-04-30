@@ -3392,9 +3392,10 @@ class RuntimeControls(BoxLayout):
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
         scale = app.config.getfloat('Tracking', 'scale')
+        smoothing = app.config.getfloat('Tracking', 'smoothing')
 
         # make a tracking thread
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, scale
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, scale, smoothing
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -3418,7 +3419,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, scale: float = 1.0) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, scale: float = 1.0, smoothing: float = 0) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -3438,6 +3439,8 @@ class RuntimeControls(BoxLayout):
         prevImage: np.ndarray | None = None
 
         estimated_next_timestamp: float | None = None
+        xstep_f_prev: float | None = None
+        ystep_f_prev: float | None = None
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
@@ -3515,8 +3518,16 @@ class RuntimeControls(BoxLayout):
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
             ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
-            ystep *= scale
+
+            α = 1 - smoothing
+            if xstep_f_prev is None:
+                xstep_f_prev, ystep_f_prev = xstep, ystep
+            xstep = α*xstep + (1-α)*xstep_f_prev
+            ystep = α*ystep + (1-α)*ystep_f_prev
+            xstep_f_prev, ystep_f_prev = xstep, ystep
+
             xstep *= scale
+            ystep *= scale
 
             # getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
@@ -4215,7 +4226,8 @@ class GlowTrackerApp(App):
             'area': '400',
             'min_brightness': '0',
             'max_brightness': '255',
-            'scale': '1.0'
+            'scale': '1.0',
+            'smoothing': '0.0'
         })
 
         config.setdefaults('LiveAnalysis', {

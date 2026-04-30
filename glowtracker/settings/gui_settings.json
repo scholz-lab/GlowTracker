@@ -347,6 +347,13 @@
         "key": "scale"
     },
     {
+        "type": "string",
+        "title": "Step smoothing",
+        "desc": "EMA low-pass on tracking steps (0 = off, 0.5 mild, 0.8 aggressive). Reduces frame-to-frame CMS jitter at cost of small lag.",
+        "section": "Tracking",
+        "key": "smoothing"
+    },
+    {
         "type": "numeric",
         "title": "threshold (bits)",
         "desc": "What is considered a relevant change in the image (e.g., grayscale out of 255)?",
