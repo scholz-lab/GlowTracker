@@ -66,30 +66,36 @@ def estimateFocus(
 
 
 class AutoFocusPID:
-    """Hill-climbing autofocus controller.
+    """Hill-climbing autofocus controller. Constant-step, safety-clamped.
 
     Class name is legacy. PID is the wrong shape of controller for a unimodal
-    focus signal: the sign of (SP - focus) doesn't tell you which way to move.
-    This controller samples focus before/after each step, keeps direction when
-    focus improves, and flips + halves the step when focus drops. Step size
-    grows on success and shrinks on overshoot, so it converges fast far from
-    the peak and is stable near it.
+    focus signal. This controller samples focus each iteration, keeps direction
+    while focus improves, and flips direction when focus drops. Step magnitude
+    is constant (= minStep clamped to SAFETY_MAX_STEP_MM); no growth, so a
+    runaway sequence of false-positive measurements cannot accelerate.
+
+    Hard safety limits:
+        - Per-step move is clamped to SAFETY_MAX_STEP_MM regardless of minStep.
+        - Cumulative absolute travel is capped at SAFETY_MAX_TOTAL_TRAVEL_MM;
+          exceeding it sets self.aborted = True and the controller returns 0.
     """
+
+    SAFETY_MAX_STEP_MM: float = 0.02
+    SAFETY_MAX_TOTAL_TRAVEL_MM: float = 0.5
 
     def __init__(
         self,
         focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
         minStepDist: float = 0.0001,
-        maxStepDist: float | None = None,
         smoothingWindow: int = 1,
         noiseDeadband: float = 0.02,
         KP: float = 0.0, KI: float = 0.0, KD: float = 0.0, SP: float = 0.0,
-        integralLifeTime: int = 0, minStepBeforeChangeDir: int = 0,
-        acceptableErrorPercentage: float = 0.0,
+        maxStepDist: float = 0.0, integralLifeTime: int = 0,
+        minStepBeforeChangeDir: int = 0, acceptableErrorPercentage: float = 0.0,
     ) -> None:
         self.focusEstimationMethod = focusEstimationMethod
-        self.minStep: float = abs(minStepDist) if minStepDist else 1e-4
-        self.maxStep: float = maxStepDist if maxStepDist is not None else 10.0 * self.minStep
+        rawMin = abs(minStepDist) if minStepDist else 1e-4
+        self.step: float = min(rawMin, self.SAFETY_MAX_STEP_MM)
         self.smoothingWindow: int = max(1, smoothingWindow)
         self.noiseDeadband: float = max(0.0, noiseDeadband)
 
@@ -97,21 +103,32 @@ class AutoFocusPID:
         self.focusLog: List[float] = []
 
         self.direction: int = 1
-        self.step: float = self.minStep
+        self.totalTravel: float = 0.0
+        self.aborted: bool = False
 
     def _smoothedFocus(self) -> float:
         if self.smoothingWindow <= 1:
             return self.focusLog[-1]
         return float(np.mean(self.focusLog[-self.smoothingWindow:]))
 
+    def _commitMove(self, move: float) -> float:
+        self.totalTravel += abs(move)
+        if self.totalTravel > self.SAFETY_MAX_TOTAL_TRAVEL_MM:
+            self.aborted = True
+            return 0.0
+        return move
+
     def executePIDStep(self, image: np.ndarray, pos: float) -> float:
         """Compute the next relative z move (mm) given the current image and stage pos."""
+        if self.aborted:
+            return 0.0
+
         rawFocus = estimateFocus(self.focusEstimationMethod, image)
         self.focusLog.append(rawFocus)
         self.posLog.append(pos)
 
         if len(self.focusLog) == 1:
-            return self.step * self.direction
+            return self._commitMove(self.step * self.direction)
 
         N = self.smoothingWindow
         currFocus = self._smoothedFocus()
@@ -126,10 +143,7 @@ class AutoFocusPID:
         if abs(delta) / ref < self.noiseDeadband:
             return 0.0
 
-        if delta > 0:
-            self.step = min(self.step * 1.5, self.maxStep)
-        else:
+        if delta < 0:
             self.direction *= -1
-            self.step = max(self.step * 0.5, self.minStep)
 
-        return self.step * self.direction
+        return self._commitMove(self.step * self.direction)

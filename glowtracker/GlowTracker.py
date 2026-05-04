@@ -3263,6 +3263,11 @@ class RuntimeControls(BoxLayout):
             # Perform one autofocus step
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
+            # Safety: bail out if controller hit its travel limit.
+            if autoFocusPID.aborted:
+                print(f"LiveFocus: total travel exceeded {autoFocusPID.SAFETY_MAX_TOTAL_TRAVEL_MM} mm — aborting.")
+                break
+
             # Move relative z-position. Synchronous so the next image is at a known position.
             if relPosZ != 0:
                 stage.move_z(relPosZ, unit='mm', wait_until_idle= True)
@@ -3285,7 +3290,7 @@ class RuntimeControls(BoxLayout):
                 time.sleep(waitTime)
         
         # The live focus has stopped
-        self.livefocuscheckbox.state == 'normal'
+        self.livefocuscheckbox.state = 'normal'
     
 
     def stopLiveFocus(self):
