@@ -212,6 +212,27 @@
         "key": "isshowgraph"
     },
     {
+        "type": "string",
+        "title": "Probe delta (mm)",
+        "desc": "Distance probed +/- from current z each AF event. Smaller = finer correction, larger = better signal-to-noise. Capped at 0.02 mm. Default 0.002 (= 2 um).",
+        "section": "Autofocus",
+        "key": "probe_delta_mm"
+    },
+    {
+        "type": "string",
+        "title": "Improvement margin",
+        "desc": "A probe (z+/-d) only wins over the current z if its focus exceeds F0 by this fraction (e.g. 0.02 = 2%). Higher = more conservative, fewer spurious moves. Default 0.02.",
+        "section": "Autofocus",
+        "key": "improvement_margin"
+    },
+    {
+        "type": "string",
+        "title": "AF interval (sec)",
+        "desc": "Seconds between AF events. The stage holds still between events. Default 5.0.",
+        "section": "Autofocus",
+        "key": "af_interval_sec"
+    },
+    {
         "type": "title",
         "title": "Calibration"
     },
@@ -352,6 +373,13 @@
         "desc": "EMA low-pass on tracking steps (0 = off, 0.5 mild, 0.8 aggressive). Reduces frame-to-frame CMS jitter at cost of small lag.",
         "section": "Tracking",
         "key": "smoothing"
+    },
+    {
+        "type": "string",
+        "title": "Dead zone (px)",
+        "desc": "Don't move the stage until the worm's CMS exceeds this radius (in px) from the field center. Eliminates stage motion from segmentation noise when worm is roughly centered. Default 15.",
+        "section": "Tracking",
+        "key": "deadzone_px"
     },
     {
         "type": "numeric",

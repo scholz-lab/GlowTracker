@@ -66,84 +66,62 @@ def estimateFocus(
 
 
 class AutoFocusPID:
-    """Hill-climbing autofocus controller. Constant-step, safety-clamped.
+    """Periodic 3-point bracket autofocus.
 
-    Class name is legacy. PID is the wrong shape of controller for a unimodal
-    focus signal. This controller samples focus each iteration, keeps direction
-    while focus improves, and flips direction when focus drops. Step magnitude
-    is constant (= minStep clamped to SAFETY_MAX_STEP_MM); no growth, so a
-    runaway sequence of false-positive measurements cannot accelerate.
+    Class name is legacy. Each AF event probes z+δ and z-δ, picks whichever of
+    {z-δ, z, z+δ} has the highest focus metric (subject to an improvement
+    margin), and moves there. Stateless per event: no PID memory, no direction
+    history. Cumulative travel across the session is capped for safety.
 
-    Hard safety limits:
-        - Per-step move is clamped to SAFETY_MAX_STEP_MM regardless of minStep.
-        - Cumulative absolute travel is capped at SAFETY_MAX_TOTAL_TRAVEL_MM;
-          exceeding it sets self.aborted = True and the controller returns 0.
+    Per-event motion is bounded to ≤ 4·δ in total: +δ, then -2δ, then at most
+    +2δ to settle on the best position. So a single event can never wander far
+    regardless of focus measurement noise.
     """
 
-    SAFETY_MAX_STEP_MM: float = 0.02
-    SAFETY_MAX_TOTAL_TRAVEL_MM: float = 0.5
+    SAFETY_MAX_PROBE_MM: float = 0.02
+    SAFETY_MAX_TOTAL_TRAVEL_MM: float = 2.0
 
     def __init__(
         self,
         focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
-        minStepDist: float = 0.0001,
-        smoothingWindow: int = 1,
-        noiseDeadband: float = 0.02,
-        KP: float = 0.0, KI: float = 0.0, KD: float = 0.0, SP: float = 0.0,
-        maxStepDist: float = 0.0, integralLifeTime: int = 0,
+        probeDelta: float = 0.002,
+        improvementMargin: float = 0.02,
+        minStepDist: float = 0.0, smoothingWindow: int = 1, noiseDeadband: float = 0.0,
+        maxStepDist: float = 0.0, KP: float = 0.0, KI: float = 0.0, KD: float = 0.0,
+        SP: float = 0.0, integralLifeTime: int = 0,
         minStepBeforeChangeDir: int = 0, acceptableErrorPercentage: float = 0.0,
     ) -> None:
         self.focusEstimationMethod = focusEstimationMethod
-        rawMin = abs(minStepDist) if minStepDist else 1e-4
-        self.step: float = min(rawMin, self.SAFETY_MAX_STEP_MM)
-        self.smoothingWindow: int = max(1, smoothingWindow)
-        self.noiseDeadband: float = max(0.0, noiseDeadband)
+        rawDelta = abs(probeDelta) if probeDelta else 0.002
+        self.probeDelta: float = min(rawDelta, self.SAFETY_MAX_PROBE_MM)
+        self.improvementMargin: float = max(0.0, improvementMargin)
 
-        self.posLog: List[float] = []
-        self.focusLog: List[float] = []
-
-        self.direction: int = 1
         self.totalTravel: float = 0.0
         self.aborted: bool = False
+        self.focusLog: List[float] = []
+        self.posLog: List[float] = []
 
-    def _smoothedFocus(self) -> float:
-        if self.smoothingWindow <= 1:
-            return self.focusLog[-1]
-        return float(np.mean(self.focusLog[-self.smoothingWindow:]))
+    def estimate(self, image: np.ndarray) -> float:
+        return estimateFocus(self.focusEstimationMethod, image)
 
-    def _commitMove(self, move: float) -> float:
-        self.totalTravel += abs(move)
+    def commitMove(self, distance: float) -> bool:
+        """Track cumulative absolute travel. Returns False once the cap is hit."""
+        self.totalTravel += abs(distance)
         if self.totalTravel > self.SAFETY_MAX_TOTAL_TRAVEL_MM:
             self.aborted = True
-            return 0.0
-        return move
+            return False
+        return True
 
-    def executePIDStep(self, image: np.ndarray, pos: float) -> float:
-        """Compute the next relative z move (mm) given the current image and stage pos."""
-        if self.aborted:
-            return 0.0
+    def pickBest(self, F_minus: float, F_zero: float, F_plus: float) -> int:
+        """Return -1, 0, or +1 indicating which of {z-δ, z, z+δ} has the best focus.
 
-        rawFocus = estimateFocus(self.focusEstimationMethod, image)
-        self.focusLog.append(rawFocus)
-        self.posLog.append(pos)
-
-        if len(self.focusLog) == 1:
-            return self._commitMove(self.step * self.direction)
-
-        N = self.smoothingWindow
-        currFocus = self._smoothedFocus()
-        if len(self.focusLog) > N:
-            prevFocus = float(np.mean(self.focusLog[-N - 1:-1]))
-        else:
-            prevFocus = self.focusLog[-2]
-
-        delta = currFocus - prevFocus
-        ref = max(abs(currFocus), abs(prevFocus), 1e-9)
-
-        if abs(delta) / ref < self.noiseDeadband:
-            return 0.0
-
-        if delta < 0:
-            self.direction *= -1
-
-        return self._commitMove(self.step * self.direction)
+        A probe wins only if it beats F_zero by at least improvementMargin
+        (relative). Otherwise we hold position. This is the natural deadband:
+        no spurious moves when the current z is already close to peak.
+        """
+        threshold = F_zero * (1.0 + self.improvementMargin)
+        if F_plus >= F_minus and F_plus > threshold:
+            return +1
+        if F_minus > F_plus and F_minus > threshold:
+            return -1
+        return 0

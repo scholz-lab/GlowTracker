@@ -3122,32 +3122,21 @@ class RuntimeControls(BoxLayout):
             app: GlowTrackerApp = App.get_running_app()
 
             focusfps = app.config.getfloat('Autofocus', 'focusfps')
-
-            print("Live focus Framerate:", focusfps)
-
-            KP = app.config.getfloat('Autofocus', 'kp')
-            KI = app.config.getfloat('Autofocus', 'ki')
-            KD = app.config.getfloat('Autofocus', 'kd')
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
             focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
             dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
             capturedRadius = app.config.getint('Tracking', 'capture_radius')
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
-            depthoffield = app.config.getfloat('Camera', 'depthoffield')
-            smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
-            minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
-            
+            probedelta = app.config.getfloat('Autofocus', 'probe_delta_mm')
+            improvementmargin = app.config.getfloat('Autofocus', 'improvement_margin')
+            afinterval = app.config.getfloat('Autofocus', 'af_interval_sec')
+
+            print(f"LiveFocus: 3-point bracket every {afinterval}s, probe +/-{probedelta*1000:.1f}um")
+
             autoFocusPID = AutoFocusPID(
-                KP= KP,
-                KI= KI,
-                KD= KD,
-                SP= SP,
-                focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
-                minStepDist= depthoffield,
-                acceptableErrorPercentage= 0.05,
-                integralLifeTime= 0,
-                smoothingWindow= smoothingwindow,
-                minStepBeforeChangeDir= minstepbeforechangedir
+                focusEstimationMethod=focusEstimationMethod,
+                probeDelta=probedelta,
+                improvementMargin=improvementmargin,
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -3207,7 +3196,7 @@ class RuntimeControls(BoxLayout):
                 self.updateLiveFocusGraphEvent = Clock.schedule_interval(updateLiveFocusGraph, 1.0 / focusfps)
 
             # Pack args
-            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focusfps, graph_x_data, graph_y_data, graph_data_lock
+            autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, afinterval, graph_x_data, graph_y_data, graph_data_lock
 
             # Start the autofocus thread
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
@@ -3222,73 +3211,79 @@ class RuntimeControls(BoxLayout):
             self.livefocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
-        """Autofocus loop to be executed inside a thread.
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, interval: float = 5.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
+        """Periodic 3-point bracket AF. One event every `interval` seconds.
 
-        Args:
-            autoFocusPID (AutoFocusPID): Autofocus object
-            camera (basler.Camera): camera
-            stage (Stage): stage
-            dualColorMode (bool, optional): is the image dual-colored. Defaults to False.
-            capturedRadius (float, optional): radius from center of the image to square crop. Defaults to 0 means no cropping.
-            isShowGraph (bool, optional): Is the live focus graph enabled. Defaults to False.
-            fps (float, optional): Maximum frequency to perform autofocus per second. Defaults to 10.0.
-            graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
-            graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
-            graph_data_lock (Lock, optional): threading Lock object for modifying graph_data
+        Each event: measure F0 at z, probe +δ measure F+, probe -2δ measure F-,
+        move to whichever of {z-δ, z, z+δ} has the highest focus metric.
         """
         app: GlowTrackerApp = App.get_running_app()
-        spf = 1.0 / fps
-        image = None
 
-        print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
+        def measure() -> float:
+            t_pre = self.imageacquisitionmanager.imageRetrieveTimeStamp
+            deadline = time.perf_counter() + 1.0
+            while self.imageacquisitionmanager.imageRetrieveTimeStamp <= t_pre:
+                if time.perf_counter() > deadline:
+                    break
+                time.sleep(0.005)
+            if dualColorMode:
+                img = self.imageacquisitionmanager.dualColorMainSideImage
+            else:
+                img = self.imageacquisitionmanager.image
+            if img is None:
+                return 0.0
+            cropped = macro.cropCenterImage(img, capturedRadius * 2, capturedRadius * 2)
+            return autoFocusPID.estimate(cropped)
 
-        # Continuously running as long as these conditions are met.
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.livefocuscheckbox.state == 'down':
 
-            startTime = time.perf_counter()
+            # Wait between events; poll for cancellation.
+            elapsed = 0.0
+            while elapsed < interval and self.livefocuscheckbox.state == 'down' and (camera.IsGrabbing() or camera.isOnHold()):
+                time.sleep(0.05)
+                elapsed += 0.05
 
-            # Get current image
-            if dualColorMode:
-                image = self.imageacquisitionmanager.dualColorMainSideImage
-            else:
-                image = self.imageacquisitionmanager.image
-
-            # Center-crop the image
-            croppedImage = macro.cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
-
-            # Get current position
-            pos = app.coords[2]
-
-            # Perform one autofocus step
-            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
-
-            # Safety: bail out if controller hit its travel limit.
-            if autoFocusPID.aborted:
-                print(f"LiveFocus: total travel exceeded {autoFocusPID.SAFETY_MAX_TOTAL_TRAVEL_MM} mm — aborting.")
+            if self.livefocuscheckbox.state != 'down' or not (camera.IsGrabbing() or camera.isOnHold()):
                 break
 
-            # Move relative z-position. Synchronous so the next image is at a known position.
-            if relPosZ != 0:
-                stage.move_z(relPosZ, unit='mm', wait_until_idle= True)
-                app.coords[2] = app.coords[2] + relPosZ
-            
+            if autoFocusPID.aborted:
+                print(f"LiveFocus: cumulative travel exceeded {autoFocusPID.SAFETY_MAX_TOTAL_TRAVEL_MM} mm -- aborting.")
+                break
+
+            delta = autoFocusPID.probeDelta
+
+            F0 = measure()
+
+            if not autoFocusPID.commitMove(delta):
+                break
+            stage.move_z(delta, unit='mm', wait_until_idle=True)
+            app.coords[2] += delta
+            F_plus = measure()
+
+            if not autoFocusPID.commitMove(2 * delta):
+                break
+            stage.move_z(-2 * delta, unit='mm', wait_until_idle=True)
+            app.coords[2] -= 2 * delta
+            F_minus = measure()
+
+            best = autoFocusPID.pickBest(F_minus, F0, F_plus)
+            finalOffset = (best + 1) * delta
+            if finalOffset != 0:
+                if not autoFocusPID.commitMove(finalOffset):
+                    break
+                stage.move_z(finalOffset, unit='mm', wait_until_idle=True)
+                app.coords[2] += finalOffset
+
+            autoFocusPID.focusLog.extend([F_minus, F0, F_plus])
             if isShowGraph:
-                # Update live graph data
                 with graph_data_lock:
-                    graph_x_data.append(len(autoFocusPID.focusLog) - 1)
-                    graph_y_data.append(autoFocusPID.focusLog[-1])
-            
-            endTime = time.perf_counter()
+                    base = len(graph_x_data)
+                    graph_x_data.extend([base, base + 1, base + 2])
+                    graph_y_data.extend([F_minus, F0, F_plus])
 
-            elapsedTime = endTime - startTime
+            labels = ['z-d', 'z', 'z+d']
+            print(f"AF: F-={F_minus:.4g}  F0={F0:.4g}  F+={F_plus:.4g}  best={labels[best+1]}  travel={autoFocusPID.totalTravel*1000:.1f}um")
 
-            waitTime = spf - elapsedTime
-
-            # Wait until matching spf
-            if waitTime > 0:
-                time.sleep(waitTime)
-        
         # The live focus has stopped
         self.livefocuscheckbox.state = 'normal'
     
@@ -3397,9 +3392,10 @@ class RuntimeControls(BoxLayout):
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
         scale = app.config.getfloat('Tracking', 'scale')
         smoothing = app.config.getfloat('Tracking', 'smoothing')
+        deadzone_px = app.config.getfloat('Tracking', 'deadzone_px')
 
         # make a tracking thread
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, scale, smoothing
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, scale, smoothing, deadzone_px
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -3423,7 +3419,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, scale: float = 1.0, smoothing: float = 0) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, scale: float = 1.0, smoothing: float = 0, deadzone_px: float = 0.0) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -3518,7 +3514,11 @@ class RuntimeControls(BoxLayout):
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep
             self.cmsOffset_y = -ystep
-            
+
+            if xstep*xstep + ystep*ystep < deadzone_px*deadzone_px:
+                xstep = 0
+                ystep = 0
+
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
             ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
@@ -4198,6 +4198,9 @@ class GlowTrackerApp(App):
             'bestfocusvalue': 2000,
             'focusfps': '15',
             'isshowgraph': 'false',
+            'probe_delta_mm': '0.002',
+            'improvement_margin': '0.02',
+            'af_interval_sec': '5.0',
         })
 
         config.setdefaults('Calibration', {
@@ -4231,7 +4234,8 @@ class GlowTrackerApp(App):
             'min_brightness': '0',
             'max_brightness': '255',
             'scale': '1.0',
-            'smoothing': '0.0'
+            'smoothing': '0.0',
+            'deadzone_px': '15'
         })
 
         config.setdefaults('LiveAnalysis', {
