@@ -3263,11 +3263,10 @@ class RuntimeControls(BoxLayout):
             # Perform one autofocus step
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
-            # Move relative z-position
-            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
-
-            # Update App's internal stage coordinate
-            app.coords[2] = app.coords[2] + relPosZ
+            # Move relative z-position. Synchronous so the next image is at a known position.
+            if relPosZ != 0:
+                stage.move_z(relPosZ, unit='mm', wait_until_idle= True)
+                app.coords[2] = app.coords[2] + relPosZ
             
             if isShowGraph:
                 # Update live graph data

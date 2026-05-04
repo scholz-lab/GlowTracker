@@ -66,130 +66,70 @@ def estimateFocus(
 
 
 class AutoFocusPID:
+    """Hill-climbing autofocus controller.
+
+    Class name is legacy. PID is the wrong shape of controller for a unimodal
+    focus signal: the sign of (SP - focus) doesn't tell you which way to move.
+    This controller samples focus before/after each step, keeps direction when
+    focus improves, and flips + halves the step when focus drops. Step size
+    grows on success and shrinks on overshoot, so it converges fast far from
+    the peak and is stable near it.
+    """
+
     def __init__(
         self,
-        KP: float = 0.5,
-        KI: float = 0.01,
-        KD: float = 0.1,
-        SP: float = 1000,
         focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
         minStepDist: float = 0.0001,
-        integralLifeTime: int = 0,
+        maxStepDist: float | None = None,
         smoothingWindow: int = 1,
-        minStepBeforeChangeDir: int = 0,
-        acceptableErrorPercentage: float = 0.05,
+        noiseDeadband: float = 0.02,
+        KP: float = 0.0, KI: float = 0.0, KD: float = 0.0, SP: float = 0.0,
+        integralLifeTime: int = 0, minStepBeforeChangeDir: int = 0,
+        acceptableErrorPercentage: float = 0.0,
     ) -> None:
-        """Initialize attributes
-
-        Args:
-            KP (float, optional): Proportional constant. Defaults to 0.5.
-            KI (float, optional): Integral constant. Defaults to 0.01.
-            KD (float, optional): Differential constant. Defaults to 0.1.
-            SP (float, optional): Setpoint. Defaults to 1000.
-            focusEstimationMethod (FocusEstimationMethod, optional): Which kind of focus estimation mode to use. Defaults to focusEstimationMethod.SumOfHighDCT
-            minStepDist (float, optional): Minimum move distance. Defaults to 0.0001.
-            integralLifeTime (int, optional): How far back (iteration step) do we count the values into the integral. Defaults to 0 means no limit.
-            smoothingWindow (int, optional): How far back (iteration step) do we smooth the PV over. Defaults to 1, which means no smoothing.
-            minStepBeforeChangeDir (int, optional): Minimum number of steps to perform before allowing changing of direction. Defaults to 0, which means can change direction at any time.
-            acceptableErrorPercentage (float, optional): Acceptable error ratio between PV / SP . Defaults to 0.05 which means PV is acceptable within 0.95 <= PV / SP <= 1.05 range
-        """
-
-        self.KP = KP
-        self.KI = KI
-        self.KD = KD
-        self.SP: float = SP
         self.focusEstimationMethod = focusEstimationMethod
-        self.minStepDist: float = minStepDist
-        self.integralLifeTime: int = integralLifeTime
-        self.smoothingWindow: int = smoothingWindow
-        # Blending weight for PV smoothing
-        self.WEIGHT_MAX = 9
-        self.WEIHT_MIN = 1
-        self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
-        self.acceptableErrorPercentage: float = acceptableErrorPercentage
+        self.minStep: float = abs(minStepDist) if minStepDist else 1e-4
+        self.maxStep: float = maxStepDist if maxStepDist is not None else 10.0 * self.minStep
+        self.smoothingWindow: int = max(1, smoothingWindow)
+        self.noiseDeadband: float = max(0.0, noiseDeadband)
 
         self.posLog: List[float] = []
         self.focusLog: List[float] = []
-        self.errorLog: List[float] = []
 
         self.direction: int = 1
-        self.directionResetCounter = 0
+        self.step: float = self.minStep
+
+    def _smoothedFocus(self) -> float:
+        if self.smoothingWindow <= 1:
+            return self.focusLog[-1]
+        return float(np.mean(self.focusLog[-self.smoothingWindow:]))
 
     def executePIDStep(self, image: np.ndarray, pos: float) -> float:
-        """Perform one PID control step based on current image and lens position.
-
-        Args:
-            image (np.ndarray): gray-scaled image
-            pos (float): stage z-axis position
-
-        Returns:
-            relPosZ (float): estimated **relative** z-axis position to move to
-        """
-
-        # Estimate focus the image at current position
-        PV = estimateFocus(self.focusEstimationMethod, image)
-
-        # Apply a linear, weighted average to PV with emphasis on recent data
-        focuses = [PV]
-        if self.smoothingWindow > 1:
-            focuses = self.focusLog[-(self.smoothingWindow - 1) :] + focuses
-        focuses = np.array(focuses)
-
-        # Compute linear weight
-        t = np.array([1])
-
-        if len(focuses) > 1:
-            # t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
-            t = np.arange(len(focuses)) / float(len(focuses) - 1)
-
-        weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
-
-        PV = sum(focuses * weights) / sum(weights)
-
-        # Compute error
-        err = self.SP - PV
-        U: float = 0.0
-
-        if len(self.focusLog) == 0:
-            # If this is the first time executing, simply move by a minimum distance
-            U = self.minStepDist * self.direction
-
-        else:
-            prevErr = self.errorLog[-1]
-            # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
-            derivative = err - prevErr
-
-            # If the PV is not close enough to the SP (percentage-wise), then execute
-            errorRatio = abs(PV / self.SP - 1.0)
-            if errorRatio > self.acceptableErrorPercentage:
-                # PID calculations
-                if self.integralLifeTime > 0:
-                    self.integral = np.sum(self.errorLog[-self.integralLifeTime :])
-                else:
-                    self.integral = np.sum(self.errorLog)
-
-                U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
-
-                # Decide direction. If the error is increasing then we should flip direction.
-                if self.directionResetCounter > self.minStepBeforeChangeDir:
-                    # Compute derivative of past error up to histLength
-                    pastErrs = list(zip(self.errorLog[1:], self.errorLog))[
-                        -(self.minStepBeforeChangeDir + 1) :
-                    ]
-                    diffs = list(map(lambda x: x[0] - x[1], pastErrs))
-
-                    # The averaing error is increasing
-                    if sum(diffs) > 0:
-                        self.direction = self.direction * -1
-                        self.directionResetCounter = 0
-
-                self.directionResetCounter += 1
-
-                U = U * self.direction
-
-        # Record
-        self.focusLog.append(PV)
-        self.errorLog.append(err)
+        """Compute the next relative z move (mm) given the current image and stage pos."""
+        rawFocus = estimateFocus(self.focusEstimationMethod, image)
+        self.focusLog.append(rawFocus)
         self.posLog.append(pos)
 
-        return U
+        if len(self.focusLog) == 1:
+            return self.step * self.direction
+
+        N = self.smoothingWindow
+        currFocus = self._smoothedFocus()
+        if len(self.focusLog) > N:
+            prevFocus = float(np.mean(self.focusLog[-N - 1:-1]))
+        else:
+            prevFocus = self.focusLog[-2]
+
+        delta = currFocus - prevFocus
+        ref = max(abs(currFocus), abs(prevFocus), 1e-9)
+
+        if abs(delta) / ref < self.noiseDeadband:
+            return 0.0
+
+        if delta > 0:
+            self.step = min(self.step * 1.5, self.maxStep)
+        else:
+            self.direction *= -1
+            self.step = max(self.step * 0.5, self.minStep)
+
+        return self.step * self.direction
