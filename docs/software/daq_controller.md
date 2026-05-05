@@ -26,7 +26,7 @@ To enable which mode activate when the recording start, click on the drop-down o
 
 <figure class="center-figure">
   <img src="../custom_assets/images/daq_controller/LedSequencer.png" alt="MacroScriptWidget" width="80%">
-  <figcaption>Sequencer GUI</figcaption>
+  <figcaption>A DAQ Controller window. Currently Sequencer window tab.</figcaption>
 </figure>
 
 
@@ -73,18 +73,38 @@ In which case, the command will be mapped to the first closest frame after the s
 
 ## Leds-Stage Program
 
-<figure class="center-figure">
-  <img src="../custom_assets/images/daq_controller/LedsStageProgram.png" alt="MacroScriptWidget" width="80%">
-  <figcaption>StageProgram GUI</figcaption>
-</figure>
-
-Specify DAQ output voltage as a function of stage position.
+The Leds-Stage program lets you send out a signal based on the current stage position. 
 There are two stage program modes: `Gaussian` and `FourPoint`.
 
-- `Gaussian` is a normallized 2D Gaussian function $$\text{vol}=A \cdot\exp{\left(-\frac{(x - \mu_x)^2}{2 \sigma_x^2}-\frac{(y - \mu_y)^2}{2 \sigma_y^2}\right)}$$, where $$A$$ is an amplitude (peak of the distribution).
+- `Gaussian` is a normalized 2D Gaussian function 
+$$
+  \text{vol}
+  =
+  A 
+  \cdot
+  \exp{
+    \left(
+      -\frac{(x - \mu_x)^2}{2 \sigma_x^2}
+      -\frac{(y - \mu_y)^2}{2 \sigma_y^2}
+    \right)
+  }
+$$, where $$A$$ is an amplitude (peak of the distribution).
+<figure class="center-figure">
+  <img src="../custom_assets/images/daq_controller/LedsStageProgram_Gaussian.png" alt="MacroScriptWidget" width="80%">
+  <figcaption>StageProgram Gaussian mode</figcaption>
+</figure>
 
 - `FourPoint` is bilinear interpolation between four 2D vertices $$\left[p_1, p_2, p_3, p_4 \right]$$, each with its weight $$\left[w_1, w_2, w_3, w_4 \right]$$. 
 Points outside quadrilateral can be set to $$0$$ or a constant float value.
+<figure class="center-figure">
+  <img src="../custom_assets/images/daq_controller/LedsStageProgram_FourPoint.png" alt="MacroScriptWidget" width="80%">
+  <figcaption>StageProgram FourPoint</figcaption>
+</figure>
 
 For both of the stage program modes, there is a toggle switch to interpret the parameters as relative to the starting position of the recording.
+In an example figure below, we can set the mean of the Gaussian distribution to be relative to the starting position at recording by (-30, -30) mm.
 
+<figure class="center-figure">
+  <img src="../custom_assets/images/daq_controller/LedsStageProgram_Gaussian_relative.png" alt="MacroScriptWidget" width="80%">
+  <figcaption>StageProgram Gaussian relative to the starting position</figcaption>
+</figure>
