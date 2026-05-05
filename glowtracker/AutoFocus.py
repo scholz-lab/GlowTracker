@@ -70,16 +70,15 @@ class AutoFocusPID:
 
     Class name is legacy. Each AF event probes z+δ and z-δ, picks whichever of
     {z-δ, z, z+δ} has the highest focus metric (subject to an improvement
-    margin), and moves there. Stateless per event: no PID memory, no direction
-    history. Cumulative travel across the session is capped for safety.
+    margin against BOTH F_zero AND the opposing probe), and moves there.
+    Stateless per event.
 
-    Per-event motion is bounded to ≤ 4·δ in total: +δ, then -2δ, then at most
-    +2δ to settle on the best position. So a single event can never wander far
-    regardless of focus measurement noise.
+    Safety: tracks signed net displacement from the session start. Probes that
+    return to start contribute 0 to the budget; only real drift consumes it.
     """
 
-    SAFETY_MAX_PROBE_MM: float = 0.02
-    SAFETY_MAX_TOTAL_TRAVEL_MM: float = 2.0
+    SAFETY_MAX_PROBE_MM: float = 0.04
+    SAFETY_MAX_NET_DISPLACEMENT_MM: float = 2.0
 
     def __init__(
         self,
@@ -96,7 +95,7 @@ class AutoFocusPID:
         self.probeDelta: float = min(rawDelta, self.SAFETY_MAX_PROBE_MM)
         self.improvementMargin: float = max(0.0, improvementMargin)
 
-        self.totalTravel: float = 0.0
+        self.netDisplacement: float = 0.0
         self.aborted: bool = False
         self.focusLog: List[float] = []
         self.posLog: List[float] = []
@@ -105,9 +104,9 @@ class AutoFocusPID:
         return estimateFocus(self.focusEstimationMethod, image)
 
     def commitMove(self, distance: float) -> bool:
-        """Track cumulative absolute travel. Returns False once the cap is hit."""
-        self.totalTravel += abs(distance)
-        if self.totalTravel > self.SAFETY_MAX_TOTAL_TRAVEL_MM:
+        """Track signed net displacement. Returns False once |net| exceeds the cap."""
+        self.netDisplacement += distance
+        if abs(self.netDisplacement) > self.SAFETY_MAX_NET_DISPLACEMENT_MM:
             self.aborted = True
             return False
         return True
@@ -115,13 +114,14 @@ class AutoFocusPID:
     def pickBest(self, F_minus: float, F_zero: float, F_plus: float) -> int:
         """Return -1, 0, or +1 indicating which of {z-δ, z, z+δ} has the best focus.
 
-        A probe wins only if it beats F_zero by at least improvementMargin
-        (relative). Otherwise we hold position. This is the natural deadband:
-        no spurious moves when the current z is already close to peak.
+        A probe wins only if it beats BOTH F_zero AND the opposing probe by
+        improvementMargin (relative). This requires evidence of a real
+        gradient: random noise can only push one comparison over the margin
+        at a time, not both. If neither probe meets both criteria, hold.
         """
-        threshold = F_zero * (1.0 + self.improvementMargin)
-        if F_plus >= F_minus and F_plus > threshold:
+        margin = 1.0 + self.improvementMargin
+        if F_plus > F_zero * margin and F_plus > F_minus * margin:
             return +1
-        if F_minus > F_plus and F_minus > threshold:
+        if F_minus > F_zero * margin and F_minus > F_plus * margin:
             return -1
         return 0

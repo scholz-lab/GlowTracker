@@ -3219,21 +3219,24 @@ class RuntimeControls(BoxLayout):
         """
         app: GlowTrackerApp = App.get_running_app()
 
-        def measure() -> float:
-            t_pre = self.imageacquisitionmanager.imageRetrieveTimeStamp
-            deadline = time.perf_counter() + 1.0
-            while self.imageacquisitionmanager.imageRetrieveTimeStamp <= t_pre:
-                if time.perf_counter() > deadline:
-                    break
-                time.sleep(0.005)
-            if dualColorMode:
-                img = self.imageacquisitionmanager.dualColorMainSideImage
-            else:
-                img = self.imageacquisitionmanager.image
-            if img is None:
-                return 0.0
-            cropped = macro.cropCenterImage(img, capturedRadius * 2, capturedRadius * 2)
-            return autoFocusPID.estimate(cropped)
+        def measure(samples: int = 3) -> float:
+            values = []
+            for _ in range(samples):
+                t_pre = self.imageacquisitionmanager.imageRetrieveTimeStamp
+                deadline = time.perf_counter() + 1.0
+                while self.imageacquisitionmanager.imageRetrieveTimeStamp <= t_pre:
+                    if time.perf_counter() > deadline:
+                        break
+                    time.sleep(0.005)
+                if dualColorMode:
+                    img = self.imageacquisitionmanager.dualColorMainSideImage
+                else:
+                    img = self.imageacquisitionmanager.image
+                if img is None:
+                    continue
+                cropped = macro.cropCenterImage(img, capturedRadius * 2, capturedRadius * 2)
+                values.append(autoFocusPID.estimate(cropped))
+            return float(np.mean(values)) if values else 0.0
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.livefocuscheckbox.state == 'down':
 
@@ -3247,7 +3250,7 @@ class RuntimeControls(BoxLayout):
                 break
 
             if autoFocusPID.aborted:
-                print(f"LiveFocus: cumulative travel exceeded {autoFocusPID.SAFETY_MAX_TOTAL_TRAVEL_MM} mm -- aborting.")
+                print(f"LiveFocus: net displacement exceeded {autoFocusPID.SAFETY_MAX_NET_DISPLACEMENT_MM} mm -- aborting.")
                 break
 
             delta = autoFocusPID.probeDelta
@@ -3282,7 +3285,7 @@ class RuntimeControls(BoxLayout):
                     graph_y_data.extend([F_minus, F0, F_plus])
 
             labels = ['z-d', 'z', 'z+d']
-            print(f"AF: F-={F_minus:.4g}  F0={F0:.4g}  F+={F_plus:.4g}  best={labels[best+1]}  travel={autoFocusPID.totalTravel*1000:.1f}um")
+            print(f"AF: F-={F_minus:.4g}  F0={F0:.4g}  F+={F_plus:.4g}  best={labels[best+1]}  net={autoFocusPID.netDisplacement*1000:+.1f}um")
 
         # The live focus has stopped
         self.livefocuscheckbox.state = 'normal'
