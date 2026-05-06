@@ -3307,8 +3307,7 @@ class RuntimeControls(BoxLayout):
         camera = app.camera
         stage = app.stage
 
-        # if camera is not None and stage is not None and camera.IsGrabbing():
-        if True:
+        if camera is not None and stage is not None and camera.IsGrabbing():
 
             if self.isShowTrackingDialogueFirstTime:
                 self.isShowTrackingDialogueFirstTime = False
