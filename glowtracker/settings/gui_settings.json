@@ -417,28 +417,28 @@
     },
     {
         "type": "title",
-        "title": "LedsControl"
+        "title": "DaqControl"
     },
     {
         "type": "options",
         "title": "Mode",
-        "desc": "Modes of controlling LED",
-        "section": "LedsControl",
+        "desc": "Modes of controlling DAQ",
+        "section": "DaqControl",
         "key": "mode",
         "options": ["Off", "Sequencer", "StageProgram"]
     },
     {
         "type": "path",
-        "title": "LED sequence file",
-        "desc": "The file path of LED sequence",
-        "section": "LedsControl",
-        "key": "ledsequencescript"
+        "title": "DAQ sequence file",
+        "desc": "The file path of DAQ sequence",
+        "section": "DaqControl",
+        "key": "sequencescript"
     },
     {
         "type": "options",
         "title": "StageProgramMode",
-        "desc": "Modes of controlling LED as Stage-Program",
-        "section": "LedsControl",
+        "desc": "Modes of controlling DAQ as Stage-Program",
+        "section": "DaqControl",
         "key": "stageprogrammode",
         "options": ["FourPoint", "Gaussian"]
     },
@@ -446,14 +446,14 @@
         "type": "bool",
         "title": "FourPoint Relative Position",
         "desc": "Is the bottom-left corner of the FourPoint relative to the start-Recording position",
-        "section": "LedsControl",
+        "section": "DaqControl",
         "key": "relative"
     },
     {
         "type": "bool",
         "title": "Gaussian Relative Position",
         "desc": "Are the gaussian means relative to the start-Recording position",
-        "section": "LedsControl",
+        "section": "DaqControl",
         "key": "g_relative"
     },
     {
