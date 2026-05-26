@@ -14,7 +14,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
 
 
-class LEDsMode(Enum):
+class DAQMode(Enum):
     Off = 'Off'
     Sequencer = 'Sequencer'
     StageProgram = 'StageProgram'
@@ -65,10 +65,10 @@ class DAQControl():
 
     def __init__(self):
         self.daq: u3.U3 | None = None
-        self.ledsSequnceDict : OrderedDict = OrderedDict()
-        self.ledsSequnceDictRunning : OrderedDict = OrderedDict()
+        self.sequncerDict : OrderedDict = OrderedDict()
+        self.sequnceDictRunning : OrderedDict = OrderedDict()
         # self.isEnable: bool = False
-        self.ledsMode: LEDsMode = LEDsMode.Off
+        self.daqMode: DAQMode = DAQMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
     
@@ -87,7 +87,7 @@ class DAQControl():
     def start(self, startRecordPosition: np.ndarray):
         """Reset internal command dict to original to prepare for running.
         """
-        self.ledsSequnceDictRunning = deepcopy(self.ledsSequnceDict)
+        self.sequnceDictRunning = deepcopy(self.sequncerDict)
         self.daqStageProgram.startRecordPosition = startRecordPosition
     
     
@@ -104,7 +104,7 @@ class DAQControl():
         dac0Command = u3.DAC0_8(dac0Val)
         self.daq.getFeedback(dac0Command)
         # Clean running command queue
-        self.ledsSequnceDictRunning.clear()
+        self.sequnceDictRunning.clear()
         self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
 
         
@@ -131,14 +131,14 @@ class DAQControl():
 
             # Check if empty
             if len(processedDict) == 0:
-                self.ledsSequnceDict.clear()
+                self.sequncerDict.clear()
                 return
 
             # Get running mode
             mode = processedDict.pop('mode')[0]
             
             # Sort and convert to OrderedDict
-            self.ledsSequnceDict = OrderedDict( {key:val for key, val in sorted(processedDict.items(), key= lambda x: x[0])} )
+            self.sequncerDict = OrderedDict( {key:val for key, val in sorted(processedDict.items(), key= lambda x: x[0])} )
 
             if mode == 'frame':
                 self.sequencerMode = SequencerMode.Frame
@@ -147,34 +147,34 @@ class DAQControl():
                 self.sequencerMode = SequencerMode.Time
                 
             else:
-                raise ValueError(f"Failed to parse LED script text: Invalid 'mode' argument. Options are ['frame', 'time']")
+                raise ValueError(f"Failed to parse DAQ script text: Invalid 'mode' argument. Options are ['frame', 'time']")
 
         except Exception as e:
-            raise ValueError(f"Failed to parse LED script text: {e}")
+            raise ValueError(f"Failed to parse DAQ script text: {e}")
     
 
     def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = []) -> None:
-        if self.ledsMode == LEDsMode.Off:
+        if self.daqMode == DAQMode.Off:
             return
         
-        elif self.ledsMode == LEDsMode.Sequencer:
+        elif self.daqMode == DAQMode.Sequencer:
             self.updateSequencer(frameNum= frameNum, frameTime= frameTime)
         
-        elif self.ledsMode == LEDsMode.StageProgram:
+        elif self.daqMode == DAQMode.StageProgram:
             self.updateStageProgram(stagePosition)
 
 
     def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
 
-        # Seperate this into two cases, one for each LEDsMode
+        # Seperate this into two cases, one for each DAQMode
         #   Also need stage position input
-        if len(self.ledsSequnceDictRunning) == 0 or not self.ledsMode == LEDsMode.Sequencer:
+        if len(self.sequnceDictRunning) == 0 or not self.daqMode == DAQMode.Sequencer:
             return
 
         if self.sequencerMode == SequencerMode.Frame:
         
             # Get the exact frame command
-            frameCommand = self.ledsSequnceDictRunning.pop(frameNum, default= None)
+            frameCommand = self.sequnceDictRunning.pop(frameNum, default= None)
 
             if frameCommand is not None:
                 print(f"Frame {frameNum}:")
@@ -183,25 +183,25 @@ class DAQControl():
         elif self.sequencerMode == SequencerMode.Time:
             
             # Get the first (lowest frame time) command in queue
-            commandFrameTime = next(iter(self.ledsSequnceDictRunning))
+            commandFrameTime = next(iter(self.sequnceDictRunning))
 
             if frameTime >= commandFrameTime:
 
                 # Pop the command
                 # Get all the commands with time that are lower than the frame time
                 commands = []
-                while commandFrameTime <= frameTime and len(self.ledsSequnceDictRunning) > 0:
+                while commandFrameTime <= frameTime and len(self.sequnceDictRunning) > 0:
 
                     # Pop first item (lowest frame time)
-                    commandFrameTime, frameCommand = self.ledsSequnceDictRunning.popitem(last= False)
+                    commandFrameTime, frameCommand = self.sequnceDictRunning.popitem(last= False)
                     commands.append([commandFrameTime, frameCommand])
 
                     # If the command queue is now empty then stop
-                    if len(self.ledsSequnceDictRunning) == 0:
+                    if len(self.sequnceDictRunning) == 0:
                         break
                     
                     # Get the next one
-                    commandFrameTime = next(iter(self.ledsSequnceDictRunning))
+                    commandFrameTime = next(iter(self.sequnceDictRunning))
 
                     # If the next commandFrameTime is already higher then break
                     if commandFrameTime > frameTime:

@@ -87,7 +87,7 @@ from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
-from DAQ_control import DAQControl, LEDsMode, StageProgramMode, GaussianParams
+from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 
 # 
 # Math
@@ -409,8 +409,8 @@ class RightColumn(BoxLayout):
             self._popup.open()
 
     
-    def open_leds(self):
-        """Open the LEDs Control Sequence widget popup.
+    def open_daq_widget(self):
+        """Open the DAQ Control Sequence widget popup.
         """
 
         # Disabled interaction with preview image widget
@@ -419,12 +419,12 @@ class RightColumn(BoxLayout):
         # Unbind keyboard events
         self.app.unbind_keys()
 
-        # Create LedsControlTabPanel Widget
-        ledsControlTabPanelHolder = LedsControlTabPanelHolder()
-        ledsControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
+        # Create DAQControlTabPanel Widget
+        daqControlTabPanelHolder = DAQControlTabPanelHolder()
+        daqControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
         
         # Launch the widget inside a popup window
-        self._popup = Popup(title= '', separator_height= 0, content= ledsControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup = Popup(title= '', separator_height= 0, content= daqControlTabPanelHolder, size_hint= (0.7, 0.7))
         self._popup.open()
 
 
@@ -966,13 +966,13 @@ class DepthOfFieldCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
-class LedsControlTabPanelHolder(FloatLayout):
+class DAQControlTabPanelHolder(FloatLayout):
 
     mode: Spinner
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.ids.ledscontroltabpanel.init()
+        self.ids.daqcontroltabpanel.init()
 
     
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -982,7 +982,7 @@ class LedsControlTabPanelHolder(FloatLayout):
             closeCallback (callable): the closing callback event.
         """        
         self.closeCallback = closeCallback
-        self.ids.ledscontroltabpanel.setCloseCallback( closeCallback )
+        self.ids.daqcontroltabpanel.setCloseCallback( closeCallback )
     
     def updateMode(self):
         print(self.mode.text)
@@ -990,14 +990,14 @@ class LedsControlTabPanelHolder(FloatLayout):
         app: GlowTrackerApp = App.get_running_app()
 
         # Update to config
-        app.config.set('LedsControl', 'mode', self.mode.text)
+        app.config.set('DaqControl', 'mode', self.mode.text)
         app.config.write()
 
         # Update DAQControl
-        app.daqControl.ledsMode = LEDsMode[self.mode.text]
+        app.daqControl.daqMode = DAQMode[self.mode.text]
 
 
-class LedsControlTabPanel(TabbedPanel):
+class DAQControlTabPanel(TabbedPanel):
     """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
     """    
 
@@ -1006,8 +1006,8 @@ class LedsControlTabPanel(TabbedPanel):
     
     
     def init(self):
-        self.ids.ledssequencer.init()
-        self.ids.ledsstageprogram.init()
+        self.ids.daqsequencer.init()
+        self.ids.daqstageprogram.init()
     
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1017,17 +1017,17 @@ class LedsControlTabPanel(TabbedPanel):
             closeCallback (callable): the closing callback event.
         """        
         self.closeCallback = closeCallback
-        self.ids.ledssequencer.setCloseCallback( closeCallback )
-        self.ids.ledsstageprogram.setCloseCallback( closeCallback )
+        self.ids.daqsequencer.setCloseCallback( closeCallback )
+        self.ids.daqstageprogram.setCloseCallback( closeCallback )
 
 
-class LedsControlWidget(BoxLayout):
+class DAQControlWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-        super(LedsControlWidget, self).__init__(**kwargs)
+        super(DAQControlWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1038,12 +1038,12 @@ class LedsControlWidget(BoxLayout):
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
 
-        self.ledsScript: str = ''
+        self.daqScript: str = ''
         self._popup: Popup = None
-        self.ledsScriptFile: str = self.ids.ledsscriptfile.text
+        self.daqScriptFile: str = self.ids.daqscriptfile.text
         # Load the recent script
-        if self.ledsScriptFile != '':
-            self.loadScript(self.ledsScriptFile)
+        if self.daqScriptFile != '':
+            self.loadScript(self.daqScriptFile)
 
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1055,7 +1055,7 @@ class LedsControlWidget(BoxLayout):
         self.closeCallback = closeCallback
 
 
-    def openLoadLedsControlWidget(self):
+    def openLoadDAQControlWidget(self):
         """Open a popup to load the script.
         """
         
@@ -1063,8 +1063,8 @@ class LedsControlWidget(BoxLayout):
 
         # Check if current file path is not empty then go to that path at the beginning,
         #  and set loadWidget.ids.filechooser.path = ...
-        if self.ledsScriptFile != '':
-            loadWidget.ids.filechooser.path = self.ledsScriptFile
+        if self.daqScriptFile != '':
+            loadWidget.ids.filechooser.path = self.daqScriptFile
 
         self._popup = Popup(title= "Load sequence file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
@@ -1097,33 +1097,33 @@ class LedsControlWidget(BoxLayout):
             filePath (str): _description_
         """
         # Get the absolute file path
-        self.ledsScriptFile = os.path.abspath(filePath)
+        self.daqScriptFile = os.path.abspath(filePath)
         
         # Load the script text
 
         try:
-            with open(self.ledsScriptFile, 'r') as file:
-                self.ledsScript = file.read()
+            with open(self.daqScriptFile, 'r') as file:
+                self.daqScript = file.read()
 
-            print(f'Loaded LEDs control script {self.ledsScriptFile}')
+            print(f'Loaded DAQ sequence script {self.daqScriptFile}')
 
         except FileNotFoundError:
-            print(f'The file {self.ledsScriptFile} was not found.')
+            print(f'The file {self.daqScriptFile} was not found.')
 
         except IOError:
-            print(f'An error occurred while reading the file {self.ledsScriptFile}.')
+            print(f'An error occurred while reading the file {self.daqScriptFile}.')
         
         # Set display text
-        self.ids.ledsscriptfile.text = self.ledsScriptFile
-        self.ids.scripttext.text = self.ledsScript
+        self.ids.daqscriptfile.text = self.daqScriptFile
+        self.ids.scripttext.text = self.daqScript
 
         # Set as recent script
-        self.app.config.set('LedsControl', 'ledsequencescript', self.ledsScriptFile)
+        self.app.config.set('DaqControl', 'sequencescript', self.daqScriptFile)
         self.app.config.write()
 
         # Parse text to command
         try:
-            self.app.daqControl.parseTextScript(self.ledsScript)
+            self.app.daqControl.parseTextScript(self.daqScript)
 
         except Exception as e:
             print(e)
@@ -1133,9 +1133,9 @@ class LedsControlWidget(BoxLayout):
     def saveScript(self):
         """Save the current macro script into the same file (overwrite if exists).
         """
-        file_path = self.ids.ledsscriptfile.text
+        file_path = self.ids.daqscriptfile.text
         # Copy text from inputtext to self
-        self.ledsScript = self.ids.scripttext.text
+        self.daqScript = self.ids.scripttext.text
 
         try:
             # Convert to absolute path if it's a relative path
@@ -1148,10 +1148,10 @@ class LedsControlWidget(BoxLayout):
             
             # Open the file in overwrite mode, creating it if it doesn't exist
             with open(abs_file_path, 'w') as file:
-                file.write(self.ledsScript)
+                file.write(self.daqScript)
 
             # Set as recent script
-            self.app.config.set('LedsControl', 'ledsequencescript', self.ids.ledsscriptfile.text)
+            self.app.config.set('DaqControl', 'sequencescript', self.ids.daqscriptfile.text)
 
             print(f"Saved the script {file_path}")
 
@@ -1159,18 +1159,18 @@ class LedsControlWidget(BoxLayout):
             print(f"Error saving to {file_path}: {e}")
 
         except Exception as e:
-            print(f"Error saving LED script: {e}")
+            print(f"Error saving DAQ script: {e}")
 
         # Then update the current script to daqControl
         try:
-            self.app.daqControl.parseTextScript(self.ledsScript)
+            self.app.daqControl.parseTextScript(self.daqScript)
 
         except Exception as e:
             print(e)
             return None
     
 
-class LedsStageProgramWidget(BoxLayout):
+class DAQStageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
@@ -1178,11 +1178,11 @@ class LedsStageProgramWidget(BoxLayout):
 
     # FourPoint params
     modeSpinner: Spinner
-    constanttextinput: LedsStageTextInput
-    p1x: LedsStageTextInput; p1y: LedsStageTextInput; p1v: LedsStageTextInput
-    p2x: LedsStageTextInput; p2y: LedsStageTextInput; p2v: LedsStageTextInput
-    p3x: LedsStageTextInput; p3y: LedsStageTextInput; p3v: LedsStageTextInput
-    p4x: LedsStageTextInput; p4y: LedsStageTextInput; p4v: LedsStageTextInput
+    constanttextinput: DAQStageTextInput
+    p1x: DAQStageTextInput; p1y: DAQStageTextInput; p1v: DAQStageTextInput
+    p2x: DAQStageTextInput; p2y: DAQStageTextInput; p2v: DAQStageTextInput
+    p3x: DAQStageTextInput; p3y: DAQStageTextInput; p3v: DAQStageTextInput
+    p4x: DAQStageTextInput; p4y: DAQStageTextInput; p4v: DAQStageTextInput
     relative: Switch
     exterior_layout: BoxLayout
     fourpoint_header_layout: BoxLayout
@@ -1193,11 +1193,11 @@ class LedsStageProgramWidget(BoxLayout):
     relative_layout: BoxLayout
 
     # Gaussian Params
-    g_amplitude: LedsStageTextInput
-    g_x_mean: LedsStageTextInput
-    g_x_sigma: LedsStageTextInput
-    g_y_mean: LedsStageTextInput
-    g_y_sigma: LedsStageTextInput
+    g_amplitude: DAQStageTextInput
+    g_x_mean: DAQStageTextInput
+    g_x_sigma: DAQStageTextInput
+    g_y_mean: DAQStageTextInput
+    g_y_sigma: DAQStageTextInput
     g_relative: Switch
     g_amplitude_layout: BoxLayout
     g_x_mean_layout: BoxLayout
@@ -1207,7 +1207,7 @@ class LedsStageProgramWidget(BoxLayout):
     g_relative_layout: BoxLayout
 
     def __init__(self, **kwargs):
-        super(LedsStageProgramWidget, self).__init__(**kwargs)
+        super(DAQStageProgramWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1217,8 +1217,8 @@ class LedsStageProgramWidget(BoxLayout):
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
-        self.exterior = macro.Exterior[self.app.config.get('LedsControl', 'exterior')]
-        self.mode = StageProgramMode[self.app.config.get('LedsControl', 'stageprogrammode')]
+        self.exterior = macro.Exterior[self.app.config.get('DaqControl', 'exterior')]
+        self.mode = StageProgramMode[self.app.config.get('DaqControl', 'stageprogrammode')]
         self.modeSpinner.text = self.mode.value
         self._popup: Popup = None
         
@@ -1230,7 +1230,7 @@ class LedsStageProgramWidget(BoxLayout):
         self._tempContainer = BoxLayout()
         
         self.initModeWidget()
-        self.updateLedStageProgram()
+        self.updateDaqStageProgram()
 
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1308,11 +1308,11 @@ class LedsStageProgramWidget(BoxLayout):
                     stacklayout.add_widget(widget= widget)
         
         # Save to config
-        self.app.config.set('LedsControl', 'stageprogrammode', self.modeSpinner.text)
+        self.app.config.set('DaqControl', 'stageprogrammode', self.modeSpinner.text)
         self.app.config.write()
 
 
-    def updateLedStageProgram(self) -> None:
+    def updateDaqStageProgram(self) -> None:
 
         if self.mode == StageProgramMode.FourPoint:
             # Parse values
@@ -1348,38 +1348,38 @@ class LedsStageProgramWidget(BoxLayout):
 
 class RelativePositionSwitch(Switch):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
+    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
-        self.active = self.app.config.getboolean('LedsControl', self.configKey)
+        self.active = self.app.config.getboolean('DaqControl', self.configKey)
 
     
     @override
     def on_touch_up(self, touch): 
         """On switch touch up callback. Update the config value 'self.configKey',
-            and call root.updateLedStageProgram()
+            and call root.updateDaqStageProgram()
 
         Args:
             touch (Touch): touch input data.
         """
         if super(RelativePositionSwitch, self).on_touch_up(touch):
 
-            self.app.config.set('LedsControl', self.configKey, int(self.active))
+            self.app.config.set('DaqControl', self.configKey, int(self.active))
             self.app.config.write()
 
-            self.root.updateLedStageProgram()
+            self.root.updateDaqStageProgram()
 
             return True
     
 
-class LedsStageTextInput(TextInput):
+class DAQStageTextInput(TextInput):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be LedsStageProgramWidget
+    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
-        self.text = self.app.config.get('LedsControl', self.configKey)
+        self.text = self.app.config.get('DaqControl', self.configKey)
         self.value = float(self.text)
 
 
@@ -1413,12 +1413,12 @@ class LedsStageTextInput(TextInput):
 
     @override
     def on_text_validate(self, *args):
-        """Validate self.text. Then save to config and update LedStageProgram.
+        """Validate self.text. Then save to config and update DAQStageProgram.
         """
         if self._validate():
-            self.app.config.set('LedsControl', self.configKey, self.value)
+            self.app.config.set('DaqControl', self.configKey, self.value)
             self.app.config.write()
-            self.root.updateLedStageProgram()
+            self.root.updateDaqStageProgram()
         
         else:
             self.text = str(self.value)
@@ -2101,7 +2101,7 @@ class RecordButton(ImageAcquisitionButton):
         self.savingthread.start()
 
         # Prep DAQ control
-        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.start( np.array(self.app.coords[:2]) )
 
         # Setup image acquisition thread parameters
@@ -2279,7 +2279,7 @@ class RecordButton(ImageAcquisitionButton):
         Clock.schedule_once( resumeButtonsState )
 
         # Reset the DAQ state
-        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.reset()
     
 
@@ -2380,7 +2380,7 @@ class RecordButton(ImageAcquisitionButton):
 
         # Trigger DAQ Control command
         # Actually, is framecounter.value effected when frame skip?
-        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
@@ -2398,7 +2398,7 @@ class RecordButton(ImageAcquisitionButton):
         self.imageQueue.put(None)
 
         # Reset the DAQ state
-        if self.app.daqControl.isConnected() and self.app.daqControl.ledsMode != LEDsMode.Off:
+        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.reset()
 
         # There are two ways to reach this point:
@@ -3976,42 +3976,42 @@ class DAQConnectionButton(ToggleButton):
             self.state = 'normal'
             return
         
-        app.daqControl.ledsMode = LEDsMode[app.config.get("LedsControl", "mode")]
+        app.daqControl.daqMode = DAQMode[app.config.get("DaqControl", "mode")]
 
         # Load recent script
         try:
-            recentScriptFile = app.config.get('LedsControl', 'ledsequencescript')
+            recentScriptFile = app.config.get('DaqControl', 'sequencescript')
             # Read the file
             with open(recentScriptFile, 'r') as file:
                 recentScript = file.read()
                 # Parse the script
                 app.daqControl.parseTextScript(recentScript)
-                print(f'Loaded LEDs control script {recentScriptFile}')
+                print(f'Loaded DAQ sequence script {recentScriptFile}')
 
         except Exception as e:
-            print(f'Error loading recent LEDs control script: {e}')
+            print(f'Error loading recent DAQ sequence script: {e}')
 
         # Load StageProgram properties
-        stageprogrammode = StageProgramMode[app.config.get('LedsControl', 'stageprogrammode')]
-        exterior = macro.Exterior[app.config.get('LedsControl', 'exterior')]
-        exteriorConstant = app.config.getfloat('LedsControl', 'constanttextinput')
-        p1x = app.config.getfloat('LedsControl', 'p1x')
-        p1y = app.config.getfloat('LedsControl', 'p1y')
-        p1v = app.config.getfloat('LedsControl', 'p1v')
-        p2x = app.config.getfloat('LedsControl', 'p2x')
-        p2y = app.config.getfloat('LedsControl', 'p2y')
-        p2v = app.config.getfloat('LedsControl', 'p2v')
-        p3x = app.config.getfloat('LedsControl', 'p3x')
-        p3y = app.config.getfloat('LedsControl', 'p3y')
-        p3v = app.config.getfloat('LedsControl', 'p3v')
-        p4x = app.config.getfloat('LedsControl', 'p4x')
-        p4y = app.config.getfloat('LedsControl', 'p4y')
-        p4v = app.config.getfloat('LedsControl', 'p4v')
-        g_amplitude = app.config.getfloat('LedsControl', 'g_amplitude')
-        g_x_mean = app.config.getfloat('LedsControl', 'g_x_mean')
-        g_x_sigma = app.config.getfloat('LedsControl', 'g_x_sigma')
-        g_y_mean = app.config.getfloat('LedsControl', 'g_y_mean')
-        g_y_sigma = app.config.getfloat('LedsControl', 'g_y_sigma')
+        stageprogrammode = StageProgramMode[app.config.get('DaqControl', 'stageprogrammode')]
+        exterior = macro.Exterior[app.config.get('DaqControl', 'exterior')]
+        exteriorConstant = app.config.getfloat('DaqControl', 'constanttextinput')
+        p1x = app.config.getfloat('DaqControl', 'p1x')
+        p1y = app.config.getfloat('DaqControl', 'p1y')
+        p1v = app.config.getfloat('DaqControl', 'p1v')
+        p2x = app.config.getfloat('DaqControl', 'p2x')
+        p2y = app.config.getfloat('DaqControl', 'p2y')
+        p2v = app.config.getfloat('DaqControl', 'p2v')
+        p3x = app.config.getfloat('DaqControl', 'p3x')
+        p3y = app.config.getfloat('DaqControl', 'p3y')
+        p3v = app.config.getfloat('DaqControl', 'p3v')
+        p4x = app.config.getfloat('DaqControl', 'p4x')
+        p4y = app.config.getfloat('DaqControl', 'p4y')
+        p4v = app.config.getfloat('DaqControl', 'p4v')
+        g_amplitude = app.config.getfloat('DaqControl', 'g_amplitude')
+        g_x_mean = app.config.getfloat('DaqControl', 'g_x_mean')
+        g_x_sigma = app.config.getfloat('DaqControl', 'g_x_sigma')
+        g_y_mean = app.config.getfloat('DaqControl', 'g_y_mean')
+        g_y_sigma = app.config.getfloat('DaqControl', 'g_y_sigma')
         gaussianParams = GaussianParams(amplitude= g_amplitude, x_mean= g_x_mean, x_sigma= g_x_sigma, y_mean= g_y_mean, y_sigma= g_y_sigma)
 
         p1 = Vertex2D(np.array([p1x, p1y], np.float32), p1v, 'P1')
@@ -4236,9 +4236,9 @@ class GlowTrackerApp(App):
             'recentscript': ''
         })
 
-        config.setdefaults('LedsControl', {
+        config.setdefaults('DaqControl', {
             'mode': 'Off',
-            'ledsequencescript': '',
+            'sequencescript': '',
             'stageprogrammode': 'Gaussian',
             'exterior': 'Zero',
             'constanttextinput': 0,
@@ -4687,11 +4687,11 @@ class GlowTrackerApp(App):
                     'down' if showliveanalysis else 'normal'
             
 
-        elif section == 'LedsControl':
+        elif section == 'DaqControl':
 
             if key == 'mode':
 
-                self.daqControl.ledsMode = LEDsMode[value]
+                self.daqControl.daqMode = DAQMode[value]
 
 
         elif section == 'Developer':

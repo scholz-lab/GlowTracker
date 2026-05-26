@@ -644,8 +644,8 @@ MainWindow:
         on_release: root.show_calibration()
     MyButton:
         size_hint: (1, 0.1)
-        text: 'LEDs'
-        on_release: root.open_leds()
+        text: 'DAQ'
+        on_release: root.open_daq_widget()
     MyLabel:
         text: 'Hardware'
         size_hint: (1, 0.1)
@@ -1033,12 +1033,12 @@ MainWindow:
             on_release: root.closeCallback()
 
 
-<LedsControlTabPanelHolder>:
+<daqcontroltabpanelHolder>:
 
     mode: mode
 
-    LedsControlTabPanel:
-        id: ledscontroltabpanel
+    DAQControlTabPanel:
+        id: daqcontroltabpanel
         size_hint: 1, 1
         pos_hint: {"center_x": 0.5, "center_y": 0.5}
 
@@ -1051,7 +1051,7 @@ MainWindow:
         pos_hint: {"right": 1, "top": 1}
 
         Label:
-            text: '[b][color=018EFF]LEDs Mode[/color][/b]'
+            text: '[b][color=018EFF]DAQ Mode[/color][/b]'
             size_hint_x: None
             width: self.texture_size[0]
             markup: True
@@ -1064,30 +1064,30 @@ MainWindow:
             text: 'Off'
             values: 'Off', 'Sequencer', 'StageProgram'
             on_text: root.updateMode()
-            on_kv_post: self.text = app.config.get('LedsControl', 'mode')
+            on_kv_post: self.text = app.config.get('DaqControl', 'mode')
 
 
 
-<LedsControlTabPanel>:
+<DAQControlTabPanel>:
     size: root.size
     pos: root.pos
     do_default_tab: False
     tab_width: 220
             
     TabbedPanelItem:
-        text: 'Leds Sequencer'
+        text: 'Sequencer'
 
-        LedsControlWidget:
-            id: ledssequencer
+        DAQControlWidget:
+            id: daqsequencer
 
     TabbedPanelItem:
-        text: 'Leds-Stage program'
+        text: 'Stage program'
         
-        LedsStageProgramWidget:
-            id: ledsstageprogram
+        DAQStageProgramWidget:
+            id: daqstageprogram
 
 
-<LedsControlWidget>:
+<DAQControlWidget>:
     size: root.size
     pos: root.pos
     
@@ -1098,13 +1098,13 @@ MainWindow:
         size_hint_y: 0.1
 
         TextInput:
-            id: ledsscriptfile
-            text: app.config.get('LedsControl', 'ledsequencescript')
+            id: daqscriptfile
+            text: app.config.get('DaqControl', 'sequencescript')
             size_hint_x: 0.8
         
         Button:
             text: "Load"
-            on_release: root.openLoadLedsControlWidget()
+            on_release: root.openLoadDAQControlWidget()
             size_hint_x: None
 
         Button:
@@ -1136,7 +1136,7 @@ MainWindow:
                 size_hint_y: 0.1
 
 
-<LedsStageProgramWidget>:
+<DAQStageProgramWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
@@ -1204,7 +1204,7 @@ MainWindow:
                     id: modeSpinner
                     text: 'Gaussian'
                     values: 'Gaussian', 'FourPoint'
-                    on_text: root.updateMode(); root.updateLedStageProgram()
+                    on_text: root.updateMode(); root.updateDaqStageProgram()
                     size_hint_x: None
                     width: dp(100)
                 
@@ -1225,11 +1225,11 @@ MainWindow:
                     id: exteriorSpinner
                     text: 'Zero'
                     values: 'Zero', 'Constant'
-                    on_text: root.updateExteriorChoice(); root.updateLedStageProgram()
+                    on_text: root.updateExteriorChoice(); root.updateDaqStageProgram()
                     size_hint_x: None
                     width: dp(100)
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: constanttextinput
                     on_kv_post: root.updateExteriorChoice()
                     root: root
@@ -1268,17 +1268,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p1x
                     configKey: 'p1x'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p1y
                     configKey: 'p1y'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p1v
                     configKey: 'p1v'
                     root: root
@@ -1296,17 +1296,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p2x
                     configKey: 'p2x'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p2y
                     configKey: 'p2y'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p2v
                     configKey: 'p2v'
                     root: root
@@ -1324,17 +1324,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p3x
                     configKey: 'p3x'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p3y
                     configKey: 'p3y'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p3v
                     configKey: 'p3v'
                     root: root
@@ -1352,17 +1352,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p4x
                     configKey: 'p4x'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p4y
                     configKey: 'p4y'
                     root: root
                 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: p4v
                     configKey: 'p4v'
                     root: root
@@ -1409,7 +1409,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: g_amplitude
                     configKey: 'g_amplitude'
                     root: root
@@ -1427,7 +1427,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: g_x_mean
                     configKey: 'g_x_mean'
                     root: root
@@ -1445,7 +1445,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: g_x_sigma
                     configKey: 'g_x_sigma'
                     root: root
@@ -1464,7 +1464,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: g_y_mean
                     configKey: 'g_y_mean'
                     root: root
@@ -1483,7 +1483,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                LedsStageTextInput:
+                DAQStageTextInput:
                     id: g_y_sigma
                     configKey: 'g_y_sigma'
                     root: root
@@ -1539,7 +1539,7 @@ MainWindow:
                 Button:
                     size_hint_x: 0.5
                     text: "Update"
-                    on_release: root.updateLedStageProgram()
+                    on_release: root.updateDaqStageProgram()
                     background_color: [94.0/255, 190.0/255, 88.0/255, 1]
         
         BoxLayout:
@@ -1551,7 +1551,7 @@ MainWindow:
             on_release: root.closeCallback()
 
 
-<LedsStageTextInput>:
+<DAQStageTextInput>:
     multiline: False
     input_filter: 'float'
     base_direction: 'rtl'
