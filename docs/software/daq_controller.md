@@ -10,7 +10,7 @@ nav_order: 6
 GlowTracker has a feature that allows controlling of a Data Acquisition device (DAQ), specifically of LabJack U3 family, to send out analogue signal programatically to control other electronic devices such as an LED driver or a buzzer --- enabling a wide range of experimentation e.g. Mechanogenetics, and Optogenetics.
 The analogue output line is set to `DAC0` (learn more [here](https://support.labjack.com/docs/2-hardware-description-u3-datasheet)) and the voltage is capped at 5V.
 
-This feature can be accessed via the `LEDs` button on the right column.
+This feature can be accessed via the `DAQ` button on the right column.
 A green light status under `DAQ` indicates a connection with a DAQ devices.
 If the light status is red, click on it to attempt to connect to a DAQ device via USB port.
 
@@ -19,13 +19,13 @@ If the light status is red, click on it to attempt to connect to a DAQ device vi
 </figure>
 
 Once clicked, a window will appear.
-There are two main tabs: **Leds Sequencer** and **Leds-Stage program**; each corresponds to how the analogue signal is sent.
-**Leds Sequencer** lets you write a signal sequence, saying what time (second or frame number) and how much voltage.
-**Leds-Stage program** lets you send out a signal based on current stage position.
-To enable which mode activate when the recording start, click on the drop-down option next to the blue <b style='color:#018EFF;'>LEDs Mode</b> text, the options are: "Off", "Leds Sequencer", and "Leds-Stage program".
+There are two main tabs: **Sequencer** and **Stage program**; each corresponds to how the analogue signal is sent.
+**Sequencer** lets you write a signal sequence, saying what time (second or frame number) and how much voltage.
+**Stage program** lets you send out a signal based on current stage position.
+To enable which mode activate when the recording start, click on the drop-down option next to the blue <b style='color:#018EFF;'>DAQ Mode</b> text, the options are: "Off", "Sequencer", and "Stage program".
 
 <figure class="center-figure">
-  <img src="../custom_assets/images/daq_controller/LedSequencer.png" alt="MacroScriptWidget" width="80%">
+  <img src="../custom_assets/images/daq_controller/Sequencer.png" alt="MacroScriptWidget" width="80%">
   <figcaption>A DAQ Controller window. Currently Sequencer window tab.</figcaption>
 </figure>
 
@@ -71,9 +71,9 @@ At the 10th second, the output is set back to 0 vol and remain until before the 
 Depending on the camera's framerate, it is highly likely that we do not get an exact 1-to-1 match from the second to the acquired frame number.
 In which case, the command will be mapped to the first closest frame after the specified ideal time e.g. if the target time is at 5.0 second but the acquired frames are at 4.9, 5.1, 5.3, ..., the command will execute at frame 5.1 second.
 
-## Leds-Stage Program
+## Stage Program
 
-The Leds-Stage program lets you send out a signal based on the current stage position. 
+The Stage program lets you send out a signal based on the current stage position. 
 There are two stage program modes: `Gaussian` and `FourPoint`.
 
 - `Gaussian` is a normalized 2D Gaussian function 
@@ -90,14 +90,14 @@ $$
   }
 $$, where $$A$$ is an amplitude (peak of the distribution).
 <figure class="center-figure">
-  <img src="../custom_assets/images/daq_controller/LedsStageProgram_Gaussian.png" alt="MacroScriptWidget" width="80%">
+  <img src="../custom_assets/images/daq_controller/StageProgram_Gaussian.png" alt="MacroScriptWidget" width="80%">
   <figcaption>StageProgram Gaussian mode</figcaption>
 </figure>
 
 - `FourPoint` is bilinear interpolation between four 2D vertices $$\left[p_1, p_2, p_3, p_4 \right]$$, each with its weight $$\left[w_1, w_2, w_3, w_4 \right]$$. 
 Points outside quadrilateral can be set to $$0$$ or a constant float value.
 <figure class="center-figure">
-  <img src="../custom_assets/images/daq_controller/LedsStageProgram_FourPoint.png" alt="MacroScriptWidget" width="80%">
+  <img src="../custom_assets/images/daq_controller/StageProgram_FourPoint.png" alt="MacroScriptWidget" width="80%">
   <figcaption>StageProgram FourPoint</figcaption>
 </figure>
 
@@ -105,6 +105,6 @@ For both of the stage program modes, there is a toggle switch to interpret the p
 In an example figure below, we can set the mean of the Gaussian distribution to be relative to the starting position at recording by (-30, -30) mm.
 
 <figure class="center-figure">
-  <img src="../custom_assets/images/daq_controller/LedsStageProgram_Gaussian_relative.png" alt="MacroScriptWidget" width="80%">
+  <img src="../custom_assets/images/daq_controller/StageProgram_Gaussian_relative.png" alt="MacroScriptWidget" width="80%">
   <figcaption>StageProgram Gaussian relative to the starting position</figcaption>
 </figure>
