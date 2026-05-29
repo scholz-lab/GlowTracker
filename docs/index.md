@@ -16,6 +16,18 @@ nav_order: 1
     <img float="left" align ="middle" src="custom_assets/images/macroscope_3d_4_shortstage.png" alt="microscope video" width="35%" />
 </div>
 
+<iframe
+    width="560"
+    height="315"
+    src="https://www.youtube.com/embed/OWpMvF_qpRY"
+    title="Assembling a single color epi-fluorescence tracking microscope"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allowfullscreen
+    style="display: block; margin: 40px auto;">
+</iframe>
+
 ## (Epifluorescence + Tracking) / affordable = GlowTracker
 <p align="justify">
   Epifluorescence microscopy uses fluorescence to visualize and study biological samples. Hereby, the sample has to be illuminated by a specific wavelength, which causes the sample to emit light of a higher wavelength. This light can then be captured by a camera. 
