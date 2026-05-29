@@ -21,6 +21,18 @@ nav_order: 4
       </tr>
     </table>
 
+<iframe
+    width="560"
+    height="315"
+    src="https://www.youtube.com/embed/OWpMvF_qpRY"
+    title="Assembling a single color epi-fluorescence tracking microscope"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allowfullscreen
+    style="display: block; margin: 40px auto;">
+</iframe>
+
 ## Steps for assembling your microscope 
 <p align="justify">Assuming you have all the parts from the <a href="https://scholz-lab.github.io/GlowTracker/List%20of%20parts/List_of_parts.html"><i>parts list</i></a> available, you should be able to assemble the microscope in about two hours and have a fully functional tool.</p>
 
