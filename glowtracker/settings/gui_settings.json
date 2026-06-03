@@ -312,6 +312,20 @@
         "key": "showtrackingoverlay"
     },
     {
+        "type": "bool",
+        "title": "Display tracking trail overlay",
+        "desc": "Also display the tracking trail in the tracking overlay.",
+        "section": "Tracking",
+        "key": "showtrail"
+    },
+    {
+        "type": "numeric",
+        "title": "Trail limit",
+        "desc": "Maximum trail history length",
+        "section": "Tracking",
+        "key": "traillimit"
+    },
+    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",

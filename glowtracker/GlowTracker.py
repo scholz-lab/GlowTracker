@@ -24,7 +24,7 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Rectangle
+from kivy.graphics import Color, Line, Ellipse, Mesh
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -2673,8 +2673,9 @@ class ImageOverlay(FloatLayout):
 
         self.trackingBorder: Line | None = None
         self.cmsShape: Ellipse | None = None
+        self.trailMesh: Mesh | None = None
 
-        self.app = App.get_running_app()
+        self.app: GlowTrackerApp = App.get_running_app()
 
 
     def resizeToImage(self) -> None:
@@ -2740,6 +2741,12 @@ class ImageOverlay(FloatLayout):
 
         cmsOffset_x, cmsOffset_y = 0, 0
         trackingMask = np.zeros(0)
+        # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
+        trail: np.array = None
+
+        # Mock-up data
+        a = np.arange(10)
+        trail = np.column_stack([a,a])
 
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
         if rtc.isTracking:
@@ -2753,7 +2760,7 @@ class ImageOverlay(FloatLayout):
         if doClear:
             self.clearTrackingOverlay()
 
-        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, trail)
     
     
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -2814,7 +2821,7 @@ class ImageOverlay(FloatLayout):
         return center, btm_left, top_right
     
     
-    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None) -> None:
+    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None, trail: np.ndarray | None = None) -> None:
         """Draw the tracking info overlay.
             1. Draw the tracking mask if provided
             2. Draw the tracking border
@@ -2930,6 +2937,65 @@ class ImageOverlay(FloatLayout):
             else:
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
+        
+        # 
+        #   Draw tracking trail if provided
+        # 
+        showtrail = self.app.config.getboolean('Tracking', 'showtrail') 
+        if trail is not None and showtrail:
+            
+            # We have trail position in stage coordinate, in XY
+            # Want to have the in screen space, in XY
+            #   stage -> image -> screen -> offset to center
+
+            imageToStageMat_XY = macro.swapMatXYOrder(self.app.imageToStageMat)
+            stageToImageMat = np.linalg.inv(imageToStageMat_XY)
+
+            # Get last M (trial limit) vertices and 
+            #   apply transformation to each row vertex
+            traillimit = self.app.config.getint('Tracking', 'traillimit')
+            trail_imageCoord = stageToImageMat @ trail[-traillimit::, :].transpose()
+
+            #   Transfrom back to column matrix
+            trail_imageCoord = trail_imageCoord.transpose()
+
+            # Transform to screen space 
+            displayedScale: float = normImageSize[0] / imageSize[0]
+
+            trail_screenCoord = trail_imageCoord * displayedScale
+
+            offsetToCenter = center - trail_screenCoord[-1, :]
+
+            trail_screenCoord = trail_screenCoord + offsetToCenter
+
+            # Construct mesh
+            vertices = []
+            
+            #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
+            verts_with_uv = np.column_stack([trail_screenCoord, np.zeros(trail_screenCoord.shape)]) 
+            #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
+            verts_with_uv = verts_with_uv.flatten()
+            vertices = verts_with_uv.tolist()
+
+            indices = []
+
+            numVerts = trail_screenCoord.shape[0] 
+            indices = np.arange(numVerts, dtype= np.int32).tolist()
+
+            if self.trailMesh is None:
+
+                self.trailMesh = Mesh(
+                    vertices = vertices,
+                    indices = indices,
+                    mode = 'line_strip'
+                )
+
+                self.canvas.add(Color(0.9, 0.0, 1.0, 0.75))
+                self.canvas.add(self.trailMesh)
+
+            else:
+                self.trailMesh.vertices = vertices
+                self.trailMesh.indices = indices
 
 
     def clearTrackingOverlay(self):
@@ -2953,6 +3019,10 @@ class ImageOverlay(FloatLayout):
             self.canvas.remove(self.cmsShape)
             self.cmsShape = None
         
+        if self.trailMesh is not None:
+            self.canvas.remove(self.trailMesh)
+            self.trailMesh = None
+            
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
@@ -4203,6 +4273,8 @@ class GlowTrackerApp(App):
 
         config.setdefaults('Tracking', {
             'showtrackingoverlay': 'true',
+            'showtrail': 'true',
+            'traillimit' : '1000',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
