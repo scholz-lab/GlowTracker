@@ -77,11 +77,12 @@ import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
+from copy import deepcopy
 
 # 
 # Own classes
 # 
-from Zaber_control import Stage, AxisEnum
+from Zaber_control import Stage, AxisEnum, Vec3
 import Microscope_macros as macro
 from Microscope_macros import Vertex2D
 import Basler_control as basler
@@ -2384,7 +2385,6 @@ class RecordButton(ImageAcquisitionButton):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
-            self.app.coords
             self.app.daqControl.update(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, stagePosition= self.app.coords)
 
         super().receiveImageCallback()
@@ -2744,14 +2744,12 @@ class ImageOverlay(FloatLayout):
         # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
         trail: np.array = None
 
-        # Mock-up data
-        a = np.arange(10)
-        trail = np.column_stack([a,a])
-
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
         if rtc.isTracking:
             # If tracking, the get the tracking data from RuntimeControls
-            cmsOffset_x, cmsOffset_y, trackingMask = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask
+            cmsOffset_x, cmsOffset_y, trackingMask, posHist = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask, rtc.posHist
+            # Convert posHist to numpy and discard the z-axis position
+            trail = np.array(posHist)[:, (0, 1)]
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
@@ -2833,8 +2831,14 @@ class ImageOverlay(FloatLayout):
             trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
         """
         
-        # Frequently used 
+        # Frequently used variables
         center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+
+        # Compute scaling
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+        normImageSize = np.array(previewImage.get_norm_image_size())
+        imageSize = previewImage.texture_size
+        displayedScale = normImageSize[0] / imageSize[0]
 
         # 
         # Check if needs to draw tracking mask
@@ -2912,12 +2916,6 @@ class ImageOverlay(FloatLayout):
         # 
         if cmsOffset_x is not None and cmsOffset_y is not None:
             
-            # Compute scaling
-            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
-            normImageSize = np.array(previewImage.get_norm_image_size())
-            imageSize = previewImage.texture_size
-            displayedScale = normImageSize[0] / imageSize[0]
-            
             # Compute cms draw position
             cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale 
 
@@ -2958,6 +2956,8 @@ class ImageOverlay(FloatLayout):
 
             #   Transfrom back to column matrix
             trail_imageCoord = trail_imageCoord.transpose()
+            # Convert from mm unit to meter
+            trail_imageCoord = trail_imageCoord * 1000
 
             # Transform to screen space 
             displayedScale: float = normImageSize[0] / imageSize[0]
@@ -3173,6 +3173,7 @@ class RuntimeControls(BoxLayout):
         self.cmsOffset_x: float | None = None
         self.cmsOffset_y: float | None = None
         self.trackingMask: np.ndarray | None = None
+        self.posHist: List[Vec3] = []
 
 
     def on_framecounter(self, instance, value):
@@ -3403,11 +3404,11 @@ class RuntimeControls(BoxLayout):
         Args:
             start_pos_tex_coord (np.array): Starting position in the image texture space (full image size). Used to move the stage to center at that position.
         """        
-        app = App.get_running_app()
-        stage = app.stage
-        units = app.config.get('Calibration', 'step_units')
-        minstep = app.config.getfloat('Tracking', 'min_step')
-        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        app: GlowTrackerApp = App.get_running_app()
+        stage: Stage = app.stage
+        units: str = app.config.get('Calibration', 'step_units')
+        minstep: float = app.config.getfloat('Tracking', 'min_step')
+        dualColorMode: bool = app.config.getboolean('DualColor', 'dualcolormode')
         
         # 
         # Move stage by the user pointed starting position
@@ -3449,6 +3450,10 @@ class RuntimeControls(BoxLayout):
         # Update stage coordinate in the app
         app.coords =  app.stage.get_position()
 
+        # Record position history
+        self.posHist.clear()
+        self.posHist.append((app.coords[0], app.coords[1], app.coords[2]))
+
         # 
         # Start the tracking
         # 
@@ -3462,7 +3467,7 @@ class RuntimeControls(BoxLayout):
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.posHist
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -3486,7 +3491,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, posHist: List[Vec3]) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -3587,15 +3592,19 @@ class RuntimeControls(BoxLayout):
             ystep *= scale
             xstep *= scale
 
-            # getting stage coord is slow so we will interpolate from movements
+            # Getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
                 prevImage = image
+            
             if abs(ystep) > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 prevImage = image
+            
+            # Record position history
+            posHist.append((app.coords[0], app.coords[1], app.coords[2]))
 
             tracking_frame_end_time = time.perf_counter()
 
