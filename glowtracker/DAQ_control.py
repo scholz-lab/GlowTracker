@@ -18,6 +18,7 @@ class DAQMode(Enum):
     Off = 'Off'
     Sequencer = 'Sequencer'
     StageProgram = 'StageProgram'
+    Reversal = 'Reversal'
 
 
 class SequencerMode(Enum):
@@ -511,3 +512,13 @@ class DAQStageProgram():
         plt.ion()
 
         return imageArr
+
+
+class Reversal():
+    
+    def __init__(self):
+        pass
+
+    
+    def detectReversal(self) -> bool:
+        pass

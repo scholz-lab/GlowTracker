@@ -1007,8 +1007,9 @@ class DAQControlTabPanel(TabbedPanel):
     
     
     def init(self):
-        self.ids.daqsequencer.init()
-        self.ids.daqstageprogram.init()
+        self.ids.sequencerwidget.init()
+        self.ids.stageprogramwidget.init()
+        self.ids.reversalwidget.init()
     
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1018,17 +1019,18 @@ class DAQControlTabPanel(TabbedPanel):
             closeCallback (callable): the closing callback event.
         """        
         self.closeCallback = closeCallback
-        self.ids.daqsequencer.setCloseCallback( closeCallback )
-        self.ids.daqstageprogram.setCloseCallback( closeCallback )
+        self.ids.sequencerwidget.setCloseCallback( closeCallback )
+        self.ids.stageprogramwidget.setCloseCallback( closeCallback )
+        self.ids.reversalwidget.setCloseCallback( closeCallback )
 
 
-class DAQControlWidget(BoxLayout):
+class SequencerWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-        super(DAQControlWidget, self).__init__(**kwargs)
+        super(SequencerWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1056,7 +1058,7 @@ class DAQControlWidget(BoxLayout):
         self.closeCallback = closeCallback
 
 
-    def openLoadDAQControlWidget(self):
+    def openLoadSequencerWidget(self):
         """Open a popup to load the script.
         """
         
@@ -1171,7 +1173,7 @@ class DAQControlWidget(BoxLayout):
             return None
     
 
-class DAQStageProgramWidget(BoxLayout):
+class StageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
@@ -1208,7 +1210,7 @@ class DAQStageProgramWidget(BoxLayout):
     g_relative_layout: BoxLayout
 
     def __init__(self, **kwargs):
-        super(DAQStageProgramWidget, self).__init__(**kwargs)
+        super(StageProgramWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1346,10 +1348,37 @@ class DAQStageProgramWidget(BoxLayout):
         # Show the plot
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
 
+class ReversalWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+
+
+    def __init__(self, **kwargs):
+        super(ReversalWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize 
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+
 
 class RelativePositionSwitch(Switch):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
+    root = ObjectProperty()     # Reference to root, which should be StageProgramWidget
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
@@ -1376,7 +1405,7 @@ class RelativePositionSwitch(Switch):
 
 class DAQStageTextInput(TextInput):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
+    root = ObjectProperty()     # Reference to root, which should be StageProgramWidget
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
@@ -4341,7 +4370,8 @@ class GlowTrackerApp(App):
             'g_x_sigma': 0,
             'g_y_mean': 0,
             'g_y_sigma': 0,
-            'g_relative': 'true'
+            'g_relative': 'true',
+            'animallength': '100'
         })
 
         

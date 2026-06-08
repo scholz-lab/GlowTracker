@@ -439,7 +439,7 @@
         "desc": "Modes of controlling DAQ",
         "section": "DaqControl",
         "key": "mode",
-        "options": ["Off", "Sequencer", "StageProgram"]
+        "options": ["Off", "Sequencer", "StageProgram", "Reversal"]
     },
     {
         "type": "path",
@@ -469,6 +469,13 @@
         "desc": "Are the gaussian means relative to the start-Recording position",
         "section": "DaqControl",
         "key": "g_relative"
+    },
+    {
+        "type": "numeric",
+        "title": "Animal length (um)",
+        "desc": "Average length of the tracking animal",
+        "section": "DaqControl",
+        "key": "animallength"
     },
     {
         "type": "title",

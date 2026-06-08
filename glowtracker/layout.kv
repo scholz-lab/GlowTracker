@@ -1062,7 +1062,7 @@ MainWindow:
             size: '100dp', '40dp'
             id: mode
             text: 'Off'
-            values: 'Off', 'Sequencer', 'StageProgram'
+            values: 'Off', 'Sequencer', 'StageProgram', 'Reversal'
             on_text: root.updateMode()
             on_kv_post: self.text = app.config.get('DaqControl', 'mode')
 
@@ -1077,17 +1077,23 @@ MainWindow:
     TabbedPanelItem:
         text: 'Sequencer'
 
-        DAQControlWidget:
-            id: daqsequencer
+        SequencerWidget:
+            id: sequencerwidget
 
     TabbedPanelItem:
         text: 'Stage program'
         
-        DAQStageProgramWidget:
-            id: daqstageprogram
+        StageProgramWidget:
+            id: stageprogramwidget
+    
+    TabbedPanelItem:
+        text: 'Reversal'
+        
+        ReversalWidget:
+            id: reversalwidget
 
 
-<DAQControlWidget>:
+<SequencerWidget>:
     size: root.size
     pos: root.pos
     
@@ -1104,7 +1110,7 @@ MainWindow:
         
         Button:
             text: "Load"
-            on_release: root.openLoadDAQControlWidget()
+            on_release: root.openLoadSequencerWidget()
             size_hint_x: None
 
         Button:
@@ -1136,7 +1142,7 @@ MainWindow:
                 size_hint_y: 0.1
 
 
-<DAQStageProgramWidget>:
+<StageProgramWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
@@ -1550,6 +1556,38 @@ MainWindow:
             size_hint_x: .2
             on_release: root.closeCallback()
 
+
+<ReversalWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+
+    StackLayout:
+        id: stacklayout
+        orientation: 'tb-lr'
+        size_hint_x: 0.5
+        spacing: [0, dp(5)]
+
+        BoxLayout:
+            id: animallength_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
+
+            Label:
+                text: 'Animal length (um)'
+                halign: 'center'
+                valign: 'middle'
+                size_hint_x: 0.4
+                text_size: [dp(150), root.height]
+
+            DAQStageTextInput:
+                id: animallength
+                configKey: 'animallength'
+                root: root
+                size_hint_x: 0.6
+
+        
 
 <DAQStageTextInput>:
     multiline: False
