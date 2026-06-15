@@ -1576,7 +1576,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     break
                 app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                 app.update_coordinates(isAsync= False)
-                time.sleep(0.5)
+                time.sleep(0.1)
         Thread(target= _scan, daemon= True).start()
 
     def stop_scan(self):
