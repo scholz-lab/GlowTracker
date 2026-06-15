@@ -100,6 +100,8 @@ MainWindow:
         id: zcontrols
     GoToControls:
         id: gotocontrols
+    CenterRadiusFromThreePoints:
+        id: centerradiusfromthreepoints
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
@@ -345,6 +347,38 @@ MainWindow:
     Button:
         text: 'Go'
         on_release: root.go_to()
+
+<CenterRadiusFromThreePoints>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: 120
+    spacing: 5
+    MyLabel:
+        text: 'Plate Region (3 edge points)'
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: 5
+        Button:
+            text: 'Capture point'
+            on_release: root.capture_points()
+        Label:
+            id: countlabel
+            text: '{}/3'.format(len(root.points))
+            size_hint_x: 0.3
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: 5
+        Button:
+            text: 'Calculate'
+            disabled: len(root.points) < 3
+            on_release: root.calculate()
+        Button:
+            text: 'Reset'
+            on_release: root.reset()
+    Label:
+        id: resultlabel
+        text: 'Diameter: -    Center: -'
+
 #################################
 # Load camera properties - Popup
 #################################

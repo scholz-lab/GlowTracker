@@ -1503,6 +1503,16 @@ class GoToControls(BoxLayout):
         self.ids.gotoy.text = '{:.3f}'.format(coords[1])
         self.ids.gotoz.text = '{:.3f}'.format(coords[2])
 
+class CenterRadiusFromThreePoints(BoxLayout):
+
+    points = ListProperty([])
+
+    def capture_points(self):
+        coords = App.get_running_app().coords
+        self.points.append(coords[:2])   # only capture x and y
+        if len(self.points) > 3:
+            self.points.pop(0)
+        
 
 class LoadCameraProperties(BoxLayout):
     """Camera settings loading widget
