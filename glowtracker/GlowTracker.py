@@ -3398,7 +3398,7 @@ class RuntimeControls(BoxLayout):
         print('started tracking thread')
 
         # schedule occasional position check of the stage
-        self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+        # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
 
     def set_ROI(self, roiX, roiY):
@@ -3931,6 +3931,9 @@ class Connections(BoxLayout):
             thread_connect_async.daemon = True
             thread_connect_async.start()
             
+            # poll the coordinates regardless of motion
+            app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
+            
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
@@ -3942,6 +3945,10 @@ class Connections(BoxLayout):
         if app.stage is None:
             self.stage_connection.state = 'normal'
         else:
+            if getattr(app, 'coord_updateevent', None) is not None:
+                app.coord_updateevent.cancel()
+                app.coord_updateevent = None
+                
             app.stage.disconnect()
             app.stage = None
         # disable buttons
