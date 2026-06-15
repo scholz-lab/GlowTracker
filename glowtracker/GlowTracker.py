@@ -1509,10 +1509,56 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     def capture_points(self):
         coords = App.get_running_app().coords
-        self.points.append(coords[:2])   # only capture x and y
+        self.points.append(coords[:2])   
         if len(self.points) > 3:
             self.points.pop(0)
-        
+            
+    def compute_circle(self):
+        if len(self.points) < 3:
+            print('not enough points, add at least 3 points')
+            return None
+        p1, p2, p3 = self.points[:3]
+        A = np.array([
+            [p1[0], p1[1], 1],
+            [p2[0], p2[1], 1],
+            [p3[0], p3[1], 1]
+        ])
+        B = np.array([
+            -(p1[0]**2 + p1[1]**2),
+            -(p2[0]**2 + p2[1]**2),
+            -(p3[0]**2 + p3[1]**2)
+        ])
+        try:
+            X = np.linalg.solve(A, B)
+            xc, yc = -X[0]/2, -X[1]/2
+            radius = np.sqrt(xc**2 + yc**2 - X[2])
+            return (xc, yc), radius
+        except np.linalg.LinAlgError:
+            print('could not compute circle from points')
+            return None
+
+    def calculate(self):
+        app = App.get_running_app()
+        result = self.compute_circle()
+        if result is None:
+            app.plateCenter = None
+            app.plateRadius = None
+            self.ids.resultlabel.text = 'Diameter: -    Center: -'
+            return
+        (xc, yc), radius = result
+        # Store on the app so downstream code (limits, scan area) can read it
+        app.plateCenter = (xc, yc)
+        app.plateRadius = radius
+        self.ids.resultlabel.text = \
+            'Diameter: {:.2f} mm    Center: ({:.2f}, {:.2f})'.format(2 * radius, xc, yc)
+
+    def reset(self):
+        app = App.get_running_app()
+        self.points = []
+        app.plateCenter = None
+        app.plateRadius = None
+        self.ids.resultlabel.text = 'Diameter: -    Center: -'
+
 
 class LoadCameraProperties(BoxLayout):
     """Camera settings loading widget
@@ -4132,6 +4178,8 @@ class GlowTrackerApp(App):
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
+    plateCenter = ObjectProperty(None)
+    plateRadius = ObjectProperty(None)
     frameBuffer = list()
 
 
