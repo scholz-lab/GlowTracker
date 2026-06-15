@@ -103,9 +103,13 @@ MainWindow:
     CenterRadiusFromThreePoints:
         id: centerradiusfromthreepoints
     MyButton:
-        text: 'Autofocus'
+        text: 'Scan'
         pos_hint: {'x': 0.25}
-        on_release: root.autoFocusButtonCallback()
+        on_release: centerradiusfromthreepoints.scan_area()
+    MyButton:
+        text: 'Stop Scan'
+        pos_hint: {'x': 0.25}
+        on_release: centerradiusfromthreepoints.stop_scan()
     MyLabel: 
         text: 'Camera Settings'
     CameraProperties:
@@ -354,7 +358,7 @@ MainWindow:
     height: 120
     spacing: 5
     MyLabel:
-        text: 'Plate Region (3 edge points)'
+        text: 'Plate Region'
     BoxLayout:
         orientation: 'horizontal'
         spacing: 5
@@ -363,7 +367,7 @@ MainWindow:
             on_release: root.capture_points()
         Label:
             id: countlabel
-            text: '{}/3'.format(len(root.points))
+            text: 'Points: {}'.format(len(root.points))
             size_hint_x: 0.3
     BoxLayout:
         orientation: 'horizontal'

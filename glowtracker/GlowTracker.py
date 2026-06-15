@@ -1506,36 +1506,32 @@ class GoToControls(BoxLayout):
 class CenterRadiusFromThreePoints(BoxLayout):
 
     points = ListProperty([])
+    _stop_scan = False
 
     def capture_points(self):
         coords = App.get_running_app().coords
-        self.points.append(coords[:2])   
-        if len(self.points) > 3:
-            self.points.pop(0)
-            
+        self.points.append(list(coords[:2]))
+
     def compute_circle(self):
         if len(self.points) < 3:
             print('not enough points, add at least 3 points')
             return None
-        p1, p2, p3 = self.points[:3]
-        A = np.array([
-            [p1[0], p1[1], 1],
-            [p2[0], p2[1], 1],
-            [p3[0], p3[1], 1]
-        ])
-        B = np.array([
-            -(p1[0]**2 + p1[1]**2),
-            -(p2[0]**2 + p2[1]**2),
-            -(p3[0]**2 + p3[1]**2)
-        ])
-        try:
-            X = np.linalg.solve(A, B)
-            xc, yc = -X[0]/2, -X[1]/2
-            radius = np.sqrt(xc**2 + yc**2 - X[2])
-            return (xc, yc), radius
-        except np.linalg.LinAlgError:
-            print('could not compute circle from points')
+
+        pts = np.array(self.points, dtype=float)
+        A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+        B = -(pts[:, 0] ** 2 + pts[:, 1] ** 2)
+
+        X, _, rank, _ = np.linalg.lstsq(A, B, rcond=None)
+        if rank < 3:
             return None
+
+        xc, yc = -X[0] / 2, -X[1] / 2
+        underRoot = xc ** 2 + yc ** 2 - X[2]
+        if underRoot <= 0:
+            return None
+
+        radius = np.sqrt(underRoot)
+        return (float(xc), float(yc)), float(radius)
 
     def calculate(self):
         app = App.get_running_app()
@@ -1546,7 +1542,6 @@ class CenterRadiusFromThreePoints(BoxLayout):
             self.ids.resultlabel.text = 'Diameter: -    Center: -'
             return
         (xc, yc), radius = result
-        # Store on the app so downstream code (limits, scan area) can read it
         app.plateCenter = (xc, yc)
         app.plateRadius = radius
         self.ids.resultlabel.text = \
@@ -1558,6 +1553,36 @@ class CenterRadiusFromThreePoints(BoxLayout):
         app.plateCenter = None
         app.plateRadius = None
         self.ids.resultlabel.text = 'Diameter: -    Center: -'
+        
+    def scan_area(self):
+        app = App.get_running_app()
+        if app.stage is None:
+            print('connect the stage first')
+            return
+        if app.plateCenter is None or app.plateRadius is None:
+            print('calculate plate region first')
+            return
+        fov = app.get_fov_mm()
+        if fov is None:
+            print('no fov returned')
+            return
+        tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap=1.0)
+        z = app.coords[2]
+        self._stop_scan = False
+        def _scan():
+            for (x, y) in tiles:
+                if self._stop_scan:
+                    print('scan stopped')
+                    break
+                app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
+                app.update_coordinates(isAsync= False)
+                time.sleep(0.5)
+        Thread(target= _scan, daemon= True).start()
+
+    def stop_scan(self):
+        self._stop_scan = True
+
+        
 
 
 class LoadCameraProperties(BoxLayout):
@@ -4921,6 +4946,24 @@ class GlowTrackerApp(App):
             pos = self.stage.get_position(isAsync= isAsync)
             if pos is not None:
                 self.coords = pos
+
+    def get_fov_mm(self):
+        """Current camera field of view as (width, height) in mm, or None if unavailable.
+
+        Derived on demand from the calibrated pixel size and the camera's
+        *current* pixel dimensions, so it stays correct when the ROI changes.
+        Requires a connected camera and a valid calibration (Camera/pixelsize).
+        """
+        if self.camera is None:
+            return None
+        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        if pixelsize <= 0:
+            return None
+        # pixelsize is stored in the calibration step units (mm or um) per pixel
+        to_mm = 0.001 if self.config.get('Calibration', 'step_units') == 'um' else 1.0
+        width_mm = pixelsize * self.camera.Width() * to_mm
+        height_mm = pixelsize * self.camera.Height() * to_mm
+        return (width_mm, height_mm)
 
 
 

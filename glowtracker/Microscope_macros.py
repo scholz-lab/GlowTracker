@@ -100,6 +100,29 @@ def getStageDistances(deltaCoords, imageToStageMat):
     stageDistances = np.matmul(imageToStageMat, deltaCoords)
     return stageDistances
 
+
+def generate_scan_tiles(center, radius, fov_w, fov_h, overlap=1.0, edge_margin=0.0):
+    """scan a circle"""
+    cx, cy = center
+    step_x = max(fov_w - overlap, 1e-3)
+    step_y = max(fov_h - overlap, 1e-3)
+    keep_radius = max(radius - edge_margin, 0.0)
+    n_x = int(np.ceil(radius / step_x))
+    n_y = int(np.ceil(radius / step_y))
+
+    tiles = []
+    for row, iy in enumerate(range(-n_y, n_y + 1)):
+        y = cy + iy * step_y
+        xs = list(range(-n_x, n_x + 1))
+        if row % 2 == 1:
+            xs.reverse()   
+        for ix in xs:
+            x = cx + ix * step_x
+            if (x - cx) ** 2 + (y - cy) ** 2 <= keep_radius ** 2:
+                tiles.append((x, y))
+    return tiles
+
+
 # functions for tracking
 #%% Functions used for centering stage
 def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, threshold = 10, dark_bg = True, display = False):
