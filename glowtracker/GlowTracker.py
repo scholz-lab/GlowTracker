@@ -1476,6 +1476,34 @@ class ZControls(StageAxisController):
         super(ZControls, self).__init__(**kwargs)
 
 
+class GoToControls(BoxLayout):
+    def go_to(self):
+        app = App.get_running_app()
+        if app.stage is None:
+            return
+        try:
+            target = [
+                float(self.ids.gotox.text),
+                float(self.ids.gotoy.text),
+                float(self.ids.gotoz.text),
+            ]
+        except ValueError:
+            print('invalid coordinate input')
+            return
+
+        def _move():
+            app.stage.move_abs(target, 'mm', wait_until_idle= True)
+            app.update_coordinates(isAsync= False)
+
+        Thread(target= _move, daemon= True).start()
+
+    def prefill(self):
+        coords = App.get_running_app().coords
+        self.ids.gotox.text = '{:.3f}'.format(coords[0])
+        self.ids.gotoy.text = '{:.3f}'.format(coords[1])
+        self.ids.gotoz.text = '{:.3f}'.format(coords[2])
+
+
 class LoadCameraProperties(BoxLayout):
     """Camera settings loading widget
     """    

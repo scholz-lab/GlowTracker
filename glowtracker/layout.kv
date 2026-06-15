@@ -98,6 +98,8 @@ MainWindow:
         id: ycontrols
     ZControls:
         id: zcontrols
+    GoToControls:
+        id: gotocontrols
     MyButton:
         text: 'Autofocus'
         pos_hint: {'x': 0.25}
@@ -313,6 +315,36 @@ MainWindow:
             id: sbl4    
             on_state: app.stage.start_move((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
             #disabled: app.stage.connection is None
+
+<GoToControls>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: 40
+    spacing: 5
+    TextInput:
+        id: gotox
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'X'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoy
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Y'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoz
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Z'
+        on_focus: app.toggle_key_binding(self.focus)
+    Button:
+        text: 'Fill'
+        on_release: root.prefill()
+    Button:
+        text: 'Go'
+        on_release: root.go_to()
 #################################
 # Load camera properties - Popup
 #################################

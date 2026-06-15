@@ -236,13 +236,13 @@ class Stage:
         pos_len = len(position) 
         
         try:
-            if pos_len >= 1 and self.axis_x is not None and position[0] != 0:
+            if pos_len >= 1 and self.axis_x is not None:
                 self.axis_x.move_absolute(float(position[0]), units_from_literals(unit), wait_until_idle)
 
-            if pos_len >= 2 and self.axis_y is not None and position[1] != 0:
+            if pos_len >= 2 and self.axis_y is not None:
                 self.axis_y.move_absolute(float(position[1]), units_from_literals(unit), wait_until_idle)
-            
-            if pos_len == 3 and self.axis_z is not None and position[2] != 0:
+
+            if pos_len == 3 and self.axis_z is not None:
                 self.axis_z.move_absolute(float(position[2]), units_from_literals(unit), wait_until_idle)
         
         except MotionLibException as e:
