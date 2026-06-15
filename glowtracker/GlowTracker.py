@@ -3919,21 +3919,21 @@ class Connections(BoxLayout):
             def connect_async():
 
                 # home stage - do this in a thread, it is slow, ~2 sec
-                app.stage.on_connect(homing,  move_start, startloc, limits)
-                
+                app.stage.on_connect(homing, move_start, startloc, limits)
+
                 # Call update_coordinates once.
                 #   We have to specify not to run 'update_coordinates' in async mode because it's going to
                 #   be run inside a thread.
+
                 app.update_coordinates(isAsync= False)  
+                app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
+                
 
             
             thread_connect_async = Thread(target= connect_async)
             thread_connect_async.daemon = True
             thread_connect_async.start()
-            
-            # poll the coordinates regardless of motion
-            app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
-            
+                        
             app.root.ids.leftcolumn.ids.xcontrols.enable_all()
             app.root.ids.leftcolumn.ids.ycontrols.enable_all()
             app.root.ids.leftcolumn.ids.zcontrols.enable_all()
@@ -4832,7 +4832,9 @@ class GlowTrackerApp(App):
     def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
-            self.coords = self.stage.get_position(isAsync= isAsync)
+            pos = self.stage.get_position(isAsync= isAsync)
+            if pos is not None:
+                self.coords = pos
 
 
 
