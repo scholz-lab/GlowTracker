@@ -1594,13 +1594,16 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     if not ok:
                         print('failed to capture image, skipping tile')
                         continue
+                    Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
                     present, offset = macro.detect_worm(img, threshold, min_pixels)
                     if present:
                         print(f'Found a worm !!')
                         self._stop_scan = True
-                        worm_x = x + offset[0] * app.config.getfloat('Camera', 'pixelsize')
-                        worm_y = y + offset[1] * app.config.getfloat('Camera', 'pixelsize')
-                        app.stage.move_abs((worm_x, worm_y, z), 'mm', wait_until_idle= True)
+                        units = app.config.get('Calibration', 'step_units')
+                        dy, dx = macro.getStageDistances(
+                            np.array([-offset[1], offset[0]]), app.imageToStageMat)
+                        app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                        app.update_coordinates(isAsync= False)
                         break
             finally:
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
