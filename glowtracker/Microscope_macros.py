@@ -123,6 +123,17 @@ def generate_scan_tiles(center, radius, fov_w, fov_h, overlap=1.0, edge_margin=0
     return tiles
 
 
+def detect_worm(image, threshold, min_pixels=20):
+    bright = image > threshold
+    count = int(bright.sum())
+    if count < min_pixels: return False, None
+    ys, xs = np.nonzero(bright)
+    h, w = image.shape[:2]
+    offset_x = float(xs.mean()) - w / 2.0
+    offset_y = float(ys.mean()) - h / 2.0
+    return True, (offset_x, offset_y)
+
+
 # functions for tracking
 #%% Functions used for centering stage
 def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, threshold = 10, dark_bg = True, display = False):
@@ -829,6 +840,14 @@ class CameraAndStageCalibrator:
         pixelSize_Y = self.stepsize / camBasisYLen
         #   Average between the two
         pixelSize = (pixelSize_X + pixelSize_Y) / 2
+
+        print(
+            f'[calib] step={self.stepsize} {self.stepunits} | '
+            f'shiftX={camBasisXLen:.1f}px shiftY={camBasisYLen:.1f}px | '
+            f'pxX={pixelSize_X:.4f} pxY={pixelSize_Y:.4f} (avg {pixelSize:.4f}) | '
+            f'angle(X^Y)={math.degrees(angleBetweenXYBasis):.2f} deg | '
+            f'rotation={math.degrees(rotationStageToCam):.2f} deg'
+        )
 
         return (rotationStageToCam, signAngleBetweenXYBasis, pixelSize)
 

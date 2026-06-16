@@ -322,6 +322,7 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
         filepath (str): the .pfs file path
 
     Returns:
+    
         Dict[str, str] | None: A string dictionary contains
         the configuration key and value. The value is always parsed
         as a string, so if it is number or other type, it would need

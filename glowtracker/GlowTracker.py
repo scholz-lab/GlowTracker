@@ -1562,21 +1562,45 @@ class CenterRadiusFromThreePoints(BoxLayout):
         if app.plateCenter is None or app.plateRadius is None:
             print('calculate plate region first')
             return
+        if app.camera is None:
+            print('connect the camera first')
+            return
         fov = app.get_fov_mm()
         if fov is None:
             print('no fov returned')
             return
+
+        threshold = 200
+        min_pixels = 50
+
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap=1.0)
         z = app.coords[2]
+
+        mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        prev_live = mgr.liveviewbutton.state
+        mgr.liveviewbutton.state = 'normal'
+
         self._stop_scan = False
         def _scan():
-            for (x, y) in tiles:
-                if self._stop_scan:
-                    print('scan stopped')
-                    break
-                app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
-                app.update_coordinates(isAsync= False)
-                time.sleep(0.1)
+            try:
+                for (x, y) in tiles:
+                    if self._stop_scan:
+                        print('scan stopped')
+                        break
+                    app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
+                    app.update_coordinates(isAsync= False)
+                    time.sleep(0.1)
+                    ok, img = app.camera.singleTake()
+                    if not ok:
+                        print('failed to capture image, skipping tile')
+                        continue
+                    present, offset = macro.detect_worm(img, threshold, min_pixels)
+                    if present:
+                        print(f'Found a worm !!')
+                        self._stop_scan = True
+                        break
+            finally:
+                Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
         Thread(target= _scan, daemon= True).start()
 
     def stop_scan(self):
@@ -1860,7 +1884,7 @@ class ImageAcquisitionButton(ToggleButton):
 
         if grabArgs.isContinuous:
             self.camera.StartGrabbing(grabArgs.grabStrategy)
-        
+
         else:
             # Grab for a specific number of frames
             self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)

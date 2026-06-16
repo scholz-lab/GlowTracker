@@ -222,19 +222,23 @@ class Stage:
         
 
     # Stage moving to a given absolute position 
-    def move_abs(self, position: List[float], unit: str = 'mm', wait_until_idle: bool = False) -> None:
+    def move_abs(self, position: List[float], unit: str = 'mm', wait_until_idle: bool = False) -> bool:
         """Move to a given absolute position.
 
         Args:
             position (List[float]): The absolute position in order of x, y, z. Supports from 1 axis to 3 axes.
             unit (str, optional): Unit of the position. Defaults to 'mm'.
             wait_until_idle (bool, optional): Is the function return only after all axes finished moving. Defaults to False.
+
+        Returns:
+            bool: True if the move command was issued without fault, False if it
+                failed (e.g. range limit, stall/slip fault) or there is no connection.
         """
         if self.connection is None:
-            return
-        
-        pos_len = len(position) 
-        
+            return False
+
+        pos_len = len(position)
+
         try:
             if pos_len >= 1 and self.axis_x is not None:
                 self.axis_x.move_absolute(float(position[0]), units_from_literals(unit), wait_until_idle)
@@ -244,56 +248,75 @@ class Stage:
 
             if pos_len == 3 and self.axis_z is not None:
                 self.axis_z.move_absolute(float(position[2]), units_from_literals(unit), wait_until_idle)
-        
-        except MotionLibException as e:
-            print(e)
 
-            
+        except MotionLibException as e:
+            print(f'move_abs to {position} {unit} failed: {e}')
+            return False
+
+        return True
+
+
     # move single axis
-    def move_x(self, step: float, unit: str = 'um', wait_until_idle: bool = False):
+    def move_x(self, step: float, unit: str = 'um', wait_until_idle: bool = False) -> bool:
         """Move to a given relative location
 
         Args:
             step (float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
             unit (str, optional): Unit of the step. Defaults to 'um'.
             wait_until_idle (bool, optional): is wait until finished moving. Defaults to False.
-        """        
+
+        Returns:
+            bool: True if the move command was issued without fault, False otherwise.
+        """
         try:
             if self.axis_x is not None:
                 self.axis_x.move_relative(float(step), units_from_literals(unit), wait_until_idle)
 
         except MotionLibException as e:
-            print(e)
-    
-    
+            print(f'move_x by {step} {unit} failed: {e}')
+            return False
+
+        return True
+
+
     # move single axis
-    def move_y(self, step, unit = 'um', wait_until_idle = False):
+    def move_y(self, step, unit = 'um', wait_until_idle = False) -> bool:
         """Move to a given relative location
-        Parameters: 
+        Parameters:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
+        Returns:
+                    bool: True if the move command was issued without fault, False otherwise.
         """
         try:
             if self.axis_y is not None:
                 self.axis_y.move_relative(float(step), units_from_literals(unit), wait_until_idle)
-        
+
         except MotionLibException as e:
-            print(e)
-    
-    
+            print(f'move_y by {step} {unit} failed: {e}')
+            return False
+
+        return True
+
+
     # move single axis
-    def move_z(self, step, unit = 'um', wait_until_idle = False):
+    def move_z(self, step, unit = 'um', wait_until_idle = False) -> bool:
         """Move to a given relative location
-        Parameters: 
+        Parameters:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
+        Returns:
+                    bool: True if the move command was issued without fault, False otherwise.
         """
         try:
             if self.axis_z is not None:
                 self.axis_z.move_relative(float(step), units_from_literals(unit), wait_until_idle)
-        
+
         except MotionLibException as e:
-            print(e)
+            print(f'move_z by {step} {unit} failed: {e}')
+            return False
+
+        return True
 
 
     # define generic movement function 
@@ -320,7 +343,7 @@ class Stage:
             self.move_z(float(steps[2]), unit = unit, wait_until_idle=wait_until_idle)
         
 
-    def start_move(self, velocity: Vec3, unit: str = 'um/s') -> None:
+    def start_move(self, velocity: Vec3, unit: str = 'um/s') -> bool:
         """Start moving in a given velocity's direction.
             ALWAYS call in conjuction with self.stop() to stop moving.
         Parameters: 
@@ -332,7 +355,7 @@ class Stage:
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
                 self.state.isMoving_x = True
                 self.axis_x.move_velocity(float(velocity[0]), units_from_literals(unit))
-            
+
             if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
                 self.state.isMoving_y = True
                 self.axis_y.move_velocity(float(velocity[1]), units_from_literals(unit))
@@ -341,7 +364,15 @@ class Stage:
                 self.state.isMoving_z = True
                 self.axis_z.move_velocity(float(velocity[2]), units_from_literals(unit))
         except MovementFailedException as e:
-            print(e)
+            print(f'start_move at velocity {velocity} {unit} failed: {e}')
+            # The command faulted: clear the flags so the axis isn't left stuck
+            #   in a "moving" state that would block the next start_move.
+            self.state.isMoving_x = False
+            self.state.isMoving_y = False
+            self.state.isMoving_z = False
+            return False
+
+        return True
 
 
     def stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> None:
