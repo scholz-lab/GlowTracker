@@ -1589,7 +1589,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         break
                     app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                     app.update_coordinates(isAsync= False)
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                     ok, img = app.camera.singleTake()
                     if not ok:
                         print('failed to capture image, skipping tile')
@@ -1598,6 +1598,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     if present:
                         print(f'Found a worm !!')
                         self._stop_scan = True
+                        worm_x = x + offset[0] * app.config.getfloat('Camera', 'pixelsize')
+                        worm_y = y + offset[1] * app.config.getfloat('Camera', 'pixelsize')
+                        app.stage.move_abs((worm_x, worm_y, z), 'mm', wait_until_idle= True)
                         break
             finally:
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
