@@ -58,6 +58,7 @@ from kivy.uix.stacklayout import StackLayout
 # 
 # IO, Utils
 # 
+import asyncio
 import datetime
 import time
 from pathlib import Path
@@ -1557,6 +1558,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
         self._stop_scan = False
         def _scan():
+            asyncio.set_event_loop(asyncio.new_event_loop())
             try:
                 for (x, y) in tiles:
                     if self._stop_scan:
@@ -1585,6 +1587,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         break
             finally:
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
+                asyncio.get_event_loop().close()
         Thread(target= _scan, daemon= True).start()
 
     def stop_scan(self):
