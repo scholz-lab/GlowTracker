@@ -303,32 +303,7 @@ class LeftColumn(BoxLayout):
             prevLiveViewButtonState: str = liveViewButton.state
             liveViewButton.state = 'normal'
 
-            #   Load settings
-            depthoffield = self.app.config.getfloat('Camera', 'depthoffield')
-            depthoffieldsearchdistance = self.app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
-            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
-            dualColorModeMainSide = self.app.config.get('DualColor', 'mainside')
-            capturedRadius = self.app.config.getint('Tracking', 'capture_radius')
-            focusEstimationMethod = FocusEstimationMethod(self.app.config.get('Autofocus', 'focusestimationmethod'))
-
-            #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
-            depthOfFieldEstimator = macro.DepthOfFieldEstimator()
-            numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
-            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
-
-            #   Get best-focused position
-            bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
-            bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
-            
-            # Move to the best-focus position
-            stagePosition = stage.get_position()
-            stagePosition[2] = bestFocusPosition
-            stage.move_abs(stagePosition, unit= 'mm')
-
-            # Remember best focus value for later auto focus
-            bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
-            self.app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
-            self.app.config.write()
+            self.app.autofocus()
 
             # Return LiveView state
             liveViewButton.state = prevLiveViewButtonState
@@ -1603,6 +1578,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         dy, dx = macro.getStageDistances(
                             np.array([-offset[1], offset[0]]), app.imageToStageMat)
                         app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                        app.update_coordinates(isAsync= False)
+                        # autofocus
+                        app.autofocus()
                         app.update_coordinates(isAsync= False)
                         break
             finally:
@@ -4994,6 +4972,38 @@ class GlowTrackerApp(App):
         width_mm = pixelsize * self.camera.Width() * to_mm
         height_mm = pixelsize * self.camera.Height() * to_mm
         return (width_mm, height_mm)
+
+    def autofocus(self) -> float | None:
+        """moved from autofocus macro to have a shared autofocus function that can be called from both macro and settings menu.
+        """
+        camera = self.camera
+        stage = self.stage
+        if camera is None or stage is None:
+            print('autofocus requires a stage and a camera')
+            return None
+
+        depthoffield = self.config.getfloat('Camera', 'depthoffield')
+        depthoffieldsearchdistance = self.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+        dualColorMode = self.config.getboolean('DualColor', 'dualcolormode')
+        dualColorModeMainSide = self.config.get('DualColor', 'mainside')
+        capturedRadius = self.config.getint('Tracking', 'capture_radius')
+        focusEstimationMethod = FocusEstimationMethod(self.config.get('Autofocus', 'focusestimationmethod'))
+
+        depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+        numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
+        depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
+
+        bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
+        bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
+        stagePosition = stage.get_position()
+        stagePosition[2] = bestFocusPosition
+        stage.move_abs(stagePosition, unit= 'mm')
+
+        bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+        self.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+        self.config.write()
+
+        return bestFocusPosition
 
 
 
