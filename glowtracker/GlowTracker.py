@@ -1546,7 +1546,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
             print('no fov returned')
             return
 
-        threshold = 200
+        threshold = 150
         min_pixels = 50
 
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap=1.0)
@@ -1560,31 +1560,34 @@ class CenterRadiusFromThreePoints(BoxLayout):
         def _scan():
             asyncio.set_event_loop(asyncio.new_event_loop())
             try:
-                for (x, y) in tiles:
-                    if self._stop_scan:
-                        print('scan stopped')
-                        break
-                    app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
-                    app.update_coordinates(isAsync= False)
-                    time.sleep(0.05)
-                    ok, img = app.camera.singleTake()
-                    if not ok:
-                        print('failed to capture image, skipping tile')
-                        continue
-                    Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
-                    present, offset = macro.detect_worm(img, threshold, min_pixels)
-                    if present:
-                        print(f'Found a worm !!')
-                        self._stop_scan = True
-                        units = app.config.get('Calibration', 'step_units')
-                        dy, dx = macro.getStageDistances(
-                            np.array([-offset[1], offset[0]]), app.imageToStageMat)
-                        app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                scan_pass = 0
+                while not self._stop_scan:
+                    scan_pass += 1
+                    print(f'scan pass {scan_pass}')
+                    for (x, y) in tiles:
+                        if self._stop_scan:
+                            break
+                        app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                         app.update_coordinates(isAsync= False)
-                        # autofocus
-                        app.autofocus()
-                        app.update_coordinates(isAsync= False)
-                        break
+                        time.sleep(0.05)
+                        ok, img = app.camera.singleTake()
+                        if not ok:
+                            print('failed to capture image, skipping tile')
+                            continue
+                        Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
+                        present, offset = macro.detect_worm(img, threshold, min_pixels)
+                        if present:
+                            print(f'Found a worm !!')
+                            self._stop_scan = True
+                            units = app.config.get('Calibration', 'step_units')
+                            dy, dx = macro.getStageDistances(
+                                np.array([-offset[1], offset[0]]), app.imageToStageMat)
+                            app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                            app.update_coordinates(isAsync= False)
+                            # autofocus
+                            app.autofocus()
+                            app.update_coordinates(isAsync= False)
+                            break
             finally:
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
                 asyncio.get_event_loop().close()
