@@ -4286,7 +4286,7 @@ class GlowTrackerApp(App):
             'port': '/dev/ttyUSB0',
             'move_start': 'false',
             'homing': 'false',
-            'stage_limits': '160,160,180',
+            'stage_limits': '150,150,152',
             'start_loc': '0,0,0',
             'maxspeed': '20',
             'maxspeed_unit': 'mm/s',

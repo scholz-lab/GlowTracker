@@ -1,4 +1,6 @@
 import asyncio
+import threading
+import time
 from zaber_motion import Library, Units, MotionLibException, MovementFailedException, CommandFailedException
 from zaber_motion.units import units_from_literals, LITERALS_TO_UNITS, UnitsAndLiterals, Units
 from zaber_motion.ascii import Connection, Axis, Device
@@ -77,6 +79,12 @@ class Stage:
             self.accel = self.set_accel(accel, units_from_literals(accel_unit))
         
         self.state = StageState()
+
+        self._jog_velocity = [0.0, 0.0, 0.0]
+        self._jog_watchdog: threading.Thread | None = None
+
+        self._last_pos: List[float] | None = None
+        self._last_pos_time: float = 0.0
             
             
     def connect_stage(self, port='COM3'):
@@ -222,6 +230,42 @@ class Stage:
         
 
     # Stage moving to a given absolute position 
+    KEEPOUT_Y = 65.0      # mm
+    KEEPOUT_Z = 130.0     
+    KEEPOUT_MARGIN = 2.0 
+
+    _UNIT_TO_MM = {'mm': 1.0, 'um': 0.001, 'cm': 10.0}
+
+    def is_safe(self, x: float, y: float, z: float) -> bool:
+        """True if absolute position (mm) is outside the collision keep-out zone."""
+        y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
+        z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
+        return not (y < y_lim and z > z_lim)
+
+    def _execute_safe_moves(self, target: List[float], cur: List[float], wait_until_idle: bool) -> None:
+        mm = units_from_literals('mm')
+        z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
+
+        def go_xy():
+            self.axis_x.move_absolute(target[0], mm, False)
+            self.axis_y.move_absolute(target[1], mm, False)
+            self.axis_x.wait_until_idle()
+            self.axis_y.wait_until_idle()
+
+        def go_z():
+            if self.axis_z is not None:
+                self.axis_z.move_absolute(target[2], mm, wait_until_idle)
+
+        if self.axis_z is not None and target[2] > z_lim:
+            go_xy()
+            go_z()
+        elif self.axis_z is not None and cur[2] > z_lim:
+            self.axis_z.move_absolute(target[2], mm, True)
+            go_xy()
+        else:
+            go_xy()
+            go_z()
+
     def move_abs(self, position: List[float], unit: str = 'mm', wait_until_idle: bool = False) -> bool:
         """Move to a given absolute position.
 
@@ -231,26 +275,33 @@ class Stage:
             wait_until_idle (bool, optional): Is the function return only after all axes finished moving. Defaults to False.
 
         Returns:
-            bool: True if the move command was issued without fault, False if it
-                failed (e.g. range limit, stall/slip fault) or there is no connection.
+            bool: True if the move completed, False if refused or faulted.
         """
         if self.connection is None:
             return False
 
-        pos_len = len(position)
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move_abs: unknown unit {unit!r}; refusing for safety')
+            return False
+
+        cur = self.get_position(unit='mm', isAsync=False)
+        if cur is None:
+            print('move_abs: cannot read current position; refusing')
+            return False
+
+        target = list(cur)
+        for i in range(min(len(position), 3)):
+            target[i] = float(position[i]) * factor
+
+        if self.axis_z is not None and not self.is_safe(*target):
+            print(f'move_abs refused: target {target} mm is inside the keep-out zone')
+            return False
 
         try:
-            if pos_len >= 1 and self.axis_x is not None:
-                self.axis_x.move_absolute(float(position[0]), units_from_literals(unit), wait_until_idle)
-
-            if pos_len >= 2 and self.axis_y is not None:
-                self.axis_y.move_absolute(float(position[1]), units_from_literals(unit), wait_until_idle)
-
-            if pos_len == 3 and self.axis_z is not None:
-                self.axis_z.move_absolute(float(position[2]), units_from_literals(unit), wait_until_idle)
-
+            self._execute_safe_moves(target, cur, wait_until_idle)
         except MotionLibException as e:
-            print(f'move_abs to {position} {unit} failed: {e}')
+            print(f'move_abs to {target} mm failed: {e}')
             return False
 
         return True
@@ -281,13 +332,26 @@ class Stage:
 
     # move single axis
     def move_y(self, step, unit = 'um', wait_until_idle = False) -> bool:
-        """Move to a given relative location
+        """Move to a given relative location.
         Parameters:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         Returns:
                     bool: True if the move command was issued without fault, False otherwise.
         """
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move_y: unknown unit {unit!r}; refusing for safety')
+            return False
+        cur = self._safe_position_mm()
+        if cur is None:
+            print('move_y: cannot read current position; refusing')
+            return False
+        if self.axis_z is not None and len(cur) > 2:
+            target_y = cur[1] + float(step) * factor
+            if not self.is_safe(cur[0], target_y, cur[2]):
+                print(f'move_y refused: would enter keep-out (y={target_y:.1f}, z={cur[2]:.1f})')
+                return False
         try:
             if self.axis_y is not None:
                 self.axis_y.move_relative(float(step), units_from_literals(unit), wait_until_idle)
@@ -301,13 +365,26 @@ class Stage:
 
     # move single axis
     def move_z(self, step, unit = 'um', wait_until_idle = False) -> bool:
-        """Move to a given relative location
+        """Move to a given relative location.
         Parameters:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
         Returns:
                     bool: True if the move command was issued without fault, False otherwise.
         """
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move_z: unknown unit {unit!r}; refusing for safety')
+            return False
+        cur = self._safe_position_mm()
+        if cur is None:
+            print('move_z: cannot read current position; refusing')
+            return False
+        if self.axis_z is not None and len(cur) > 2:
+            target_z = cur[2] + float(step) * factor
+            if not self.is_safe(cur[0], cur[1], target_z):
+                print(f'move_z refused: would enter keep-out (y={cur[1]:.1f}, z={target_z:.1f})')
+                return False
         try:
             if self.axis_z is not None:
                 self.axis_z.move_relative(float(step), units_from_literals(unit), wait_until_idle)
@@ -319,28 +396,46 @@ class Stage:
         return True
 
 
-    # define generic movement function 
-    def move_rel(self, steps: Tuple[float], unit: str = 'um', wait_until_idle: bool = False) -> None:
-        """Move to a given relative steps
+    def move_rel(self, steps: Tuple[float], unit: str = 'um', wait_until_idle: bool = False) -> bool:
+        """Move by relative steps, routed through the same collision-safe planner
+        as move_abs. Refuses if the resulting position is inside the keep-out zone.
 
         Args:
             steps (Tuple[float]): The relative movement step vector in order of x, y, z. Supports from 1 axis to 3 axes.
             unit (str, optional): Unit of the steps. Defaults to 'um'.
             wait_until_idle (bool, optional): Is the function return only after all axes finished moving. Defaults to False.
-        """        
-        if self.connection is None:
-            return
-        
-        pos_len = len(steps) 
-       
-        if pos_len >= 1 and steps[0] != 0:
-            self.move_x(float(steps[0]), unit = unit, wait_until_idle=wait_until_idle)
 
-        if pos_len >= 2 and steps[1] != 0:
-            self.move_y(float(steps[1]), unit = unit, wait_until_idle=wait_until_idle)
-        
-        if pos_len == 3 and steps[2] != 0:
-            self.move_z(float(steps[2]), unit = unit, wait_until_idle=wait_until_idle)
+        Returns:
+            bool: True if the move completed, False if refused or faulted.
+        """
+        if self.connection is None:
+            return False
+
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move_rel: unknown unit {unit!r}; refusing for safety')
+            return False
+
+        cur = self.get_position(unit='mm', isAsync=False)
+        if cur is None:
+            print('move_rel: cannot read current position; refusing')
+            return False
+
+        target = list(cur)
+        for i in range(min(len(steps), 3)):
+            target[i] = cur[i] + float(steps[i]) * factor
+
+        if self.axis_z is not None and not self.is_safe(*target):
+            print(f'move_rel refused: target {target} mm is inside the keep-out zone')
+            return False
+
+        try:
+            self._execute_safe_moves(target, cur, wait_until_idle)
+        except MotionLibException as e:
+            print(f'move_rel by {steps} {unit} failed: {e}')
+            return False
+
+        return True
         
 
     def start_move(self, velocity: Vec3, unit: str = 'um/s') -> bool:
@@ -354,14 +449,17 @@ class Stage:
             # Move each axis simultaneously
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
                 self.state.isMoving_x = True
+                self._jog_velocity[0] = velocity[0]
                 self.axis_x.move_velocity(float(velocity[0]), units_from_literals(unit))
 
             if self.axis_y is not None and not self.state.isMoving_y and velocity[1] != 0:
                 self.state.isMoving_y = True
+                self._jog_velocity[1] = velocity[1]
                 self.axis_y.move_velocity(float(velocity[1]), units_from_literals(unit))
 
             if self.axis_z is not None and not self.state.isMoving_z and velocity[2] != 0:
                 self.state.isMoving_z = True
+                self._jog_velocity[2] = velocity[2]
                 self.axis_z.move_velocity(float(velocity[2]), units_from_literals(unit))
         except MovementFailedException as e:
             print(f'start_move at velocity {velocity} {unit} failed: {e}')
@@ -372,7 +470,31 @@ class Stage:
             self.state.isMoving_z = False
             return False
 
+        if self.axis_z is not None and (self._jog_watchdog is None or not self._jog_watchdog.is_alive()):
+            self._jog_watchdog = threading.Thread(target=self._jog_safety_watchdog, daemon=True)
+            self._jog_watchdog.start()
+
         return True
+
+    def _jog_safety_watchdog(self) -> None:
+        y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
+        z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
+        BUFFER = 5.0
+        
+        while self.connection is not None and (
+                self.state.isMoving_x or self.state.isMoving_y or self.state.isMoving_z):
+            pos = self.get_position(unit='mm', isAsync=False)
+            if pos is None or len(pos) < 3:
+                break
+            x, y, z = pos[0], pos[1], pos[2]
+            vy, vz = self._jog_velocity[1], self._jog_velocity[2]
+
+            if z > z_lim and vy < 0 and y < y_lim + BUFFER:
+                self.stop(AxisEnum.Y)
+            if y < y_lim and vz > 0 and z > z_lim - BUFFER:
+                self.stop(AxisEnum.Z)
+
+            time.sleep(0.02)
 
 
     def stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> None:
@@ -390,24 +512,28 @@ class Stage:
                 self.axis_y.stop(wait_until_idle = False)
                 if self.axis_z is not None:
                     self.axis_z.stop(wait_until_idle = False)
-                
+
                 self.state.isMoving_x = False
                 self.state.isMoving_y = False
                 self.state.isMoving_z = False
+                self._jog_velocity = [0.0, 0.0, 0.0]
 
 
             elif stopAxis == AxisEnum.X:
                 self.axis_x.stop(wait_until_idle = False)
                 self.state.isMoving_x = False
-            
+                self._jog_velocity[0] = 0.0
+
             elif stopAxis == AxisEnum.Y:
                 self.axis_y.stop(wait_until_idle = False)
                 self.state.isMoving_y = False
-            
+                self._jog_velocity[1] = 0.0
+
             elif stopAxis == AxisEnum.Z and self.no_axes == 3:
                 self.axis_z.stop(wait_until_idle = False)
                 self.state.isMoving_z = False
-                
+                self._jog_velocity[2] = 0.0
+
         except MovementFailedException as e:
             print(e)
 
@@ -453,11 +579,21 @@ class Stage:
             
         except MotionLibException as e:
             # Handle exception
-            #   This is usually a DeviceNotIdentifiedException from trying 
+            #   This is usually a DeviceNotIdentifiedException from trying
             #   get_position_async() while device is not fully initiated
             print(e)
-        
+
+        if pos is not None:
+            factor = self._UNIT_TO_MM.get(unit, 1.0)
+            self._last_pos = [p * factor for p in pos]
+            self._last_pos_time = time.monotonic()
+
         return pos
+
+    def _safe_position_mm(self, max_age: float = 0.3) -> List[float] | None:
+        if self._last_pos is not None and (time.monotonic() - self._last_pos_time) < max_age:
+            return self._last_pos
+        return self.get_position(unit='mm', isAsync=False)
 
 
     def set_rangelimits(self, limits: List[float] = (160,160,155), unit: str = 'mm') -> List[float]:
