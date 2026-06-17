@@ -2702,7 +2702,10 @@ class ImageOverlay(FloatLayout):
 
         self.trackingBorder: Line | None = None
         self.cmsShape: Ellipse | None = None
+
         self.trailMesh: Mesh | None = None
+        self.guidelineMesh: Mesh | None = None
+        self.bodyMesh: Mesh | None = None
 
         self.app: GlowTrackerApp = App.get_running_app()
 
@@ -2783,6 +2786,10 @@ class ImageOverlay(FloatLayout):
         else:
             # If not tracking, then we have to compute the tracking overlay data first
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
+
+            # Debug
+            a = np.arange(start= 0, stop=10, step= 0.1, dtype= np.float32)
+            trail = np.column_stack([a, a])
 
         if doClear:
             self.clearTrackingOverlay()
@@ -2868,6 +2875,9 @@ class ImageOverlay(FloatLayout):
         normImageSize = np.array(previewImage.get_norm_image_size())
         imageSize = previewImage.texture_size
         displayedScale = normImageSize[0] / imageSize[0]
+
+        imageToStageMat_XY = macro.swapMatXYOrder(self.app.imageToStageMat)
+        stageToImageMat = np.linalg.inv(imageToStageMat_XY)
 
         # 
         # Check if needs to draw tracking mask
@@ -2965,18 +2975,44 @@ class ImageOverlay(FloatLayout):
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
         
+        def updateLineMesh(mesh: Mesh | None, vertices_in: np.ndarray, color: Color) -> None:
+            # vertices_in is N x 2 mat. Each row contains a vertex in XY
+            
+            # Construct vertex array
+            #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
+            verts_with_uv = np.column_stack([vertices_in, np.zeros(vertices_in.shape)]) 
+            #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
+            verts_with_uv = verts_with_uv.flatten()
+            vertices = verts_with_uv.tolist()
+
+            # Construct index array
+            numVerts = vertices_in.shape[0] 
+            indices = np.arange(numVerts, dtype= np.int32).tolist()
+
+            if mesh is None:
+
+                mesh = Mesh(
+                    vertices = vertices,
+                    indices = indices,
+                    mode = 'line_strip'
+                )
+
+                self.canvas.add(color)
+                self.canvas.add(mesh)
+
+            else:
+                mesh.vertices = vertices
+                mesh.indices = indices
+
         # 
         #   Draw tracking trail if provided
         # 
         showtrail = self.app.config.getboolean('Tracking', 'showtrail') 
         if trail is not None and showtrail:
             
-            # We have trail position in stage coordinate, in XY
+            # We have trail position in stage coordinate, in XY as N x 2 mat
             # Want to have the in screen space, in XY
             #   stage -> image -> screen -> offset to center
-
-            imageToStageMat_XY = macro.swapMatXYOrder(self.app.imageToStageMat)
-            stageToImageMat = np.linalg.inv(imageToStageMat_XY)
 
             # Get last M (trial limit) vertices and 
             #   apply transformation to each row vertex
@@ -2986,45 +3022,89 @@ class ImageOverlay(FloatLayout):
             #   Transfrom back to column matrix
             trail_imageCoord = trail_imageCoord.transpose()
             # Convert from mm unit to meter
-            trail_imageCoord = trail_imageCoord * 1000
+            trail_imageCoord = trail_imageCoord * 1e3
 
             # Transform to screen space 
-            displayedScale: float = normImageSize[0] / imageSize[0]
-
             trail_screenCoord = trail_imageCoord * displayedScale
 
             offsetToCenter = center - trail_screenCoord[-1, :]
 
             trail_screenCoord = trail_screenCoord + offsetToCenter
 
-            # Construct mesh
-            vertices = []
+            updateLineMesh(self.trailMesh, trail_screenCoord, Color(0.9, 0.0, 1.0, 0.75))
+        
+        # Draw temp guildeline
+        if True:
             
-            #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
-            verts_with_uv = np.column_stack([trail_screenCoord, np.zeros(trail_screenCoord.shape)]) 
-            #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
-            verts_with_uv = verts_with_uv.flatten()
-            vertices = verts_with_uv.tolist()
+            # Draw a guide-line. 1mm from center to right. This position in meter.
+            guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
-            indices = []
+            # Get pixelsize (um/px)
+            pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+            #   Convert it to meter
+            pixelsize_meter = pixelsize * 1e-6
 
-            numVerts = trail_screenCoord.shape[0] 
-            indices = np.arange(numVerts, dtype= np.int32).tolist()
+            # Convert guideline to image space
+            guideline_imageSpace = guideline / pixelsize_meter
 
-            if self.trailMesh is None:
+            # Convert to screen space
+            guideline_screenSpace = guideline_imageSpace * displayedScale
 
-                self.trailMesh = Mesh(
-                    vertices = vertices,
-                    indices = indices,
-                    mode = 'line_strip'
-                )
+            # Offset to start from the center of the overlay
+            guideline_screenSpace = center + guideline_screenSpace
 
-                self.canvas.add(Color(0.9, 0.0, 1.0, 0.75))
-                self.canvas.add(self.trailMesh)
+            # Construct mesh vertices from it
+            updateLineMesh(self.guidelineMesh, guideline_screenSpace, Color(1.0, 1,0, 0.0, 0.75))
+        
 
-            else:
-                self.trailMesh.vertices = vertices
-                self.trailMesh.indices = indices
+        # Draw Body line
+        if trail is not None:
+            
+            # We have trail positions in mm 
+            trail
+
+            animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
+            animallength_mm = animallength_um * 1e-3
+
+            # Greedy sums up until equal or exceed animal's length
+            #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
+            revTrail = trail[::-1]
+            sumLength = 0
+            
+            tailIndex = 0
+            
+            for i in range(1, len(revTrail)):
+                length = np.linalg.norm(revTrail[i-1] - revTrail[i])
+                sumLength = sumLength + length
+                tailIndex = i
+
+                if sumLength >= animallength_mm:
+                    break
+            
+            # Copy points from head to tail
+            bodyVert = revTrail[0:tailIndex:1]
+            print(f'bodylength: {sumLength}, verts: {len(bodyVert)}')
+
+            # We have body vertices in stage coordinate, in XY as N x 2 mat
+            # Want to have the in screen space, in XY
+            #   stage -> image -> screen -> offset to center
+            
+            #   apply transformation to each row vertex
+            bodyVert_imageCoord = stageToImageMat @ bodyVert.transpose()
+
+            #   Transfrom back to column matrix
+            bodyVert_imageCoord = bodyVert_imageCoord.transpose()
+            # Convert from mm unit to meter
+            bodyVert_imageCoord = bodyVert_imageCoord * 1e3
+
+            # Transform to screen space 
+            bodyVert_screenCoord = bodyVert_imageCoord * displayedScale
+
+            offsetToCenter = center - bodyVert_screenCoord[0]
+
+            bodyVert_screenCoord = bodyVert_screenCoord + offsetToCenter
+
+            updateLineMesh(self.bodyMesh, bodyVert_screenCoord, Color(0.0, 1.0, 0.0, 0.75))
 
 
     def clearTrackingOverlay(self):
@@ -3051,6 +3131,15 @@ class ImageOverlay(FloatLayout):
         if self.trailMesh is not None:
             self.canvas.remove(self.trailMesh)
             self.trailMesh = None
+
+        if self.guidelineMesh is not None:
+            self.canvas.remove(self.guidelineMesh)
+            self.guidelineMesh = None
+            
+        if self.bodyMesh is not None:
+            self.canvas.remove(self.bodyMesh)
+            self.bodyMesh = None
+
             
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
@@ -4371,7 +4460,7 @@ class GlowTrackerApp(App):
             'g_y_mean': 0,
             'g_y_sigma': 0,
             'g_relative': 'true',
-            'animallength': '100'
+            'animallength': '1000'
         })
 
         
