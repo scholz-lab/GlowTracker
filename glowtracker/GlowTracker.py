@@ -3337,7 +3337,6 @@ class RuntimeControls(BoxLayout):
                 KD= KD,
                 SP= SP,
                 focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
-                minStepDist= depthoffield,
                 acceptableErrorPercentage= 0.05,
                 integralLifeTime= 0,
                 smoothingWindow= smoothingwindow,

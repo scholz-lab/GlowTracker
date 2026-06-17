@@ -71,7 +71,7 @@ class AutoFocusPID:
         KD: float = 0.1,
         SP: float = 1000,
         focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
-        minStepDist: float = 0.0001,
+        minStepDist: float = 0.002,
         integralLifeTime: int = 0,
         smoothingWindow: int = 1,
         minStepBeforeChangeDir: int = 0,
@@ -100,7 +100,8 @@ class AutoFocusPID:
         self.KD = KD
         self.SP: float = SP
         self.focusEstimationMethod = focusEstimationMethod
-        self.minStepDist: float = minStepDist
+        # Convergence floor: always below the coarse step so motion can't freeze
+        self.minStepDist: float = min(minStepDist, coarseStep / 2)
         self.integralLifeTime: int = integralLifeTime
         self.smoothingWindow: int = smoothingWindow
         # Blending weight for PV smoothing
