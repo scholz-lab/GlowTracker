@@ -1575,7 +1575,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
                         app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                         app.update_coordinates(isAsync= False)
-                        time.sleep(0.05)
+                        time.sleep(0.01)
                         ok, img = app.camera.singleTake()
                         if not ok:
                             print('failed to capture image, skipping tile')
@@ -5003,6 +5003,7 @@ class GlowTrackerApp(App):
 
         depthOfFieldEstimator = macro.DepthOfFieldEstimator()
         numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
+        print(f'autofocus: Taking {numSamples} images for depth of field estimation with search distance {depthoffieldsearchdistance} and step size {depthoffield}')
         depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
 
         bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()

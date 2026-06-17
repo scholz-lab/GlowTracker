@@ -75,7 +75,10 @@ class AutoFocusPID:
         integralLifeTime: int = 0,
         smoothingWindow: int = 1,
         minStepBeforeChangeDir: int = 0,
-        acceptableErrorPercentage: float = 0.05
+        acceptableErrorPercentage: float = 0.05,
+        coarseStepFactor: float = 10.0,
+        peakEpsilonFrac: float = 0.02,
+        reacquireFraction: float = 0.7
     ) -> None:
         """Initialize attributes
 
@@ -105,8 +108,17 @@ class AutoFocusPID:
         self.WEIHT_MIN = 1
         self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
         self.acceptableErrorPercentage: float = acceptableErrorPercentage
-        
-        
+
+        # Peak-seeking parameters
+        #   coarseStep: starting (climb) step; halves on overshoot down to minStepDist
+        #   peakEpsilonFrac: only a drop > this fraction counts as an overshoot (noise guard)
+        #   reacquireFraction: if focus falls below best*fraction, reopen a coarse search
+        self.coarseStep: float = minStepDist * coarseStepFactor
+        self.peakEpsilonFrac: float = peakEpsilonFrac
+        self.reacquireFraction: float = reacquireFraction
+        self.step: float = self.coarseStep
+        self.bestFocus: float = 0.0
+
         self.posLog: List[float] = []
         self.focusLog: List[float] = []
         self.errorLog: List[float] = []
@@ -115,20 +127,89 @@ class AutoFocusPID:
         self.directionResetCounter = 0
 
 
-    def executePIDStep(self, image: np.ndarray, pos: float) -> float:
-        """Perform one PID control step based on current image and lens position.
+    # def executePIDStep(self, image: np.ndarray, pos: float) -> float:
+    #     """Perform one PID control step based on current image and lens position.
 
-        Args:
-            image (np.ndarray): gray-scaled image
-            pos (float): stage z-axis position
+    #     Args:
+    #         image (np.ndarray): gray-scaled image
+    #         pos (float): stage z-axis position
 
-        Returns:
-            relPosZ (float): estimated **relative** z-axis position to move to
-        """
+    #     Returns:
+    #         relPosZ (float): estimated **relative** z-axis position to move to
+    #     """
 
-        # Estimate focus the image at current position
+    #     # Estimate focus the image at current position
+    #     PV = estimateFocus(self.focusEstimationMethod, image)
+
+    #     # Apply a linear, weighted average to PV with emphasis on recent data
+    #     focuses = [PV]
+    #     if self.smoothingWindow > 1:
+    #         focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+    #     focuses = np.array(focuses)
+
+    #     # Compute linear weight
+    #     t = np.array([1])
+
+    #     if (len(focuses) > 1):
+    #         t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+        
+    #     weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+
+    #     PV = sum(focuses * weights) / sum(weights)
+
+    #     # Compute error
+    #     err = self.SP - PV
+    #     U: float = 0.0
+
+    #     if len(self.focusLog) == 0:
+    #         # If this is the first time executing, simply move by a minimum distance
+    #         U = self.minStepDist * self.direction
+
+    #     else:
+    #         prevErr = self.errorLog[-1]
+    #         # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
+    #         derivative = (err - prevErr)
+
+    #         # If the PV is not close enough to the SP (percentage-wise), then execute 
+    #         errorRatio = abs( PV / self.SP - 1.0)
+    #         if errorRatio > self.acceptableErrorPercentage:
+                
+    #             # PID calculations
+    #             if self.integralLifeTime > 0:
+    #                 self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
+    #             else:
+    #                 self.integral = np.sum(self.errorLog)
+
+    #             U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
+
+    #             # Decide direction. If the error is increasing then we should flip direction.
+    #             if self.directionResetCounter > self.minStepBeforeChangeDir:
+                    
+    #                 # Compute derivative of past error up to histLength
+    #                 pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
+    #                 diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
+
+    #                 # The averaing error is increasing
+    #                 if sum(diffs) > 0:
+                        
+    #                     self.direction = self.direction * -1
+    #                     self.directionResetCounter = 0
+                
+    #             self.directionResetCounter += 1
+
+    #             U = U * self.direction
+                
+
+    #     # Record
+    #     self.focusLog.append(PV)
+    #     self.errorLog.append(err)
+    #     self.posLog.append(pos)
+
+    #     return U
+    
+    def executePIDStep(self, image, pos):
         PV = estimateFocus(self.focusEstimationMethod, image)
-
+        
         # Apply a linear, weighted average to PV with emphasis on recent data
         focuses = [PV]
         if self.smoothingWindow > 1:
@@ -145,53 +226,30 @@ class AutoFocusPID:
 
         PV = sum(focuses * weights) / sum(weights)
 
-        # Compute error
-        err = self.SP - PV
         U: float = 0.0
 
         if len(self.focusLog) == 0:
-            # If this is the first time executing, simply move by a minimum distance
-            U = self.minStepDist * self.direction
-
+            self.bestFocus = PV
+            U = self.step * self.direction
         else:
-            prevErr = self.errorLog[-1]
-            # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
-            derivative = (err - prevErr)
+            prevPV = self.focusLog[-1]
 
-            # If the PV is not close enough to the SP (percentage-wise), then execute 
-            errorRatio = abs( PV / self.SP - 1.0)
-            if errorRatio > self.acceptableErrorPercentage:
-                
-                # PID calculations
-                if self.integralLifeTime > 0:
-                    self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
-                else:
-                    self.integral = np.sum(self.errorLog)
+            if PV < self.bestFocus * self.reacquireFraction:
+                self.step = self.coarseStep
+                self.bestFocus = PV
+            elif PV < prevPV * (1.0 - self.peakEpsilonFrac):
+                self.direction *= -1
+                self.step = max(self.step * 0.5, self.minStepDist)
 
-                U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
+            self.bestFocus = max(self.bestFocus, PV)
 
-                # Decide direction. If the error is increasing then we should flip direction.
-                if self.directionResetCounter > self.minStepBeforeChangeDir:
-                    
-                    # Compute derivative of past error up to histLength
-                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
-                    diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
+            U = self.step * self.direction
 
-                    # The averaing error is increasing
-                    if sum(diffs) > 0:
-                        
-                        self.direction = self.direction * -1
-                        self.directionResetCounter = 0
-                
-                self.directionResetCounter += 1
+            if self.step <= self.minStepDist:
+                U = 0.0
 
-                U = U * self.direction
-                
-
-        # Record
         self.focusLog.append(PV)
-        self.errorLog.append(err)
         self.posLog.append(pos)
-
         return U
+
 
