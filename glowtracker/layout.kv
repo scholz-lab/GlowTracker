@@ -352,7 +352,7 @@ MainWindow:
         text: 'Go'
         on_release: root.go_to()
 
-        
+
 <CenterRadiusFromThreePoints>:
     orientation: 'vertical'
     size_hint_y: None
@@ -383,6 +383,12 @@ MainWindow:
     Label:
         id: resultlabel
         text: 'Diameter: -    Center: -'
+    ProgressBar:
+        max: 1
+        value: root.scan_progress
+        size_hint_y: None
+        height: 20
+
 
 #################################
 # Load camera properties - Popup

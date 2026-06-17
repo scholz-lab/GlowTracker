@@ -1483,6 +1483,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     points = ListProperty([])
     _stop_scan = False
+    scan_progress = NumericProperty(0)  
+
 
     def capture_points(self):
         coords = App.get_running_app().coords
@@ -1564,9 +1566,12 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 while not self._stop_scan:
                     scan_pass += 1
                     print(f'scan pass {scan_pass}')
-                    for (x, y) in tiles:
+                    for i, (x, y) in enumerate(tiles):
                         if self._stop_scan:
                             break
+                        frac = (i + 1) / len(tiles)
+                        Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
+
                         app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                         app.update_coordinates(isAsync= False)
                         time.sleep(0.05)
