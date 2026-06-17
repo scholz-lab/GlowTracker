@@ -1565,6 +1565,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 scan_pass = 0
                 while not self._stop_scan:
                     scan_pass += 1
+                    self.scan_progress = 0
                     print(f'scan pass {scan_pass}')
                     for i, (x, y) in enumerate(tiles):
                         if self._stop_scan:
