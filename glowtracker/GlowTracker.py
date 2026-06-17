@@ -60,6 +60,7 @@ from kivy.uix.stacklayout import StackLayout
 # 
 import asyncio
 import datetime
+import json
 import time
 from pathlib import Path
 from threading import Thread, Lock
@@ -1483,8 +1484,69 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     points = ListProperty([])
     _stop_scan = False
-    scan_progress = NumericProperty(0)  
+    scan_progress = NumericProperty(0)
+    saved_scenarios = ListProperty([])
 
+    def on_kv_post(self, *args):
+        self.refresh_scenarios()
+
+    def _scenario_path(self):
+        return os.path.join(os.path.dirname(__file__), 'settings', 'scan_scenarios.json')
+
+    def _read_scenarios(self):
+        try:
+            with open(self._scenario_path()) as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def refresh_scenarios(self):
+        self.saved_scenarios = sorted(self._read_scenarios().keys())
+
+    def save_scenario(self, name):
+        name = name.strip()
+        if not name:
+            print('enter a scenario name')
+            return
+        app = App.get_running_app()
+        data = self._read_scenarios()
+        entry = {'points': [list(p) for p in self.points]}
+        if app.plateCenter is not None:
+            entry['center'] = list(app.plateCenter)
+            entry['radius'] = app.plateRadius
+        data[name] = entry
+        path = self._scenario_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+        self.refresh_scenarios()
+
+    def load_scenario(self, name):
+        entry = self._read_scenarios().get(name)
+        if entry is None:
+            return
+        self.points = [list(p) for p in entry.get('points', [])]
+        if len(self.points) >= 3:
+            self.calculate()
+        elif 'center' in entry and 'radius' in entry:
+            app = App.get_running_app()
+            app.plateCenter = tuple(entry['center'])
+            app.plateRadius = entry['radius']
+            self.ids.resultlabel.text = 'Diameter: {:.2f} mm    Center: ({:.2f}, {:.2f})'.format(2 * entry['radius'], *entry['center'])
+
+    def set_points_from_text(self, text):
+        pts = []
+        for pair in text.replace('\n', ';').split(';'):
+            pair = pair.strip()
+            if not pair:
+                continue
+            try:
+                x, y = (float(v) for v in pair.split(','))
+            except ValueError:
+                print(f'bad point: {pair}')
+                return
+            pts.append([x, y])
+        self.points = pts
 
     def capture_points(self):
         coords = App.get_running_app().coords
@@ -3265,7 +3327,8 @@ class RuntimeControls(BoxLayout):
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
             smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
             minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
-            
+            coarsestep = app.config.getfloat('Autofocus', 'coarsestep')
+
             autoFocusPID = AutoFocusPID(
                 KP= KP,
                 KI= KI,
@@ -3276,7 +3339,8 @@ class RuntimeControls(BoxLayout):
                 acceptableErrorPercentage= 0.05,
                 integralLifeTime= 0,
                 smoothingWindow= smoothingwindow,
-                minStepBeforeChangeDir= minstepbeforechangedir
+                minStepBeforeChangeDir= minstepbeforechangedir,
+                coarseStep= coarsestep
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -4320,6 +4384,7 @@ class GlowTrackerApp(App):
             'bestfocusvalue': 2000,
             'focusfps': '15',
             'isshowgraph': 'false',
+            'coarsestep': '0.02',
         })
 
         config.setdefaults('Calibration', {

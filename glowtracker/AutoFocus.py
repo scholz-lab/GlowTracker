@@ -76,7 +76,7 @@ class AutoFocusPID:
         smoothingWindow: int = 1,
         minStepBeforeChangeDir: int = 0,
         acceptableErrorPercentage: float = 0.05,
-        coarseStepFactor: float = 10.0,
+        coarseStep: float = 0.02,
         peakEpsilonFrac: float = 0.02,
         reacquireFraction: float = 0.7
     ) -> None:
@@ -109,11 +109,7 @@ class AutoFocusPID:
         self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
         self.acceptableErrorPercentage: float = acceptableErrorPercentage
 
-        # Peak-seeking parameters
-        #   coarseStep: starting (climb) step; halves on overshoot down to minStepDist
-        #   peakEpsilonFrac: only a drop > this fraction counts as an overshoot (noise guard)
-        #   reacquireFraction: if focus falls below best*fraction, reopen a coarse search
-        self.coarseStep: float = minStepDist * coarseStepFactor
+        self.coarseStep: float = coarseStep
         self.peakEpsilonFrac: float = peakEpsilonFrac
         self.reacquireFraction: float = reacquireFraction
         self.step: float = self.coarseStep

@@ -191,6 +191,13 @@
         "key": "minstepbeforechangedir"
     },
     {
+        "type": "custom_numeric",
+        "title": "Coarse step (mm)",
+        "desc": "Initial Z step (mm) the peak-seeking autofocus climbs with; it halves on overshoot down to the depth of field. Defaults to 0.02.",
+        "section": "Autofocus",
+        "key": "coarsestep"
+    },
+    {
         "type": "numeric",
         "title": "Best focus value",
         "desc": "Current best focus value. Use as a target value for autofocusing. Automatically filled in from DoF calibration.",

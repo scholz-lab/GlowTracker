@@ -356,7 +356,7 @@ MainWindow:
 <CenterRadiusFromThreePoints>:
     orientation: 'vertical'
     size_hint_y: None
-    height: 120
+    height: 210
     spacing: 5
     MyLabel:
         text: 'Plate Region'
@@ -380,6 +380,37 @@ MainWindow:
         Button:
             text: 'Reset'
             on_release: root.reset()
+    TextInput:
+        id: pointstext
+        size_hint_y: None
+        height: 30
+        multiline: False
+        hint_text: 'x,y; x,y; x,y'
+        on_focus: app.toggle_key_binding(self.focus)
+        on_text_validate: root.set_points_from_text(self.text)
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: 5
+        TextInput:
+            id: scenarioname
+            multiline: False
+            hint_text: 'scenario name'
+            on_focus: app.toggle_key_binding(self.focus)
+        Button:
+            text: 'Save'
+            size_hint_x: 0.3
+            on_release: root.save_scenario(scenarioname.text)
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: 5
+        Spinner:
+            id: scenariospinner
+            text: 'load scenario'
+            values: root.saved_scenarios
+        Button:
+            text: 'Load'
+            size_hint_x: 0.3
+            on_release: root.load_scenario(scenariospinner.text)
     Label:
         id: resultlabel
         text: 'Diameter: -    Center: -'
