@@ -380,14 +380,21 @@ MainWindow:
         Button:
             text: 'Reset'
             on_release: root.reset()
-    TextInput:
-        id: pointstext
+    BoxLayout:
+        orientation: 'horizontal'
         size_hint_y: None
         height: 30
-        multiline: False
-        hint_text: 'x,y; x,y; x,y'
-        on_focus: app.toggle_key_binding(self.focus)
-        on_text_validate: root.set_points_from_text(self.text)
+        spacing: 5
+        TextInput:
+            id: pointstext
+            multiline: False
+            hint_text: 'x,y; x,y; x,y'
+            on_focus: app.toggle_key_binding(self.focus)
+            on_text_validate: root.set_points_from_text(self.text)
+        Button:
+            text: 'Set'
+            size_hint_x: 0.3
+            on_release: root.set_points_from_text(pointstext.text)
     BoxLayout:
         orientation: 'horizontal'
         spacing: 5

@@ -1535,6 +1535,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
             self.ids.resultlabel.text = 'Diameter: {:.2f} mm    Center: ({:.2f}, {:.2f})'.format(2 * entry['radius'], *entry['center'])
 
     def set_points_from_text(self, text):
+        if not text.strip():
+            return
         pts = []
         for pair in text.replace('\n', ';').split(';'):
             pair = pair.strip()
@@ -3455,6 +3457,8 @@ class RuntimeControls(BoxLayout):
 
             # Perform one autofocus step
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
+
+            print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
             # Move relative z-position
             stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
