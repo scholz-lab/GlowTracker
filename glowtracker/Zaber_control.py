@@ -237,7 +237,6 @@ class Stage:
     _UNIT_TO_MM = {'mm': 1.0, 'um': 0.001, 'cm': 10.0}
 
     def is_safe(self, x: float, y: float, z: float) -> bool:
-        """True if absolute position (mm) is outside the collision keep-out zone."""
         y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
         z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
         return not (y < y_lim and z > z_lim)
@@ -437,6 +436,21 @@ class Stage:
 
         return True
         
+
+    def move_xy(self, x: float, y: float, unit: str = 'mm', wait_until_idle: bool = True) -> bool:
+        if self.connection is None:
+            return False
+        try:
+            u = units_from_literals(unit)
+            self.axis_x.move_absolute(float(x), u, False)
+            self.axis_y.move_absolute(float(y), u, False)
+            if wait_until_idle:
+                self.axis_x.wait_until_idle()
+                self.axis_y.wait_until_idle()
+        except MotionLibException as e:
+            print(f'move_xy to ({x}, {y}) {unit} failed: {e}')
+            return False
+        return True
 
     def start_move(self, velocity: Vec3, unit: str = 'um/s') -> bool:
         """Start moving in a given velocity's direction.

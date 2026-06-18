@@ -386,6 +386,15 @@ class RightColumn(BoxLayout):
             self._popup.open()
 
     
+    def show_scan(self):
+        if getattr(self, '_scanPanel', None) is None:
+            self._scanPanel = CenterRadiusFromThreePoints()
+        if self._scanPanel.parent is not None:
+            self._scanPanel.parent.remove_widget(self._scanPanel)
+        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel, size_hint= (0.5, 0.9))
+        self._popup.open()
+
+
     def open_daq_widget(self):
         """Open the DAQ Control Sequence widget popup.
         """
@@ -1487,6 +1496,13 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_progress = NumericProperty(0)
     saved_scenarios = ListProperty([])
 
+    scan_exposure = NumericProperty(100000)
+    scan_gain = NumericProperty(0)
+    scan_settle = NumericProperty(0.01)
+    scan_threshold = NumericProperty(150)
+    scan_min_pixels = NumericProperty(50)
+    scan_overlap = NumericProperty(0.4)
+
     def on_kv_post(self, *args):
         self.refresh_scenarios()
 
@@ -1612,15 +1628,25 @@ class CenterRadiusFromThreePoints(BoxLayout):
             print('no fov returned')
             return
 
-        threshold = 150
-        min_pixels = 50
-
-        tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap=1.0)
+        threshold = self.scan_threshold
+        min_pixels = self.scan_min_pixels
+        settle = self.scan_settle
         z = app.coords[2]
+
+        tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap= self.scan_overlap)
+        tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
+        if not tiles:
+            print('no safe tiles to scan at this Z')
+            return
 
         mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
         prev_live = mgr.liveviewbutton.state
         mgr.liveviewbutton.state = 'normal'
+
+        prev_exposure = app.camera.ExposureTime()
+        prev_gain = app.camera.Gain()
+        app.camera.ExposureTime.Value = float(self.scan_exposure)
+        app.camera.Gain.Value = float(self.scan_gain)
 
         self._stop_scan = False
         def _scan():
@@ -1630,6 +1656,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 while not self._stop_scan:
                     scan_pass += 1
                     self.scan_progress = 0
+                    t_move = t_settle = t_grab = t_detect = t_disp = 0.0
+                    n_tiles = 0
+                    pass_start = time.perf_counter()
                     print(f'scan pass {scan_pass}')
                     for i, (x, y) in enumerate(tiles):
                         if self._stop_scan:
@@ -1637,28 +1666,51 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         frac = (i + 1) / len(tiles)
                         Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
 
-                        app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
-                        app.update_coordinates(isAsync= False)
-                        time.sleep(0.01)
+                        t0 = time.perf_counter()
+                        app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
+                        t1 = time.perf_counter()
+                        time.sleep(settle)
+                        t2 = time.perf_counter()
                         ok, img = app.camera.singleTake()
+                        t3 = time.perf_counter()
                         if not ok:
                             print('failed to capture image, skipping tile')
                             continue
                         Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
+                        t4 = time.perf_counter()
                         present, offset = macro.detect_worm(img, threshold, min_pixels)
+                        t5 = time.perf_counter()
+
+                        t_move += t1 - t0
+                        t_settle += t2 - t1
+                        t_grab += t3 - t2
+                        t_disp += t4 - t3
+                        t_detect += t5 - t4
+                        n_tiles += 1
                         if present:
-                            print(f'Found a worm !!')
+                            print('Found a worm !!')
                             self._stop_scan = True
                             units = app.config.get('Calibration', 'step_units')
                             dy, dx = macro.getStageDistances(
                                 np.array([-offset[1], offset[0]]), app.imageToStageMat)
                             app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
-                            app.update_coordinates(isAsync= False)
-                            # autofocus
                             app.autofocus()
                             app.update_coordinates(isAsync= False)
                             break
+
+                    if n_tiles > 0:
+                        pass_elapsed = time.perf_counter() - pass_start
+                        per = lambda s: s / n_tiles * 1000.0
+                        print(
+                            f'pass {scan_pass}: move {per(t_move):.0f}ms | '
+                            f'settle {per(t_settle):.0f}ms | grab {per(t_grab):.0f}ms | '
+                            f'detect {per(t_detect):.0f}ms | disp {per(t_disp):.0f}ms | '
+                            f'total {pass_elapsed / n_tiles * 1000.0:.0f}ms/tile | '
+                            f'{n_tiles / pass_elapsed:.1f} tiles/s  ({n_tiles} tiles)'
+                        )
             finally:
+                app.camera.ExposureTime.Value = prev_exposure
+                app.camera.Gain.Value = prev_gain
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
                 asyncio.get_event_loop().close()
         Thread(target= _scan, daemon= True).start()
@@ -3634,6 +3686,11 @@ class RuntimeControls(BoxLayout):
 
         estimated_next_timestamp: float | None = None
 
+        bench_window = 30
+        bench_n = 0
+        bench_detect = bench_move = bench_compute = bench_wait = 0.0
+        bench_start = time.perf_counter()
+
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
             # Handling image cycle synchronization.
@@ -3690,9 +3747,10 @@ class RuntimeControls(BoxLayout):
                 prevImage = image
 
             # Extract worm position
+            _td0 = time.perf_counter()
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
-                
+
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
 
@@ -3702,7 +3760,8 @@ class RuntimeControls(BoxLayout):
 
                 except ValueError as e:
                     ystep, xstep = 0, 0
-            
+            _td1 = time.perf_counter()
+
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep
             self.cmsOffset_y = -ystep
@@ -3714,6 +3773,7 @@ class RuntimeControls(BoxLayout):
             xstep *= scale
 
             # getting stage coord is slow so we will interpolate from movements
+            _tm0 = time.perf_counter()
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
@@ -3722,6 +3782,7 @@ class RuntimeControls(BoxLayout):
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 prevImage = image
+            _tm1 = time.perf_counter()
 
             tracking_frame_end_time = time.perf_counter()
 
@@ -3760,6 +3821,23 @@ class RuntimeControls(BoxLayout):
             total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
 
             estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
+
+            bench_n += 1
+            bench_detect += _td1 - _td0
+            bench_move += _tm1 - _tm0
+            bench_compute += computation_time
+            bench_wait += total_waiting_time
+            if bench_n >= bench_window:
+                elapsed = time.perf_counter() - bench_start
+                per = lambda s: s / bench_n * 1000.0
+                print(
+                    f'track: detect {per(bench_detect):.1f}ms | move {per(bench_move):.1f}ms | '
+                    f'compute {per(bench_compute):.1f}ms | wait {per(bench_wait):.1f}ms | '
+                    f'{bench_n / elapsed:.1f} fps'
+                )
+                bench_n = 0
+                bench_detect = bench_move = bench_compute = bench_wait = 0.0
+                bench_start = time.perf_counter()
 
             # Wait
             time.sleep(total_waiting_time)
@@ -5036,12 +5114,6 @@ class GlowTrackerApp(App):
                 self.coords = pos
 
     def get_fov_mm(self):
-        """Current camera field of view as (width, height) in mm, or None if unavailable.
-
-        Derived on demand from the calibrated pixel size and the camera's
-        *current* pixel dimensions, so it stays correct when the ROI changes.
-        Requires a connected camera and a valid calibration (Camera/pixelsize).
-        """
         if self.camera is None:
             return None
         pixelsize = self.config.getfloat('Camera', 'pixelsize')

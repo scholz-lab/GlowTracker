@@ -100,7 +100,6 @@ class AutoFocusPID:
         self.KD = KD
         self.SP: float = SP
         self.focusEstimationMethod = focusEstimationMethod
-        # Convergence floor: always below the coarse step so motion can't freeze
         self.minStepDist: float = min(minStepDist, coarseStep / 2)
         self.integralLifeTime: int = integralLifeTime
         self.smoothingWindow: int = smoothingWindow
