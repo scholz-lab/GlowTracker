@@ -1493,6 +1493,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     points = ListProperty([])
     _stop_scan = False
+    _preview_saved = None
     scan_progress = NumericProperty(0)
     saved_scenarios = ListProperty([])
 
@@ -1725,8 +1726,26 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     def toggle_preview(self):
         app = App.get_running_app()
+        if app.camera is None:
+            return
         btn = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.liveviewbutton
-        btn.state = 'normal' if btn.state == 'down' else 'down'
+        if btn.state == 'down':
+            btn.state = 'normal'
+            if self._preview_saved is not None:
+                exp, gain, fr_en, fr = self._preview_saved
+                app.camera.ExposureTime.Value = exp
+                app.camera.Gain.Value = gain
+                app.camera.AcquisitionFrameRate.Value = fr
+                app.camera.AcquisitionFrameRateEnable.Value = fr_en
+                self._preview_saved = None
+        else:
+            self._preview_saved = (
+                app.camera.ExposureTime(), app.camera.Gain(),
+                app.camera.AcquisitionFrameRateEnable(), app.camera.AcquisitionFrameRate())
+            app.camera.AcquisitionFrameRateEnable.Value = False
+            app.camera.ExposureTime.Value = float(self.scan_exposure)
+            app.camera.Gain.Value = float(self.scan_gain)
+            btn.state = 'down'
 
         
 
