@@ -2703,9 +2703,11 @@ class ImageOverlay(FloatLayout):
         self.trackingBorder: Line | None = None
         self.cmsShape: Ellipse | None = None
 
-        self.trailMesh: Mesh | None = None
-        self.guidelineMesh: Mesh | None = None
-        self.bodyMesh: Mesh | None = None
+        self.trailMesh: Mesh = Mesh(mode = 'line_strip')
+        self.guidelineMesh: Mesh = Mesh(mode = 'line_strip')
+        self.bodyMesh: Mesh = Mesh(mode = 'line_strip')
+        self.tailToHeadMesh: Mesh = Mesh(mode = 'line_strip')
+        self.velocityMesh: Mesh = Mesh(mode = 'line_strip')
 
         self.app: GlowTrackerApp = App.get_running_app()
 
@@ -2975,7 +2977,7 @@ class ImageOverlay(FloatLayout):
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
         
-        def updateLineMesh(mesh: Mesh | None, vertices_in: np.ndarray, color: Color) -> None:
+        def updateLineMesh(mesh: Mesh, vertices_in: np.ndarray, color: Color) -> None:
             # vertices_in is N x 2 mat. Each row contains a vertex in XY
             
             # Construct vertex array
@@ -2989,20 +2991,12 @@ class ImageOverlay(FloatLayout):
             numVerts = vertices_in.shape[0] 
             indices = np.arange(numVerts, dtype= np.int32).tolist()
 
-            if mesh is None:
+            mesh.vertices = vertices
+            mesh.indices = indices
 
-                mesh = Mesh(
-                    vertices = vertices,
-                    indices = indices,
-                    mode = 'line_strip'
-                )
-
+            if mesh not in self.canvas.children:
                 self.canvas.add(color)
                 self.canvas.add(mesh)
-
-            else:
-                mesh.vertices = vertices
-                mesh.indices = indices
 
         # 
         #   Draw tracking trail if provided
@@ -3073,6 +3067,7 @@ class ImageOverlay(FloatLayout):
             
             tailIndex = 0
             
+            
             for i in range(1, len(revTrail)):
                 length = np.linalg.norm(revTrail[i-1] - revTrail[i])
                 sumLength = sumLength + length
@@ -3082,29 +3077,111 @@ class ImageOverlay(FloatLayout):
                     break
             
             # Copy points from head to tail
-            bodyVert = revTrail[0:tailIndex:1]
+            bodyVert = revTrail[0:tailIndex+1:1]
             print(f'bodylength: {sumLength}, verts: {len(bodyVert)}')
 
-            # We have body vertices in stage coordinate, in XY as N x 2 mat
-            # Want to have the in screen space, in XY
-            #   stage -> image -> screen -> offset to center
+            if len(bodyVert) > 1:
+
+                # Convert from mm unit to meter
+                bodyVert = bodyVert * 1e3
+
+                # We have body vertices in stage coordinate, in XY as N x 2 mat
+                # Want to have the in screen space, in XY
+                #   stage -> image -> screen -> offset to center
+                
+                #   apply transformation to each row vertex
+                bodyVert_imageCoord = stageToImageMat @ bodyVert.transpose()
+
+                #   Transfrom back to column matrix
+                bodyVert_imageCoord = bodyVert_imageCoord.transpose()
+                
+                # Transform to screen space 
+                bodyVert_screenCoord = bodyVert_imageCoord * displayedScale
+
+                offsetToCenter = center - bodyVert_screenCoord[0]
+
+                bodyVert_screenCoord = bodyVert_screenCoord + offsetToCenter
+
+                updateLineMesh(self.bodyMesh, bodyVert_screenCoord, Color(1.0, 1.0, 0.0, 0.75))
             
-            #   apply transformation to each row vertex
-            bodyVert_imageCoord = stageToImageMat @ bodyVert.transpose()
+                # 
+                # Draw vector from tail to head
+                # 
+                # We have bodyVert: Bx2 (B:= body length), rows of point from head to tail
+                head = bodyVert[0]
+                tail = bodyVert[-1]
+                vecTailToHead = head - tail
+                tailToHeadVert = np.vstack([tail, head])
 
-            #   Transfrom back to column matrix
-            bodyVert_imageCoord = bodyVert_imageCoord.transpose()
-            # Convert from mm unit to meter
-            bodyVert_imageCoord = bodyVert_imageCoord * 1e3
+                # We have body vertices in stage coordinate, in XY as N x 2 mat
+                # Want to have the in screen space, in XY
+                #   stage -> image -> screen -> offset to center
+                
+                #   apply transformation to each row vertex
+                tailToHeadVert_imageCoord = stageToImageMat @ tailToHeadVert.transpose()
 
-            # Transform to screen space 
-            bodyVert_screenCoord = bodyVert_imageCoord * displayedScale
+                #   Transfrom back to column matrix
+                tailToHeadVert_imageCoord = tailToHeadVert_imageCoord.transpose()
+                
+                # Transform to screen space 
+                tailToHeadVert_screenCoord = tailToHeadVert_imageCoord * displayedScale
 
-            offsetToCenter = center - bodyVert_screenCoord[0]
+                # Offset to have head at the center of the screen
+                offsetToCenter = center - tailToHeadVert_screenCoord[1]
 
-            bodyVert_screenCoord = bodyVert_screenCoord + offsetToCenter
+                tailToHeadVert_screenCoord = tailToHeadVert_screenCoord + offsetToCenter
 
-            updateLineMesh(self.bodyMesh, bodyVert_screenCoord, Color(0.0, 1.0, 0.0, 0.75))
+                updateLineMesh(self.tailToHeadMesh, tailToHeadVert_screenCoord, Color(0.0, 0.0, 1.0, 0.75))
+
+                # 
+                # Estimate velocity
+                # 
+                # midPoint
+                velocityHistoryPercent = 0.25
+                numHistVert = round(len(bodyVert) * velocityHistoryPercent)
+                # Slice from head to numHistVert
+                histVert = bodyVert[0:numHistVert]
+
+                # Compute derivative between each pair of vertex. Assume equal delta time.
+                velocities = histVert[0:-1] - histVert[1:]
+
+                # Uniform weighted average
+                velocity = np.sum(velocities, axis= 0) / len(velocities)
+
+                # Draw the velocity
+                velocityVert = np.array([[0,0], velocity])
+
+                #   apply transformation to each row vertex
+                velocityVert_imageCoord = stageToImageMat @ velocityVert.transpose()
+
+                #   Transfrom back to column matrix
+                velocityVert_imageCoord = velocityVert_imageCoord.transpose()
+                
+                # Transform to screen space 
+                velocityVert_screenCoord = velocityVert_imageCoord * displayedScale
+
+                # Offset to have head at the center of the screen
+                offsetToCenter = center - velocityVert_screenCoord[0]
+
+                velocityVert_screenCoord = velocityVert_screenCoord + offsetToCenter
+
+                # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
+                #   If yes, reversal -> red color.
+                #   If not, non-reversal -> green color.
+
+                angle_radian = macro.computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
+                angle_degree = angle_radian * 180 / math.pi
+
+                # Todo: get from settings
+                reversalThresholdAngleRadian = 90
+
+                velocityColor = Color(0, 1, 0, 0.75)
+                if angle_degree > reversalThresholdAngleRadian or angle_degree < -reversalThresholdAngleRadian:
+                    velocityColor = Color(1, 0, 0, 0.75)
+                    print("Reversing!")
+
+                updateLineMesh(self.velocityMesh, velocityVert_screenCoord, velocityColor)
+
 
 
     def clearTrackingOverlay(self):
@@ -3128,18 +3205,20 @@ class ImageOverlay(FloatLayout):
             self.canvas.remove(self.cmsShape)
             self.cmsShape = None
         
-        if self.trailMesh is not None:
+        if self.trailMesh in self.canvas.children:
             self.canvas.remove(self.trailMesh)
-            self.trailMesh = None
 
-        if self.guidelineMesh is not None:
+        if self.guidelineMesh in self.canvas.children:
             self.canvas.remove(self.guidelineMesh)
-            self.guidelineMesh = None
             
-        if self.bodyMesh is not None:
+        if self.bodyMesh in self.canvas.children:
             self.canvas.remove(self.bodyMesh)
-            self.bodyMesh = None
 
+        if self.tailToHeadMesh in self.canvas.children:
+            self.canvas.remove(self.tailToHeadMesh)
+        
+        if self.velocityMesh in self.canvas.children:
+            self.canvas.remove(self.velocityMesh)
             
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
