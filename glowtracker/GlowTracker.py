@@ -1645,6 +1645,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
         prev_exposure = app.camera.ExposureTime()
         prev_gain = app.camera.Gain()
+        prev_fr_enable = app.camera.AcquisitionFrameRateEnable()
+        prev_fr = app.camera.AcquisitionFrameRate()
+        app.camera.AcquisitionFrameRateEnable.Value = False
         app.camera.ExposureTime.Value = float(self.scan_exposure)
         app.camera.Gain.Value = float(self.scan_gain)
 
@@ -1711,6 +1714,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
             finally:
                 app.camera.ExposureTime.Value = prev_exposure
                 app.camera.Gain.Value = prev_gain
+                app.camera.AcquisitionFrameRate.Value = prev_fr
+                app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
                 asyncio.get_event_loop().close()
         Thread(target= _scan, daemon= True).start()
