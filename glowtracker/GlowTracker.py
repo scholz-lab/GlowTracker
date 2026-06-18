@@ -1676,7 +1676,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         if not ok:
                             print('failed to capture image, skipping tile')
                             continue
-                        Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
+                        Clock.schedule_once(lambda dt, im=img: setattr(self.ids.scanpreview, 'texture', imageToTexture(im)))
                         t4 = time.perf_counter()
                         present, offset = macro.detect_worm(img, threshold, min_pixels)
                         t5 = time.perf_counter()
