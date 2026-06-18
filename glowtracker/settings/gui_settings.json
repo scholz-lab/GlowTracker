@@ -90,6 +90,34 @@
         "options": ["mm/s^2", "um/s^2"]
     },
     {
+        "type": "numeric",
+        "title": "Scan maxspeed",
+        "desc": "Maximum stage speed during plate scanning",
+        "section": "Stage",
+        "key": "scan_maxspeed"
+    },
+    {
+        "type": "numeric",
+        "title": "Scan acceleration",
+        "desc": "Stage acceleration during plate scanning",
+        "section": "Stage",
+        "key": "scan_acceleration"
+    },
+    {
+        "type": "numeric",
+        "title": "Tracking maxspeed",
+        "desc": "Maximum stage speed during tracking",
+        "section": "Stage",
+        "key": "track_maxspeed"
+    },
+    {
+        "type": "numeric",
+        "title": "Tracking acceleration",
+        "desc": "Stage acceleration during tracking",
+        "section": "Stage",
+        "key": "track_acceleration"
+    },
+    {
         "type": "bool",
         "title": "Move in image space mode",
         "desc": "Control the stage movement relative to the image space. Requires calibration.",

@@ -1652,6 +1652,15 @@ class CenterRadiusFromThreePoints(BoxLayout):
         app.camera.ExposureTime.Value = float(self.scan_exposure)
         app.camera.Gain.Value = float(self.scan_gain)
 
+        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
+        accel_unit = app.config.get('Stage', 'acceleration_unit')
+        norm_maxspeed = float(app.config.get('Stage', 'maxspeed'))
+        norm_accel = float(app.config.get('Stage', 'acceleration'))
+        app.stage.set_motion(
+            float(app.config.get('Stage', 'scan_maxspeed')),
+            float(app.config.get('Stage', 'scan_acceleration')),
+            maxspeed_unit, accel_unit)
+
         self._stop_scan = False
         def _scan():
             asyncio.set_event_loop(asyncio.new_event_loop())
@@ -1717,6 +1726,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 app.camera.Gain.Value = prev_gain
                 app.camera.AcquisitionFrameRate.Value = prev_fr
                 app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
+                app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
                 Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
                 asyncio.get_event_loop().close()
         Thread(target= _scan, daemon= True).start()
@@ -3615,6 +3625,12 @@ class RuntimeControls(BoxLayout):
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+
+        stage.set_motion(
+            float(app.config.get('Stage', 'track_maxspeed')),
+            float(app.config.get('Stage', 'track_acceleration')),
+            app.config.get('Stage', 'maxspeed_unit'),
+            app.config.get('Stage', 'acceleration_unit'))
         
         # 
         # Move stage by the user pointed starting position
@@ -3808,6 +3824,13 @@ class RuntimeControls(BoxLayout):
         self.isTracking = False
         self.cropX = 0
         self.cropY = 0
+
+        if app.stage is not None:
+            app.stage.set_motion(
+                float(app.config.get('Stage', 'maxspeed')),
+                float(app.config.get('Stage', 'acceleration')),
+                app.config.get('Stage', 'maxspeed_unit'),
+                app.config.get('Stage', 'acceleration_unit'))
 
         if self.coord_updateevent is not None:
             Clock.unschedule(self.coord_updateevent)
@@ -4390,6 +4413,10 @@ class GlowTrackerApp(App):
             'maxspeed_unit': 'mm/s',
             'acceleration': '60',
             'acceleration_unit': 'mm/s^2',
+            'scan_maxspeed': '40',
+            'scan_acceleration': '1000',
+            'track_maxspeed': '20',
+            'track_acceleration': '200',
             'move_image_space_mode': 'false'
         })
 

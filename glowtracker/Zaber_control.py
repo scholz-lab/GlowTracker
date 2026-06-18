@@ -206,6 +206,11 @@ class Stage:
         return self.accel
 
 
+    def set_motion(self, maxspeed: float, accel: float, maxspeed_unit: str = DEFAULT_MAXSPEED_UNIT, accel_unit: str = DEFAULT_ACCEL_UNIT) -> None:
+        self.set_maxspeed(maxspeed, maxspeed_unit)
+        self.set_accel(accel, accel_unit)
+
+
     #  Stage homing
     def home_stage(self):
         '''
