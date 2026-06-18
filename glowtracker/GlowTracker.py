@@ -3700,20 +3700,13 @@ class RuntimeControls(BoxLayout):
         stage = app.stage
         camera = app.camera
 
-        # Compute second per frame to determine the lower bound waiting time
-        camera_spf = 1 / camera.ResultingFrameRate()
-        
-
-        # Dual Color mode settings
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
         self.isTracking = True
-        image: np.ndarray | None = None
-        retrieveTimestamp: float = 0
-        prevImage: np.ndarray | None = None
+        prevImage = None
         scale = 1.0
-
-        estimated_next_timestamp: float | None = None
+        SETTLE_FLOOR = 3e-3
+        ready_time = 0.0
 
         bench_window = 30
         bench_n = 0
@@ -3722,56 +3715,18 @@ class RuntimeControls(BoxLayout):
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
-            # Handling image cycle synchronization.
-            # Because the recording and tracking thread are asynchronous
-            # and doesn't have the same priority, it could be the case that
-            # one thread get executed more than the other and the estimated time
-            # became inaccurate.
-            wait_time = 0
-            if estimated_next_timestamp is not None:
-                
-                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-                diff_estimated_time = estimated_next_timestamp - retrieveTimestamp
+            wait_begin = time.perf_counter()
+            while self.trackingcheckbox.state == 'down' and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
+                time.sleep(0.001)
+            wait_end = time.perf_counter()
 
-                # If the estimated time is approximately close to the image timestamp
-                # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
-                if abs(diff_estimated_time)/camera_spf < 0.1:
-                    pass
-                else:
-                    # If the estimated time is less than the current time
-                    # then it is also ok to use the current image
-                    if estimated_next_timestamp < retrieveTimestamp:
-                        pass
-                    # If the estimated time is more than the current image timestamp
-                    # then compute the estimated next cycle time and wait
-                    else:
-                        current_time = time.perf_counter()
-
-                        diff_time_factor = (current_time - retrieveTimestamp) / camera_spf
-                        fractional_part, integer_part = math.modf(diff_time_factor)
-
-                        wait_time = camera_spf * ( 1.0 - fractional_part )
-
-                        time.sleep(wait_time)
-            else:
-                # Wait for the stage to finished moving/centering at location in the
-                # first time
-                stage.wait_until_idle()
-
-                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-                estimated_next_timestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-
-            # Get the latest image
-            tracking_frame_start_time = time.perf_counter()
+            tracking_frame_start_time = wait_end
 
             if dualColorMode:
                 image = self.imageacquisitionmanager.dualColorMainSideImage
             else:
                 image = self.imageacquisitionmanager.image
 
-            retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-
-            # If prev frame is empty then use the same as current
             if prevImage is None:
                 prevImage = image
 
@@ -3813,48 +3768,15 @@ class RuntimeControls(BoxLayout):
                 prevImage = image
             _tm1 = time.perf_counter()
 
-            tracking_frame_end_time = time.perf_counter()
-
-            #   Wait for stage movement to finish to not get motion blur.
-            #   This could be done by checking with stage.is_busy().
-            #   However, that function call is very costly (~3 secs) 
-            #   and is not good for loop checking.
-            #   So we are going to just estimate it here.
-
-            #   Delay from receing the image in recording and tracking it
-            delay_receive_image_and_tracking_time = tracking_frame_start_time - retrieveTimestamp
-
-            #   Time take to compute tracking
-            computation_time = tracking_frame_end_time - tracking_frame_start_time
-
-            communication_delay = 2e-3
-
-            #   Travel time
-            #       Because x and y axis travel independently, the speed that we have to wait 
-            #       is the maximum between the two.
-            max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
-            stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
-
-            #   Sums up all the waiting time ingredient
-            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
-
-            #   Compute the waiting time to reach the next receive image
-            fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
-            time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
-
-            #   Sums up the total time we need to wait, which are:
-            #       communication delay
-            #       + stage travelling time
-            #       + time to receiving the last blurry image
-            total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
-
-            estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
+            max_travel_dist = max(abs(xstep), abs(ystep))
+            settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist * 1e-3)
+            ready_time = time.perf_counter() + settle
 
             bench_n += 1
             bench_detect += _td1 - _td0
             bench_move += _tm1 - _tm0
-            bench_compute += computation_time
-            bench_wait += total_waiting_time
+            bench_compute += _tm1 - tracking_frame_start_time
+            bench_wait += wait_end - wait_begin
             if bench_n >= bench_window:
                 elapsed = time.perf_counter() - bench_start
                 per = lambda s: s / bench_n * 1000.0
@@ -3866,9 +3788,6 @@ class RuntimeControls(BoxLayout):
                 bench_n = 0
                 bench_detect = bench_move = bench_compute = bench_wait = 0.0
                 bench_start = time.perf_counter()
-
-            # Wait
-            time.sleep(total_waiting_time)
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
         self.trackingcheckbox.state = 'normal'
