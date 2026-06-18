@@ -344,160 +344,170 @@ MainWindow:
 
 
 <CenterRadiusFromThreePoints>:
-    orientation: 'vertical'
+    orientation: 'horizontal'
     padding: 10
-    spacing: 5
-    MyLabel:
-        text: 'Plate Region'
-        size_hint_y: None
-        height: 30
+    spacing: 10
     BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 30
+        orientation: 'vertical'
+        size_hint_x: 0.5
         spacing: 5
-        Button:
-            text: 'Capture point'
-            on_release: root.capture_points()
+        MyLabel:
+            text: 'Plate Region'
+            size_hint_y: None
+            height: 30
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Capture point'
+                on_release: root.capture_points()
+            Label:
+                id: countlabel
+                text: 'Points: {}'.format(len(root.points))
+                size_hint_x: 0.3
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Calculate'
+                disabled: len(root.points) < 3
+                on_release: root.calculate()
+            Button:
+                text: 'Reset'
+                on_release: root.reset()
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: pointstext
+                multiline: False
+                hint_text: 'x,y; x,y; x,y'
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.set_points_from_text(self.text)
+            Button:
+                text: 'Set'
+                size_hint_x: 0.3
+                on_release: root.set_points_from_text(pointstext.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: scenarioname
+                multiline: False
+                hint_text: 'scenario name'
+                on_focus: app.toggle_key_binding(self.focus)
+            Button:
+                text: 'Save'
+                size_hint_x: 0.3
+                on_release: root.save_scenario(scenarioname.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Spinner:
+                id: scenariospinner
+                text: 'load scenario'
+                values: root.saved_scenarios
+            Button:
+                text: 'Load'
+                size_hint_x: 0.3
+                on_release: root.load_scenario(scenariospinner.text)
         Label:
-            id: countlabel
-            text: 'Points: {}'.format(len(root.points))
-            size_hint_x: 0.3
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 30
-        spacing: 5
-        Button:
-            text: 'Calculate'
-            disabled: len(root.points) < 3
-            on_release: root.calculate()
-        Button:
-            text: 'Reset'
-            on_release: root.reset()
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 30
-        spacing: 5
-        TextInput:
-            id: pointstext
-            multiline: False
-            hint_text: 'x,y; x,y; x,y'
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.set_points_from_text(self.text)
-        Button:
-            text: 'Set'
-            size_hint_x: 0.3
-            on_release: root.set_points_from_text(pointstext.text)
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 30
-        spacing: 5
-        TextInput:
-            id: scenarioname
-            multiline: False
-            hint_text: 'scenario name'
-            on_focus: app.toggle_key_binding(self.focus)
-        Button:
-            text: 'Save'
-            size_hint_x: 0.3
-            on_release: root.save_scenario(scenarioname.text)
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 30
-        spacing: 5
-        Spinner:
-            id: scenariospinner
-            text: 'load scenario'
-            values: root.saved_scenarios
-        Button:
-            text: 'Load'
-            size_hint_x: 0.3
-            on_release: root.load_scenario(scenariospinner.text)
-    Label:
-        id: resultlabel
-        text: 'Diameter: -    Center: -'
-        size_hint_y: None
-        height: 30
-    MyLabel:
-        text: 'Scan Settings'
-        size_hint_y: None
-        height: 30
-    GridLayout:
-        cols: 2
-        size_hint_y: None
-        height: 180
-        spacing: 5
-        Label:
-            text: 'Exposure (us)'
-        TextInput:
-            text: str(root.scan_exposure)
-            input_filter: 'float'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_exposure = float(self.text)
-        Label:
-            text: 'Gain'
-        TextInput:
-            text: str(root.scan_gain)
-            input_filter: 'float'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_gain = float(self.text)
-        Label:
-            text: 'Settle (s)'
-        TextInput:
-            text: str(root.scan_settle)
-            input_filter: 'float'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_settle = float(self.text)
-        Label:
-            text: 'Brightness threshold'
-        TextInput:
-            text: str(root.scan_threshold)
-            input_filter: 'float'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_threshold = float(self.text)
-        Label:
-            text: 'Min bright pixels'
-        TextInput:
-            text: str(root.scan_min_pixels)
-            input_filter: 'int'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_min_pixels = int(self.text)
-        Label:
-            text: 'Tile overlap (mm)'
-        TextInput:
-            text: str(root.scan_overlap)
-            input_filter: 'float'
-            multiline: False
-            on_focus: app.toggle_key_binding(self.focus)
-            on_text_validate: root.scan_overlap = float(self.text)
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: 40
-        spacing: 5
-        Button:
-            text: 'Scan'
-            on_release: root.scan_area()
-        Button:
-            text: 'Stop'
-            on_release: root.stop_scan()
-    ProgressBar:
-        max: 1
-        value: root.scan_progress
-        size_hint_y: None
-        height: 20
+            id: resultlabel
+            text: 'Diameter: -    Center: -'
+            size_hint_y: None
+            height: 30
+        MyLabel:
+            text: 'Scan Settings'
+            size_hint_y: None
+            height: 30
+        GridLayout:
+            cols: 2
+            size_hint_y: None
+            height: 180
+            spacing: 5
+            Label:
+                text: 'Exposure (us)'
+            TextInput:
+                text: str(root.scan_exposure)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_exposure = float(self.text)
+            Label:
+                text: 'Gain'
+            TextInput:
+                text: str(root.scan_gain)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_gain = float(self.text)
+            Label:
+                text: 'Settle (s)'
+            TextInput:
+                text: str(root.scan_settle)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_settle = float(self.text)
+            Label:
+                text: 'Brightness threshold'
+            TextInput:
+                text: str(root.scan_threshold)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_threshold = float(self.text)
+            Label:
+                text: 'Min bright pixels'
+            TextInput:
+                text: str(root.scan_min_pixels)
+                input_filter: 'int'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_min_pixels = int(self.text)
+            Label:
+                text: 'Tile overlap (mm)'
+            TextInput:
+                text: str(root.scan_overlap)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_overlap = float(self.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 40
+            spacing: 5
+            Button:
+                text: 'Live'
+                on_release: root.toggle_preview()
+            Button:
+                text: 'Scan'
+                on_release: root.scan_area()
+            Button:
+                text: 'Stop'
+                on_release: root.stop_scan()
+        ProgressBar:
+            max: 1
+            value: root.scan_progress
+            size_hint_y: None
+            height: 20
+        Widget:
     Image:
         id: scanpreview
+        size_hint_x: 0.5
         fit_mode: 'contain'
+        texture: app.texture
 
 
 #################################
