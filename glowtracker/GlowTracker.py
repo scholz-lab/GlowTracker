@@ -3827,8 +3827,7 @@ class RuntimeControls(BoxLayout):
             #   Time take to compute tracking
             computation_time = tracking_frame_end_time - tracking_frame_start_time
 
-            #   Communication delay from host to stage is 20 ms
-            communication_delay = 20e-3 
+            communication_delay = 2e-3
 
             #   Travel time
             #       Because x and y axis travel independently, the speed that we have to wait 
