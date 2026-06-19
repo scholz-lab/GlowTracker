@@ -219,6 +219,13 @@
         "key": "minstepbeforechangedir"
     },
     {
+        "type": "numeric",
+        "title": "Focus frames per Z",
+        "desc": "Number of frames averaged at each Z position before the autofocus moves. Higher reduces noise but is slower. Defaults to 5.",
+        "section": "Autofocus",
+        "key": "buffer_n"
+    },
+    {
         "type": "custom_numeric",
         "title": "Coarse step (mm)",
         "desc": "Initial Z step (mm) the peak-seeking autofocus climbs with; it halves on overshoot down to the depth of field. Defaults to 0.02.",

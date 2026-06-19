@@ -3421,6 +3421,7 @@ class RuntimeControls(BoxLayout):
             smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
             minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
             coarsestep = app.config.getfloat('Autofocus', 'coarsestep')
+            buffer_n = app.config.getint('Autofocus', 'buffer_n')
 
             autoFocusPID = AutoFocusPID(
                 KP= KP,
@@ -3432,7 +3433,8 @@ class RuntimeControls(BoxLayout):
                 integralLifeTime= 0,
                 smoothingWindow= smoothingwindow,
                 minStepBeforeChangeDir= minstepbeforechangedir,
-                coarseStep= coarsestep
+                coarseStep= coarsestep,
+                buffer_n= buffer_n
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -3507,7 +3509,7 @@ class RuntimeControls(BoxLayout):
             self.livefocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None, number_of_images_to_estimate_focus: int = 5) -> None:
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
         """Autofocus loop to be executed inside a thread.
 
         Args:
@@ -3521,12 +3523,10 @@ class RuntimeControls(BoxLayout):
             graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
             graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
             graph_data_lock (Lock, optional): threading Lock object for modifying graph_data
-            number_of_images_to_estimate_focus (int, optional): Number of images to use for focus estimation. Defaults to 5.
         """
         app: GlowTrackerApp = App.get_running_app()
         spf = 1.0 / fps
         image = None
-        autofocs_latest = list()
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
@@ -3548,9 +3548,10 @@ class RuntimeControls(BoxLayout):
             pos = app.coords[2]
 
             # Perform one autofocus step
-            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos, numberOfImagesToEstimateFocus= number_of_images_to_estimate_focus, autofocs_latest)
+            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
-            print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
+            if autoFocusPID.focusLog:
+                print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
             # Move relative z-position
             stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
@@ -4447,6 +4448,7 @@ class GlowTrackerApp(App):
             'focusfps': '15',
             'isshowgraph': 'false',
             'coarsestep': '0.02',
+            'buffer_n': '5',
         })
 
         config.setdefaults('Calibration', {

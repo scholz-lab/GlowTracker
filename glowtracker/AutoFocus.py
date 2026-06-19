@@ -122,6 +122,9 @@ class AutoFocusPID:
 
         self.direction: int = 1
         self.directionResetCounter = 0
+
+        self.buffer_n: int = buffer_n
+        self.buffer: List[float] = []
         
         self.buffer = []
         self.buffer_n = buffer_n
