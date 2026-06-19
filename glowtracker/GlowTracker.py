@@ -1659,10 +1659,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
         accel_unit = app.config.get('Stage', 'acceleration_unit')
         norm_maxspeed = float(app.config.get('Stage', 'maxspeed'))
         norm_accel = float(app.config.get('Stage', 'acceleration'))
-        app.stage.set_motion(
-            float(app.config.get('Stage', 'scan_maxspeed')),
-            float(app.config.get('Stage', 'scan_acceleration')),
-            maxspeed_unit, accel_unit)
+        scan_maxspeed = float(app.config.get('Stage', 'scan_maxspeed'))
+        scan_accel = float(app.config.get('Stage', 'scan_acceleration'))
 
         self._stop_scan = False
         self._found = False
@@ -1677,6 +1675,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     n_tiles = 0
                     pass_start = time.perf_counter()
                     print(f'scan pass {scan_pass}')
+                    app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
                     for i, (x, y) in enumerate(tiles):
                         if self._stop_scan:
                             break
@@ -1684,8 +1683,15 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
 
                         t0 = time.perf_counter()
-                        app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
+                        moved = app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
                         t1 = time.perf_counter()
+                        if i == 0:
+                            pos = app.stage.get_position(unit= 'mm', isAsync= False)
+                            if (not moved) or pos is None or abs(pos[0] - x) > 1.0 or abs(pos[1] - y) > 1.0:
+                                print(f'scan aborted: first move did not reach target ({x:.2f}, {y:.2f}), got {pos}')
+                                self._stop_scan = True
+                                break
+                            app.stage.set_motion(scan_maxspeed, scan_accel, maxspeed_unit, accel_unit)
                         time.sleep(settle)
                         t2 = time.perf_counter()
                         ok, img = app.camera.singleTake()
