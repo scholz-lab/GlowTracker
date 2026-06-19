@@ -5185,6 +5185,7 @@ def reset():
 
 def main():
     mp.set_start_method('forkserver', force=True)
+    mp.set_forkserver_preload(['image_saver'])
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')
