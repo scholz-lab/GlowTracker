@@ -2708,6 +2708,9 @@ class ImageOverlay(FloatLayout):
         self.bodyMesh: Mesh = Mesh(mode = 'line_strip')
         self.tailToHeadMesh: Mesh = Mesh(mode = 'line_strip')
         self.velocityMesh: Mesh = Mesh(mode = 'line_strip')
+        self.velocityMeshColor: Color = Color(1, 0, 0, 0.75)
+
+        self.trail = np.empty([1, 2])
 
         self.app: GlowTrackerApp = App.get_running_app()
 
@@ -2776,14 +2779,13 @@ class ImageOverlay(FloatLayout):
         cmsOffset_x, cmsOffset_y = 0, 0
         trackingMask = np.zeros(0)
         # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
-        trail: np.array = None
 
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
         if rtc.isTracking:
             # If tracking, the get the tracking data from RuntimeControls
             cmsOffset_x, cmsOffset_y, trackingMask, posHist = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask, rtc.posHist
             # Convert posHist to numpy and discard the z-axis position
-            trail = np.array(posHist)[:, (0, 1)]
+            self.trail = np.array(posHist)[:, (0, 1)]
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
@@ -2791,12 +2793,12 @@ class ImageOverlay(FloatLayout):
 
             # Debug
             a = np.arange(start= 0, stop=10, step= 0.1, dtype= np.float32)
-            trail = np.column_stack([a, a])
+            self.trail = np.column_stack([a, a])
 
         if doClear:
             self.clearTrackingOverlay()
 
-        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, trail)
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, self.trail)
     
     
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -3002,6 +3004,7 @@ class ImageOverlay(FloatLayout):
         #   Draw tracking trail if provided
         # 
         showtrail = self.app.config.getboolean('Tracking', 'showtrail') 
+        croppedTrail = None
         if trail is not None and showtrail:
             
             # We have trail position in stage coordinate, in XY as N x 2 mat
@@ -3011,7 +3014,10 @@ class ImageOverlay(FloatLayout):
             # Get last M (trial limit) vertices and 
             #   apply transformation to each row vertex
             traillimit = self.app.config.getint('Tracking', 'traillimit')
-            trail_imageCoord = stageToImageMat @ trail[-traillimit::, :].transpose()
+
+            croppedTrail = trail[-traillimit::, :]
+
+            trail_imageCoord = stageToImageMat @ croppedTrail.transpose()
 
             #   Transfrom back to column matrix
             trail_imageCoord = trail_imageCoord.transpose()
@@ -3028,7 +3034,7 @@ class ImageOverlay(FloatLayout):
             updateLineMesh(self.trailMesh, trail_screenCoord, Color(0.9, 0.0, 1.0, 0.75))
         
         # Draw temp guildeline
-        if True:
+        if False:
             
             # Draw a guide-line. 1mm from center to right. This position in meter.
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
@@ -3052,17 +3058,15 @@ class ImageOverlay(FloatLayout):
         
 
         # Draw Body line
-        if trail is not None:
+        if croppedTrail is not None:
             
             # We have trail positions in mm 
-            trail
-
             animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
             animallength_mm = animallength_um * 1e-3
 
             # Greedy sums up until equal or exceed animal's length
             #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
-            revTrail = trail[::-1]
+            revTrail = croppedTrail[::-1]
             sumLength = 0
             
             tailIndex = 0
@@ -3136,8 +3140,7 @@ class ImageOverlay(FloatLayout):
                 # 
                 # Estimate velocity
                 # 
-                # midPoint
-                velocityHistoryPercent = 0.25
+                velocityHistoryPercent = 0.10
                 numHistVert = round(len(bodyVert) * velocityHistoryPercent)
                 # Slice from head to numHistVert
                 histVert = bodyVert[0:numHistVert]
@@ -3149,7 +3152,7 @@ class ImageOverlay(FloatLayout):
                 velocity = np.sum(velocities, axis= 0) / len(velocities)
 
                 # Draw the velocity
-                velocityVert = np.array([[0,0], velocity])
+                velocityVert = np.array([[0,0], velocity * 100 / np.linalg.norm(velocity)])
 
                 #   apply transformation to each row vertex
                 velocityVert_imageCoord = stageToImageMat @ velocityVert.transpose()
@@ -3175,12 +3178,13 @@ class ImageOverlay(FloatLayout):
                 # Todo: get from settings
                 reversalThresholdAngleRadian = 90
 
-                velocityColor = Color(0, 1, 0, 0.75)
+                self.velocityMeshColor.rgba = [0, 1, 0, 0.75]
+                
                 if angle_degree > reversalThresholdAngleRadian or angle_degree < -reversalThresholdAngleRadian:
-                    velocityColor = Color(1, 0, 0, 0.75)
+                    self.velocityMeshColor.rgba = [1, 0, 0, 0.75]
                     print("Reversing!")
 
-                updateLineMesh(self.velocityMesh, velocityVert_screenCoord, velocityColor)
+                updateLineMesh(self.velocityMesh, velocityVert_screenCoord, self.velocityMeshColor)
 
 
 
