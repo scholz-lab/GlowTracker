@@ -2722,7 +2722,6 @@ class RecordButton(ImageAcquisitionButton):
         super().receiveImageCallback()
     
 
-    @override
     def _saveHandoffLoop(self) -> None:
         while True:
             try:
@@ -2737,6 +2736,7 @@ class RecordButton(ImageAcquisitionButton):
                 self.droppedSaveFrames += 1
 
 
+    @override
     def finishAcquisitionCallback(self) -> None:
         """Send stop signal to image saving threads and stop image acquisition.
         """
