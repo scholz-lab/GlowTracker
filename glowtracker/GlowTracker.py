@@ -1,4 +1,8 @@
 from __future__ import annotations
+import multiprocessing as mp
+from multiprocessing.managers import SharedMemoryManager
+from SharedMemory import SharedMemoryQueue
+import image_saver
 
 import os
 # Suppress kivy normal initialization logs in the beginning
@@ -24,33 +28,28 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Rectangle
+from kivy.graphics import Color, Line, Ellipse
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
+from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent, mainthread
-from kivy.metrics import Metrics
-from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.scatterlayout import ScatterLayout
-from kivy.uix.scatter import Scatter
 from kivy.uix.tabbedpanel import TabbedPanel
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
-from kivy.uix.slider import Slider
-from kivy.uix.behaviors import DragBehavior, FocusBehavior
+from kivy.uix.behaviors import DragBehavior
 from kivy.uix.switch import Switch
 from kivy.uix.spinner import Spinner
 from kivy.uix.stacklayout import StackLayout
@@ -62,11 +61,10 @@ import asyncio
 import datetime
 import json
 import time
-from pathlib import Path
 from threading import Thread, Lock
-from multiprocessing.pool import ThreadPool
-from functools import partial
-from queue import Queue
+# from multiprocessing.pool import ThreadPool
+# from functools import partial
+from queue import Queue, Full
 from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
@@ -96,7 +94,6 @@ from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 # 
 import math
 import numpy as np
-from skimage.io import imsave
 import cv2
 from scipy.stats import skew
 
@@ -2410,12 +2407,29 @@ class RecordButton(ImageAcquisitionButton):
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
-        # Image data queue to share between recording and saving
-        self.imageQueue = Queue()
+        # # Image data queue to share between recording and saving
+        # self.imageQueue = Queue()
 
-        # Start a thread for saving images
-        self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
-        self.savingthread.start()
+        # # Start a thread for saving images
+        # self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
+        # self.savingthread.start()
+        
+        # do multiprocessing instead using the shared memory queue
+        self.shm_manager = SharedMemoryManager()
+        self.shm_manager.start()
+        example = {
+            'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
+        }
+        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=60)
+        self.nameQueue = mp.Queue()
+        self.stop_event = mp.Event()
+        ctx = mp.get_context('forkserver')
+        self.saveproc = ctx.Process(
+            target=image_saver.save_worker,
+            args=(self.imageQueue, self.nameQueue, self.saveFilePath, self.stop_event),
+            daemon=True)
+        self.saveproc.start()
+
 
         # Prep DAQ control
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
@@ -2574,9 +2588,14 @@ class RecordButton(ImageAcquisitionButton):
         Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
         
         # Close saving threads
-        if self.savingthread:
-            self.imageQueue.put(None)
-            self.savingthread.join()
+        # if self.savingthread:
+        #     self.imageQueue.put(None)
+        #     self.savingthread.join()
+        self.stop_event.set()
+        self.saveproc.join()
+        self.shm_manager.shutdown()
+ 
+
 
 
         # Set LiveView button state back to enable.
@@ -2652,35 +2671,13 @@ class RecordButton(ImageAcquisitionButton):
                 print(f'Error writing coordinateFile: {e}')
 
         # Put image(s) into the saving queue
-        if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
-            # Put the full image
-            self.imageQueue.put([
-                np.copy(self.image),
-                self.saveFilePath,
-                self.imageFilenameFormat.format(self.frameCounter)
-            ])
-
-        elif self.isDualColorMode and self.dualColorRecordingMode == 'Splitted':
-            # Put the dual color main and minor images
-            mainImageFileName = self.imageFilenameFormat.format(self.frameCounter)
-            minorImageFileName = str(mainImageFileName)
-
-            extensionLen = len(self.imageFilenameExtension)
-
-            mainImageFileName = mainImageFileName[:-(extensionLen+1)] + '-main.' + self.imageFilenameExtension
-            minorImageFileName = minorImageFileName[:-(extensionLen+1)] + '-minor.' + self.imageFilenameExtension
-
-            mainImageFileName = mainImageFileName[:]
-            self.imageQueue.put([
-                np.copy(self.dualColorMainSideImage),
-                self.saveFilePath,
-                mainImageFileName
-            ])
-            self.imageQueue.put([
-                np.copy(self.dualColorMinorSideImage),
-                self.saveFilePath,
-                minorImageFileName
-            ])
+        while True:
+            try:
+                self.imageQueue.put({'img': self.image})
+                break
+            except Full:
+                time.sleep(0.001)
+        self.nameQueue.put(self.imageFilenameFormat.format(self.frameCounter))
 
         self.frameCounter += 1
 
@@ -2712,7 +2709,7 @@ class RecordButton(ImageAcquisitionButton):
         """Send stop signal to image saving threads and stop image acquisition.
         """        
         # Send signal to terminate recording workers
-        self.imageQueue.put(None)
+        self.stop_event.set()
 
         # Reset the DAQ state
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
@@ -5187,6 +5184,7 @@ def reset():
 
 
 def main():
+    mp.set_start_method('forkserver', force=True)
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')

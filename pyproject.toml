@@ -51,7 +51,8 @@ dependencies = [
     "itk-elastix",
     "platformdirs",
     "pyparsing",
-    "labjackpython"
+    "labjackpython",
+    "atomics"
 ]
 classifiers = [
     "Intended Audience :: Science/Research",

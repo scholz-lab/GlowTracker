@@ -26,7 +26,6 @@ from AutoFocus import FocusEstimationMethod, estimateFocus
 # 
 import math
 import numpy as np
-import scipy.ndimage as ndi
 from scipy.optimize import curve_fit
 from scipy.stats import gennorm
 from scipy.special import gamma as gammafunc
@@ -34,7 +33,7 @@ import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from skimage.filters import threshold_otsu, threshold_li, threshold_yen
+from skimage.filters import threshold_yen
 from skimage.transform import downscale_local_mean
 from skimage.registration import phase_cross_correlation
 import itk
