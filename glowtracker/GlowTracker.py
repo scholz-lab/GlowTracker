@@ -3507,7 +3507,7 @@ class RuntimeControls(BoxLayout):
             self.livefocuscheckbox.state = 'normal'
 
     
-    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
+    def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None, number_of_images_to_estimate_focus: int = 5) -> None:
         """Autofocus loop to be executed inside a thread.
 
         Args:
@@ -3521,10 +3521,12 @@ class RuntimeControls(BoxLayout):
             graph_x_data (List[float], optional): List object to append values in the x-axis to, to be shown on LiveFocus graph. Defaults to empty list().
             graph_y_data (List[float], optional): List object to append values in the y-axis to, to be shwown on LiveFocus graph. Defaults to empty list().
             graph_data_lock (Lock, optional): threading Lock object for modifying graph_data
+            number_of_images_to_estimate_focus (int, optional): Number of images to use for focus estimation. Defaults to 5.
         """
         app: GlowTrackerApp = App.get_running_app()
         spf = 1.0 / fps
         image = None
+        autofocs_latest = list()
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
@@ -3546,7 +3548,7 @@ class RuntimeControls(BoxLayout):
             pos = app.coords[2]
 
             # Perform one autofocus step
-            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
+            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos, numberOfImagesToEstimateFocus= number_of_images_to_estimate_focus, autofocs_latest)
 
             print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
@@ -3726,12 +3728,13 @@ class RuntimeControls(BoxLayout):
 
         bench_window = 30
         bench_n = 0
-        bench_detect = bench_move = bench_compute = bench_wait = 0.0
+        bench_detect = bench_move = bench_compute = bench_settle = bench_frame = 0.0
         bench_start = time.perf_counter()
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
 
             wait_begin = time.perf_counter()
+            wait_ready = ready_time
             while self.trackingcheckbox.state == 'down' and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
                 time.sleep(0.001)
             wait_end = time.perf_counter()
@@ -3788,21 +3791,25 @@ class RuntimeControls(BoxLayout):
             settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist * 1e-3)
             ready_time = time.perf_counter() + settle
 
+            settle_wait = max(0.0, min(wait_ready, wait_end) - wait_begin)
+            frame_wait = (wait_end - wait_begin) - settle_wait
+
             bench_n += 1
             bench_detect += _td1 - _td0
             bench_move += _tm1 - _tm0
             bench_compute += _tm1 - tracking_frame_start_time
-            bench_wait += wait_end - wait_begin
+            bench_settle += settle_wait
+            bench_frame += frame_wait
             if bench_n >= bench_window:
                 elapsed = time.perf_counter() - bench_start
                 per = lambda s: s / bench_n * 1000.0
                 print(
                     f'track: detect {per(bench_detect):.1f}ms | move {per(bench_move):.1f}ms | '
-                    f'compute {per(bench_compute):.1f}ms | wait {per(bench_wait):.1f}ms | '
-                    f'{bench_n / elapsed:.1f} fps'
+                    f'compute {per(bench_compute):.1f}ms | settle {per(bench_settle):.1f}ms | '
+                    f'frame {per(bench_frame):.1f}ms | {bench_n / elapsed:.1f} fps'
                 )
                 bench_n = 0
-                bench_detect = bench_move = bench_compute = bench_wait = 0.0
+                bench_detect = bench_move = bench_compute = bench_settle = bench_frame = 0.0
                 bench_start = time.perf_counter()
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal

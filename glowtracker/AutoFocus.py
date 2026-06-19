@@ -78,7 +78,8 @@ class AutoFocusPID:
         acceptableErrorPercentage: float = 0.05,
         coarseStep: float = 0.02,
         peakEpsilonFrac: float = 0.02,
-        reacquireFraction: float = 0.7
+        reacquireFraction: float = 0.7,
+        buffer_n = 5, 
     ) -> None:
         """Initialize attributes
 
@@ -121,6 +122,9 @@ class AutoFocusPID:
 
         self.direction: int = 1
         self.directionResetCounter = 0
+        
+        self.buffer = []
+        self.buffer_n = buffer_n
 
 
     # def executePIDStep(self, image: np.ndarray, pos: float) -> float:
@@ -203,43 +207,51 @@ class AutoFocusPID:
 
     #     return U
     
-    def executePIDStep(self, image, pos):
+    def executePIDStep(self, image, pos) -> float:
         PV = estimateFocus(self.focusEstimationMethod, image)
-        
-        # Apply a linear, weighted average to PV with emphasis on recent data
-        focuses = [PV]
-        if self.smoothingWindow > 1:
-            focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
-        focuses = np.array(focuses)
+        self.buffer.append(PV)
+        batch_ready = len(self.buffer) == self.buffer_n
+        if batch_ready:
+            PV = np.mean(self.buffer)
+            self.buffer = []
 
-        # Compute linear weight
-        t = np.array([1])
+            # Apply a linear, weighted average to PV with emphasis on recent data
+            focuses = [PV]
+            if self.smoothingWindow > 1:
+                focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+            focuses = np.array(focuses)
 
-        if (len(focuses) > 1):
-            t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
-        
-        weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+            # Compute linear weight
+            t = np.array([1])
 
-        PV = sum(focuses * weights) / sum(weights)
+            if (len(focuses) > 1):
+                t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+            
+            weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
 
-        if len(self.focusLog) == 0:
-            self.bestFocus = PV
-            self.directionResetCounter = 0
-        else:
-            prevPV = self.focusLog[-1]
-            if PV < prevPV * (1.0 - self.peakEpsilonFrac):
-                self.directionResetCounter += 1
+            PV = sum(focuses * weights) / sum(weights)
+
+            if len(self.focusLog) == 0:
+                self.bestFocus = PV
+                self.directionResetCounter = 0
             else:
-                self.directionResetCounter = 0
-            if self.directionResetCounter > self.minStepBeforeChangeDir:
-                self.direction *= -1
-                self.directionResetCounter = 0
-            self.bestFocus = max(self.bestFocus, PV)
+                prevPV = self.focusLog[-1]
+                if PV < prevPV * (1.0 - self.peakEpsilonFrac):
+                    self.directionResetCounter += 1
+                else:
+                    self.directionResetCounter = 0
+                if self.directionResetCounter > self.minStepBeforeChangeDir:
+                    self.direction *= -1
+                    self.directionResetCounter = 0
+                self.bestFocus = max(self.bestFocus, PV)
+            self.focusLog.append(PV)
+            self.posLog.append(pos)
 
-        U = self.step * self.direction
 
-        self.focusLog.append(PV)
-        self.posLog.append(pos)
+
+
+        U = self.step * self.direction if batch_ready else 0.0
+
         return U
 
 
