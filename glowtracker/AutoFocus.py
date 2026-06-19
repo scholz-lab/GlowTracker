@@ -239,21 +239,27 @@ class AutoFocusPID:
                 self.directionResetCounter = 0
             else:
                 prevPV = self.focusLog[-1]
-                if PV < prevPV * (1.0 - self.peakEpsilonFrac):
-                    self.directionResetCounter += 1
+                if PV < self.bestFocus * self.reacquireFraction:
+                    self.step = self.coarseStep
+                    self.directionResetCounter = 0
+                    self.bestFocus = PV
                 else:
-                    self.directionResetCounter = 0
-                if self.directionResetCounter > self.minStepBeforeChangeDir:
-                    self.direction *= -1
-                    self.directionResetCounter = 0
-                self.bestFocus = max(self.bestFocus, PV)
+                    if PV < prevPV * (1.0 - self.peakEpsilonFrac):
+                        self.directionResetCounter += 1
+                    else:
+                        self.directionResetCounter = 0
+                    if self.directionResetCounter > self.minStepBeforeChangeDir:
+                        self.direction *= -1
+                        self.step = max(self.step * 0.5, self.minStepDist)
+                        self.directionResetCounter = 0
+                    self.bestFocus = max(self.bestFocus, PV)
             self.focusLog.append(PV)
             self.posLog.append(pos)
 
-
-
-
-        U = self.step * self.direction if batch_ready else 0.0
+        if batch_ready and self.step > self.minStepDist:
+            U = self.step * self.direction
+        else:
+            U = 0.0
 
         return U
 
