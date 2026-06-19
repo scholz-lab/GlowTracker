@@ -71,7 +71,7 @@ import time
 from threading import Thread, Lock
 # from multiprocessing.pool import ThreadPool
 # from functools import partial
-from queue import Queue, Full
+from queue import Queue, Full, Empty
 from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
@@ -2446,6 +2446,14 @@ class RecordButton(ImageAcquisitionButton):
             daemon=True)
         self.saveproc.start()
 
+        # Handoff thread: the acquisition thread only drops a reference here, this
+        # thread does the shared-memory copy so the acquisition/tracking loop never
+        # pays the copy cost.
+        self.saveHandoffQueue = Queue(maxsize=16)
+        self._saveHandoffStop = False
+        self.saveHandoffThread = Thread(target=self._saveHandoffLoop, daemon=True)
+        self.saveHandoffThread.start()
+
         grabArgs = basler.CameraGrabParameters(
             bufferSize= self.app.config.getint('Experiment', 'buffersize'),
             isContinuous= self.isContinuous,
@@ -2598,6 +2606,9 @@ class RecordButton(ImageAcquisitionButton):
         # if self.savingthread:
         #     self.imageQueue.put(None)
         #     self.savingthread.join()
+        # Flush the handoff thread so all queued frames reach the saver, then stop it.
+        self._saveHandoffStop = True
+        self.saveHandoffThread.join()
         self.stop_event.set()
         self.saveproc.join()
         self.shm_manager.shutdown()
@@ -2679,10 +2690,10 @@ class RecordButton(ImageAcquisitionButton):
             except ValueError as e:
                 print(f'Error writing coordinateFile: {e}')
 
-        # Hand the frame to the saver process. Never block the acquisition thread:
-        # if the queue is full (disk can't keep up) drop the save rather than stall tracking.
+        # Hand the frame reference to the handoff thread (no copy here). Never block
+        # the acquisition thread: if the handoff queue is full, drop the save.
         try:
-            self.imageQueue.put({'img': self.image, 'idx': self.frameCounter})
+            self.saveHandoffQueue.put_nowait((self.image, self.frameCounter))
         except Full:
             self.droppedSaveFrames += 1
 
@@ -2712,12 +2723,23 @@ class RecordButton(ImageAcquisitionButton):
     
 
     @override
+    def _saveHandoffLoop(self) -> None:
+        while True:
+            try:
+                image, idx = self.saveHandoffQueue.get(timeout=0.1)
+            except Empty:
+                if self._saveHandoffStop:
+                    break
+                continue
+            try:
+                self.imageQueue.put({'img': image, 'idx': idx})
+            except Full:
+                self.droppedSaveFrames += 1
+
+
     def finishAcquisitionCallback(self) -> None:
         """Send stop signal to image saving threads and stop image acquisition.
-        """        
-        # Send signal to terminate recording workers
-        self.stop_event.set()
-
+        """
         # Reset the DAQ state
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.reset()
