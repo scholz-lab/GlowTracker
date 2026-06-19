@@ -11,9 +11,16 @@ os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
 # Emulate camera
 # os.environ["PYLON_CAMEMU"] = "1"
 
-# 
+# multiprocessing (forkserver/spawn) re-imports the main module in child processes.
+# When that happens this file runs with run_name '__mp_main__'; keep Kivy headless
+# there so worker/forkserver processes don't open extra GUI windows.
+if __name__ == '__mp_main__':
+    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+    os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
+#
 # Kivy Imports
-# 
+#
 import kivy
 # Require modern version
 kivy.require('2.0.0')
@@ -2414,23 +2421,6 @@ class RecordButton(ImageAcquisitionButton):
         # self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
         # self.savingthread.start()
         
-        # do multiprocessing instead using the shared memory queue
-        self.shm_manager = SharedMemoryManager()
-        self.shm_manager.start()
-        example = {
-            'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
-        }
-        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=60)
-        self.nameQueue = mp.Queue()
-        self.stop_event = mp.Event()
-        ctx = mp.get_context('forkserver')
-        self.saveproc = ctx.Process(
-            target=image_saver.save_worker,
-            args=(self.imageQueue, self.nameQueue, self.saveFilePath, self.stop_event),
-            daemon=True)
-        self.saveproc.start()
-
-
         # Prep DAQ control
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.start( np.array(self.app.coords[:2]) )
@@ -2438,6 +2428,23 @@ class RecordButton(ImageAcquisitionButton):
         # Setup image acquisition thread parameters
         self.initRecordingParams()
         self.frameCounter = 0
+        self.droppedSaveFrames = 0
+
+        # Offload frame saving to a separate process through a shared-memory queue
+        self.shm_manager = SharedMemoryManager()
+        self.shm_manager.start()
+        example = {
+            'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
+            'idx': 0,
+        }
+        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=120)
+        self.stop_event = mp.Event()
+        ctx = mp.get_context('forkserver')
+        self.saveproc = ctx.Process(
+            target=image_saver.save_worker,
+            args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
+            daemon=True)
+        self.saveproc.start()
 
         grabArgs = basler.CameraGrabParameters(
             bufferSize= self.app.config.getint('Experiment', 'buffersize'),
@@ -2594,6 +2601,8 @@ class RecordButton(ImageAcquisitionButton):
         self.stop_event.set()
         self.saveproc.join()
         self.shm_manager.shutdown()
+        if getattr(self, 'droppedSaveFrames', 0):
+            print(f'WARNING: dropped {self.droppedSaveFrames} frames from saving (disk could not keep up)')
  
 
 
@@ -2670,14 +2679,12 @@ class RecordButton(ImageAcquisitionButton):
             except ValueError as e:
                 print(f'Error writing coordinateFile: {e}')
 
-        # Put image(s) into the saving queue
-        while True:
-            try:
-                self.imageQueue.put({'img': self.image})
-                break
-            except Full:
-                time.sleep(0.001)
-        self.nameQueue.put(self.imageFilenameFormat.format(self.frameCounter))
+        # Hand the frame to the saver process. Never block the acquisition thread:
+        # if the queue is full (disk can't keep up) drop the save rather than stall tracking.
+        try:
+            self.imageQueue.put({'img': self.image, 'idx': self.frameCounter})
+        except Full:
+            self.droppedSaveFrames += 1
 
         self.frameCounter += 1
 

@@ -5,10 +5,7 @@ from queue import Empty
 import tifffile
 
 
-def save_worker(image_queue, name_queue, save_dir, stop_event):
-    """Runs in its own process. Pulls frames out of the shared-memory queue and
-    their filenames from name_queue, and writes them to disk. Exits once
-    stop_event is set and the queue is drained."""
+def save_worker(image_queue, save_dir, filename_format, stop_event):
     while True:
         try:
             data = image_queue.get()
@@ -17,5 +14,5 @@ def save_worker(image_queue, name_queue, save_dir, stop_event):
                 break
             time.sleep(0.001)
             continue
-        fname = name_queue.get()
+        fname = filename_format.format(int(data['idx']))
         tifffile.imwrite(os.path.join(save_dir, fname), data['img'])
