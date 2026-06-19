@@ -1503,6 +1503,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_threshold = NumericProperty(150)
     scan_min_pixels = NumericProperty(50)
     scan_overlap = NumericProperty(0.4)
+    track_exposure = NumericProperty(5000)
+    track_gain = NumericProperty(0)
+    _found = False
 
     def on_kv_post(self, *args):
         self.refresh_scenarios()
@@ -1662,6 +1665,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
             maxspeed_unit, accel_unit)
 
         self._stop_scan = False
+        self._found = False
         def _scan():
             asyncio.set_event_loop(asyncio.new_event_loop())
             try:
@@ -1703,10 +1707,13 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         if present:
                             print('Found a worm !!')
                             self._stop_scan = True
+                            self._found = True
                             units = app.config.get('Calibration', 'step_units')
                             dy, dx = macro.getStageDistances(
                                 np.array([-offset[1], offset[0]]), app.imageToStageMat)
                             app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                            app.camera.ExposureTime.Value = float(self.track_exposure)
+                            app.camera.Gain.Value = float(self.track_gain)
                             app.autofocus()
                             app.update_coordinates(isAsync= False)
                             break
@@ -1722,14 +1729,34 @@ class CenterRadiusFromThreePoints(BoxLayout):
                             f'{n_tiles / pass_elapsed:.1f} tiles/s  ({n_tiles} tiles)'
                         )
             finally:
-                app.camera.ExposureTime.Value = prev_exposure
-                app.camera.Gain.Value = prev_gain
+                app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
                 app.camera.AcquisitionFrameRate.Value = prev_fr
                 app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
-                app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
-                Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
+                if self._found:
+                    Clock.schedule_once(lambda dt: self._after_scan_found())
+                else:
+                    app.camera.ExposureTime.Value = prev_exposure
+                    app.camera.Gain.Value = prev_gain
+                    Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
                 asyncio.get_event_loop().close()
         Thread(target= _scan, daemon= True).start()
+
+    def _after_scan_found(self):
+        app = App.get_running_app()
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        mgr = rc.ids.imageacquisitionmanager
+        mgr.liveviewbutton.state = 'down'
+
+        def _go(dt):
+            if app.camera is None or not app.camera.IsGrabbing():
+                return
+            h, w = app.image.shape[0], app.image.shape[1]
+            rc.trackingcheckbox.state = 'down'
+            rc.startTracking(np.array([w / 2.0, h / 2.0]))
+            rc.livefocuscheckbox.state = 'down'
+            return False
+
+        Clock.schedule_interval(_go, 0.1)
 
     def stop_scan(self):
         self._stop_scan = True

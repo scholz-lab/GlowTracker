@@ -433,10 +433,10 @@ MainWindow:
         GridLayout:
             cols: 2
             size_hint_y: None
-            height: 180
+            height: 240
             spacing: 5
             Label:
-                text: 'Exposure (us)'
+                text: 'Scan exposure (us)'
             TextInput:
                 text: str(root.scan_exposure)
                 input_filter: 'float'
@@ -444,13 +444,29 @@ MainWindow:
                 on_focus: app.toggle_key_binding(self.focus)
                 on_text_validate: root.scan_exposure = float(self.text)
             Label:
-                text: 'Gain'
+                text: 'Scan gain'
             TextInput:
                 text: str(root.scan_gain)
                 input_filter: 'float'
                 multiline: False
                 on_focus: app.toggle_key_binding(self.focus)
                 on_text_validate: root.scan_gain = float(self.text)
+            Label:
+                text: 'Track exposure (us)'
+            TextInput:
+                text: str(root.track_exposure)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.track_exposure = float(self.text)
+            Label:
+                text: 'Track gain'
+            TextInput:
+                text: str(root.track_gain)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.track_gain = float(self.text)
             Label:
                 text: 'Settle (s)'
             TextInput:

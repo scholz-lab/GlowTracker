@@ -215,7 +215,7 @@ class AutoFocusPID:
         self.buffer.append(PV)
         batch_ready = len(self.buffer) == self.buffer_n
         if batch_ready:
-            PV = np.mean(self.buffer)
+            PV = np.median(self.buffer)
             self.buffer = []
 
             # Apply a linear, weighted average to PV with emphasis on recent data
@@ -250,7 +250,7 @@ class AutoFocusPID:
                         self.directionResetCounter = 0
                     if self.directionResetCounter > self.minStepBeforeChangeDir:
                         self.direction *= -1
-                        self.step = max(self.step * 0.5, self.minStepDist)
+                        self.step = max(self.step * 0.75, self.minStepDist)
                         self.directionResetCounter = 0
                     self.bestFocus = max(self.bestFocus, PV)
             self.focusLog.append(PV)
