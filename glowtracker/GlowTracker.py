@@ -1497,7 +1497,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
     _preview_saved = None
     scan_progress = NumericProperty(0)
     saved_scenarios = ListProperty([])
-
+    scan_z = NumericProperty(140)
     scan_exposure = NumericProperty(100000)
     scan_gain = NumericProperty(0)
     scan_settle = NumericProperty(0.01)
@@ -1636,7 +1636,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
         threshold = self.scan_threshold
         min_pixels = self.scan_min_pixels
         settle = self.scan_settle
-        z = app.coords[2]
+        # z = app.coords[2]
+        z = self.scan_z
 
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap= self.scan_overlap)
         tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
@@ -1685,6 +1686,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
                         t0 = time.perf_counter()
                         moved = app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
+                        moved = moved and app.stage.move_z(z, 'mm', wait_until_idle= True)
                         t1 = time.perf_counter()
                         if i == 0:
                             pos = app.stage.get_position(unit= 'mm', isAsync= False)

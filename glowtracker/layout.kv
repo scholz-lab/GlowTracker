@@ -444,6 +444,15 @@ MainWindow:
                 on_focus: app.toggle_key_binding(self.focus)
                 on_text_validate: root.scan_exposure = float(self.text)
             Label:
+                text: 'Z axis (mm)'
+            TextInput:
+                text: str(root.scan_z)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.scan_z = float(self.text)
+
+            Label:
                 text: 'Scan gain'
             TextInput:
                 text: str(root.scan_gain)

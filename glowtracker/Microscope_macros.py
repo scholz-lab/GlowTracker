@@ -1161,7 +1161,16 @@ class DepthOfFieldEstimator:
             
 
             # Center-crop the image
-            image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
+            # image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
+            present, offset = detect_worm(image, 150, 50)
+            if present:
+                cx, cy = w/2 + offset[0], h/2 + offset[1]
+                r = capturedRadius
+                crop = image[int(cy-r):int(cy+r), int(cx-r):int(cx+r)]
+                estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+            else:
+                estimatedFocus = np.nan   # reject this sample
+
             
             # Estimate focus of the image
             estimatedFocus = estimateFocus(focusEstimationMethod, image)
