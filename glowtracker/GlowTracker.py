@@ -2218,14 +2218,18 @@ class ImageAcquisitionButton(ToggleButton):
         # Do we need to crop on tracking region? 
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         liveAnalysisData = imageAcquisitionManager.liveAnalysisData
+        # median/percentile/skew sort the whole array, which is very expensive on a
+        # full-resolution frame and holds the GIL. Compute them on a strided subsample
+        # (statistically identical) so this stays off the tracking critical path.
+        sample = image[::4, ::4]
         with liveAnalysisData.lock:
             imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
             imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
             imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
-            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
-            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
+            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(sample, axis= None)
+            imageAcquisitionManager.liveAnalysisData.skewness = skew(sample, axis= None, nan_policy= 'omit')
+            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(sample, q= 5, axis= None)
+            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(sample, q= 95, axis= None)
     
 
     def receiveImageCallback(self) -> None:
