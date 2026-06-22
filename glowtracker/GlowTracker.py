@@ -2441,7 +2441,7 @@ class RecordButton(ImageAcquisitionButton):
             'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
             'idx': 0,
         }
-        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=120)
+        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=60)
         self.stop_event = mp.Event()
         ctx = mp.get_context('forkserver')
         self.saveproc = ctx.Process(
@@ -2450,9 +2450,6 @@ class RecordButton(ImageAcquisitionButton):
             daemon=True)
         self.saveproc.start()
 
-        # Handoff thread: the acquisition thread only drops a reference here, this
-        # thread does the shared-memory copy so the acquisition/tracking loop never
-        # pays the copy cost.
         self.saveHandoffQueue = Queue(maxsize=16)
         self._saveHandoffStop = False
         self.saveHandoffThread = Thread(target=self._saveHandoffLoop, daemon=True)
