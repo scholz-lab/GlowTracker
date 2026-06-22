@@ -11,9 +11,6 @@ os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
 # Emulate camera
 # os.environ["PYLON_CAMEMU"] = "1"
 
-# multiprocessing (forkserver/spawn) re-imports the main module in child processes.
-# When that happens this file runs with run_name '__mp_main__'; keep Kivy headless
-# there so worker/forkserver processes don't open extra GUI windows.
 if __name__ == '__mp_main__':
     os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
     os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
@@ -395,7 +392,7 @@ class RightColumn(BoxLayout):
             self._scanPanel = CenterRadiusFromThreePoints()
         if self._scanPanel.parent is not None:
             self._scanPanel.parent.remove_widget(self._scanPanel)
-        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel, size_hint= (0.5, 0.9))
+        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel, size_hint= (0.95, 0.95))
         self._popup.open()
 
 
@@ -2441,7 +2438,7 @@ class RecordButton(ImageAcquisitionButton):
             'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
             'idx': 0,
         }
-        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size=60)
+        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size= 60)
         self.stop_event = mp.Event()
         ctx = mp.get_context('forkserver')
         self.saveproc = ctx.Process(
