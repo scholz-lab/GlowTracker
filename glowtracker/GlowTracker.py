@@ -4601,6 +4601,18 @@ class GlowTrackerApp(App):
 
     def build(self):
 
+        print('>>> configFile:', self.configFile)
+        print('>>> exists:', os.path.exists(self.configFile))
+        try:
+            with open(self.configFile) as _f:
+                print('>>> sections in file:')
+                for _line in _f:
+                    if _line.strip().startswith('['):
+                        print('   ', _line.strip())
+        except Exception as _e:
+            print('>>> could not read configFile:', _e)
+        print('>>> in-memory sections before update:', self.config.sections())
+
         # Load user's config
         self.config.update_config(self.configFile, overwrite= True)
 
@@ -5243,6 +5255,8 @@ def main():
         App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f'Kivy App error: {e}')
         return None
 
