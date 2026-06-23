@@ -1109,7 +1109,7 @@ class DepthOfFieldEstimator:
         return estimatedDof
     
 
-    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0, followWorm: bool = False, imageToStageMat = None, stageUnits: str = 'um', threshold: float = 150, minPixels: int = 50) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1148,7 +1148,7 @@ class DepthOfFieldEstimator:
                 raise RuntimeError('Taking an image is unsuccessful')
 
             h, w = image.shape
-            
+
             if dualColorMode:
 
                 if dualColorModeMainSide == 'Left':
@@ -1157,33 +1157,46 @@ class DepthOfFieldEstimator:
                 elif dualColorModeMainSide == 'Right':
                     image = image[:, w//2:]
 
-                w = image.shape[1]
-            
+                h, w = image.shape
 
-            # Center-crop the image
-            # image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
-            present, offset = detect_worm(image, 150, 50)
-            if present:
-                cx, cy = w/2 + offset[0], h/2 + offset[1]
-                r = capturedRadius
-                crop = image[int(cy-r):int(cy+r), int(cx-r):int(cx+r)]
-                estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+            r = int(capturedRadius)
+
+            if followWorm:
+                # Locate the worm and measure focus on a fixed window around it.
+                present, offset = detect_worm(image, threshold, minPixels)
+                if present:
+                    cx = min(max(int(w/2 + offset[0]), r), w - r)
+                    cy = min(max(int(h/2 + offset[1]), r), h - r)
+                    crop = image[cy-r:cy+r, cx-r:cx+r]
+                    estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+                    # Move the camera (XY) to recenter on the worm for the next Z step.
+                    if imageToStageMat is not None:
+                        dy, dx = getStageDistances(np.array([-offset[1], offset[0]]), imageToStageMat)
+                        stage.move_rel((dx, dy, 0), unit= stageUnits, wait_until_idle= True)
+                else:
+                    estimatedFocus = np.nan   # reject this sample
             else:
-                estimatedFocus = np.nan   # reject this sample
+                crop = cropCenterImage(image, r * 2, r * 2)
+                estimatedFocus = estimateFocus(focusEstimationMethod, crop)
 
-            
-            # Estimate focus of the image
-            estimatedFocus = estimateFocus(focusEstimationMethod, image)
-            
             # Store the image
             df.iloc[i] = [currentPos[2], image, estimatedFocus]
-            
-            # Move to a new position
-            currentPos[2] = currentPos[2] + stepSize_z
-            stage.move_abs(currentPos, wait_until_idle= True)
 
-        # Return stage to starting position
-        stage.move_abs(startingPos)
+            # Step Z. In follow mode move Z relatively so the XY following is preserved.
+            currentPos[2] = currentPos[2] + stepSize_z
+            if followWorm:
+                stage.move_z(stepSize_z, unit= 'mm', wait_until_idle= True)
+            else:
+                stage.move_abs(currentPos, wait_until_idle= True)
+
+        if followWorm:
+            # Keep the followed XY; only return Z to the starting height.
+            endPos = stage.get_position(unit= 'mm')
+            endPos[2] = startingPos[2]
+            stage.move_abs(endPos, wait_until_idle= True)
+        else:
+            # Return stage to starting position
+            stage.move_abs(startingPos)
 
         self.dofDataFrame = df
 

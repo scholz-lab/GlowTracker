@@ -1715,17 +1715,21 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         n_tiles += 1
                         if present:
                             print('Found a worm !!')
-                            self._stop_scan = True
-                            self._found = True
                             units = app.config.get('Calibration', 'step_units')
                             dy, dx = macro.getStageDistances(
                                 np.array([-offset[1], offset[0]]), app.imageToStageMat)
                             app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
                             app.camera.ExposureTime.Value = float(self.track_exposure)
                             app.camera.Gain.Value = float(self.track_gain)
-                            app.autofocus()
+                            focus = app.autofocus(follow_worm= True, threshold= threshold, min_pixels= min_pixels)
                             app.update_coordinates(isAsync= False)
-                            break
+                            if focus is not None:
+                                self._stop_scan = True
+                                self._found = True
+                                break
+                            print('lost the worm during focus, resuming scan')
+                            app.camera.ExposureTime.Value = float(self.scan_exposure)
+                            app.camera.Gain.Value = float(self.scan_gain)
 
                     if n_tiles > 0:
                         pass_elapsed = time.perf_counter() - pass_start
@@ -5167,8 +5171,10 @@ class GlowTrackerApp(App):
         height_mm = pixelsize * self.camera.Height() * to_mm
         return (width_mm, height_mm)
 
-    def autofocus(self) -> float | None:
+    def autofocus(self, follow_worm: bool = False, threshold: float = 150, min_pixels: int = 50) -> float | None:
         """moved from autofocus macro to have a shared autofocus function that can be called from both macro and settings menu.
+        When follow_worm is True the Z sweep tracks the worm in XY (moves the camera to keep it centered)
+        and measures focus on a window around the worm; returns None if no worm is seen during the sweep.
         """
         camera = self.camera
         stage = self.stage
@@ -5186,15 +5192,25 @@ class GlowTrackerApp(App):
         depthOfFieldEstimator = macro.DepthOfFieldEstimator()
         numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
         print(f'autofocus: Taking {numSamples} images for depth of field estimation with search distance {depthoffieldsearchdistance} and step size {depthoffield}')
-        depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
+        stageUnits = self.config.get('Calibration', 'step_units')
+        depthOfFieldEstimator.takeCalibrationImages(
+            camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod,
+            dualColorMode, dualColorModeMainSide, capturedRadius,
+            followWorm= follow_worm, imageToStageMat= self.imageToStageMat,
+            stageUnits= stageUnits, threshold= threshold, minPixels= min_pixels)
 
-        bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
-        bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
+        valid = depthOfFieldEstimator.dofDataFrame.dropna(subset= ['estimatedFocus'])
+        if valid.empty:
+            print('autofocus: no worm detected during the sweep')
+            return None
+
+        bestFocusIndex = valid['estimatedFocus'].idxmax()
+        bestFocusPosition = valid.loc[bestFocusIndex, 'pos_z']
         stagePosition = stage.get_position()
         stagePosition[2] = bestFocusPosition
         stage.move_abs(stagePosition, unit= 'mm')
 
-        bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
+        bestFocusValue = valid.loc[bestFocusIndex, 'estimatedFocus']
         self.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
         self.config.write()
 

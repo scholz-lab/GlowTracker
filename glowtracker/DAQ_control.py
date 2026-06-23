@@ -89,8 +89,8 @@ class DAQControl():
         """
         self.sequnceDictRunning = deepcopy(self.sequncerDict)
         self.daqStageProgram.startRecordPosition = startRecordPosition
-    
-    
+
+
     def reset(self):
         """Set DAQ values to factory default. Should be call after finished executing a command list.
         """
@@ -103,11 +103,20 @@ class DAQControl():
         dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
         dac0Command = u3.DAC0_8(dac0Val)
         self.daq.getFeedback(dac0Command)
+        self.setDAC1(0.0)
         # Clean running command queue
         self.sequnceDictRunning.clear()
         self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
 
         
+    def setDAC1(self, volts: float) -> None:
+        if not self.isConnected():
+            return
+        volts = max(min(volts, 4.95), 0)
+        dac1Val = self.daq.voltageToDACBits(volts= volts, dacNumber= 1, is16Bits= False)
+        self.daq.getFeedback(u3.DAC1_8(dac1Val))
+
+
     def parseTextScript(self, text: str) -> None:
 
         try:
@@ -237,20 +246,18 @@ class DAQControl():
 
             print(f"Light on {vol} vol")
 
-            # Send command to DAQ at DAC0
             dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
-            dac0Command = u3.DAC0_8(dac0Val)
-            self.daq.getFeedback(dac0Command)
-            
-        
+            dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
+            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+
+
         elif command == 'off':
-            
+
             print(f"Light off")
 
-            # Send command to DAQ at DAC0
             dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
-            dac0Command = u3.DAC0_8(dac0Val)
-            self.daq.getFeedback(dac0Command)
+            dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
+            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
 
 
 @dataclass
