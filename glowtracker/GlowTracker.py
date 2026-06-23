@@ -4417,7 +4417,7 @@ class GlowTrackerApp(App):
     def __init__(self,  **kwargs):
         super(GlowTrackerApp, self).__init__(**kwargs)
         # Declare config file path
-        self.configFile = self.getDefaultUserConfigFilePath()
+        self.configFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'glowtracker_local.ini')
         # define settings menu style
         self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion - right now also happens in settings!
