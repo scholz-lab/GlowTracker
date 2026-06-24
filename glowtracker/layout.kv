@@ -1103,6 +1103,12 @@ MainWindow:
         DepthOfFieldCalibration:
             id: depthoffieldcalibration
 
+    TabbedPanelItem:
+        text: 'Intensity Sweep'
+
+        IntensitySweepCalibration:
+            id: intensitysweepcalibration
+
 
 <CameraAndStageCalibration>:
     size: root.size
@@ -1264,6 +1270,58 @@ MainWindow:
         Button:
             text: "Close"
             size_hint_x: .15
+            on_release: root.closeCallback()
+
+
+<IntensitySweepCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: 'Mean intensity over Z sweep'
+            size_hint_y: 0.1
+        Image:
+            id: intensitysweepplot
+
+    BoxLayout:
+        size_hint_y: .08
+        spacing: 10
+
+        Label:
+            text: 'Z start (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zstart
+            text: '0'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Z end (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zend
+            text: '1'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Num photos'
+            size_hint_x: .1
+        TextInput:
+            id: numphotos
+            text: '50'
+            multiline: False
+            size_hint_x: .12
+        Button:
+            text: "Sweep"
+            size_hint_x: .18
+            on_release: root.sweep()
+        Button:
+            text: "Close"
+            size_hint_x: .14
             on_release: root.closeCallback()
 
 

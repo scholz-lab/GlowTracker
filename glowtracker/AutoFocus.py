@@ -16,6 +16,8 @@ class FocusEstimationMethod(Enum):
     ModifiedLaplace = 'ModifiedLaplace'
     # Sum of High-Frequency DCT Coefficient
     SumOfHighDCT = 'SumOfHighDCT'
+    # Sum of strong gradients (Tenengrad thresholded at median * factor)
+    StrongTenengrad = 'StrongTenengrad'
 
 
 def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarray) -> float:
@@ -58,6 +60,16 @@ def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarra
         dct = cv2.dct(np.float32(resized))
         hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
         estimatedFocus = np.sum(np.abs(hf_coeffs))
+
+    elif focusEstimationMethod == FocusEstimationMethod.StrongTenengrad:
+        gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
+        gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
+        gmag = np.sqrt(gx**2 + gy**2)
+        gmag = gmag[gmag != 0]
+        if gmag.size > 0:
+            threshold = np.median(gmag) * 10.0
+            strong = gmag[gmag > threshold]
+            estimatedFocus = float(np.sum(strong))
 
     return estimatedFocus
 
@@ -228,8 +240,8 @@ class AutoFocusPID:
             t = np.array([1])
 
             if (len(focuses) > 1):
-                t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
-            
+                t = np.arange(len(focuses)) / float( max(1, len(focuses) - 1) )
+
             weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
 
             PV = sum(focuses * weights) / sum(weights)

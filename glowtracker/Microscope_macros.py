@@ -29,6 +29,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 from scipy.stats import gennorm
 from scipy.special import gamma as gammafunc
+from scipy.signal import savgol_filter
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
@@ -1307,33 +1308,6 @@ class DepthOfFieldEstimator:
         return plotImage
     
 
-    def genIntensityStatsPlot(self) -> np.ndarray:
-        pos_z = self.dofDataFrame['pos_z'].tolist()
-
-        means = []
-        for image in self.dofDataFrame['image']:
-            means.append(np.mean(image))
-
-        fig = plt.figure(figsize=(10, 7))
-
-        plt.plot(pos_z, means, 'b.-', label='mean')
-
-        plt.xlabel('Position Z')
-        plt.ylabel('Intensity (brightness)')
-        plt.legend()
-        plt.tight_layout()
-
-        canvas = FigureCanvasAgg(fig)
-        canvas.draw()
-        width, height = fig.get_size_inches() * fig.get_dpi()
-        plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
-        plotImage = plotImage[:, :, 1:4]
-
-        plt.close(fig= fig)
-
-        return plotImage
-
-
     def getBestFocusImage(self) -> Tuple[float, np.ndarray, float]:
         """Get a sampled image that has the best focus
 
@@ -1347,6 +1321,92 @@ class DepthOfFieldEstimator:
         bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
         bestFocusValue = self.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
         return bestFocusPosition, bestFocusImage, bestFocusValue
+
+
+class IntensitySweeper:
+
+    def __init__(self):
+        self.dataFrame = pd.DataFrame(columns=['pos_z', 'mean_intensity'])
+        self.peakZ = None
+
+
+    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> None:
+        df = pd.DataFrame(columns=['pos_z', 'mean_intensity'], index= range(numImages))
+
+        startingPos = stage.get_position(unit='mm')
+
+        stepSize_z = (zEnd - zStart) / (numImages - 1)
+        currentPos = [startingPos[0], startingPos[1], zStart]
+
+        stage.move_abs(currentPos, wait_until_idle= True)
+
+        for i in range(numImages):
+
+            isSuccess, image = camera.singleTake()
+
+            if not isSuccess:
+                raise RuntimeError('Taking an image is unsuccessful')
+
+            if dualColorMode:
+                w = image.shape[1]
+                if dualColorModeMainSide == 'Left':
+                    image = image[:, :w//2]
+                elif dualColorModeMainSide == 'Right':
+                    image = image[:, w//2:]
+
+            df.iloc[i] = [currentPos[2], np.mean(image)]
+
+            currentPos[2] = currentPos[2] + stepSize_z
+            stage.move_abs(currentPos, wait_until_idle= True)
+
+        stage.move_abs(startingPos)
+
+        self.dataFrame = df
+
+
+    def genPlot(self) -> np.ndarray:
+        pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        diff = np.diff(means)
+        z_mid = (pos_z[:-1] + pos_z[1:]) / 2
+
+        windowLength = min(11, len(diff))
+        if windowLength % 2 == 0:
+            windowLength -= 1
+
+        if windowLength >= 5:
+            smoothedDiff = savgol_filter(diff, windowLength, 2)
+        else:
+            smoothedDiff = diff
+
+        extremumIdx = np.argmax(np.abs(smoothedDiff))
+        self.peakZ = z_mid[extremumIdx]
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9))
+
+        ax1.plot(pos_z, means, 'b.-', label='mean')
+        ax1.set_ylabel('Intensity (brightness)')
+        ax1.legend()
+
+        ax2.plot(z_mid, diff, 'g.', label='d(intensity)')
+        ax2.plot(z_mid, smoothedDiff, 'r-', label='smoothed')
+        ax2.axvline(self.peakZ, color='k', linestyle='--', label=f'peak (z={self.peakZ:.4f})')
+        ax2.set_xlabel('Position Z')
+        ax2.set_ylabel('d(intensity)')
+        ax2.legend()
+
+        fig.tight_layout()
+
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        plotImage = plotImage[:, :, 1:4]
+
+        plt.close(fig= fig)
+
+        return plotImage
 
 
 class Exterior(Enum):

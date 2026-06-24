@@ -715,6 +715,7 @@ class CalibrationTabPanel(TabbedPanel):
         self.ids.stagecalibration.setCloseCallback( closeCallback )
         self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
         self.ids.depthoffieldcalibration.setCloseCallback( closeCallback )
+        self.ids.intensitysweepcalibration.setCloseCallback( closeCallback )
 
 
 class CameraAndStageCalibration(BoxLayout):
@@ -947,10 +948,6 @@ class DepthOfFieldCalibration(BoxLayout):
             bestFocusPosition, bestFocusImage, bestFocusValue = depthOfFieldEstimator.getBestFocusImage()
             self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
-            intensityStatsPlotImage = depthOfFieldEstimator.genIntensityStatsPlot()
-            intensityStatsImageWidget = Image(texture= imageToTexture(intensityStatsPlotImage))
-            Popup(title= 'Intensity statistics over Z sweep', content= intensityStatsImageWidget, size_hint= (0.8, 0.8)).open()
-
             # Update display text
             self.ids.estimateddepthoffieldtext.text = f"Estimated Depth of Field: {estimatedDof:.5f} mm. Best in-focused position: {bestFocusPosition:.2f} mm."
 
@@ -963,6 +960,43 @@ class DepthOfFieldCalibration(BoxLayout):
             print(f'Failed to estimate depth of field: {e}')
 
         # Resume the camera to previous state
+        liveViewButton.state = prevLiveViewButtonState
+
+
+class IntensitySweepCalibration(BoxLayout):
+
+    closeCallback = ObjectProperty(None)
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        self.closeCallback = closeCallback
+
+
+    def sweep(self):
+        app: GlowTrackerApp = App.get_running_app()
+        camera: basler.Camera = app.camera
+        stage: Stage = app.stage
+
+        if camera is None or stage is None:
+            return
+
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
+
+        zStart = float(self.ids.zstart.text)
+        zEnd = float(self.ids.zend.text)
+        numImages = int(self.ids.numphotos.text)
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
+
+        intensitySweeper = macro.IntensitySweeper()
+
+        try:
+            intensitySweeper.sweep(camera, stage, zStart, zEnd, numImages, dualColorMode, mainSide)
+            self.ids.intensitysweepplot.texture = imageToTexture(intensitySweeper.genPlot())
+        except Exception as e:
+            print(f'Failed to run intensity sweep: {e}')
+
         liveViewButton.state = prevLiveViewButtonState
 
 
@@ -4361,7 +4395,7 @@ class DAQConnectionButton(ToggleButton):
 
         # Load StageProgram properties
         stageprogrammode = StageProgramMode[app.config.get('DaqControl', 'stageprogrammode')]
-        exterior = macro.Exterior[app.config.get('DaqControl', 'exterior')]
+        exteriorq = macro.Exterior[app.config.get('DaqControl', 'exterior')]
         exteriorConstant = app.config.getfloat('DaqControl', 'constanttextinput')
         p1x = app.config.getfloat('DaqControl', 'p1x')
         p1y = app.config.getfloat('DaqControl', 'p1y')
