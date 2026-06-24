@@ -1311,24 +1311,12 @@ class DepthOfFieldEstimator:
         pos_z = self.dofDataFrame['pos_z'].tolist()
 
         means = []
-        maxs = []
-        mins = []
-        stds = []
         for image in self.dofDataFrame['image']:
             means.append(np.mean(image))
-            maxs.append(np.max(image))
-            mins.append(np.min(image))
-            stds.append(np.std(image))
-
-        means = np.array(means)
-        stds = np.array(stds)
 
         fig = plt.figure(figsize=(10, 7))
 
-        plt.plot(pos_z, maxs, 'r.-', label='max')
         plt.plot(pos_z, means, 'b.-', label='mean')
-        plt.fill_between(pos_z, means - stds, means + stds, color='blue', alpha=0.2, label='mean ± std')
-        plt.plot(pos_z, mins, 'g.-', label='min')
 
         plt.xlabel('Position Z')
         plt.ylabel('Intensity (brightness)')
