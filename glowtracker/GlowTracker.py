@@ -1552,6 +1552,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_threshold = NumericProperty(150)
     scan_min_pixels = NumericProperty(50)
     scan_overlap = NumericProperty(0.4)
+    scan_z_range = NumericProperty(1.0)
+    scan_z_frames = NumericProperty(30)
     track_exposure = NumericProperty(5000)
     track_gain = NumericProperty(0)
     track_interval = NumericProperty(3600) # in seconds
@@ -1841,12 +1843,17 @@ class CenterRadiusFromThreePoints(BoxLayout):
     def stop_scan(self):
         self._stop_scan = True
 
-    def _find_scan_z(self, searchDistance= 1.0, numImages= 30) -> float | None:
+    def _find_scan_z(self, searchDistance= None, numImages= None) -> float | None:
         app = App.get_running_app()
         stage = app.stage
         if app.camera is None or app.stage is None:
             print('camera or stage not connected')
             return None
+
+        if searchDistance is None:
+            searchDistance = self.scan_z_range
+        if numImages is None:
+            numImages = int(self.scan_z_frames)
         
         if app.plateCenter is None:
             print('no stage center found') 
@@ -1866,6 +1873,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
             print(f'z-sweep failed: {e}')
             return None
 
+        peakZ = float(peakZ)
         Clock.schedule_once(lambda dt, v=peakZ: setattr(self, 'scan_z', v))
         print(f'z-sweep picked scan_z = {peakZ:.4f} mm')
         return peakZ
