@@ -1738,8 +1738,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
 
                     t0 = time.perf_counter()
-                    moved = app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
-                    moved = moved and app.stage.move_z(z, 'mm', wait_until_idle= True)
+                    moved = app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
                     t1 = time.perf_counter()
                     if i == 0:
                         pos = app.stage.get_position(unit= 'mm', isAsync= False)
