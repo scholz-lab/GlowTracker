@@ -1364,7 +1364,7 @@ class IntensitySweeper:
         self.dataFrame = df
 
 
-    def genPlot(self) -> np.ndarray:
+    def gradient(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
@@ -1380,8 +1380,21 @@ class IntensitySweeper:
         else:
             smoothedDiff = diff
 
-        extremumIdx = np.argmax(np.abs(smoothedDiff))
-        self.peakZ = z_mid[extremumIdx]
+        return z_mid, diff, smoothedDiff
+
+
+    def findGradientPeak(self) -> float:
+        z_mid, _, smoothedDiff = self.gradient()
+        self.peakZ = z_mid[np.argmax(np.abs(smoothedDiff))]
+        return self.peakZ
+
+
+    def genPlot(self) -> np.ndarray:
+        pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        z_mid, diff, smoothedDiff = self.gradient()
+        self.findGradientPeak()
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9))
 

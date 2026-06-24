@@ -1541,6 +1541,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     points = ListProperty([])
     _stop_scan = False
+    _stop_all = False
     _preview_saved = None
     scan_progress = NumericProperty(0)
     saved_scenarios = ListProperty([])
@@ -1666,36 +1667,46 @@ class CenterRadiusFromThreePoints(BoxLayout):
         self.ids.resultlabel.text = 'Diameter: -    Center: -'
         
     def scan_area(self):
+        def worker():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            try:
+                found = self._scan()
+                if found:
+                    Clock.schedule_once(lambda dt: self._after_scan_found())
+            finally:
+                asyncio.get_event_loop().close()
+        Thread(target= worker, daemon= True).start()
+
+    def _scan(self) -> bool:
         app = App.get_running_app()
         if app.stage is None:
             print('connect the stage first')
-            return
+            return False
         if app.plateCenter is None or app.plateRadius is None:
             print('calculate plate region first')
-            return
+            return False
         if app.camera is None:
             print('connect the camera first')
-            return
+            return False
         fov = app.get_fov_mm()
         if fov is None:
             print('no fov returned')
-            return
+            return False
 
         threshold = self.scan_threshold
         min_pixels = self.scan_min_pixels
         settle = self.scan_settle
-        # z = app.coords[2]
         z = self.scan_z
 
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap= self.scan_overlap)
         tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
         if not tiles:
             print('no safe tiles to scan at this Z')
-            return
+            return False
 
         mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
         prev_live = mgr.liveviewbutton.state
-        mgr.liveviewbutton.state = 'normal'
+        Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', 'normal'))
 
         prev_exposure = app.camera.ExposureTime()
         prev_gain = app.camera.Gain()
@@ -1713,94 +1724,91 @@ class CenterRadiusFromThreePoints(BoxLayout):
         scan_accel = float(app.config.get('Stage', 'scan_acceleration'))
 
         self._stop_scan = False
-        self._found = False
-        def _scan():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            try:
-                scan_pass = 0
-                while not self._stop_scan:
-                    scan_pass += 1
-                    self.scan_progress = 0
-                    t_move = t_settle = t_grab = t_detect = t_disp = 0.0
-                    n_tiles = 0
-                    pass_start = time.perf_counter()
-                    print(f'scan pass {scan_pass}')
-                    app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
-                    for i, (x, y) in enumerate(tiles):
-                        if self._stop_scan:
-                            break
-                        frac = (i + 1) / len(tiles)
-                        Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
-
-                        t0 = time.perf_counter()
-                        moved = app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
-                        moved = moved and app.stage.move_z(z, 'mm', wait_until_idle= True)
-                        t1 = time.perf_counter()
-                        if i == 0:
-                            pos = app.stage.get_position(unit= 'mm', isAsync= False)
-                            if (not moved) or pos is None or abs(pos[0] - x) > 1.0 or abs(pos[1] - y) > 1.0:
-                                print(f'scan aborted: first move did not reach target ({x:.2f}, {y:.2f}), got {pos}')
-                                self._stop_scan = True
-                                break
-                            app.stage.set_motion(scan_maxspeed, scan_accel, maxspeed_unit, accel_unit)
-                        time.sleep(settle)
-                        t2 = time.perf_counter()
-                        ok, img = app.camera.singleTake()
-                        t3 = time.perf_counter()
-                        if not ok:
-                            print('failed to capture image, skipping tile')
-                            continue
-                        Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
-                        t4 = time.perf_counter()
-                        present, offset = macro.detect_worm(img, threshold, min_pixels)
-                        t5 = time.perf_counter()
-
-                        t_move += t1 - t0
-                        t_settle += t2 - t1
-                        t_grab += t3 - t2
-                        t_disp += t4 - t3
-                        t_detect += t5 - t4
-                        n_tiles += 1
-                        if present:
-                            print('Found a worm !!')
-                            units = app.config.get('Calibration', 'step_units')
-                            dy, dx = macro.getStageDistances(
-                                np.array([-offset[1], offset[0]]), app.imageToStageMat)
-                            app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
-                            app.camera.ExposureTime.Value = float(self.track_exposure)
-                            app.camera.Gain.Value = float(self.track_gain)
-                            focus = app.autofocus(follow_worm= True, threshold= threshold, min_pixels= min_pixels)
-                            app.update_coordinates(isAsync= False)
-                            if focus is not None:
-                                self._stop_scan = True
-                                self._found = True
-                                break
-                            print('lost the worm during focus, resuming scan')
-                            app.camera.ExposureTime.Value = float(self.scan_exposure)
-                            app.camera.Gain.Value = float(self.scan_gain)
-
-                    if n_tiles > 0:
-                        pass_elapsed = time.perf_counter() - pass_start
-                        per = lambda s: s / n_tiles * 1000.0
-                        print(
-                            f'pass {scan_pass}: move {per(t_move):.0f}ms | '
-                            f'settle {per(t_settle):.0f}ms | grab {per(t_grab):.0f}ms | '
-                            f'detect {per(t_detect):.0f}ms | disp {per(t_disp):.0f}ms | '
-                            f'total {pass_elapsed / n_tiles * 1000.0:.0f}ms/tile | '
-                            f'{n_tiles / pass_elapsed:.1f} tiles/s  ({n_tiles} tiles)'
-                        )
-            finally:
+        found = False
+        try:
+            scan_pass = 0
+            while not self._stop_scan:
+                scan_pass += 1
+                Clock.schedule_once(lambda dt: setattr(self, 'scan_progress', 0))
+                t_move = t_settle = t_grab = t_detect = t_disp = 0.0
+                n_tiles = 0
+                pass_start = time.perf_counter()
+                print(f'scan pass {scan_pass}')
                 app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
-                app.camera.AcquisitionFrameRate.Value = prev_fr
-                app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
-                if self._found:
-                    Clock.schedule_once(lambda dt: self._after_scan_found())
-                else:
-                    app.camera.ExposureTime.Value = prev_exposure
-                    app.camera.Gain.Value = prev_gain
-                    Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
-                asyncio.get_event_loop().close()
-        Thread(target= _scan, daemon= True).start()
+                for i, (x, y) in enumerate(tiles):
+                    if self._stop_scan:
+                        break
+                    frac = (i + 1) / len(tiles)
+                    Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
+
+                    t0 = time.perf_counter()
+                    moved = app.stage.move_xy(x, y, 'mm', wait_until_idle= True)
+                    moved = moved and app.stage.move_z(z, 'mm', wait_until_idle= True)
+                    t1 = time.perf_counter()
+                    if i == 0:
+                        pos = app.stage.get_position(unit= 'mm', isAsync= False)
+                        if (not moved) or pos is None or abs(pos[0] - x) > 1.0 or abs(pos[1] - y) > 1.0:
+                            print(f'scan aborted: first move did not reach target ({x:.2f}, {y:.2f}), got {pos}')
+                            self._stop_scan = True
+                            break
+                        app.stage.set_motion(scan_maxspeed, scan_accel, maxspeed_unit, accel_unit)
+                    time.sleep(settle)
+                    t2 = time.perf_counter()
+                    ok, img = app.camera.singleTake()
+                    t3 = time.perf_counter()
+                    if not ok:
+                        print('failed to capture image, skipping tile')
+                        continue
+                    Clock.schedule_once(lambda dt, im=img: setattr(app, 'image', im))
+                    t4 = time.perf_counter()
+                    present, offset = macro.detect_worm(img, threshold, min_pixels)
+                    t5 = time.perf_counter()
+
+                    t_move += t1 - t0
+                    t_settle += t2 - t1
+                    t_grab += t3 - t2
+                    t_disp += t4 - t3
+                    t_detect += t5 - t4
+                    n_tiles += 1
+                    if present:
+                        print('Found a worm !!')
+                        units = app.config.get('Calibration', 'step_units')
+                        dy, dx = macro.getStageDistances(
+                            np.array([-offset[1], offset[0]]), app.imageToStageMat)
+                        app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                        app.camera.ExposureTime.Value = float(self.track_exposure)
+                        app.camera.Gain.Value = float(self.track_gain)
+                        focus = app.autofocus(follow_worm= True, threshold= threshold, min_pixels= min_pixels)
+                        app.update_coordinates(isAsync= False)
+                        if focus is not None:
+                            found = True
+                            break
+                        print('lost the worm during focus, resuming scan')
+                        app.camera.ExposureTime.Value = float(self.scan_exposure)
+                        app.camera.Gain.Value = float(self.scan_gain)
+
+                if n_tiles > 0:
+                    pass_elapsed = time.perf_counter() - pass_start
+                    per = lambda s: s / n_tiles * 1000.0
+                    print(
+                        f'pass {scan_pass}: move {per(t_move):.0f}ms | '
+                        f'settle {per(t_settle):.0f}ms | grab {per(t_grab):.0f}ms | '
+                        f'detect {per(t_detect):.0f}ms | disp {per(t_disp):.0f}ms | '
+                        f'total {pass_elapsed / n_tiles * 1000.0:.0f}ms/tile | '
+                        f'{n_tiles / pass_elapsed:.1f} tiles/s  ({n_tiles} tiles)'
+                    )
+                if found:
+                    break
+        finally:
+            app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
+            app.camera.AcquisitionFrameRate.Value = prev_fr
+            app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
+            if not found:
+                app.camera.ExposureTime.Value = prev_exposure
+                app.camera.Gain.Value = prev_gain
+                Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
+
+        return found
 
     def _after_scan_found(self):
         app = App.get_running_app()
@@ -1822,6 +1830,80 @@ class CenterRadiusFromThreePoints(BoxLayout):
     
     def stop_scan(self):
         self._stop_scan = True
+
+    def _find_scan_z(self, searchDistance= 1.0, numImages= 30) -> float | None:
+        app = App.get_running_app()
+        if app.camera is None or app.stage is None:
+            return None
+
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
+
+        zStart = self.scan_z - searchDistance / 2
+        zEnd = self.scan_z + searchDistance / 2
+
+        sweeper = macro.IntensitySweeper()
+        try:
+            sweeper.sweep(app.camera, app.stage, zStart, zEnd, numImages, dualColorMode, mainSide)
+            peakZ = sweeper.findGradientPeak()
+        except Exception as e:
+            print(f'z-sweep failed: {e}')
+            return None
+
+        Clock.schedule_once(lambda dt, v=peakZ: setattr(self, 'scan_z', v))
+        print(f'z-sweep picked scan_z = {peakZ:.4f} mm')
+        return peakZ
+
+    def run_plates(self, plates= None, record_duration= None):
+        app = App.get_running_app()
+
+        if plates is None:
+            if app.plateCenter is None or app.plateRadius is None:
+                print('calculate plate region first')
+                return
+            plates = [(list(app.plateCenter), app.plateRadius)]
+
+        if record_duration is None:
+            record_duration = self.track_interval
+
+        self._stop_all = False
+
+        def orchestrator():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            rc = app.root.ids.middlecolumn.ids.runtimecontrols
+            try:
+                for center, radius in plates:
+                    if self._stop_all:
+                        break
+
+                    Clock.schedule_once(lambda dt, c=center, r=radius: self._set_plate(c, r))
+
+                    self._find_scan_z()
+                    if self._stop_all:
+                        break
+
+                    found = self._scan()
+                    if not found or self._stop_all:
+                        continue
+
+                    rc._track(record_duration, record= True)
+            finally:
+                asyncio.get_event_loop().close()
+                print('finished plate run')
+
+        Thread(target= orchestrator, daemon= True).start()
+
+    def _set_plate(self, center, radius):
+        app = App.get_running_app()
+        app.plateCenter = np.array(center, np.float32)
+        app.plateRadius = radius
+
+    def stop_plates(self):
+        self._stop_all = True
+        self._stop_scan = True
+        app = App.get_running_app()
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        rc.track_done.set()
 
     def toggle_preview(self):
         app = App.get_running_app()
@@ -3829,10 +3911,14 @@ class RuntimeControls(BoxLayout):
             h, w = app.image.shape[0], app.image.shape[1]
             rc.trackingcheckbox.state = 'down'
             rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=duration)
+            if record:
+                mgr.recordbutton.state = 'down'
             return False
-        
+
         Clock.schedule_once(_start)
         self.track_done.wait()
+        if record:
+            Clock.schedule_once(lambda dt: setattr(mgr.recordbutton, 'state', 'normal'))
     
 
     def set_ROI(self, roiX, roiY):
