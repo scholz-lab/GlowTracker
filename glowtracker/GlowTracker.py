@@ -3,6 +3,7 @@ import multiprocessing as mp
 from multiprocessing.managers import SharedMemoryManager
 from SharedMemory import SharedMemoryQueue
 import image_saver
+from threading import Thread, Lock, Event
 
 import os
 # Suppress kivy normal initialization logs in the beginning
@@ -103,6 +104,14 @@ from scipy.stats import skew
 
 import gc
 
+@dataclass
+class Plate:
+    name: str
+    center: tuple
+    radius: float
+    scan_z: float
+    scan_exposure: float
+    track_exposure: float
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -938,6 +947,10 @@ class DepthOfFieldCalibration(BoxLayout):
             bestFocusPosition, bestFocusImage, bestFocusValue = depthOfFieldEstimator.getBestFocusImage()
             self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
+            intensityStatsPlotImage = depthOfFieldEstimator.genIntensityStatsPlot()
+            intensityStatsImageWidget = Image(texture= imageToTexture(intensityStatsPlotImage))
+            Popup(title= 'Intensity statistics over Z sweep', content= intensityStatsImageWidget, size_hint= (0.8, 0.8)).open()
+
             # Update display text
             self.ids.estimateddepthoffieldtext.text = f"Estimated Depth of Field: {estimatedDof:.5f} mm. Best in-focused position: {bestFocusPosition:.2f} mm."
 
@@ -1506,6 +1519,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_overlap = NumericProperty(0.4)
     track_exposure = NumericProperty(5000)
     track_gain = NumericProperty(0)
+    track_interval = NumericProperty(3600) # in seconds
     _found = False
 
     def on_kv_post(self, *args):
@@ -1765,12 +1779,13 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 return
             h, w = app.image.shape[0], app.image.shape[1]
             rc.trackingcheckbox.state = 'down'
-            rc.startTracking(np.array([w / 2.0, h / 2.0]))
+            rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=self.track_interval)
             rc.livefocuscheckbox.state = 'down'
             return False
 
         Clock.schedule_interval(_go, 0.1)
-
+        
+    
     def stop_scan(self):
         self._stop_scan = True
 
@@ -3443,6 +3458,7 @@ class RuntimeControls(BoxLayout):
         self.focus_history = []
         self.liveFocusThread = None
         self.focus_motion = 0
+        self.track_done = Event()
         self.isTracking = False
         self.isShowTrackingDialogueFirstTime = True
         self.coord_updateevent: ClockEvent | None = None
@@ -3680,11 +3696,12 @@ class RuntimeControls(BoxLayout):
             self.trackingcheckbox.state = 'normal'
     
 
-    def startTracking(self, start_pos_tex_coord: np.array) -> None:
+    def startTracking(self, start_pos_tex_coord: np.array, track_interval: float | None = None) -> None:
         """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
 
         Args:
             start_pos_tex_coord (np.array): Starting position in the image texture space (full image size). Used to move the stage to center at that position.
+            track_interval (float | None): The interval between tracking updates in seconds. If None, uses the value from the configuration.
         """        
         app = App.get_running_app()
         stage = app.stage
@@ -3750,15 +3767,42 @@ class RuntimeControls(BoxLayout):
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
+
         # make a tracking thread 
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
+        
+        self._track_timeout = None
+        if track_interval is not None:
+            self._track_timeout = Clock.schedule_once(lambda dt: setattr(self.trackingcheckbox, 'state', 'normal'), track_interval)
 
         # schedule occasional position check of the stage
         # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
 
+    def _track(self, duration, record = False):
+        app = App.get_running_app()
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        mgr = rc.ids.imageacquisitionmanager
+        
+        self.track_done.clear()
+        
+        def _start(dt):
+            mgr.liveviewbutton.state = 'down'
+            Clock.schedule_interval(_go, 0.1)
+        
+        def _go(dt):
+            if app.camera is None or not app.camera.IsGrabbing():
+                return
+            h, w = app.image.shape[0], app.image.shape[1]
+            rc.trackingcheckbox.state = 'down'
+            rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=duration)
+            return False
+        
+        Clock.schedule_once(_start)
+        self.track_done.wait()
+    
 
     def set_ROI(self, roiX, roiY):
         app: GlowTrackerApp = App.get_running_app()
@@ -3886,12 +3930,17 @@ class RuntimeControls(BoxLayout):
     def stopTracking(self):
         """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
         """
+        self.track_done.set()
         app: GlowTrackerApp = App.get_running_app()
         camera = app.camera
 
         if camera is None:
             return
         
+        if getattr(self, '_track_timeout', None) is not None:
+            self._track_timeout.cancel()
+            self._track_timeout = None
+
         self.isTracking = False
         self.cropX = 0
         self.cropY = 0

@@ -477,6 +477,14 @@ MainWindow:
                 on_focus: app.toggle_key_binding(self.focus)
                 on_text_validate: root.track_gain = float(self.text)
             Label:
+                text: 'Track timeout (s)'
+            TextInput:
+                text: str(root.track_interval)
+                input_filter: 'float'
+                multiline: False
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.track_interval = float(self.text)
+            Label:
                 text: 'Settle (s)'
             TextInput:
                 text: str(root.scan_settle)
