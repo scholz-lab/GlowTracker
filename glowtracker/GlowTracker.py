@@ -4395,7 +4395,7 @@ class DAQConnectionButton(ToggleButton):
 
         # Load StageProgram properties
         stageprogrammode = StageProgramMode[app.config.get('DaqControl', 'stageprogrammode')]
-        exteriorq = macro.Exterior[app.config.get('DaqControl', 'exterior')]
+        exterior = macro.Exterior[app.config.get('DaqControl', 'exterior')]
         exteriorConstant = app.config.getfloat('DaqControl', 'constanttextinput')
         p1x = app.config.getfloat('DaqControl', 'p1x')
         p1y = app.config.getfloat('DaqControl', 'p1y')
