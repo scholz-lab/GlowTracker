@@ -1669,15 +1669,21 @@ class CenterRadiusFromThreePoints(BoxLayout):
     def scan_area(self):
         def worker():
             asyncio.set_event_loop(asyncio.new_event_loop())
+            found = False
             try:
-                found = self._scan()
+                self._begin_scan_camera()
+                try:
+                    peakZ = self._find_scan_z()
+                    found = self._scan(z= peakZ)
+                finally:
+                    self._end_scan_camera(found)
                 if found:
                     Clock.schedule_once(lambda dt: self._after_scan_found())
             finally:
                 asyncio.get_event_loop().close()
         Thread(target= worker, daemon= True).start()
 
-    def _scan(self) -> bool:
+    def _scan(self, z: float = None) -> bool:
         app = App.get_running_app()
         if app.stage is None:
             print('connect the stage first')
@@ -1696,25 +1702,13 @@ class CenterRadiusFromThreePoints(BoxLayout):
         threshold = self.scan_threshold
         min_pixels = self.scan_min_pixels
         settle = self.scan_settle
-        z = self.scan_z
-
+        z = self.scan_z if z is None else z
+        
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap= self.scan_overlap)
         tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
         if not tiles:
             print('no safe tiles to scan at this Z')
             return False
-
-        mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
-        prev_live = mgr.liveviewbutton.state
-        Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', 'normal'))
-
-        prev_exposure = app.camera.ExposureTime()
-        prev_gain = app.camera.Gain()
-        prev_fr_enable = app.camera.AcquisitionFrameRateEnable()
-        prev_fr = app.camera.AcquisitionFrameRate()
-        app.camera.AcquisitionFrameRateEnable.Value = False
-        app.camera.ExposureTime.Value = float(self.scan_exposure)
-        app.camera.Gain.Value = float(self.scan_gain)
 
         maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
         accel_unit = app.config.get('Stage', 'acceleration_unit')
@@ -1778,14 +1772,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
                         app.camera.ExposureTime.Value = float(self.track_exposure)
                         app.camera.Gain.Value = float(self.track_gain)
-                        focus = app.autofocus(follow_worm= True, threshold= threshold, min_pixels= min_pixels)
                         app.update_coordinates(isAsync= False)
-                        if focus is not None:
-                            found = True
-                            break
-                        print('lost the worm during focus, resuming scan')
-                        app.camera.ExposureTime.Value = float(self.scan_exposure)
-                        app.camera.Gain.Value = float(self.scan_gain)
+                        found = True
+                        break
 
                 if n_tiles > 0:
                     pass_elapsed = time.perf_counter() - pass_start
@@ -1801,14 +1790,35 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     break
         finally:
             app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
-            app.camera.AcquisitionFrameRate.Value = prev_fr
-            app.camera.AcquisitionFrameRateEnable.Value = prev_fr_enable
-            if not found:
-                app.camera.ExposureTime.Value = prev_exposure
-                app.camera.Gain.Value = prev_gain
-                Clock.schedule_once(lambda dt: setattr(mgr.liveviewbutton, 'state', prev_live))
-
         return found
+    
+    def _begin_scan_camera(self):
+        app = App.get_running_app()
+        mrg = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        self._cam_saved = {
+            'live' : mrg.liveviewbutton.state,
+            'exposure' : app.camera.ExposureTime(),
+            'gain' : app.camera.Gain(),
+            'fr_enable' : app.camera.AcquisitionFrameRateEnable(),
+            'fr' : app.camera.AcquisitionFrameRate()
+        }
+        Clock.schedule_once(lambda dt: setattr(mrg.liveviewbutton, 'state', 'normal'))
+        t0 = time.perf_counter()
+        while app.camera.IsGrabbing() and time.perf_counter() - t0 < 2.0:
+            time.sleep(0.02)
+        app.camera.AcquisitionFrameRateEnable.Value = False
+        app.camera.ExposureTime.Value = float(self.scan_exposure)
+        app.camera.Gain.Value = float(self.scan_gain)
+
+    def _end_scan_camera(self, found):
+        app = App.get_running_app()
+        mrg = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        app.camera.AcquisitionFrameRate.Value = self._cam_saved['fr']
+        app.camera.AcquisitionFrameRateEnable.Value = self._cam_saved['fr_enable']
+        if not found:
+            app.camera.ExposureTime.Value = self._cam_saved['exposure']
+            app.camera.Gain.Value = self._cam_saved['gain']
+            Clock.schedule_once(lambda dt: setattr(mrg.liveviewbutton, 'state', self._cam_saved['live']))
 
     def _after_scan_found(self):
         app = App.get_running_app()
@@ -1833,9 +1843,15 @@ class CenterRadiusFromThreePoints(BoxLayout):
 
     def _find_scan_z(self, searchDistance= 1.0, numImages= 30) -> float | None:
         app = App.get_running_app()
+        stage = app.stage
         if app.camera is None or app.stage is None:
+            print('camera or stage not connected')
             return None
-
+        
+        if app.plateCenter is None:
+            print('no stage center found') 
+            return None
+        stage.move_abs((app.plateCenter[0], app.plateCenter[1], self.scan_z), 'mm', wait_until_idle= True)
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         mainSide = app.config.get('DualColor', 'mainside')
 
@@ -1877,15 +1893,16 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         break
 
                     Clock.schedule_once(lambda dt, c=center, r=radius: self._set_plate(c, r))
-
-                    self._find_scan_z()
-                    if self._stop_all:
-                        break
-
-                    found = self._scan()
+                    found = False
+                    self._begin_scan_camera()
+                    try:
+                        z = self._find_scan_z()
+                        if not self._stop_all:
+                            found = self._scan(z)
+                    finally:
+                        self._end_scan_camera(found)
                     if not found or self._stop_all:
                         continue
-
                     rc._track(record_duration, record= True)
             finally:
                 asyncio.get_event_loop().close()
@@ -3911,6 +3928,7 @@ class RuntimeControls(BoxLayout):
             h, w = app.image.shape[0], app.image.shape[1]
             rc.trackingcheckbox.state = 'down'
             rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=duration)
+            rc.livefocuscheckbox.state = 'down'
             if record:
                 mgr.recordbutton.state = 'down'
             return False
