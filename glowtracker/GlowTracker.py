@@ -3008,16 +3008,7 @@ class LiveAnalysisLabel(Label):
 
     def updateText(self, liveAnalysisData: LiveAnalysisData):
 
-        # Get LiveAnalysisData from ImageAcquisition
-        app: GlowTrackerApp = App.get_running_app()
-        
-        self.text = f"""Min: {liveAnalysisData.minBrightness:.2f}
-Max: {liveAnalysisData.maxBrightness:.2f}
-Mean: {liveAnalysisData.meanBrightness:.2f}
-Median: {liveAnalysisData.medianBrightness:.2f}
-Skewness: {liveAnalysisData.skewness:.2f}
-5 percentile: {liveAnalysisData.percentile_5:.2f}
-95 percentile: {liveAnalysisData.percentile_95:.2f}"""
+        self.text = f"Mean: {liveAnalysisData.meanBrightness:.2f}"
 
 
 class ImageOverlay(FloatLayout):

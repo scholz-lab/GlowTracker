@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, curr_file_dir)
 
 # Disable kivy console log
-os.environ["KIVY_NO_CONSOLELOG"] = "1"
+# os.environ["KIVY_NO_CONSOLELOG"] = "1"
 
 # Start application (guarded so multiprocessing children don't relaunch the GUI)
 if __name__ == '__main__':
