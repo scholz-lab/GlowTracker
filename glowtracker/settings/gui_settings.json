@@ -312,20 +312,6 @@
         "key": "showtrackingoverlay"
     },
     {
-        "type": "bool",
-        "title": "Display tracking trail overlay",
-        "desc": "Also display the tracking trail in the tracking overlay.",
-        "section": "Tracking",
-        "key": "showtrail"
-    },
-    {
-        "type": "numeric",
-        "title": "Trail limit",
-        "desc": "Maximum trail history length",
-        "section": "Tracking",
-        "key": "traillimit"
-    },
-    {
         "type": "numeric",
         "title": "ROI (Width)",
         "desc": "Width of the tracking image in px",
@@ -471,11 +457,32 @@
         "key": "g_relative"
     },
     {
+        "type": "bool",
+        "title": "Display tracking trail overlay",
+        "desc": "Display the tracking trail in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showtrail"
+    },
+    {
+        "type": "numeric",
+        "title": "Trail limit",
+        "desc": "Maximum trail history length",
+        "section": "DaqControl",
+        "key": "traillimit"
+    },
+    {
         "type": "numeric",
         "title": "Animal length (um)",
         "desc": "Average length of the tracking animal",
         "section": "DaqControl",
         "key": "animallength"
+    },
+    {
+        "type": "bool",
+        "title": "Display 1mm guideline",
+        "desc": "Display 1mm guideline in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showguideline"
     },
     {
         "type": "title",

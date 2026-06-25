@@ -1376,7 +1376,7 @@ class ReversalWidget(BoxLayout):
         self.closeCallback = closeCallback
 
 
-class RelativePositionSwitch(Switch):
+class DaqRelativePositionSwitch(Switch):
     configKey = StringProperty()
     root = ObjectProperty()     # Reference to root, which should be StageProgramWidget
 
@@ -1393,12 +1393,16 @@ class RelativePositionSwitch(Switch):
         Args:
             touch (Touch): touch input data.
         """
-        if super(RelativePositionSwitch, self).on_touch_up(touch):
+        if super(DaqRelativePositionSwitch, self).on_touch_up(touch):
 
             self.app.config.set('DaqControl', self.configKey, int(self.active))
             self.app.config.write()
 
-            self.root.updateDaqStageProgram()
+            # Check 
+            value = self.app.config.getboolean('DaqControl', self.configKey)
+
+            if self.root is not None:
+                self.root.updateDaqStageProgram()
 
             return True
     
@@ -2710,8 +2714,6 @@ class ImageOverlay(FloatLayout):
         self.velocityMesh: Mesh = Mesh(mode = 'line_strip')
         self.velocityMeshColor: Color = Color(1, 0, 0, 0.75)
 
-        self.trail = np.empty([1, 2])
-
         self.app: GlowTrackerApp = App.get_running_app()
 
 
@@ -2778,6 +2780,7 @@ class ImageOverlay(FloatLayout):
 
         cmsOffset_x, cmsOffset_y = 0, 0
         trackingMask = np.zeros(0)
+        trail = np.empty([1, 2])
         # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
 
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
@@ -2785,20 +2788,22 @@ class ImageOverlay(FloatLayout):
             # If tracking, the get the tracking data from RuntimeControls
             cmsOffset_x, cmsOffset_y, trackingMask, posHist = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask, rtc.posHist
             # Convert posHist to numpy and discard the z-axis position
-            self.trail = np.array(posHist)[:, (0, 1)]
+            #   and update unit from mm to meter.
+            # TODO: Gather unit from the stage calibration setting
+            trail = np.array(posHist)[:, (0, 1)] * 1e3
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
             # Debug
-            a = np.arange(start= 0, stop=10, step= 0.1, dtype= np.float32)
-            self.trail = np.column_stack([a, a])
+            a = np.arange(start= 0, stop=10, step= 0.1, dtype= np.float32) * 1e3
+            trail = np.column_stack([a, a])
 
         if doClear:
             self.clearTrackingOverlay()
 
-        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, self.trail)
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, trail)
     
     
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -2979,62 +2984,12 @@ class ImageOverlay(FloatLayout):
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
         
-        def updateLineMesh(mesh: Mesh, vertices_in: np.ndarray, color: Color) -> None:
-            # vertices_in is N x 2 mat. Each row contains a vertex in XY
-            
-            # Construct vertex array
-            #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
-            verts_with_uv = np.column_stack([vertices_in, np.zeros(vertices_in.shape)]) 
-            #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
-            verts_with_uv = verts_with_uv.flatten()
-            vertices = verts_with_uv.tolist()
-
-            # Construct index array
-            numVerts = vertices_in.shape[0] 
-            indices = np.arange(numVerts, dtype= np.int32).tolist()
-
-            mesh.vertices = vertices
-            mesh.indices = indices
-
-            if mesh not in self.canvas.children:
-                self.canvas.add(color)
-                self.canvas.add(mesh)
-
-        # 
-        #   Draw tracking trail if provided
-        # 
-        showtrail = self.app.config.getboolean('Tracking', 'showtrail') 
-        croppedTrail = None
-        if trail is not None and showtrail:
-            
-            # We have trail position in stage coordinate, in XY as N x 2 mat
-            # Want to have the in screen space, in XY
-            #   stage -> image -> screen -> offset to center
-
-            # Get last M (trial limit) vertices and 
-            #   apply transformation to each row vertex
-            traillimit = self.app.config.getint('Tracking', 'traillimit')
-
-            croppedTrail = trail[-traillimit::, :]
-
-            trail_imageCoord = stageToImageMat @ croppedTrail.transpose()
-
-            #   Transfrom back to column matrix
-            trail_imageCoord = trail_imageCoord.transpose()
-            # Convert from mm unit to meter
-            trail_imageCoord = trail_imageCoord * 1e3
-
-            # Transform to screen space 
-            trail_screenCoord = trail_imageCoord * displayedScale
-
-            offsetToCenter = center - trail_screenCoord[-1, :]
-
-            trail_screenCoord = trail_screenCoord + offsetToCenter
-
-            updateLineMesh(self.trailMesh, trail_screenCoord, Color(0.9, 0.0, 1.0, 0.75))
         
-        # Draw temp guildeline
-        if False:
+        # 
+        #   Draw 1mm guildeline
+        # 
+        showguideline = self.app.config.getboolean('DaqControl', 'showguideline') 
+        if showguideline:
             
             # Draw a guide-line. 1mm from center to right. This position in meter.
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
@@ -3044,25 +2999,48 @@ class ImageOverlay(FloatLayout):
             #   Convert it to meter
             pixelsize_meter = pixelsize * 1e-6
 
-            # Convert guideline to image space
+            # # Convert guideline to image space
             guideline_imageSpace = guideline / pixelsize_meter
 
-            # Convert to screen space
-            guideline_screenSpace = guideline_imageSpace * displayedScale
+            self._updateLineMesh(
+                mesh= self.guidelineMesh, 
+                vertices_in= guideline_imageSpace, 
+                color= Color(1.0, 1,0, 0.0, 0.75),
+                stageToImageMat= np.identity(n= 2),
+                displayedScale= displayedScale,
+                screenCenter= center,
+                isCenterAtFirstVertex= True
+            )
 
-            # Offset to start from the center of the overlay
-            guideline_screenSpace = center + guideline_screenSpace
-
-            # Construct mesh vertices from it
-            updateLineMesh(self.guidelineMesh, guideline_screenSpace, Color(1.0, 1,0, 0.0, 0.75))
+        # 
+        #   Draw tracking trail if provided
+        # 
+        showtrail = self.app.config.getboolean('DaqControl', 'showtrail') 
+        if showtrail:
+            
+            self._updateLineMesh(
+                mesh= self.trailMesh, 
+                vertices_in= trail, 
+                color= Color(0.9, 0.0, 1.0, 0.75),
+                stageToImageMat= stageToImageMat,
+                displayedScale= displayedScale,
+                screenCenter= center,
+                isCenterAtFirstVertex= False
+            )
         
-
-        # Draw Body line
-        if croppedTrail is not None:
+            # 
+            # Draw Body line
+            # 
             
             # We have trail positions in mm 
             animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
             animallength_mm = animallength_um * 1e-3
+
+            # Get last M (trial limit) vertices and 
+            #   apply transformation to each row vertex
+            traillimit = self.app.config.getint('DaqControl', 'traillimit')
+            
+            croppedTrail = trail[-traillimit::, :]
 
             # Greedy sums up until equal or exceed animal's length
             #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
@@ -3070,7 +3048,6 @@ class ImageOverlay(FloatLayout):
             sumLength = 0
             
             tailIndex = 0
-            
             
             for i in range(1, len(revTrail)):
                 length = np.linalg.norm(revTrail[i-1] - revTrail[i])
@@ -3082,31 +3059,20 @@ class ImageOverlay(FloatLayout):
             
             # Copy points from head to tail
             bodyVert = revTrail[0:tailIndex+1:1]
-            print(f'bodylength: {sumLength}, verts: {len(bodyVert)}')
+            print(f'bodylength: {sumLength:.4f}, verts: {len(bodyVert)}')
 
+            # Atleast two vertices
             if len(bodyVert) > 1:
 
-                # Convert from mm unit to meter
-                bodyVert = bodyVert * 1e3
-
-                # We have body vertices in stage coordinate, in XY as N x 2 mat
-                # Want to have the in screen space, in XY
-                #   stage -> image -> screen -> offset to center
-                
-                #   apply transformation to each row vertex
-                bodyVert_imageCoord = stageToImageMat @ bodyVert.transpose()
-
-                #   Transfrom back to column matrix
-                bodyVert_imageCoord = bodyVert_imageCoord.transpose()
-                
-                # Transform to screen space 
-                bodyVert_screenCoord = bodyVert_imageCoord * displayedScale
-
-                offsetToCenter = center - bodyVert_screenCoord[0]
-
-                bodyVert_screenCoord = bodyVert_screenCoord + offsetToCenter
-
-                updateLineMesh(self.bodyMesh, bodyVert_screenCoord, Color(1.0, 1.0, 0.0, 0.75))
+                self._updateLineMesh(
+                    mesh= self.bodyMesh, 
+                    vertices_in= bodyVert, 
+                    color= Color(1.0, 1.0, 0.0, 0.75),
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= True
+                )
             
                 # 
                 # Draw vector from tail to head
@@ -3114,28 +3080,17 @@ class ImageOverlay(FloatLayout):
                 # We have bodyVert: Bx2 (B:= body length), rows of point from head to tail
                 head = bodyVert[0]
                 tail = bodyVert[-1]
-                vecTailToHead = head - tail
                 tailToHeadVert = np.vstack([tail, head])
 
-                # We have body vertices in stage coordinate, in XY as N x 2 mat
-                # Want to have the in screen space, in XY
-                #   stage -> image -> screen -> offset to center
-                
-                #   apply transformation to each row vertex
-                tailToHeadVert_imageCoord = stageToImageMat @ tailToHeadVert.transpose()
-
-                #   Transfrom back to column matrix
-                tailToHeadVert_imageCoord = tailToHeadVert_imageCoord.transpose()
-                
-                # Transform to screen space 
-                tailToHeadVert_screenCoord = tailToHeadVert_imageCoord * displayedScale
-
-                # Offset to have head at the center of the screen
-                offsetToCenter = center - tailToHeadVert_screenCoord[1]
-
-                tailToHeadVert_screenCoord = tailToHeadVert_screenCoord + offsetToCenter
-
-                updateLineMesh(self.tailToHeadMesh, tailToHeadVert_screenCoord, Color(0.0, 0.0, 1.0, 0.75))
+                self._updateLineMesh(
+                    mesh= self.tailToHeadMesh, 
+                    vertices_in= tailToHeadVert, 
+                    color= Color(0.0, 0.0, 1.0, 0.75),
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= False
+                )
 
                 # 
                 # Estimate velocity
@@ -3154,24 +3109,11 @@ class ImageOverlay(FloatLayout):
                 # Draw the velocity
                 velocityVert = np.array([[0,0], velocity * 100 / np.linalg.norm(velocity)])
 
-                #   apply transformation to each row vertex
-                velocityVert_imageCoord = stageToImageMat @ velocityVert.transpose()
-
-                #   Transfrom back to column matrix
-                velocityVert_imageCoord = velocityVert_imageCoord.transpose()
-                
-                # Transform to screen space 
-                velocityVert_screenCoord = velocityVert_imageCoord * displayedScale
-
-                # Offset to have head at the center of the screen
-                offsetToCenter = center - velocityVert_screenCoord[0]
-
-                velocityVert_screenCoord = velocityVert_screenCoord + offsetToCenter
-
                 # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
                 #   If yes, reversal -> red color.
                 #   If not, non-reversal -> green color.
 
+                vecTailToHead = head - tail
                 angle_radian = macro.computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
                 angle_degree = angle_radian * 180 / math.pi
 
@@ -3184,9 +3126,62 @@ class ImageOverlay(FloatLayout):
                     self.velocityMeshColor.rgba = [1, 0, 0, 0.75]
                     print("Reversing!")
 
-                updateLineMesh(self.velocityMesh, velocityVert_screenCoord, self.velocityMeshColor)
+                self._updateLineMesh(
+                    mesh= self.velocityMesh, 
+                    vertices_in= velocityVert, 
+                    color= self.velocityMeshColor,
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= False
+                )
 
 
+    def _updateLineMesh(
+        self, 
+        mesh: Mesh, 
+        vertices_in: np.ndarray, 
+        color: Color, 
+        stageToImageMat: np.ndarray, 
+        displayedScale: float, 
+        screenCenter: np.ndarray, 
+        isCenterAtFirstVertex: bool
+    ) -> None:
+        # vertices_in is N x 2 mat in stage space (meter). Each row contains a vertex in XY
+
+        # Want to have the in screen space, in XY
+        #   stage -> image -> screen -> offset to center
+
+        verts_imageCoord = stageToImageMat @ vertices_in.transpose()
+
+        #   Transfrom back to column matrix
+        verts_imageCoord = verts_imageCoord.transpose()
+
+        # Transform to screen space 
+        verts_screenCoord = verts_imageCoord * displayedScale
+
+        offsetToCenter = screenCenter - ( verts_screenCoord[0] if isCenterAtFirstVertex else verts_screenCoord[-1] )
+
+        verts_screenCoord = verts_screenCoord + offsetToCenter
+        
+        # Construct vertex array
+        #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
+        verts_with_uv = np.column_stack([verts_screenCoord, np.zeros(verts_screenCoord.shape)])
+
+        #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
+        verts_with_uv = verts_with_uv.flatten()
+        vertices = verts_with_uv.tolist()
+
+        # Construct index array
+        indices = np.arange(len(verts_screenCoord), dtype= np.int32).tolist()
+
+        mesh.vertices = vertices
+        mesh.indices = indices
+
+        if mesh not in self.canvas.children:
+            self.canvas.add(color)
+            self.canvas.add(mesh)
+            
 
     def clearTrackingOverlay(self):
         """Clear the tracking info overlay
@@ -4483,8 +4478,6 @@ class GlowTrackerApp(App):
 
         config.setdefaults('Tracking', {
             'showtrackingoverlay': 'true',
-            'showtrail': 'true',
-            'traillimit' : '1000',
             'roi_x': '1800',
             'roi_y': '1800',
             'capture_radius': '400',
@@ -4543,7 +4536,10 @@ class GlowTrackerApp(App):
             'g_y_mean': 0,
             'g_y_sigma': 0,
             'g_relative': 'true',
-            'animallength': '1000'
+            'showtrail': 'true',
+            'traillimit' : '1000',
+            'animallength': '1000',
+            'showguideline': 'true',
         })
 
         

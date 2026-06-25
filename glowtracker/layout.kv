@@ -1397,7 +1397,7 @@ MainWindow:
                     size_hint_y: 1
                     size_hint_x: 0.2
 
-                    RelativePositionSwitch:
+                    DaqRelativePositionSwitch:
                         id: relative
                         configKey: 'relative'
                         root: root
@@ -1518,7 +1518,7 @@ MainWindow:
                     size_hint_y: 1
                     size_hint_x: 0.2
 
-                    RelativePositionSwitch:
+                    DaqRelativePositionSwitch:
                         id: g_relative
                         configKey: 'g_relative'
                         root: root
@@ -1569,6 +1569,35 @@ MainWindow:
         spacing: [0, dp(5)]
 
         BoxLayout:
+            id: relative_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 1
+                size_hint_x: 0.8
+                padding: [dp(15), 0, 0, 0]
+
+                Label:
+                    text: 'Display trail in overlay'
+                    halign: 'left'
+                    valign: 'middle'
+                    text_size: self.size
+            
+            AnchorLayout:
+                anchor_x: 'right'
+                anchor_y: 'center'
+                size_hint_y: 1
+                size_hint_x: 0.2
+
+                DaqRelativePositionSwitch:
+                    id: showtrail
+                    configKey: 'showtrail'
+                    root: None
+
+        BoxLayout:
             id: animallength_layout
             orientation: 'horizontal'
             size_hint_y: 0.1
@@ -1586,7 +1615,54 @@ MainWindow:
                 configKey: 'animallength'
                 root: root
                 size_hint_x: 0.6
+        
+        BoxLayout:
+            id: animallength_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
 
+            Label:
+                text: 'Max trail history (time step)'
+                halign: 'center'
+                valign: 'middle'
+                size_hint_x: 0.4
+                text_size: [dp(150), root.height]
+
+            DAQStageTextInput:
+                id: traillimit
+                configKey: 'traillimit'
+                root: root
+                size_hint_x: 0.6
+        
+        BoxLayout:
+            id: relative_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
+
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 1
+                size_hint_x: 0.8
+                padding: [dp(15), 0, 0, 0]
+
+                Label:
+                    text: 'Display 1mm guideline'
+                    halign: 'left'
+                    valign: 'middle'
+                    text_size: self.size
+            
+            AnchorLayout:
+                anchor_x: 'right'
+                anchor_y: 'center'
+                size_hint_y: 1
+                size_hint_x: 0.2
+
+                DaqRelativePositionSwitch:
+                    id: showguideline
+                    configKey: 'showguideline'
+                    root: None
         
 
 <DAQStageTextInput>:
