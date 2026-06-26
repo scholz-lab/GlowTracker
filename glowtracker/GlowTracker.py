@@ -4004,7 +4004,7 @@ class RuntimeControls(BoxLayout):
 
         bench_window = 30
         bench_n = 0
-        bench_detect = bench_move = bench_compute = bench_settle = bench_frame = 0.0
+        bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
         bench_start = time.perf_counter()
 
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
@@ -4025,8 +4025,9 @@ class RuntimeControls(BoxLayout):
             if prevImage is None:
                 prevImage = image
 
+            _t_fetch = time.perf_counter()
+
             # Extract worm position
-            _td0 = time.perf_counter()
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
 
@@ -4039,20 +4040,21 @@ class RuntimeControls(BoxLayout):
 
                 except ValueError as e:
                     ystep, xstep = 0, 0
-            _td1 = time.perf_counter()
+            _t_detect = time.perf_counter()
 
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep
             self.cmsOffset_y = -ystep
-            
+            _t_store = time.perf_counter()
+
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
             ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
             ystep *= scale
             xstep *= scale
+            _t_convert = time.perf_counter()
 
             # getting stage coord is slow so we will interpolate from movements
-            _tm0 = time.perf_counter()
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
@@ -4061,7 +4063,7 @@ class RuntimeControls(BoxLayout):
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 prevImage = image
-            _tm1 = time.perf_counter()
+            _t_move = time.perf_counter()
 
             max_travel_dist = max(abs(xstep), abs(ystep))
             settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist * 1e-3)
@@ -4071,21 +4073,24 @@ class RuntimeControls(BoxLayout):
             frame_wait = (wait_end - wait_begin) - settle_wait
 
             bench_n += 1
-            bench_detect += _td1 - _td0
-            bench_move += _tm1 - _tm0
-            bench_compute += _tm1 - tracking_frame_start_time
+            bench_fetch += _t_fetch - tracking_frame_start_time
+            bench_detect += _t_detect - _t_fetch
+            bench_store += _t_store - _t_detect
+            bench_convert += _t_convert - _t_store
+            bench_move += _t_move - _t_convert
             bench_settle += settle_wait
             bench_frame += frame_wait
             if bench_n >= bench_window:
                 elapsed = time.perf_counter() - bench_start
                 per = lambda s: s / bench_n * 1000.0
                 print(
-                    f'track: detect {per(bench_detect):.1f}ms | move {per(bench_move):.1f}ms | '
-                    f'compute {per(bench_compute):.1f}ms | settle {per(bench_settle):.1f}ms | '
+                    f'track: fetch {per(bench_fetch):.2f} | detect {per(bench_detect):.1f} | '
+                    f'store {per(bench_store):.2f} | convert {per(bench_convert):.2f} | '
+                    f'move {per(bench_move):.1f} | settle {per(bench_settle):.1f} | '
                     f'frame {per(bench_frame):.1f}ms | {bench_n / elapsed:.1f} fps'
                 )
                 bench_n = 0
-                bench_detect = bench_move = bench_compute = bench_settle = bench_frame = 0.0
+                bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
                 bench_start = time.perf_counter()
 
         # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
