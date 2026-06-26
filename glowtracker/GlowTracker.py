@@ -2373,12 +2373,8 @@ class ImageAcquisitionButton(ToggleButton):
             # Crop to tracking region
             image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
 
-        # Do we need to crop on tracking region? 
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         liveAnalysisData = imageAcquisitionManager.liveAnalysisData
-        # median/percentile/skew sort the whole array, which is very expensive on a
-        # full-resolution frame and holds the GIL. Compute them on a strided subsample
-        # (statistically identical) so this stays off the tracking critical path.
         sample = image[::4, ::4]
         with liveAnalysisData.lock:
             imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)

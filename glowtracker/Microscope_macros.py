@@ -1328,6 +1328,8 @@ class IntensitySweeper:
     def __init__(self):
         self.dataFrame = pd.DataFrame(columns=['pos_z', 'mean_intensity'])
         self.peakZ = None
+        self.zeroDerivZ = None
+        self.midZ = None
 
 
     def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> None:
@@ -1364,50 +1366,103 @@ class IntensitySweeper:
         self.dataFrame = df
 
 
-    def gradient(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Estimate intensity and its 1st/2nd derivatives from a local polynomial
+        (Savitzky-Golay) fit, evaluated at the original z samples. Differentiating
+        the fit keeps the derivatives - especially the 2nd - far less noisy than
+        finite-differencing the raw means.
+
+        Returns (pos_z, smoothedMeans, firstDeriv, secondDeriv).
+        """
         pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
-        diff = np.diff(means)
-        z_mid = (pos_z[:-1] + pos_z[1:]) / 2
+        n = len(means)
+        dz = (pos_z[-1] - pos_z[0]) / (n - 1) if n > 1 else 1.0
 
-        windowLength = min(11, len(diff))
+        polyorder = 3
+        windowLength = min(11, n)
         if windowLength % 2 == 0:
             windowLength -= 1
 
-        if windowLength >= 5:
-            smoothedDiff = savgol_filter(diff, windowLength, 2)
+        if windowLength >= polyorder + 2:
+            smoothedMeans = savgol_filter(means, windowLength, polyorder)
+            firstDeriv = savgol_filter(means, windowLength, polyorder, deriv=1, delta=dz)
+            secondDeriv = savgol_filter(means, windowLength, polyorder, deriv=2, delta=dz)
         else:
-            smoothedDiff = diff
+            # Too few points to fit a smooth polynomial; fall back to finite differences.
+            smoothedMeans = means
+            firstDeriv = np.gradient(means, pos_z)
+            secondDeriv = np.gradient(firstDeriv, pos_z)
 
-        return z_mid, diff, smoothedDiff
+        return pos_z, smoothedMeans, firstDeriv, secondDeriv
+
+
+    @staticmethod
+    def _zeroCrossing(x: np.ndarray, y: np.ndarray, refIndex: int) -> float | None:
+        """Linearly-interpolated zero crossing of y(x) closest to x[refIndex],
+        or None if y never changes sign."""
+        crossings = np.where(np.diff(np.sign(y)) != 0)[0]
+        if len(crossings) == 0:
+            return None
+
+        zeros = []
+        for i in crossings:
+            y0, y1 = y[i], y[i + 1]
+            t = 0.0 if y1 == y0 else -y0 / (y1 - y0)
+            zeros.append(x[i] + t * (x[i + 1] - x[i]))
+        zeros = np.array(zeros)
+
+        return float(zeros[np.argmin(np.abs(zeros - x[refIndex]))])
 
 
     def findGradientPeak(self) -> float:
-        z_mid, _, smoothedDiff = self.gradient()
-        self.peakZ = z_mid[np.argmax(np.abs(smoothedDiff))]
+        pos_z, _, firstDeriv, _ = self.derivatives()
+        self.peakZ = float(pos_z[np.argmax(firstDeriv)])
         return self.peakZ
 
 
     def genPlot(self) -> np.ndarray:
-        pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
+        pos_z, smoothedMeans, firstDeriv, secondDeriv = self.derivatives()
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
-        z_mid, diff, smoothedDiff = self.gradient()
-        self.findGradientPeak()
+        # Steepest positive slope (max of 1st derivative).
+        peakIndex = int(np.argmax(firstDeriv))
+        self.peakZ = float(pos_z[peakIndex])
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9))
+        # Intensity extremum: where the 1st derivative crosses zero, nearest the peak.
+        self.zeroDerivZ = self._zeroCrossing(pos_z, firstDeriv, peakIndex)
 
-        ax1.plot(pos_z, means, 'b.-', label='mean')
+        # Midpoint between the steepest-slope point and the derivative-zero point.
+        self.midZ = None if self.zeroDerivZ is None else (self.peakZ + self.zeroDerivZ) / 2
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 13), sharex=True)
+
+        def markLines(ax):
+            ax.axvline(self.peakZ, color='k', linestyle='--', label=f'max slope (z={self.peakZ:.4f})')
+            if self.zeroDerivZ is not None:
+                ax.axvline(self.zeroDerivZ, color='m', linestyle='--', label=f"d=0 (z={self.zeroDerivZ:.4f})")
+            if self.midZ is not None:
+                ax.axvline(self.midZ, color='c', linestyle='-.', label=f'midpoint (z={self.midZ:.4f})')
+
+        ax1.plot(pos_z, means, 'b.', label='mean')
+        ax1.plot(pos_z, smoothedMeans, 'b-', label='fit')
+        markLines(ax1)
         ax1.set_ylabel('Intensity (brightness)')
         ax1.legend()
 
-        ax2.plot(z_mid, diff, 'g.', label='d(intensity)')
-        ax2.plot(z_mid, smoothedDiff, 'r-', label='smoothed')
-        ax2.axvline(self.peakZ, color='k', linestyle='--', label=f'peak (z={self.peakZ:.4f})')
-        ax2.set_xlabel('Position Z')
+        ax2.plot(pos_z, firstDeriv, 'r-', label="d(intensity) (fit)")
+        ax2.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax2)
         ax2.set_ylabel('d(intensity)')
         ax2.legend()
+
+        ax3.plot(pos_z, secondDeriv, 'g-', label="d²(intensity) (fit)")
+        ax3.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax3)
+        ax3.set_xlabel('Position Z')
+        ax3.set_ylabel('d²(intensity)')
+        ax3.legend()
 
         fig.tight_layout()
 
