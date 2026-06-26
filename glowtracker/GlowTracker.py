@@ -1867,15 +1867,15 @@ class CenterRadiusFromThreePoints(BoxLayout):
         sweeper = macro.IntensitySweeper()
         try:
             sweeper.sweep(app.camera, app.stage, zStart, zEnd, numImages, dualColorMode, mainSide)
-            peakZ = sweeper.findGradientPeak()
+            scanZ = sweeper.findScanZ()
         except Exception as e:
             print(f'z-sweep failed: {e}')
             return None
 
-        peakZ = float(peakZ)
-        Clock.schedule_once(lambda dt, v=peakZ: setattr(self, 'scan_z', v))
-        print(f'z-sweep picked scan_z = {peakZ:.4f} mm')
-        return peakZ
+        scanZ = float(scanZ)
+        Clock.schedule_once(lambda dt, v=scanZ: setattr(self, 'scan_z', v))
+        print(f'z-sweep picked scan_z = {scanZ:.4f} mm')
+        return scanZ
 
     def run_plates(self, plates= None, record_duration= None):
         app = App.get_running_app()

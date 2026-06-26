@@ -1367,13 +1367,6 @@ class IntensitySweeper:
 
 
     def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Estimate intensity and its 1st/2nd derivatives from a local polynomial
-        (Savitzky-Golay) fit, evaluated at the original z samples. Differentiating
-        the fit keeps the derivatives - especially the 2nd - far less noisy than
-        finite-differencing the raw means.
-
-        Returns (pos_z, smoothedMeans, firstDeriv, secondDeriv).
-        """
         pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
@@ -1390,7 +1383,6 @@ class IntensitySweeper:
             firstDeriv = savgol_filter(means, windowLength, polyorder, deriv=1, delta=dz)
             secondDeriv = savgol_filter(means, windowLength, polyorder, deriv=2, delta=dz)
         else:
-            # Too few points to fit a smooth polynomial; fall back to finite differences.
             smoothedMeans = means
             firstDeriv = np.gradient(means, pos_z)
             secondDeriv = np.gradient(firstDeriv, pos_z)
@@ -1400,8 +1392,6 @@ class IntensitySweeper:
 
     @staticmethod
     def _zeroCrossing(x: np.ndarray, y: np.ndarray, refIndex: int) -> float | None:
-        """Linearly-interpolated zero crossing of y(x) closest to x[refIndex],
-        or None if y never changes sign."""
         crossings = np.where(np.diff(np.sign(y)) != 0)[0]
         if len(crossings) == 0:
             return None
@@ -1416,25 +1406,32 @@ class IntensitySweeper:
         return float(zeros[np.argmin(np.abs(zeros - x[refIndex]))])
 
 
-    def findGradientPeak(self) -> float:
+    def computeFocusEstimates(self) -> None:
         pos_z, _, firstDeriv, _ = self.derivatives()
-        self.peakZ = float(pos_z[np.argmax(firstDeriv)])
+
+        peakIndex = int(np.argmax(firstDeriv))
+        self.peakZ = float(pos_z[peakIndex])
+
+        self.zeroDerivZ = self._zeroCrossing(pos_z, firstDeriv, peakIndex)
+
+        self.midZ = None if self.zeroDerivZ is None else (self.peakZ + self.zeroDerivZ) / 2
+
+
+    def findGradientPeak(self) -> float:
+        self.computeFocusEstimates()
         return self.peakZ
+
+
+    def findScanZ(self) -> float:
+        self.computeFocusEstimates()
+        return self.peakZ if self.midZ is None else self.midZ
 
 
     def genPlot(self) -> np.ndarray:
         pos_z, smoothedMeans, firstDeriv, secondDeriv = self.derivatives()
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
-        # Steepest positive slope (max of 1st derivative).
-        peakIndex = int(np.argmax(firstDeriv))
-        self.peakZ = float(pos_z[peakIndex])
-
-        # Intensity extremum: where the 1st derivative crosses zero, nearest the peak.
-        self.zeroDerivZ = self._zeroCrossing(pos_z, firstDeriv, peakIndex)
-
-        # Midpoint between the steepest-slope point and the derivative-zero point.
-        self.midZ = None if self.zeroDerivZ is None else (self.peakZ + self.zeroDerivZ) / 2
+        self.computeFocusEstimates()
 
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 13), sharex=True)
 
