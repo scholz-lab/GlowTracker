@@ -1552,6 +1552,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_threshold = NumericProperty(150)
     scan_min_pixels = NumericProperty(50)
     scan_overlap = NumericProperty(0.4)
+    scan_recenter_iters = NumericProperty(3)
+    scan_center_tol = NumericProperty(15)
     scan_z_range = NumericProperty(1.0)
     scan_z_frames = NumericProperty(30)
     track_exposure = NumericProperty(5000)
@@ -1768,9 +1770,21 @@ class CenterRadiusFromThreePoints(BoxLayout):
                     if present:
                         print('Found a worm !!')
                         units = app.config.get('Calibration', 'step_units')
-                        dy, dx = macro.getStageDistances(
-                            np.array([-offset[1], offset[0]]), app.imageToStageMat)
-                        app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                        for _ in range(int(self.scan_recenter_iters)):
+                            dy, dx = macro.getStageDistances(
+                                np.array([-offset[1], offset[0]]), app.imageToStageMat)
+                            app.stage.move_rel((dx, dy, 0), unit= units, wait_until_idle= True)
+                            time.sleep(settle)
+                            ok2, img2 = app.camera.singleTake()
+                            if not ok2:
+                                break
+                            Clock.schedule_once(lambda dt, im=img2: setattr(app, 'image', im))
+                            present2, offset2 = macro.detect_worm(img2, threshold, min_pixels)
+                            if not present2:
+                                break
+                            offset = offset2
+                            if abs(offset[0]) <= self.scan_center_tol and abs(offset[1]) <= self.scan_center_tol:
+                                break
                         app.camera.ExposureTime.Value = float(self.track_exposure)
                         app.camera.Gain.Value = float(self.track_gain)
                         app.update_coordinates(isAsync= False)
@@ -5361,14 +5375,24 @@ class GlowTrackerApp(App):
     def get_fov_mm(self):
         if self.camera is None:
             return None
+        to_mm = 0.001 if self.config.get('Calibration', 'step_units') == 'um' else 1.0
+        W, H = self.camera.Width(), self.camera.Height()
+
+        imageToStageMat = getattr(self, 'imageToStageMat', None)
+        if imageToStageMat is not None:
+            corners = np.array([[-W/2, -H/2], [W/2, -H/2], [W/2, H/2], [-W/2, H/2]])
+            stage = np.array([
+                macro.getStageDistances(np.array([cy, cx]), imageToStageMat)
+                for cx, cy in corners
+            ])
+            fov_x = (stage[:, 1].max() - stage[:, 1].min()) * to_mm
+            fov_y = (stage[:, 0].max() - stage[:, 0].min()) * to_mm
+            return (fov_x, fov_y)
+
         pixelsize = self.config.getfloat('Camera', 'pixelsize')
         if pixelsize <= 0:
             return None
-        # pixelsize is stored in the calibration step units (mm or um) per pixel
-        to_mm = 0.001 if self.config.get('Calibration', 'step_units') == 'um' else 1.0
-        width_mm = pixelsize * self.camera.Width() * to_mm
-        height_mm = pixelsize * self.camera.Height() * to_mm
-        return (width_mm, height_mm)
+        return (pixelsize * W * to_mm, pixelsize * H * to_mm)
 
     def autofocus(self, follow_worm: bool = False, threshold: float = 150, min_pixels: int = 50) -> float | None:
         """moved from autofocus macro to have a shared autofocus function that can be called from both macro and settings menu.
