@@ -1548,10 +1548,12 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_z = NumericProperty(140)
     scan_exposure = NumericProperty(100000)
     scan_gain = NumericProperty(0)
+    scan_framerate = NumericProperty(30)
     scan_settle = NumericProperty(0.01)
     scan_threshold = NumericProperty(150)
     scan_min_pixels = NumericProperty(50)
-    scan_overlap = NumericProperty(0.4)
+    scan_overlap_w = NumericProperty(10)
+    scan_overlap_h = NumericProperty(10)
     scan_recenter_iters = NumericProperty(3)
     scan_center_tol = NumericProperty(15)
     scan_z_range = NumericProperty(1.0)
@@ -1708,7 +1710,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
         settle = self.scan_settle
         z = self.scan_z if z is None else z
         
-        tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov, overlap= self.scan_overlap)
+        tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov,
+                                          overlap_w= self.scan_overlap_w / 100.0,
+                                          overlap_h= self.scan_overlap_h / 100.0)
         tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
         if not tiles:
             print('no safe tiles to scan at this Z')
@@ -1821,16 +1825,17 @@ class CenterRadiusFromThreePoints(BoxLayout):
         t0 = time.perf_counter()
         while app.camera.IsGrabbing() and time.perf_counter() - t0 < 2.0:
             time.sleep(0.02)
-        app.camera.AcquisitionFrameRateEnable.Value = False
+        app.camera.AcquisitionFrameRateEnable.Value = True
+        app.camera.AcquisitionFrameRate.Value = float(self.scan_framerate)
         app.camera.ExposureTime.Value = float(self.scan_exposure)
         app.camera.Gain.Value = float(self.scan_gain)
 
     def _end_scan_camera(self, found):
         app = App.get_running_app()
         mrg = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
-        app.camera.AcquisitionFrameRate.Value = self._cam_saved['fr']
-        app.camera.AcquisitionFrameRateEnable.Value = self._cam_saved['fr_enable']
         if not found:
+            app.camera.AcquisitionFrameRate.Value = self._cam_saved['fr']
+            app.camera.AcquisitionFrameRateEnable.Value = self._cam_saved['fr_enable']
             app.camera.ExposureTime.Value = self._cam_saved['exposure']
             app.camera.Gain.Value = self._cam_saved['gain']
             Clock.schedule_once(lambda dt: setattr(mrg.liveviewbutton, 'state', self._cam_saved['live']))
@@ -2360,7 +2365,18 @@ class ImageAcquisitionButton(ToggleButton):
         # Compute live analysis data
         showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
         saveanalysistorecording = self.app.config.getboolean('LiveAnalysis', 'saveanalysistorecording')
-        if showliveanalysis or saveanalysistorecording:
+
+        trackingCheckbox = self.runtimeControls.trackingcheckbox
+        recordButton = self.runtimeControls.imageacquisitionmanager.recordbutton
+        isTracking = trackingCheckbox is not None and trackingCheckbox.state == 'down'
+        isRecording = recordButton is not None and recordButton.state == 'down'
+
+        if isTracking or isRecording:
+            computeLiveAnalysis = saveanalysistorecording
+        else:
+            computeLiveAnalysis = showliveanalysis or saveanalysistorecording
+
+        if computeLiveAnalysis:
             self.computeLiveAnalysisValues()
     
     

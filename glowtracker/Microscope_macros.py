@@ -101,11 +101,11 @@ def getStageDistances(deltaCoords, imageToStageMat):
     return stageDistances
 
 
-def generate_scan_tiles(center, radius, fov_w, fov_h, overlap=1.0, edge_margin=0.0):
+def generate_scan_tiles(center, radius, fov_w, fov_h, overlap_w=0.0, overlap_h=0.0, edge_margin=0.0):
     """scan a circle"""
     cx, cy = center
-    step_x = max(fov_w - overlap, 1e-3)
-    step_y = max(fov_h - overlap, 1e-3)
+    step_x = max(fov_w * (1.0 - overlap_w), 1e-3)
+    step_y = max(fov_h * (1.0 - overlap_h), 1e-3)
     keep_radius = max(radius - edge_margin, 0.0)
     n_x = int(np.ceil(radius / step_x))
     n_y = int(np.ceil(radius / step_y))

@@ -464,6 +464,14 @@ MainWindow:
                     on_focus: app.toggle_key_binding(self.focus)
                     on_text_validate: root.scan_gain = float(self.text)
                 Label:
+                    text: 'Scan framerate (fps)'
+                TextInput:
+                    text: str(root.scan_framerate)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_framerate = float(self.text)
+                Label:
                     text: 'Track exposure (us)'
                 TextInput:
                     text: str(root.track_exposure)
@@ -512,13 +520,21 @@ MainWindow:
                     on_focus: app.toggle_key_binding(self.focus)
                     on_text_validate: root.scan_min_pixels = int(self.text)
                 Label:
-                    text: 'Tile overlap (mm)'
+                    text: 'Tile overlap W (%)'
                 TextInput:
-                    text: str(root.scan_overlap)
+                    text: str(root.scan_overlap_w)
                     input_filter: 'float'
                     multiline: False
                     on_focus: app.toggle_key_binding(self.focus)
-                    on_text_validate: root.scan_overlap = float(self.text)
+                    on_text_validate: root.scan_overlap_w = float(self.text)
+                Label:
+                    text: 'Tile overlap H (%)'
+                TextInput:
+                    text: str(root.scan_overlap_h)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_overlap_h = float(self.text)
                 Label:
                     text: 'Z sweep range (mm)'
                 TextInput:
