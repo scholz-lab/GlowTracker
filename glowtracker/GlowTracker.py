@@ -1348,33 +1348,6 @@ class StageProgramWidget(BoxLayout):
         # Show the plot
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
 
-class ReversalWidget(BoxLayout):
-    """Widget that holds the parser and the function handler
-    """
-    closeCallback = ObjectProperty(None)
-
-
-    def __init__(self, **kwargs):
-        super(ReversalWidget, self).__init__(**kwargs)
-
-
-    def init(self):
-        
-        # Initialize 
-        self.app: GlowTrackerApp = App.get_running_app()
-        self.stage = self.app.stage
-        self.camera = self.app.camera
-        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
-
-    
-    def setCloseCallback( self, closeCallback: callable ) -> None:
-        """Set widget closing callback.
-
-        Args:
-            closeCallback (callable): the closing callback.
-        """        
-        self.closeCallback = closeCallback
-
 
 class DaqRelativePositionSwitch(Switch):
     configKey = StringProperty()
@@ -1405,7 +1378,70 @@ class DaqRelativePositionSwitch(Switch):
                 self.root.updateDaqStageProgram()
 
             return True
+
+
+class ReversalWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+
+
+    def __init__(self, **kwargs):
+        super(ReversalWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize 
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+
     
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
+    
+
+    def updateConfigChanged(self, configKey: str) -> None:
+
+        if configKey in ['showtrail', 'showguideline']:
+            # Redraw tracking overlay
+            self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
+
+
+class ReversalSwitch(Switch):
+    configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root ReversalWidget
+
+    def on_kv_post(self, *args):
+        self.app = App.get_running_app()
+        self.active = self.app.config.getboolean('DaqControl', self.configKey)
+
+    
+    @override
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'self.configKey',
+            and call root.updateConfigChanged()
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        if super(ReversalSwitch, self).on_touch_up(touch):
+
+            self.app.config.set('DaqControl', self.configKey, int(self.active))
+            self.app.config.write()
+
+            if self.root is not None:
+                self.root.updateConfigChanged(self.configKey)
+
+            return True
+
 
 class DAQStageTextInput(TextInput):
     configKey = StringProperty()
