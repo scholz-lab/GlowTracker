@@ -3128,8 +3128,9 @@ class ImageOverlay(FloatLayout):
                 # 
                 # Estimate velocity
                 # 
-                velocityHistoryPercent = 0.10
-                numHistVert = round(len(bodyVert) * velocityHistoryPercent)
+                velocityHistoryPercentage = self.app.config.getfloat('DaqControl', 'velocityhistorypercentage')
+
+                numHistVert = round(len(bodyVert) * velocityHistoryPercentage / 100)
                 # Slice from head to numHistVert
                 histVert = bodyVert[0:numHistVert]
 
@@ -4572,8 +4573,9 @@ class GlowTrackerApp(App):
             'g_relative': 'true',
             'showtrail': 'true',
             'traillimit' : '1000',
-            'animallength': '1000',
+            'animallength': '500',
             'reversalthresholdradian': '90',
+            'velocityhistorypercentage': '10',
             'showguideline': 'true',
         })
 

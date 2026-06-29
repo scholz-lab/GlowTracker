@@ -1655,6 +1655,25 @@ MainWindow:
                 size_hint_x: 0.6
         
         BoxLayout:
+            id: velocityhistorypercentage_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
+
+            Label:
+                text: 'Velocity history percentage (1-100%)'
+                halign: 'center'
+                valign: 'middle'
+                size_hint_x: 0.4
+                text_size: [dp(150), root.height]
+
+            DAQStageTextInput:
+                id: velocityhistorypercentage
+                configKey: 'velocityhistorypercentage'
+                root: root
+                size_hint_x: 0.6
+            
+        BoxLayout:
             id: relative_layout
             orientation: 'horizontal'
             size_hint_y: 0.1

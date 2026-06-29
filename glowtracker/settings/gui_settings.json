@@ -485,6 +485,13 @@
         "key": "reversalthresholdradian"
     },
     {
+        "type": "numeric",
+        "title": "Estimated Velocity history percentage (1-100%)",
+        "desc": "How much of the most recent history positions should be used to estimate the velocity.",
+        "section": "DaqControl",
+        "key": "velocityhistorypercentage"
+    },
+    {
         "type": "bool",
         "title": "Display 1mm guideline",
         "desc": "Display 1mm guideline in the tracking overlay.",
