@@ -335,27 +335,29 @@ class Stage:
 
 
     # move single axis
-    def move_y(self, step, unit = 'um', wait_until_idle = False) -> bool:
+    def move_y(self, step, unit = 'um', wait_until_idle = False, check_safety: bool = True) -> bool:
         """Move to a given relative location.
         Parameters:
                     step (tuple): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str): string units, commonly used
+                    check_safety (bool): when False, skip the keep-out check and its position read. Used in the tracking loop where Z is fixed.
         Returns:
                     bool: True if the move command was issued without fault, False otherwise.
         """
-        factor = self._UNIT_TO_MM.get(unit)
-        if factor is None:
-            print(f'move_y: unknown unit {unit!r}; refusing for safety')
-            return False
-        cur = self._safe_position_mm()
-        if cur is None:
-            print('move_y: cannot read current position; refusing')
-            return False
-        if self.axis_z is not None and len(cur) > 2:
-            target_y = cur[1] + float(step) * factor
-            if not self.is_safe(cur[0], target_y, cur[2]):
-                print(f'move_y refused: would enter keep-out (y={target_y:.1f}, z={cur[2]:.1f})')
+        if check_safety:
+            factor = self._UNIT_TO_MM.get(unit)
+            if factor is None:
+                print(f'move_y: unknown unit {unit!r}; refusing for safety')
                 return False
+            cur = self._safe_position_mm()
+            if cur is None:
+                print('move_y: cannot read current position; refusing')
+                return False
+            if self.axis_z is not None and len(cur) > 2:
+                target_y = cur[1] + float(step) * factor
+                if not self.is_safe(cur[0], target_y, cur[2]):
+                    print(f'move_y refused: would enter keep-out (y={target_y:.1f}, z={cur[2]:.1f})')
+                    return False
         try:
             if self.axis_y is not None:
                 self.axis_y.move_relative(float(step), units_from_literals(unit), wait_until_idle)

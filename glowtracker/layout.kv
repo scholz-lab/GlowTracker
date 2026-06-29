@@ -1,6 +1,7 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
 #:import Image kivy.uix.image.Image
+#:import ScanMinimap Scan_map.ScanMinimap
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -464,14 +465,6 @@ MainWindow:
                     on_focus: app.toggle_key_binding(self.focus)
                     on_text_validate: root.scan_gain = float(self.text)
                 Label:
-                    text: 'Scan framerate (fps)'
-                TextInput:
-                    text: str(root.scan_framerate)
-                    input_filter: 'float'
-                    multiline: False
-                    on_focus: app.toggle_key_binding(self.focus)
-                    on_text_validate: root.scan_framerate = float(self.text)
-                Label:
                     text: 'Track exposure (us)'
                 TextInput:
                     text: str(root.track_exposure)
@@ -487,6 +480,14 @@ MainWindow:
                     multiline: False
                     on_focus: app.toggle_key_binding(self.focus)
                     on_text_validate: root.track_gain = float(self.text)
+                Label:
+                    text: 'Track framerate (fps)'
+                TextInput:
+                    text: str(root.track_framerate)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_framerate = float(self.text)
                 Label:
                     text: 'Track timeout (s)'
                 TextInput:
@@ -570,11 +571,18 @@ MainWindow:
             value: root.scan_progress
             size_hint_y: None
             height: 20
-    Image:
-        id: scanpreview
+    BoxLayout:
+        orientation: 'vertical'
         size_hint_x: 0.65
-        fit_mode: 'contain'
-        texture: app.texture
+        spacing: 5
+        Image:
+            id: scanpreview
+            size_hint_y: 0.6
+            fit_mode: 'contain'
+            texture: app.texture
+        ScanMinimap:
+            id: minimap
+            size_hint_y: 0.4
 
 
 #################################
