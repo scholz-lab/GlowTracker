@@ -478,6 +478,13 @@
         "key": "animallength"
     },
     {
+        "type": "numeric",
+        "title": "Reversal threshold (radian)",
+        "desc": "Reversal angle threshold. The movement is considered reversal when estimated direction is greater or less than +,- threshold.",
+        "section": "DaqControl",
+        "key": "reversalthresholdradian"
+    },
+    {
         "type": "bool",
         "title": "Display 1mm guideline",
         "desc": "Display 1mm guideline in the tracking overlay.",

@@ -1371,9 +1371,6 @@ class DaqRelativePositionSwitch(Switch):
             self.app.config.set('DaqControl', self.configKey, int(self.active))
             self.app.config.write()
 
-            # Check 
-            value = self.app.config.getboolean('DaqControl', self.configKey)
-
             if self.root is not None:
                 self.root.updateDaqStageProgram()
 
@@ -3121,7 +3118,7 @@ class ImageOverlay(FloatLayout):
                 self._updateLineMesh(
                     mesh= self.tailToHeadMesh, 
                     vertices_in= tailToHeadVert, 
-                    color= Color(0.0, 0.0, 1.0, 0.75),
+                    color= Color(0.0, 1.0, 1.0, 0.75),
                     stageToImageMat= stageToImageMat,
                     displayedScale= displayedScale,
                     screenCenter= center,
@@ -3154,11 +3151,12 @@ class ImageOverlay(FloatLayout):
                 angle_degree = angle_radian * 180 / math.pi
 
                 # Todo: get from settings
-                reversalThresholdAngleRadian = 90
+                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')
+                
 
                 self.velocityMeshColor.rgba = [0, 1, 0, 0.75]
                 
-                if angle_degree > reversalThresholdAngleRadian or angle_degree < -reversalThresholdAngleRadian:
+                if angle_degree > reversalthresholdradian or angle_degree < -reversalthresholdradian:
                     self.velocityMeshColor.rgba = [1, 0, 0, 0.75]
                     print("Reversing!")
 
@@ -4575,6 +4573,7 @@ class GlowTrackerApp(App):
             'showtrail': 'true',
             'traillimit' : '1000',
             'animallength': '1000',
+            'reversalthresholdradian': '90',
             'showguideline': 'true',
         })
 

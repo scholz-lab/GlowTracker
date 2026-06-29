@@ -1617,7 +1617,7 @@ MainWindow:
                 size_hint_x: 0.6
         
         BoxLayout:
-            id: animallength_layout
+            id: traillimit_layout
             orientation: 'horizontal'
             size_hint_y: 0.1
             size_hint_x: 0.9
@@ -1632,6 +1632,25 @@ MainWindow:
             DAQStageTextInput:
                 id: traillimit
                 configKey: 'traillimit'
+                root: root
+                size_hint_x: 0.6
+        
+        BoxLayout:
+            id: reversalthresholdradian_layout
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            size_hint_x: 0.9
+
+            Label:
+                text: 'Reversal threshold angle (radian)'
+                halign: 'center'
+                valign: 'middle'
+                size_hint_x: 0.4
+                text_size: [dp(150), root.height]
+
+            DAQStageTextInput:
+                id: reversalthresholdradian
+                configKey: 'reversalthresholdradian'
                 root: root
                 size_hint_x: 0.6
         
