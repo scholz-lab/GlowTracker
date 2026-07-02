@@ -1181,11 +1181,11 @@ class StageProgramWidget(BoxLayout):
 
     # FourPoint params
     modeSpinner: Spinner
-    constanttextinput: DAQStageTextInput
-    p1x: DAQStageTextInput; p1y: DAQStageTextInput; p1v: DAQStageTextInput
-    p2x: DAQStageTextInput; p2y: DAQStageTextInput; p2v: DAQStageTextInput
-    p3x: DAQStageTextInput; p3y: DAQStageTextInput; p3v: DAQStageTextInput
-    p4x: DAQStageTextInput; p4y: DAQStageTextInput; p4v: DAQStageTextInput
+    constanttextinput: DaqTextInput
+    p1x: DaqTextInput; p1y: DaqTextInput; p1v: DaqTextInput
+    p2x: DaqTextInput; p2y: DaqTextInput; p2v: DaqTextInput
+    p3x: DaqTextInput; p3y: DaqTextInput; p3v: DaqTextInput
+    p4x: DaqTextInput; p4y: DaqTextInput; p4v: DaqTextInput
     relative: Switch
     exterior_layout: BoxLayout
     fourpoint_header_layout: BoxLayout
@@ -1196,11 +1196,11 @@ class StageProgramWidget(BoxLayout):
     relative_layout: BoxLayout
 
     # Gaussian Params
-    g_amplitude: DAQStageTextInput
-    g_x_mean: DAQStageTextInput
-    g_x_sigma: DAQStageTextInput
-    g_y_mean: DAQStageTextInput
-    g_y_sigma: DAQStageTextInput
+    g_amplitude: DaqTextInput
+    g_x_mean: DaqTextInput
+    g_x_sigma: DaqTextInput
+    g_y_mean: DaqTextInput
+    g_y_sigma: DaqTextInput
     g_relative: Switch
     g_amplitude_layout: BoxLayout
     g_x_mean_layout: BoxLayout
@@ -1233,7 +1233,7 @@ class StageProgramWidget(BoxLayout):
         self._tempContainer = BoxLayout()
         
         self.initModeWidget()
-        self.updateDaqStageProgram()
+        self.updateParam()
 
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1315,7 +1315,7 @@ class StageProgramWidget(BoxLayout):
         self.app.config.write()
 
 
-    def updateDaqStageProgram(self) -> None:
+    def updateParam(self) -> None:
 
         if self.mode == StageProgramMode.FourPoint:
             # Parse values
@@ -1361,7 +1361,7 @@ class DaqRelativePositionSwitch(Switch):
     @override
     def on_touch_up(self, touch): 
         """On switch touch up callback. Update the config value 'self.configKey',
-            and call root.updateDaqStageProgram()
+            and call root.updateParam()
 
         Args:
             touch (Touch): touch input data.
@@ -1372,7 +1372,7 @@ class DaqRelativePositionSwitch(Switch):
             self.app.config.write()
 
             if self.root is not None:
-                self.root.updateDaqStageProgram()
+                self.root.updateParam()
 
             return True
 
@@ -1381,6 +1381,10 @@ class ReversalWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
+    animallength : DaqTextInput
+    traillimit : DaqTextInput
+    reversalthresholdradian : DaqTextInput
+    velocityhistorypercentage : DaqTextInput
 
 
     def __init__(self, **kwargs):
@@ -1410,6 +1414,17 @@ class ReversalWidget(BoxLayout):
         if configKey in ['showtrail', 'showguideline']:
             # Redraw tracking overlay
             self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
+    
+
+    def updateParam(self) -> None:
+
+        self.app.daqControl.reversalDetector.animallength_mm = self.animallength.value * 1e-3
+        self.app.daqControl.reversalDetector.traillimit = self.traillimit.value
+        self.app.daqControl.reversalDetector.velocityHistoryPercentage = self.velocityhistorypercentage.value
+        self.app.daqControl.reversalDetector.reversalthresholdradian = self.reversalthresholdradian.value
+        
+        self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
+
 
 
 class ReversalSwitch(Switch):
@@ -1440,9 +1455,9 @@ class ReversalSwitch(Switch):
             return True
 
 
-class DAQStageTextInput(TextInput):
+class DaqTextInput(TextInput):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be StageProgramWidget
+    root = ObjectProperty()     # Reference to root, which must have a updateParam() function.
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
@@ -1485,7 +1500,7 @@ class DAQStageTextInput(TextInput):
         if self._validate():
             self.app.config.set('DaqControl', self.configKey, self.value)
             self.app.config.write()
-            self.root.updateDaqStageProgram()
+            self.root.updateParam()
         
         else:
             self.text = str(self.value)
@@ -2451,7 +2466,13 @@ class RecordButton(ImageAcquisitionButton):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
-            self.app.daqControl.update(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, stagePosition= self.app.coords)
+            self.app.daqControl.update(
+                frameNum= self.runtimeControls.framecounter.value, 
+                frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, 
+                stagePosition= self.app.coords, 
+                posHist= self.runtimeControls.posHist
+            )
+        
 
         super().receiveImageCallback()
     
@@ -3151,9 +3172,7 @@ class ImageOverlay(FloatLayout):
                 angle_radian = macro.computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
                 angle_degree = angle_radian * 180 / math.pi
 
-                # Todo: get from settings
-                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')
-                
+                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')                
 
                 self.velocityMeshColor.rgba = [0, 1, 0, 0.75]
                 
@@ -4333,6 +4352,12 @@ class DAQConnectionButton(ToggleButton):
 
         # Update DAQStageProgram variables
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
+
+        # Update DAQReversalDetection variables
+        self.app.daqControl.reversalDetector.animallength_mm = app.config.getfloat('DaqControl', 'animallength')
+        self.app.daqControl.reversalDetector.traillimit = app.config.getfloat('DaqControl', 'traillimit')
+        self.app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
+        self.app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
 
         return
 

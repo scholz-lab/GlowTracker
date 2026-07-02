@@ -12,7 +12,7 @@ import math
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
-
+from Microscope_macros import computeAngleBetweenTwo2DVecs
 
 class DAQMode(Enum):
     Off = 'Off'
@@ -72,6 +72,7 @@ class DAQControl():
         self.daqMode: DAQMode = DAQMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
+        self.reversalDetector: ReversalDetector = ReversalDetector()
     
 
     def isConnected(self) -> bool:
@@ -154,7 +155,7 @@ class DAQControl():
             raise ValueError(f"Failed to parse DAQ script text: {e}")
     
 
-    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = []) -> None:
+    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = [], posHist: np.ndarray = None) -> None:
         if self.daqMode == DAQMode.Off:
             return
         
@@ -163,6 +164,9 @@ class DAQControl():
         
         elif self.daqMode == DAQMode.StageProgram:
             self.updateStageProgram(stagePosition)
+        
+        elif self.daqMode == DAQMode.Reversal:
+            self.updateReversalDetection(posHist)
 
 
     def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
@@ -220,6 +224,19 @@ class DAQControl():
         vol = self.daqStageProgram.getValue(stagePosition[0], stagePosition[1])
         
         self._executeCommand(frameCommand= ['on', vol])
+    
+
+    def updateReversalDetection(self, posHist: np.ndarray) -> None:
+        # TODO: Gather unit from the stage calibration setting
+        # Convert posHist to numpy and discard the z-axis position
+        #   and update unit from mm to meter.
+        trail = np.array(posHist)[:, (0, 1)] * 1e3
+        isReversing = self.reversalDetector.detectReversal(trail= trail)
+
+        if isReversing:
+            pass
+        else:
+            pass
     
 
     def _executeCommand(self, frameCommand: list) -> None:
@@ -514,11 +531,69 @@ class DAQStageProgram():
         return imageArr
 
 
-class Reversal():
+class ReversalDetector():
     
     def __init__(self):
-        pass
+        self.isReversing: bool = False
+        self.animallength_mm: float = 0
+        self.traillimit: float = 0
+        self.velocityHistoryPercentage: float = 0
+        self.reversalthresholdradian: float = 0
 
     
-    def detectReversal(self) -> bool:
-        pass
+    def detectReversal(self, trail: np.ndarray) -> bool:
+        
+        # Get last M (trial limit) vertices and 
+        #   apply transformation to each row vertex
+        croppedTrail = trail[-self.traillimit::, :]
+
+        # Greedy sums up until equal or exceed animal's length
+        #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
+        revTrail = croppedTrail[::-1]
+        sumLength = 0
+        
+        tailIndex = 0
+        
+        for i in range(1, len(revTrail)):
+            length = np.linalg.norm(revTrail[i-1] - revTrail[i])
+            sumLength = sumLength + length
+            tailIndex = i
+
+            if sumLength >= self.animallength_mm:
+                break
+        
+        # Copy points from head to tail
+        # We now have bodyVert: Bx2 (B:= body length), rows of point from head to tail
+        bodyVert = revTrail[0:tailIndex+1:1]
+
+        # Atleast two vertices
+        if len(bodyVert) > 1:
+
+            # 
+            # Estimate velocity
+            # 
+            numHistVert = round(len(bodyVert) * self.velocityHistoryPercentage / 100)
+            # Slice from head to numHistVert
+            histVert = bodyVert[0:numHistVert]
+
+            # Compute derivative between each pair of vertex. Assume equal delta time.
+            velocities = histVert[0:-1] - histVert[1:]
+
+            # Uniform weighted average
+            velocity = np.sum(velocities, axis= 0) / len(velocities)
+
+            # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
+            #   If yes, reversal -> red color.
+            #   If not, non-reversal -> green color.
+
+            vecTailToHead = bodyVert[0] - bodyVert[-1]
+            angle_radian = computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
+            angle_degree = angle_radian * 180 / math.pi
+
+            if angle_degree > self.reversalthresholdradian or angle_degree < -self.reversalthresholdradian:
+                self.isReversing = True
+
+            else:
+                self.isReversing = False
+        
+        return self.isReversing
