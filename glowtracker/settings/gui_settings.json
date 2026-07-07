@@ -492,6 +492,20 @@
         "key": "velocityhistorypercentage"
     },
     {
+        "type": "numeric",
+        "title": "Reversal voltage",
+        "desc": "Output voltage when detected reversal stage.",
+        "section": "DaqControl",
+        "key": "reversalvoltage"
+    },
+    {
+        "type": "numeric",
+        "title": "Forward voltage",
+        "desc": "Output voltage when detected forward stage.",
+        "section": "DaqControl",
+        "key": "forwardvoltage"
+    },
+    {
         "type": "bool",
         "title": "Display 1mm guideline",
         "desc": "Display 1mm guideline in the tracking overlay.",

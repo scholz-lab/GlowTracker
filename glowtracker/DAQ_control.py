@@ -223,8 +223,12 @@ class DAQControl():
         #   We want to evalute this
         vol = self.daqStageProgram.getValue(stagePosition[0], stagePosition[1])
         
-        self._executeCommand(frameCommand= ['on', vol])
-    
+        if math.isclose(vol, 0):
+            self._executeCommand(frameCommand= ['off'])
+
+        else:
+            self._executeCommand(frameCommand= ['on', vol])
+            
 
     def updateReversalDetection(self, posHist: np.ndarray) -> None:
         # TODO: Gather unit from the stage calibration setting
@@ -233,10 +237,13 @@ class DAQControl():
         trail = np.array(posHist)[:, (0, 1)] * 1e3
         isReversing = self.reversalDetector.detectReversal(trail= trail)
 
-        if isReversing:
-            pass
+        vol = self.reversalDetector.reversalVoltage if isReversing else self.reversalDetector.forwardVoltage
+
+        if math.isclose(vol, 0):
+            self._executeCommand(frameCommand= ['off'])
+
         else:
-            pass
+            self._executeCommand(frameCommand= ['on', vol])
     
 
     def _executeCommand(self, frameCommand: list) -> None:
@@ -250,6 +257,7 @@ class DAQControl():
             
             vol = frameCommand[1]
 
+            # TODO: This should be in the setting to support High-voltage DAQ
             # Clip to 0, 4.95
             vol = max( min( vol, 4.95 ), 0 )
 
@@ -397,6 +405,7 @@ class DAQStageProgram():
                     )
                 )
                 
+        # TODO: This should be in the setting to support High-voltage DAQ
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
 
@@ -535,17 +544,19 @@ class ReversalDetector():
     
     def __init__(self):
         self.isReversing: bool = False
-        self.animallength_mm: float = 0
-        self.traillimit: float = 0
+        self.animalLength_mm: float = 0
+        self.trailLimit: float = 0
         self.velocityHistoryPercentage: float = 0
-        self.reversalthresholdradian: float = 0
+        self.reversalThresholdRadian: float = 0
+        self.reversalVoltage: float = 0
+        self.forwardVoltage: float = 0
 
     
     def detectReversal(self, trail: np.ndarray) -> bool:
         
         # Get last M (trial limit) vertices and 
         #   apply transformation to each row vertex
-        croppedTrail = trail[-self.traillimit::, :]
+        croppedTrail = trail[-self.trailLimit::, :]
 
         # Greedy sums up until equal or exceed animal's length
         #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
@@ -559,7 +570,7 @@ class ReversalDetector():
             sumLength = sumLength + length
             tailIndex = i
 
-            if sumLength >= self.animallength_mm:
+            if sumLength >= self.animalLength_mm:
                 break
         
         # Copy points from head to tail
@@ -590,7 +601,7 @@ class ReversalDetector():
             angle_radian = computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
             angle_degree = angle_radian * 180 / math.pi
 
-            if angle_degree > self.reversalthresholdradian or angle_degree < -self.reversalthresholdradian:
+            if angle_degree > self.reversalThresholdRadian or angle_degree < -self.reversalThresholdRadian:
                 self.isReversing = True
 
             else:

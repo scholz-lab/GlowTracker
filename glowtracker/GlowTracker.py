@@ -1385,6 +1385,8 @@ class ReversalWidget(BoxLayout):
     traillimit : DaqTextInput
     reversalthresholdradian : DaqTextInput
     velocityhistorypercentage : DaqTextInput
+    reversalvoltage : DaqTextInput
+    forwardvoltage : DaqTextInput
 
 
     def __init__(self, **kwargs):
@@ -1418,13 +1420,14 @@ class ReversalWidget(BoxLayout):
 
     def updateParam(self) -> None:
 
-        self.app.daqControl.reversalDetector.animallength_mm = self.animallength.value * 1e-3
-        self.app.daqControl.reversalDetector.traillimit = self.traillimit.value
+        self.app.daqControl.reversalDetector.animalLength_mm = self.animallength.value * 1e-3
+        self.app.daqControl.reversalDetector.trailLimit = self.traillimit.value
         self.app.daqControl.reversalDetector.velocityHistoryPercentage = self.velocityhistorypercentage.value
-        self.app.daqControl.reversalDetector.reversalthresholdradian = self.reversalthresholdradian.value
+        self.app.daqControl.reversalDetector.reversalThresholdRadian = self.reversalthresholdradian.value
+        self.app.daqControl.reversalDetector.reversalVoltage = self.reversalvoltage.value
+        self.app.daqControl.reversalDetector.forwardVoltage = self.forwardvoltage.value
         
         self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
-
 
 
 class ReversalSwitch(Switch):
@@ -4354,8 +4357,8 @@ class DAQConnectionButton(ToggleButton):
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
         # Update DAQReversalDetection variables
-        self.app.daqControl.reversalDetector.animallength_mm = app.config.getfloat('DaqControl', 'animallength')
-        self.app.daqControl.reversalDetector.traillimit = app.config.getfloat('DaqControl', 'traillimit')
+        self.app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
+        self.app.daqControl.reversalDetector.trailLimit = app.config.getfloat('DaqControl', 'traillimit')
         self.app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
         self.app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
 
@@ -4601,6 +4604,8 @@ class GlowTrackerApp(App):
             'animallength': '500',
             'reversalthresholdradian': '90',
             'velocityhistorypercentage': '10',
+            'reversalvoltage' : '5',
+            'forwardvoltage' : '0',
             'showguideline': 'true',
         })
 

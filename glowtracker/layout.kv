@@ -1566,6 +1566,8 @@ MainWindow:
     traillimit: traillimit
     reversalthresholdradian: reversalthresholdradian
     velocityhistorypercentage: velocityhistorypercentage
+    reversalvoltage: reversalvoltage
+    forwardvoltage: forwardvoltage
 
     BoxLayout:
         orientation: 'horizontal'
@@ -1679,6 +1681,44 @@ MainWindow:
                 DaqTextInput:
                     id: velocityhistorypercentage
                     configKey: 'velocityhistorypercentage'
+                    root: root
+                    size_hint_x: 0.6
+            
+            BoxLayout:
+                id: reversalvoltage_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Reversal voltage'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: reversalvoltage
+                    configKey: 'reversalvoltage'
+                    root: root
+                    size_hint_x: 0.6
+                
+            BoxLayout:
+                id: forwardvoltage_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Forward voltage'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: forwardvoltage
+                    configKey: 'forwardvoltage'
                     root: root
                     size_hint_x: 0.6
                 
