@@ -4825,7 +4825,9 @@ class GlowTrackerApp(App):
     def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
-            self.coords = self.stage.get_position(isAsync= isAsync)
+            pos = self.stage.get_position(isAsync= isAsync)
+            if pos is not None:
+                self.coords = pos
 
 
 
