@@ -2847,15 +2847,19 @@ class ImageOverlay(FloatLayout):
             # Convert posHist to numpy and discard the z-axis position
             #   and update unit from mm to meter.
             # TODO: Gather unit from the stage calibration setting
-            trail = np.array(posHist)[:, (0, 1)] * 1e3
+            # posHist is in mm
+            # Convert to meter = 1e-3
+            trail = np.array(posHist)[:, (0, 1)] * 1e-3
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
-            # Debug
-            a = np.arange(start= 0, stop=10, step= 0.1, dtype= np.float32) * 1e3
-            trail = np.column_stack([a, a])
+            # Debug 3mm long line
+            x = -np.arange(start= 0, stop=3e-3, step= 1e-5, dtype= np.float32)
+            y = np.zeros(shape= x.shape)
+            y[-1] = 1e-4
+            trail = np.column_stack([x, y])
 
         if doClear:
             self.clearTrackingOverlay()
@@ -2942,8 +2946,18 @@ class ImageOverlay(FloatLayout):
         imageSize = previewImage.texture_size
         displayedScale = normImageSize[0] / imageSize[0]
 
-        imageToStageMat_XY = macro.swapMatXYOrder(self.app.imageToStageMat)
-        stageToImageMat = np.linalg.inv(imageToStageMat_XY)
+        
+        # px -> meter
+        imageToStageRotOnlyMat_XY = macro.swapMatXYOrder(self.app.imageToStageRotMat)
+        # meter -> px
+        stageToImageRotOnlyMat = np.linalg.inv(imageToStageRotOnlyMat_XY)
+
+        # Get pixelsize (um/px)
+        # TODO: Get unit from calibration
+        pixelsize_um = self.app.config.getfloat('Camera', 'pixelsize')
+        pixelsize = pixelsize_um * 1e-6
+
+        stageToImageMat = stageToImageRotOnlyMat / pixelsize
 
         # 
         # Check if needs to draw tracking mask
@@ -3051,13 +3065,8 @@ class ImageOverlay(FloatLayout):
             # Draw a guide-line. 1mm from center to right. This position in meter.
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
-            # Get pixelsize (um/px)
-            pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
-            #   Convert it to meter
-            pixelsize_meter = pixelsize * 1e-6
-
             # # Convert guideline to image space
-            guideline_imageSpace = guideline / pixelsize_meter
+            guideline_imageSpace = guideline / pixelsize
 
             self._updateLineMesh(
                 mesh= self.guidelineMesh, 
@@ -3091,7 +3100,7 @@ class ImageOverlay(FloatLayout):
             
             # We have trail positions in mm 
             animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
-            animallength_mm = animallength_um * 1e-3
+            animallength = animallength_um * 1e-6
 
             # Get last M (trial limit) vertices and 
             #   apply transformation to each row vertex
@@ -3111,7 +3120,7 @@ class ImageOverlay(FloatLayout):
                 sumLength = sumLength + length
                 tailIndex = i
 
-                if sumLength >= animallength_mm:
+                if sumLength >= animallength:
                     break
             
             # Copy points from head to tail
@@ -3164,7 +3173,7 @@ class ImageOverlay(FloatLayout):
                 # Uniform weighted average
                 velocity = np.sum(velocities, axis= 0) / len(velocities)
 
-                # Draw the velocity
+                # Draw the velocity line as 100-pixel long line
                 velocityVert = np.array([[0,0], velocity * 100 / np.linalg.norm(velocity)])
 
                 # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
@@ -3187,10 +3196,10 @@ class ImageOverlay(FloatLayout):
                     mesh= self.velocityMesh, 
                     vertices_in= velocityVert, 
                     color= self.velocityMeshColor,
-                    stageToImageMat= stageToImageMat,
+                    stageToImageMat= np.identity(n= 2),
                     displayedScale= displayedScale,
                     screenCenter= center,
-                    isCenterAtFirstVertex= False
+                    isCenterAtFirstVertex= True
                 )
 
 
@@ -4357,10 +4366,10 @@ class DAQConnectionButton(ToggleButton):
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
         # Update DAQReversalDetection variables
-        self.app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
-        self.app.daqControl.reversalDetector.trailLimit = app.config.getfloat('DaqControl', 'traillimit')
-        self.app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
-        self.app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
+        app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
+        app.daqControl.reversalDetector.trailLimit = app.config.getfloat('DaqControl', 'traillimit')
+        app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
+        app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
 
         return
 
