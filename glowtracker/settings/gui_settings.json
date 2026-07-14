@@ -464,6 +464,13 @@
         "key": "showtrail"
     },
     {
+        "type": "bool",
+        "title": "Display reversal detection indicators",
+        "desc": "Display body segment, head-to-tail line, and estimated direction in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showreversalindicator"
+    },
+    {
         "type": "numeric",
         "title": "Trail limit",
         "desc": "Maximum trail history length",

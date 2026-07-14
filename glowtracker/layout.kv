@@ -1607,6 +1607,35 @@ MainWindow:
                         id: showtrail
                         configKey: 'showtrail'
                         root: root
+            
+            BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Display reversal detection indicators'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    ReversalSwitch:
+                        id: showreversalindicator
+                        configKey: 'showreversalindicator'
+                        root: root
 
             BoxLayout:
                 id: animallength_layout

@@ -1413,7 +1413,7 @@ class ReversalWidget(BoxLayout):
 
     def updateConfigChanged(self, configKey: str) -> None:
 
-        if configKey in ['showtrail', 'showguideline']:
+        if configKey in ['showtrail', 'showguideline', 'showreversalindicator']:
             # Redraw tracking overlay
             self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
     
@@ -3065,7 +3065,7 @@ class ImageOverlay(FloatLayout):
             # Draw a guide-line. 1mm from center to right. This position in meter.
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
-            # # Convert guideline to image space
+            # Convert guideline to image space
             guideline_imageSpace = guideline / pixelsize
 
             self._updateLineMesh(
@@ -3079,7 +3079,7 @@ class ImageOverlay(FloatLayout):
             )
 
         # 
-        #   Draw tracking trail if provided
+        #   Draw tracking trail
         # 
         showtrail = self.app.config.getboolean('DaqControl', 'showtrail') 
         if showtrail:
@@ -3093,7 +3093,12 @@ class ImageOverlay(FloatLayout):
                 screenCenter= center,
                 isCenterAtFirstVertex= False
             )
-        
+            
+        # 
+        #   Draw reversal detection indicators
+        # 
+        showreversalindicator = self.app.config.getboolean('DaqControl', 'showreversalindicator') 
+        if showreversalindicator:
             # 
             # Draw Body line
             # 
@@ -4609,6 +4614,7 @@ class GlowTrackerApp(App):
             'g_y_sigma': 0,
             'g_relative': 'true',
             'showtrail': 'true',
+            'showreversalindicator': 'true',
             'traillimit' : '1000',
             'animallength': '500',
             'reversalthresholdradian': '90',
@@ -4617,7 +4623,6 @@ class GlowTrackerApp(App):
             'forwardvoltage' : '0',
             'showguideline': 'true',
         })
-
         
         config.setdefaults('Developer', {
             'showfps': 'false'
