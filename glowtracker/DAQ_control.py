@@ -73,6 +73,7 @@ class DAQControl():
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
         self.reversalDetector: ReversalDetector = ReversalDetector()
+        self.currentVoltage: float = 0
     
 
     def isConnected(self) -> bool:
@@ -101,13 +102,17 @@ class DAQControl():
 
         # Set to factory default
         self.daq.setDefaults(SetToFactoryDefaults= True)
+        
         # Manually set DAC0 to 0 (off)
         dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
         dac0Command = u3.DAC0_8(dac0Val)
         self.daq.getFeedback(dac0Command)
+
         # Clean running command queue
         self.sequnceDictRunning.clear()
+        
         self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
+        self.currentVoltage = 0
 
         
     def parseTextScript(self, text: str) -> None:
@@ -267,7 +272,7 @@ class DAQControl():
             dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
             dac0Command = u3.DAC0_8(dac0Val)
             self.daq.getFeedback(dac0Command)
-            
+            self.currentVoltage = vol
         
         elif command == 'off':
             
@@ -277,6 +282,7 @@ class DAQControl():
             dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
             dac0Command = u3.DAC0_8(dac0Val)
             self.daq.getFeedback(dac0Command)
+            self.currentVoltage = 0
 
 
 @dataclass

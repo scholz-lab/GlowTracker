@@ -2305,7 +2305,7 @@ class RecordButton(ImageAcquisitionButton):
         coordinateFile.write(f'area {area}\n')
         
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95\n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95, daqVol\n")
 
         return coordinateFile
 
@@ -2413,7 +2413,8 @@ class RecordButton(ImageAcquisitionButton):
 {self.parent.liveAnalysisData.medianBrightness} \
 {self.parent.liveAnalysisData.skewness} \
 {self.parent.liveAnalysisData.percentile_5} \
-{self.parent.liveAnalysisData.percentile_95} \n")
+{self.parent.liveAnalysisData.percentile_95} \
+{self.app.daqControl.currentVoltage}\n")
 
             #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
             except ValueError as e:
