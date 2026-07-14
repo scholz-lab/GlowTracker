@@ -1421,7 +1421,7 @@ class ReversalWidget(BoxLayout):
     def updateParam(self) -> None:
 
         self.app.daqControl.reversalDetector.animalLength_mm = self.animallength.value * 1e-3
-        self.app.daqControl.reversalDetector.trailLimit = self.traillimit.value
+        self.app.daqControl.reversalDetector.trailLimit = int(self.traillimit.value)
         self.app.daqControl.reversalDetector.velocityHistoryPercentage = self.velocityhistorypercentage.value
         self.app.daqControl.reversalDetector.reversalThresholdRadian = self.reversalthresholdradian.value
         self.app.daqControl.reversalDetector.reversalVoltage = self.reversalvoltage.value
@@ -2857,10 +2857,14 @@ class ImageOverlay(FloatLayout):
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
             # Debug 3mm long line
-            x = -np.arange(start= 0, stop=3e-3, step= 1e-5, dtype= np.float32)
+            x = np.arange(start= 0, stop=3e-3, step= 1e-5, dtype= np.float32)
             y = np.zeros(shape= x.shape)
-            y[-1] = 1e-4
+
+            # y[-1] = 1e-4
+            # trail = np.column_stack([x, y])
+
             trail = np.column_stack([x, y])
+
 
         if doClear:
             self.clearTrackingOverlay()
@@ -3131,7 +3135,7 @@ class ImageOverlay(FloatLayout):
             
             # Copy points from head to tail
             bodyVert = revTrail[0:tailIndex+1:1]
-            print(f'bodylength: {sumLength:.4f}, verts: {len(bodyVert)}')
+            # print(f'bodylength: {sumLength:.4f} meter, verts: {len(bodyVert)}')
 
             # Atleast two vertices
             if len(bodyVert) > 1:
@@ -3179,8 +3183,8 @@ class ImageOverlay(FloatLayout):
                 # Uniform weighted average
                 velocity = np.sum(velocities, axis= 0) / len(velocities)
 
-                # Draw the velocity line as 100-pixel long line
-                velocityVert = np.array([[0,0], velocity * 100 / np.linalg.norm(velocity)])
+                # Draw the directional line as 100 pixel long
+                directionVert = np.array([[0,0], velocity / np.linalg.norm(velocity)]) * 100 * pixelsize
 
                 # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
                 #   If yes, reversal -> red color.
@@ -3200,9 +3204,9 @@ class ImageOverlay(FloatLayout):
 
                 self._updateLineMesh(
                     mesh= self.velocityMesh, 
-                    vertices_in= velocityVert, 
+                    vertices_in= directionVert, 
                     color= self.velocityMeshColor,
-                    stageToImageMat= np.identity(n= 2),
+                    stageToImageMat= stageToImageMat,
                     displayedScale= displayedScale,
                     screenCenter= center,
                     isCenterAtFirstVertex= True
@@ -4373,7 +4377,7 @@ class DAQConnectionButton(ToggleButton):
 
         # Update DAQReversalDetection variables
         app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
-        app.daqControl.reversalDetector.trailLimit = app.config.getfloat('DaqControl', 'traillimit')
+        app.daqControl.reversalDetector.trailLimit = app.config.getint('DaqControl', 'traillimit')
         app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
         app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
 
@@ -4617,7 +4621,7 @@ class GlowTrackerApp(App):
             'showtrail': 'true',
             'showreversalindicator': 'true',
             'traillimit' : '1000',
-            'animallength': '500',
+            'animallength': '1000',
             'reversalthresholdradian': '90',
             'velocityhistorypercentage': '10',
             'reversalvoltage' : '5',

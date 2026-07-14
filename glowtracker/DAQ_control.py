@@ -551,7 +551,7 @@ class ReversalDetector():
     def __init__(self):
         self.isReversing: bool = False
         self.animalLength_mm: float = 0
-        self.trailLimit: float = 0
+        self.trailLimit: int = 0
         self.velocityHistoryPercentage: float = 0
         self.reversalThresholdRadian: float = 0
         self.reversalVoltage: float = 0
