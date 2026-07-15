@@ -24,7 +24,7 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Rectangle
+from kivy.graphics import Color, Line, Ellipse, Mesh
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -69,7 +69,7 @@ from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
-from zaber_motion.units import Units
+from zaber_motion.units import Units, units_from_literals
 from zaber_motion.unit_table import UnitTable
 from pypylon import pylon
 import platformdirs 
@@ -77,11 +77,12 @@ import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
+from copy import deepcopy
 
 # 
 # Own classes
 # 
-from Zaber_control import Stage, AxisEnum
+from Zaber_control import Stage, AxisEnum, Vec3
 import Microscope_macros as macro
 from Microscope_macros import Vertex2D
 import Basler_control as basler
@@ -1006,8 +1007,9 @@ class DAQControlTabPanel(TabbedPanel):
     
     
     def init(self):
-        self.ids.daqsequencer.init()
-        self.ids.daqstageprogram.init()
+        self.ids.sequencerwidget.init()
+        self.ids.stageprogramwidget.init()
+        self.ids.reversalwidget.init()
     
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1017,17 +1019,18 @@ class DAQControlTabPanel(TabbedPanel):
             closeCallback (callable): the closing callback event.
         """        
         self.closeCallback = closeCallback
-        self.ids.daqsequencer.setCloseCallback( closeCallback )
-        self.ids.daqstageprogram.setCloseCallback( closeCallback )
+        self.ids.sequencerwidget.setCloseCallback( closeCallback )
+        self.ids.stageprogramwidget.setCloseCallback( closeCallback )
+        self.ids.reversalwidget.setCloseCallback( closeCallback )
 
 
-class DAQControlWidget(BoxLayout):
+class SequencerWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
 
     def __init__(self, **kwargs):
-        super(DAQControlWidget, self).__init__(**kwargs)
+        super(SequencerWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1055,7 +1058,7 @@ class DAQControlWidget(BoxLayout):
         self.closeCallback = closeCallback
 
 
-    def openLoadDAQControlWidget(self):
+    def openLoadSequencerWidget(self):
         """Open a popup to load the script.
         """
         
@@ -1170,7 +1173,7 @@ class DAQControlWidget(BoxLayout):
             return None
     
 
-class DAQStageProgramWidget(BoxLayout):
+class StageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
     """
     closeCallback = ObjectProperty(None)
@@ -1178,11 +1181,11 @@ class DAQStageProgramWidget(BoxLayout):
 
     # FourPoint params
     modeSpinner: Spinner
-    constanttextinput: DAQStageTextInput
-    p1x: DAQStageTextInput; p1y: DAQStageTextInput; p1v: DAQStageTextInput
-    p2x: DAQStageTextInput; p2y: DAQStageTextInput; p2v: DAQStageTextInput
-    p3x: DAQStageTextInput; p3y: DAQStageTextInput; p3v: DAQStageTextInput
-    p4x: DAQStageTextInput; p4y: DAQStageTextInput; p4v: DAQStageTextInput
+    constanttextinput: DaqTextInput
+    p1x: DaqTextInput; p1y: DaqTextInput; p1v: DaqTextInput
+    p2x: DaqTextInput; p2y: DaqTextInput; p2v: DaqTextInput
+    p3x: DaqTextInput; p3y: DaqTextInput; p3v: DaqTextInput
+    p4x: DaqTextInput; p4y: DaqTextInput; p4v: DaqTextInput
     relative: Switch
     exterior_layout: BoxLayout
     fourpoint_header_layout: BoxLayout
@@ -1193,11 +1196,11 @@ class DAQStageProgramWidget(BoxLayout):
     relative_layout: BoxLayout
 
     # Gaussian Params
-    g_amplitude: DAQStageTextInput
-    g_x_mean: DAQStageTextInput
-    g_x_sigma: DAQStageTextInput
-    g_y_mean: DAQStageTextInput
-    g_y_sigma: DAQStageTextInput
+    g_amplitude: DaqTextInput
+    g_x_mean: DaqTextInput
+    g_x_sigma: DaqTextInput
+    g_y_mean: DaqTextInput
+    g_y_sigma: DaqTextInput
     g_relative: Switch
     g_amplitude_layout: BoxLayout
     g_x_mean_layout: BoxLayout
@@ -1207,7 +1210,7 @@ class DAQStageProgramWidget(BoxLayout):
     g_relative_layout: BoxLayout
 
     def __init__(self, **kwargs):
-        super(DAQStageProgramWidget, self).__init__(**kwargs)
+        super(StageProgramWidget, self).__init__(**kwargs)
 
 
     def init(self):
@@ -1230,7 +1233,7 @@ class DAQStageProgramWidget(BoxLayout):
         self._tempContainer = BoxLayout()
         
         self.initModeWidget()
-        self.updateDaqStageProgram()
+        self.updateParam()
 
     
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1312,7 +1315,7 @@ class DAQStageProgramWidget(BoxLayout):
         self.app.config.write()
 
 
-    def updateDaqStageProgram(self) -> None:
+    def updateParam(self) -> None:
 
         if self.mode == StageProgramMode.FourPoint:
             # Parse values
@@ -1346,9 +1349,9 @@ class DAQStageProgramWidget(BoxLayout):
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
 
 
-class RelativePositionSwitch(Switch):
+class DaqRelativePositionSwitch(Switch):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
+    root = ObjectProperty()     # Reference to root, which should be StageProgramWidget
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
@@ -1358,24 +1361,106 @@ class RelativePositionSwitch(Switch):
     @override
     def on_touch_up(self, touch): 
         """On switch touch up callback. Update the config value 'self.configKey',
-            and call root.updateDaqStageProgram()
+            and call root.updateParam()
 
         Args:
             touch (Touch): touch input data.
         """
-        if super(RelativePositionSwitch, self).on_touch_up(touch):
+        if super(DaqRelativePositionSwitch, self).on_touch_up(touch):
 
             self.app.config.set('DaqControl', self.configKey, int(self.active))
             self.app.config.write()
 
-            self.root.updateDaqStageProgram()
+            if self.root is not None:
+                self.root.updateParam()
 
             return True
+
+
+class ReversalWidget(BoxLayout):
+    """Widget that holds the parser and the function handler
+    """
+    closeCallback = ObjectProperty(None)
+    animallength : DaqTextInput
+    traillimit : DaqTextInput
+    reversalthresholdradian : DaqTextInput
+    velocityhistorypercentage : DaqTextInput
+    reversalvoltage : DaqTextInput
+    forwardvoltage : DaqTextInput
+
+
+    def __init__(self, **kwargs):
+        super(ReversalWidget, self).__init__(**kwargs)
+
+
+    def init(self):
+        
+        # Initialize 
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.stage = self.app.stage
+        self.camera = self.app.camera
+        self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
+
+    
+    def setCloseCallback( self, closeCallback: callable ) -> None:
+        """Set widget closing callback.
+
+        Args:
+            closeCallback (callable): the closing callback.
+        """        
+        self.closeCallback = closeCallback
     
 
-class DAQStageTextInput(TextInput):
+    def updateConfigChanged(self, configKey: str) -> None:
+
+        if configKey in ['showtrail', 'showguideline', 'showreversalindicator']:
+            # Redraw tracking overlay
+            self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
+    
+
+    def updateParam(self) -> None:
+
+        self.app.daqControl.reversalDetector.animalLength_mm = self.animallength.value * 1e-3
+        self.app.daqControl.reversalDetector.trailLimit = int(self.traillimit.value)
+        self.app.daqControl.reversalDetector.velocityHistoryPercentage = self.velocityhistorypercentage.value
+        self.app.daqControl.reversalDetector.reversalThresholdRadian = self.reversalthresholdradian.value
+        self.app.daqControl.reversalDetector.reversalVoltage = self.reversalvoltage.value
+        self.app.daqControl.reversalDetector.forwardVoltage = self.forwardvoltage.value
+        
+        self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
+
+
+class ReversalSwitch(Switch):
     configKey = StringProperty()
-    root = ObjectProperty()     # Reference to root, which should be DAQStageProgramWidget
+    root = ObjectProperty()     # Reference to root ReversalWidget
+
+    def on_kv_post(self, *args):
+        self.app = App.get_running_app()
+        self.active = self.app.config.getboolean('DaqControl', self.configKey)
+
+    
+    @override
+    def on_touch_up(self, touch): 
+        """On switch touch up callback. Update the config value 'self.configKey',
+            and call root.updateConfigChanged()
+
+        Args:
+            touch (Touch): touch input data.
+        """
+        if super(ReversalSwitch, self).on_touch_up(touch):
+
+            self.app.config.set('DaqControl', self.configKey, int(self.active))
+            self.app.config.write()
+
+            if self.root is not None:
+                self.root.updateConfigChanged(self.configKey)
+
+            return True
+
+
+class DaqTextInput(TextInput):
+    configKey = StringProperty()
+    root = ObjectProperty()     # Reference to root, which must have a updateParam() function.
 
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
@@ -1418,7 +1503,7 @@ class DAQStageTextInput(TextInput):
         if self._validate():
             self.app.config.set('DaqControl', self.configKey, self.value)
             self.app.config.write()
-            self.root.updateDaqStageProgram()
+            self.root.updateParam()
         
         else:
             self.text = str(self.value)
@@ -2220,7 +2305,7 @@ class RecordButton(ImageAcquisitionButton):
         coordinateFile.write(f'area {area}\n')
         
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95\n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95, daqVol\n")
 
         return coordinateFile
 
@@ -2328,7 +2413,8 @@ class RecordButton(ImageAcquisitionButton):
 {self.parent.liveAnalysisData.medianBrightness} \
 {self.parent.liveAnalysisData.skewness} \
 {self.parent.liveAnalysisData.percentile_5} \
-{self.parent.liveAnalysisData.percentile_95} \n")
+{self.parent.liveAnalysisData.percentile_95} \
+{self.app.daqControl.currentVoltage}\n")
 
             #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
             except ValueError as e:
@@ -2384,8 +2470,13 @@ class RecordButton(ImageAcquisitionButton):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
-            self.app.coords
-            self.app.daqControl.update(frameNum= self.runtimeControls.framecounter.value, frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, stagePosition= self.app.coords)
+            self.app.daqControl.update(
+                frameNum= self.runtimeControls.framecounter.value, 
+                frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, 
+                stagePosition= self.app.coords, 
+                posHist= self.runtimeControls.posHist
+            )
+        
 
         super().receiveImageCallback()
     
@@ -2674,7 +2765,14 @@ class ImageOverlay(FloatLayout):
         self.trackingBorder: Line | None = None
         self.cmsShape: Ellipse | None = None
 
-        self.app = App.get_running_app()
+        self.trailMesh: Mesh = Mesh(mode = 'line_strip')
+        self.guidelineMesh: Mesh = Mesh(mode = 'line_strip')
+        self.bodyMesh: Mesh = Mesh(mode = 'line_strip')
+        self.tailToHeadMesh: Mesh = Mesh(mode = 'line_strip')
+        self.velocityMesh: Mesh = Mesh(mode = 'line_strip')
+        self.velocityMeshColor: Color = Color(1, 0, 0, 0.75)
+
+        self.app: GlowTrackerApp = App.get_running_app()
 
 
     def resizeToImage(self) -> None:
@@ -2740,20 +2838,28 @@ class ImageOverlay(FloatLayout):
 
         cmsOffset_x, cmsOffset_y = 0, 0
         trackingMask = np.zeros(0)
+        trail = np.empty([1, 2])
+        # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
 
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
         if rtc.isTracking:
             # If tracking, the get the tracking data from RuntimeControls
-            cmsOffset_x, cmsOffset_y, trackingMask = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask
+            cmsOffset_x, cmsOffset_y, trackingMask, posHist = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask, rtc.posHist
+            # Convert posHist to numpy and discard the z-axis position
+            #   and update unit from mm to meter.
+            # posHist is in mm
+            # Convert to meter = 1e-3
+            trail = np.array(posHist)[:, (0, 1)] * 1e-3
 
         else:
             # If not tracking, then we have to compute the tracking overlay data first
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
 
+
         if doClear:
             self.clearTrackingOverlay()
 
-        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask)
+        self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, trail)
     
     
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -2814,7 +2920,7 @@ class ImageOverlay(FloatLayout):
         return center, btm_left, top_right
     
     
-    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None) -> None:
+    def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None, trail: np.ndarray | None = None) -> None:
         """Draw the tracking info overlay.
             1. Draw the tracking mask if provided
             2. Draw the tracking border
@@ -2826,8 +2932,31 @@ class ImageOverlay(FloatLayout):
             trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
         """
         
-        # Frequently used 
+        # Frequently used variables
         center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
+
+        # Compute scaling
+        previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
+        normImageSize = np.array(previewImage.get_norm_image_size())
+        imageSize = previewImage.texture_size
+        displayedScale = normImageSize[0] / imageSize[0]
+
+        
+        # px -> meter
+        imageToStageRotOnlyMat_XY = macro.swapMatXYOrder(self.app.imageToStageRotMat)
+        # meter -> px
+        stageToImageRotOnlyMat = np.linalg.inv(imageToStageRotOnlyMat_XY)
+
+        # Get pixelsize (m/px)
+        stepunits_literal: str = self.app.config.get('Calibration', 'step_units')
+        stepunits = units_from_literals(stepunits_literal)
+        #   We support only mm and um
+        prefix = 1e-3 if stepunits == Units.LENGTH_MILLIMETRES else 1e-6
+
+        pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+        pixelsize_meter = pixelsize * prefix
+
+        stageToImageMat = stageToImageRotOnlyMat / pixelsize_meter
 
         # 
         # Check if needs to draw tracking mask
@@ -2905,12 +3034,6 @@ class ImageOverlay(FloatLayout):
         # 
         if cmsOffset_x is not None and cmsOffset_y is not None:
             
-            # Compute scaling
-            previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
-            normImageSize = np.array(previewImage.get_norm_image_size())
-            imageSize = previewImage.texture_size
-            displayedScale = normImageSize[0] / imageSize[0]
-            
             # Compute cms draw position
             cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale 
 
@@ -2930,7 +3053,205 @@ class ImageOverlay(FloatLayout):
             else:
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
+        
+        
+        # 
+        #   Draw 1mm guildeline
+        # 
+        showguideline = self.app.config.getboolean('DaqControl', 'showguideline') 
+        if showguideline:
+            
+            # Draw a guide-line. 1mm from center to right. This position in meter.
+            guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
+            # Convert guideline to image space
+            guideline_imageSpace = guideline / pixelsize_meter
+
+            self._updateLineMesh(
+                mesh= self.guidelineMesh, 
+                vertices_in= guideline_imageSpace, 
+                color= Color(1.0, 1,0, 0.0, 0.75),
+                stageToImageMat= np.identity(n= 2),
+                displayedScale= displayedScale,
+                screenCenter= center,
+                isCenterAtFirstVertex= True
+            )
+
+        # 
+        #   Draw tracking trail
+        # 
+        showtrail = self.app.config.getboolean('DaqControl', 'showtrail') 
+        if showtrail:
+            
+            self._updateLineMesh(
+                mesh= self.trailMesh, 
+                vertices_in= trail, 
+                color= Color(0.9, 0.0, 1.0, 0.75),
+                stageToImageMat= stageToImageMat,
+                displayedScale= displayedScale,
+                screenCenter= center,
+                isCenterAtFirstVertex= False
+            )
+            
+        # 
+        #   Draw reversal detection indicators
+        # 
+        showreversalindicator = self.app.config.getboolean('DaqControl', 'showreversalindicator') 
+        if showreversalindicator:
+            # 
+            # Draw Body line
+            # 
+            
+            # We have trail positions in mm 
+            animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
+            animallength = animallength_um * 1e-6
+
+            # Get last M (trial limit) vertices and 
+            #   apply transformation to each row vertex
+            traillimit = self.app.config.getint('DaqControl', 'traillimit')
+            
+            croppedTrail = trail[-traillimit::, :]
+
+            # Greedy sums up until equal or exceed animal's length
+            #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
+            revTrail = croppedTrail[::-1]
+            sumLength = 0
+            
+            tailIndex = 0
+            
+            for i in range(1, len(revTrail)):
+                length = np.linalg.norm(revTrail[i-1] - revTrail[i])
+                sumLength = sumLength + length
+                tailIndex = i
+
+                if sumLength >= animallength:
+                    break
+            
+            # Copy points from head to tail
+            bodyVert = revTrail[0:tailIndex+1:1]
+            # print(f'bodylength: {sumLength:.4f} meter, verts: {len(bodyVert)}')
+
+            # Atleast two vertices
+            if len(bodyVert) > 1:
+
+                self._updateLineMesh(
+                    mesh= self.bodyMesh, 
+                    vertices_in= bodyVert, 
+                    color= Color(1.0, 1.0, 0.0, 0.75),
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= True
+                )
+            
+                # 
+                # Draw vector from tail to head
+                # 
+                # We have bodyVert: Bx2 (B:= body length), rows of point from head to tail
+                head = bodyVert[0]
+                tail = bodyVert[-1]
+                tailToHeadVert = np.vstack([tail, head])
+
+                self._updateLineMesh(
+                    mesh= self.tailToHeadMesh, 
+                    vertices_in= tailToHeadVert, 
+                    color= Color(0.0, 1.0, 1.0, 0.75),
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= False
+                )
+
+                # 
+                # Estimate velocity
+                # 
+                velocityHistoryPercentage = self.app.config.getfloat('DaqControl', 'velocityhistorypercentage')
+
+                numHistVert = round(len(bodyVert) * velocityHistoryPercentage / 100)
+                # Slice from head to numHistVert
+                histVert = bodyVert[0:numHistVert]
+
+                # Compute derivative between each pair of vertex. Assume equal delta time.
+                velocities = histVert[0:-1] - histVert[1:]
+
+                # Uniform weighted average
+                velocity = np.sum(velocities, axis= 0) / len(velocities)
+
+                # Draw the directional line as 100 pixel long
+                directionVert = np.array([[0,0], velocity / np.linalg.norm(velocity)]) * 100 * pixelsize_meter
+
+                # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
+                #   If yes, reversal -> red color.
+                #   If not, non-reversal -> green color.
+
+                vecTailToHead = head - tail
+                angle_radian = macro.computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
+                angle_degree = angle_radian * 180 / math.pi
+
+                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')                
+
+                self.velocityMeshColor.rgba = [0, 1, 0, 0.75]
+                
+                if angle_degree > reversalthresholdradian or angle_degree < -reversalthresholdradian:
+                    self.velocityMeshColor.rgba = [1, 0, 0, 0.75]
+                    print("Reversing!")
+
+                self._updateLineMesh(
+                    mesh= self.velocityMesh, 
+                    vertices_in= directionVert, 
+                    color= self.velocityMeshColor,
+                    stageToImageMat= stageToImageMat,
+                    displayedScale= displayedScale,
+                    screenCenter= center,
+                    isCenterAtFirstVertex= True
+                )
+
+
+    def _updateLineMesh(
+        self, 
+        mesh: Mesh, 
+        vertices_in: np.ndarray, 
+        color: Color, 
+        stageToImageMat: np.ndarray, 
+        displayedScale: float, 
+        screenCenter: np.ndarray, 
+        isCenterAtFirstVertex: bool
+    ) -> None:
+        # vertices_in is N x 2 mat in stage space (meter). Each row contains a vertex in XY
+
+        # Want to have the in screen space, in XY
+        #   stage -> image -> screen -> offset to center
+
+        verts_imageCoord = stageToImageMat @ vertices_in.transpose()
+
+        #   Transfrom back to column matrix
+        verts_imageCoord = verts_imageCoord.transpose()
+
+        # Transform to screen space 
+        verts_screenCoord = verts_imageCoord * displayedScale
+
+        offsetToCenter = screenCenter - ( verts_screenCoord[0] if isCenterAtFirstVertex else verts_screenCoord[-1] )
+
+        verts_screenCoord = verts_screenCoord + offsetToCenter
+        
+        # Construct vertex array
+        #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
+        verts_with_uv = np.column_stack([verts_screenCoord, np.zeros(verts_screenCoord.shape)])
+
+        #   [x1, y1, u1, v1, x2, y2, u2, v2, ...]
+        verts_with_uv = verts_with_uv.flatten()
+        vertices = verts_with_uv.tolist()
+
+        # Construct index array
+        indices = np.arange(len(verts_screenCoord), dtype= np.int32).tolist()
+
+        mesh.vertices = vertices
+        mesh.indices = indices
+
+        if mesh not in self.canvas.children:
+            self.canvas.add(color)
+            self.canvas.add(mesh)
+            
 
     def clearTrackingOverlay(self):
         """Clear the tracking info overlay
@@ -2953,6 +3274,21 @@ class ImageOverlay(FloatLayout):
             self.canvas.remove(self.cmsShape)
             self.cmsShape = None
         
+        if self.trailMesh in self.canvas.children:
+            self.canvas.remove(self.trailMesh)
+
+        if self.guidelineMesh in self.canvas.children:
+            self.canvas.remove(self.guidelineMesh)
+            
+        if self.bodyMesh in self.canvas.children:
+            self.canvas.remove(self.bodyMesh)
+
+        if self.tailToHeadMesh in self.canvas.children:
+            self.canvas.remove(self.tailToHeadMesh)
+        
+        if self.velocityMesh in self.canvas.children:
+            self.canvas.remove(self.velocityMesh)
+            
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
@@ -3103,6 +3439,7 @@ class RuntimeControls(BoxLayout):
         self.cmsOffset_x: float | None = None
         self.cmsOffset_y: float | None = None
         self.trackingMask: np.ndarray | None = None
+        self.posHist: List[Vec3] = []
 
 
     def on_framecounter(self, instance, value):
@@ -3333,11 +3670,11 @@ class RuntimeControls(BoxLayout):
         Args:
             start_pos_tex_coord (np.array): Starting position in the image texture space (full image size). Used to move the stage to center at that position.
         """        
-        app = App.get_running_app()
-        stage = app.stage
-        units = app.config.get('Calibration', 'step_units')
-        minstep = app.config.getfloat('Tracking', 'min_step')
-        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        app: GlowTrackerApp = App.get_running_app()
+        stage: Stage = app.stage
+        units: str = app.config.get('Calibration', 'step_units')
+        minstep: float = app.config.getfloat('Tracking', 'min_step')
+        dualColorMode: bool = app.config.getboolean('DualColor', 'dualcolormode')
         
         # 
         # Move stage by the user pointed starting position
@@ -3379,6 +3716,10 @@ class RuntimeControls(BoxLayout):
         # Update stage coordinate in the app
         app.coords =  app.stage.get_position()
 
+        # Record position history
+        self.posHist.clear()
+        self.posHist.append((app.coords[0], app.coords[1], app.coords[2]))
+
         # 
         # Start the tracking
         # 
@@ -3392,7 +3733,7 @@ class RuntimeControls(BoxLayout):
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
         # make a tracking thread 
-        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness
+        track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.posHist
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -3416,7 +3757,7 @@ class RuntimeControls(BoxLayout):
             self.cropY = int((hc-roiY)//2)
     
 
-    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
+    def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, posHist: List[Vec3]) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
@@ -3517,15 +3858,19 @@ class RuntimeControls(BoxLayout):
             ystep *= scale
             xstep *= scale
 
-            # getting stage coord is slow so we will interpolate from movements
+            # Getting stage coord is slow so we will interpolate from movements
             if abs(xstep) > minstep:
                 stage.move_x(xstep, unit=units, wait_until_idle =False)
                 app.coords[0] += xstep/1000.
                 prevImage = image
+            
             if abs(ystep) > minstep:
                 stage.move_y(ystep, unit=units, wait_until_idle = False)
                 app.coords[1] += ystep/1000.
                 prevImage = image
+            
+            # Record position history
+            posHist.append((app.coords[0], app.coords[1], app.coords[2]))
 
             tracking_frame_end_time = time.perf_counter()
 
@@ -4024,6 +4369,12 @@ class DAQConnectionButton(ToggleButton):
         # Update DAQStageProgram variables
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
+        # Update DAQReversalDetection variables
+        app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
+        app.daqControl.reversalDetector.trailLimit = app.config.getint('DaqControl', 'traillimit')
+        app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
+        app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
+
         return
 
 
@@ -4260,9 +4611,17 @@ class GlowTrackerApp(App):
             'g_x_sigma': 0,
             'g_y_mean': 0,
             'g_y_sigma': 0,
-            'g_relative': 'true'
+            'g_relative': 'true',
+            'showtrail': 'true',
+            'showreversalindicator': 'true',
+            'traillimit' : '1000',
+            'animallength': '1000',
+            'reversalthresholdradian': '90',
+            'velocityhistorypercentage': '10',
+            'reversalvoltage' : '5',
+            'forwardvoltage' : '0',
+            'showguideline': 'true',
         })
-
         
         config.setdefaults('Developer', {
             'showfps': 'false'

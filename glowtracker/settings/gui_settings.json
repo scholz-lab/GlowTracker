@@ -139,7 +139,7 @@
     {
         "type": "numeric",
         "title": "Pixelsize",
-        "desc": "Use calibration to calculate (um/px)",
+        "desc": "How large of a distance dose a pixel cover (isotropic). The unit is either um/px or mm/px depends on Calibration:Calibration-step-unit.",
         "section": "Camera",
         "key": "pixelsize"
     },
@@ -425,7 +425,7 @@
         "desc": "Modes of controlling DAQ",
         "section": "DaqControl",
         "key": "mode",
-        "options": ["Off", "Sequencer", "StageProgram"]
+        "options": ["Off", "Sequencer", "StageProgram", "Reversal"]
     },
     {
         "type": "path",
@@ -455,6 +455,69 @@
         "desc": "Are the gaussian means relative to the start-Recording position",
         "section": "DaqControl",
         "key": "g_relative"
+    },
+    {
+        "type": "bool",
+        "title": "Display tracking trail overlay",
+        "desc": "Display the tracking trail in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showtrail"
+    },
+    {
+        "type": "bool",
+        "title": "Display reversal detection indicators",
+        "desc": "Display body segment, head-to-tail line, and estimated direction in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showreversalindicator"
+    },
+    {
+        "type": "numeric",
+        "title": "Trail limit",
+        "desc": "Maximum trail history length (frame)",
+        "section": "DaqControl",
+        "key": "traillimit"
+    },
+    {
+        "type": "numeric",
+        "title": "Animal length (um)",
+        "desc": "Average length of the tracking animal",
+        "section": "DaqControl",
+        "key": "animallength"
+    },
+    {
+        "type": "numeric",
+        "title": "Reversal threshold (radian)",
+        "desc": "Reversal angle threshold. The movement is considered reversal when estimated direction is greater or less than +,- threshold.",
+        "section": "DaqControl",
+        "key": "reversalthresholdradian"
+    },
+    {
+        "type": "numeric",
+        "title": "Estimated Velocity history percentage (1-100%)",
+        "desc": "How much of the most recent history positions should be used to estimate the velocity.",
+        "section": "DaqControl",
+        "key": "velocityhistorypercentage"
+    },
+    {
+        "type": "numeric",
+        "title": "Reversal voltage",
+        "desc": "Output voltage when detected reversal stage.",
+        "section": "DaqControl",
+        "key": "reversalvoltage"
+    },
+    {
+        "type": "numeric",
+        "title": "Forward voltage",
+        "desc": "Output voltage when detected forward stage.",
+        "section": "DaqControl",
+        "key": "forwardvoltage"
+    },
+    {
+        "type": "bool",
+        "title": "Display 1mm guideline",
+        "desc": "Display 1mm guideline in the tracking overlay.",
+        "section": "DaqControl",
+        "key": "showguideline"
     },
     {
         "type": "title",
