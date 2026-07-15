@@ -236,7 +236,6 @@ class DAQControl():
             
 
     def updateReversalDetection(self, posHist: np.ndarray) -> None:
-        # TODO: Gather unit from the stage calibration setting
         # Convert posHist to numpy and discard the z-axis position
         #   and update unit from mm to meter.
         trail = np.array(posHist)[:, (0, 1)] * 1e3

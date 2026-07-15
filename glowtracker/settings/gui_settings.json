@@ -139,7 +139,7 @@
     {
         "type": "numeric",
         "title": "Pixelsize",
-        "desc": "Use calibration to calculate (um/px)",
+        "desc": "How large of a distance dose a pixel cover (isotropic). The unit is either um/px or mm/px depends on Calibration:Calibration-step-unit.",
         "section": "Camera",
         "key": "pixelsize"
     },

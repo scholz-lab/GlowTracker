@@ -69,7 +69,7 @@ from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
-from zaber_motion.units import Units
+from zaber_motion.units import Units, units_from_literals
 from zaber_motion.unit_table import UnitTable
 from pypylon import pylon
 import platformdirs 
@@ -2847,7 +2847,6 @@ class ImageOverlay(FloatLayout):
             cmsOffset_x, cmsOffset_y, trackingMask, posHist = rtc.cmsOffset_x, rtc.cmsOffset_y, rtc.trackingMask, rtc.posHist
             # Convert posHist to numpy and discard the z-axis position
             #   and update unit from mm to meter.
-            # TODO: Gather unit from the stage calibration setting
             # posHist is in mm
             # Convert to meter = 1e-3
             trail = np.array(posHist)[:, (0, 1)] * 1e-3
@@ -2855,15 +2854,6 @@ class ImageOverlay(FloatLayout):
         else:
             # If not tracking, then we have to compute the tracking overlay data first
             cmsOffset_x, cmsOffset_y, trackingMask = rtc.computeTrackingCMS()
-
-            # Debug 3mm long line
-            x = np.arange(start= 0, stop=3e-3, step= 1e-5, dtype= np.float32)
-            y = np.zeros(shape= x.shape)
-
-            # y[-1] = 1e-4
-            # trail = np.column_stack([x, y])
-
-            trail = np.column_stack([x, y])
 
 
         if doClear:
@@ -2957,12 +2947,16 @@ class ImageOverlay(FloatLayout):
         # meter -> px
         stageToImageRotOnlyMat = np.linalg.inv(imageToStageRotOnlyMat_XY)
 
-        # Get pixelsize (um/px)
-        # TODO: Get unit from calibration
-        pixelsize_um = self.app.config.getfloat('Camera', 'pixelsize')
-        pixelsize = pixelsize_um * 1e-6
+        # Get pixelsize (m/px)
+        stepunits_literal: str = self.app.config.get('Calibration', 'step_units')
+        stepunits = units_from_literals(stepunits_literal)
+        #   We support only mm and um
+        prefix = 1e-3 if stepunits == Units.LENGTH_MILLIMETRES else 1e-6
 
-        stageToImageMat = stageToImageRotOnlyMat / pixelsize
+        pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+        pixelsize_meter = pixelsize * prefix
+
+        stageToImageMat = stageToImageRotOnlyMat / pixelsize_meter
 
         # 
         # Check if needs to draw tracking mask
@@ -3071,7 +3065,7 @@ class ImageOverlay(FloatLayout):
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
             # Convert guideline to image space
-            guideline_imageSpace = guideline / pixelsize
+            guideline_imageSpace = guideline / pixelsize_meter
 
             self._updateLineMesh(
                 mesh= self.guidelineMesh, 
@@ -3184,7 +3178,7 @@ class ImageOverlay(FloatLayout):
                 velocity = np.sum(velocities, axis= 0) / len(velocities)
 
                 # Draw the directional line as 100 pixel long
-                directionVert = np.array([[0,0], velocity / np.linalg.norm(velocity)]) * 100 * pixelsize
+                directionVert = np.array([[0,0], velocity / np.linalg.norm(velocity)]) * 100 * pixelsize_meter
 
                 # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
                 #   If yes, reversal -> red color.
