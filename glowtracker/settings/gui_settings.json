@@ -473,7 +473,7 @@
     {
         "type": "numeric",
         "title": "Trail limit",
-        "desc": "Maximum trail history length",
+        "desc": "Maximum trail history length (frame)",
         "section": "DaqControl",
         "key": "traillimit"
     },
