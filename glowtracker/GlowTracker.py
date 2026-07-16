@@ -1,10 +1,13 @@
 from __future__ import annotations
+import sys
 import multiprocessing as mp
 from multiprocessing.managers import SharedMemoryManager
 from SharedMemory import SharedMemoryQueue
 from scan import CenterRadiusFromThreePoints
 import image_saver
 from threading import Thread, Lock, Event
+
+USE_SHARED_MEMORY_SAVER = sys.platform != 'win32'
 
 import os
 # Suppress kivy normal initialization logs in the beginning
@@ -2183,21 +2186,36 @@ class RecordButton(ImageAcquisitionButton):
         self.frameCounter = 0
         self.droppedSaveFrames = 0
 
-        # Offload frame saving to a separate process through a shared-memory queue
-        self.shm_manager = SharedMemoryManager()
-        self.shm_manager.start()
-        example = {
-            'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
-            'idx': 0,
-        }
-        self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size= 60)
-        self.stop_event = mp.Event()
-        ctx = mp.get_context('forkserver')
-        self.saveproc = ctx.Process(
-            target=image_saver.save_worker,
-            args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
-            daemon=True)
-        self.saveproc.start()
+        if USE_SHARED_MEMORY_SAVER:
+            # Offload frame saving to a separate process through a shared-memory queue
+            self.shm_manager = SharedMemoryManager()
+            self.shm_manager.start()
+            example = {
+                'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
+                'idx': 0,
+            }
+            self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size= 60)
+            self.stop_event = mp.Event()
+            ctx = mp.get_context('forkserver')
+            self.saveproc = ctx.Process(
+                target=image_saver.save_worker,
+                args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
+                daemon=True)
+            self.saveproc.start()
+        else:
+            self.shm_manager = None
+            self.saveproc = None
+            self.imageQueue = Queue(maxsize= 60)
+            self.stop_event = Event()
+            self.saveThreads = [
+                Thread(
+                    target=image_saver.save_worker,
+                    args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
+                    daemon=True)
+                for _ in range(3)
+            ]
+            for saveThread in self.saveThreads:
+                saveThread.start()
 
         self.saveHandoffQueue = Queue(maxsize=16)
         self._saveHandoffStop = False
@@ -2360,8 +2378,12 @@ class RecordButton(ImageAcquisitionButton):
         self._saveHandoffStop = True
         self.saveHandoffThread.join()
         self.stop_event.set()
-        self.saveproc.join()
-        self.shm_manager.shutdown()
+        if USE_SHARED_MEMORY_SAVER:
+            self.saveproc.join()
+            self.shm_manager.shutdown()
+        else:
+            for saveThread in self.saveThreads:
+                saveThread.join()
         if getattr(self, 'droppedSaveFrames', 0):
             print(f'WARNING: dropped {self.droppedSaveFrames} frames from saving (disk could not keep up)')
  
@@ -3437,9 +3459,9 @@ class RuntimeControls(BoxLayout):
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
 
         stage.set_motion(
-            float(app.config.get('Stage', 'track_maxspeed')),
+            float(app.config.get('Stage', 'track_speed')),
             float(app.config.get('Stage', 'track_acceleration')),
-            app.config.get('Stage', 'maxspeed_unit'),
+            app.config.get('Stage', 'speed_unit'),
             app.config.get('Stage', 'acceleration_unit'))
         
         # 
@@ -3684,9 +3706,9 @@ class RuntimeControls(BoxLayout):
 
         if app.stage is not None:
             app.stage.set_motion(
-                float(app.config.get('Stage', 'maxspeed')),
-                float(app.config.get('Stage', 'acceleration')),
-                app.config.get('Stage', 'maxspeed_unit'),
+                float(app.config.get('Stage', 'precise_speed')),
+                float(app.config.get('Stage', 'precise_acceleration')),
+                app.config.get('Stage', 'speed_unit'),
                 app.config.get('Stage', 'acceleration_unit'))
 
         if self.coord_updateevent is not None:
@@ -3999,9 +4021,9 @@ class Connections(BoxLayout):
         print('Connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
-        maxspeed = float( app.config.get('Stage', 'maxspeed') )
-        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
-        accel = float( app.config.get('Stage', 'acceleration') )
+        maxspeed = float( app.config.get('Stage', 'precise_speed') )
+        maxspeed_unit = app.config.get('Stage', 'speed_unit')
+        accel = float( app.config.get('Stage', 'precise_acceleration') )
         accel_unit = app.config.get('Stage', 'acceleration_unit')
         stage = Stage(port, maxspeed, maxspeed_unit, accel, accel_unit)
         
@@ -4185,10 +4207,10 @@ class SettingsCustomNumeric(SettingNumeric):
 # load the layout
 class GlowTrackerApp(App):
     # stage configuration properties - these will update when changed in config menu
-    vhigh = ConfigParserProperty(20,
-                    'Stage', 'vhigh', 'app', val_type=float)
-    vlow = ConfigParserProperty(20,
-                    'Stage', 'vlow', 'app', val_type=float)
+    vhigh = ConfigParserProperty(30,
+                    'Stage', 'input_fast_speed', 'app', val_type=float)
+    vlow = ConfigParserProperty(1,
+                    'Stage', 'input_slow_speed', 'app', val_type=float)
     unit = ConfigParserProperty('mm/s',
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
@@ -4258,21 +4280,22 @@ class GlowTrackerApp(App):
         """
         # Set the config defaults 
         config.setdefaults('Stage', {
-            'speed_unit': 'mm/s',
-            'vhigh': '30.0',
-            'vlow': '1.0',
             'port': '/dev/ttyUSB0',
             'move_start': 'false',
             'homing': 'false',
             'stage_limits': '150,150,152',
             'start_loc': '0,0,0',
-            'maxspeed': '20',
-            'maxspeed_unit': 'mm/s',
-            'acceleration': '60',
+            'speed_unit': 'mm/s',
             'acceleration_unit': 'mm/s^2',
-            'scan_maxspeed': '40',
-            'scan_acceleration': '1000',
-            'track_maxspeed': '20',
+            'input_fast_speed': '20.0',
+            'input_fast_acceleration': '100',
+            'input_slow_speed': '0.5',
+            'input_slow_acceleration': '100',
+            'precise_speed': '15',
+            'precise_acceleration': '200',
+            'scan_speed': '26',
+            'scan_acceleration': '500',
+            'track_speed': '20',
             'track_acceleration': '200',
             'move_image_space_mode': 'false'
         })
@@ -4528,6 +4551,22 @@ class GlowTrackerApp(App):
         print('stopped')
 
 
+    def applyInputAcceleration(self, fast: bool) -> None:
+        state = self.stage.state
+        if state.isMoving_x or state.isMoving_y or state.isMoving_z:
+            return
+        key = 'input_fast_acceleration' if fast else 'input_slow_acceleration'
+        self.stage.set_accel(self.config.getfloat('Stage', key), self.config.get('Stage', 'acceleration_unit'))
+
+
+    def jog(self, direction: tuple, fast: bool = True) -> None:
+        if self.stage is None:
+            return
+        speed = self.vhigh if fast else self.vlow
+        self.applyInputAcceleration(fast)
+        self.stage.start_move(tuple(d * speed for d in direction), self.unit)
+
+
     def on_controller_input(self, win, stickid, axisid, value) -> None:
         """Handle controller input from Kivi App"""
 
@@ -4551,6 +4590,7 @@ class GlowTrackerApp(App):
             }
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
+                self.applyInputAcceleration(fast= True)
                 self.stage.start_move(direction[axisid], self.unit)
 
     
@@ -4564,11 +4604,9 @@ class GlowTrackerApp(App):
         
         # print(key, scancode, codepoint, modifier)
 
-        if 'shift' in modifier:
-            v = self.vlow
-        else:
-            v = self.vhigh
-        
+        fast = 'shift' not in modifier
+        v = self.vhigh if fast else self.vlow
+
         direction = {
             273: (0,v,0),  # up arrow
             274: (0,-v,0),   # down arrow
@@ -4594,7 +4632,8 @@ class GlowTrackerApp(App):
             # Convert back to a 3D tuple
             velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
         
-        # Move 
+        # Move
+        self.applyInputAcceleration(fast)
         self.stage.start_move(velocity, self.unit)
 
         # Update stage position app.coords 
@@ -4700,25 +4739,23 @@ class GlowTrackerApp(App):
                     self.config.set('Stage', 'stage_limits', limits)
                     updateSettingsWidgetFlag = True
                 
-                elif key == 'maxspeed':
-                    # Set the stage maxspeed
+                elif key == 'precise_speed':
                     maxspeed = float(value)
-                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
+                    maxspeed_unit = self.config.get('Stage', 'speed_unit')
                     maxspeed = self.stage.set_maxspeed(maxspeed, maxspeed_unit)
                     maxspeed = round(maxspeed, 2)
                     # Get back the current value and set back to settings in case the input value is invalid
-                    self.config.set('Stage', 'maxspeed', maxspeed)
+                    self.config.set('Stage', 'precise_speed', maxspeed)
                     self.config.write()
                     updateSettingsWidgetFlag = True
-                    
-                elif key == 'acceleration':
-                    # Set the stage acceleration speed
+
+                elif key == 'precise_acceleration':
                     acceleration = float(value)
                     acceleration_unit = self.config.get('Stage', 'acceleration_unit')
                     acceleration = self.stage.set_accel(acceleration, acceleration_unit)
                     acceleration = round(acceleration, 2)
                     # Get back the current value and set back to settings in case the input value is invalid
-                    self.config.set('Stage', 'acceleration', acceleration)
+                    self.config.set('Stage', 'precise_acceleration', acceleration)
                     self.config.write()
                     updateSettingsWidgetFlag = True
                 
@@ -5037,8 +5074,9 @@ def reset():
 
 
 def main():
-    mp.set_start_method('forkserver', force=True)
-    mp.set_forkserver_preload(['image_saver'])
+    if USE_SHARED_MEMORY_SAVER:
+        mp.set_start_method('forkserver', force=True)
+        mp.set_forkserver_preload(['image_saver'])
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')

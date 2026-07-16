@@ -193,11 +193,11 @@ class CenterRadiusFromThreePoints(BoxLayout):
             print('no safe tiles to scan at this Z')
             return False
 
-        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
+        speed_unit = app.config.get('Stage', 'speed_unit')
         accel_unit = app.config.get('Stage', 'acceleration_unit')
-        norm_maxspeed = float(app.config.get('Stage', 'maxspeed'))
-        norm_accel = float(app.config.get('Stage', 'acceleration'))
-        scan_maxspeed = float(app.config.get('Stage', 'scan_maxspeed'))
+        precise_speed = float(app.config.get('Stage', 'precise_speed'))
+        precise_accel = float(app.config.get('Stage', 'precise_acceleration'))
+        scan_speed = float(app.config.get('Stage', 'scan_speed'))
         scan_accel = float(app.config.get('Stage', 'scan_acceleration'))
 
         self._stop_scan = False
@@ -211,7 +211,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 n_tiles = 0
                 pass_start = time.perf_counter()
                 print(f'scan pass {scan_pass}')
-                app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
+                app.stage.set_motion(precise_speed, precise_accel, speed_unit, accel_unit)
                 for i, (x, y) in enumerate(tiles):
                     if self._stop_scan:
                         break
@@ -227,7 +227,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                             print(f'scan aborted: first move did not reach target ({x:.2f}, {y:.2f}), got {pos}')
                             self._stop_scan = True
                             break
-                        app.stage.set_motion(scan_maxspeed, scan_accel, maxspeed_unit, accel_unit)
+                        app.stage.set_motion(scan_speed, scan_accel, speed_unit, accel_unit)
                     time.sleep(settle)
                     t2 = time.perf_counter()
                     ok, img = app.camera.singleTake()
@@ -285,7 +285,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 if found:
                     break
         finally:
-            app.stage.set_motion(norm_maxspeed, norm_accel, maxspeed_unit, accel_unit)
+            app.stage.set_motion(precise_speed, precise_accel, speed_unit, accel_unit)
         return found
     
     def _begin_scan_camera(self):

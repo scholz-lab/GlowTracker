@@ -6,9 +6,10 @@ import tifffile
 
 
 def save_worker(image_queue, save_dir, filename_format, stop_event):
+    get = getattr(image_queue, 'get_nowait', image_queue.get)
     while True:
         try:
-            data = image_queue.get()
+            data = get()
         except Empty:
             if stop_event.is_set():
                 break

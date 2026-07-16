@@ -10,26 +10,62 @@
         "key": "port"
     },
     {
-        "type": "numeric",
-        "title": "Stage speed",
-        "desc": "Set the fast stage speed",
-        "section": "Stage",
-        "key": "vhigh"
-    },
-    {
-        "type": "numeric",
-        "title": "Stage speed",
-        "desc": "Set the slower stage speed",
-        "section": "Stage",
-        "key": "vlow"
-    },
-    {
         "type": "options",
-        "title": "Stage speed units",
-        "desc": "micrometer/sec or millimeter/sec",
+        "title": "Speed unit",
+        "desc": "Unit for all speed settings below",
         "section": "Stage",
         "key": "speed_unit",
         "options": ["mm/s", "um/s"]
+    },
+    {
+        "type": "options",
+        "title": "Acceleration unit",
+        "desc": "Unit for all acceleration settings below",
+        "section": "Stage",
+        "key": "acceleration_unit",
+        "options": ["mm/s^2", "um/s^2"]
+    },
+    {
+        "type": "numeric",
+        "title": "User input fast speed",
+        "desc": "Jog speed for buttons, arrow keys and joystick",
+        "section": "Stage",
+        "key": "input_fast_speed"
+    },
+    {
+        "type": "numeric",
+        "title": "User input fast acceleration",
+        "desc": "Acceleration for fast jogging",
+        "section": "Stage",
+        "key": "input_fast_acceleration"
+    },
+    {
+        "type": "numeric",
+        "title": "User input slow speed",
+        "desc": "Jog speed for slow buttons and shift + arrow keys",
+        "section": "Stage",
+        "key": "input_slow_speed"
+    },
+    {
+        "type": "numeric",
+        "title": "User input slow acceleration",
+        "desc": "Acceleration for slow jogging",
+        "section": "Stage",
+        "key": "input_slow_acceleration"
+    },
+    {
+        "type": "numeric",
+        "title": "Precise move speed",
+        "desc": "Speed for automatic positioning moves (go-to, autofocus sweeps, scan recentering)",
+        "section": "Stage",
+        "key": "precise_speed"
+    },
+    {
+        "type": "numeric",
+        "title": "Precise move acceleration",
+        "desc": "Acceleration for automatic positioning moves",
+        "section": "Stage",
+        "key": "precise_acceleration"
     },
     {
         "type": "bool",
@@ -61,40 +97,10 @@
     },
     {
         "type": "numeric",
-        "title": "Stage maxspeed",
-        "desc": "Set the maximum stage speed",
+        "title": "Scan speed",
+        "desc": "Stage speed during plate scanning",
         "section": "Stage",
-        "key": "maxspeed"
-    },
-    {
-        "type": "options",
-        "title": "Stage maxspeed units",
-        "desc": "micrometer/sec or millimeter/sec",
-        "section": "Stage",
-        "key": "maxspeed_unit",
-        "options": ["mm/s", "um/s"]
-    },
-    {
-        "type": "numeric",
-        "title": "Stage acceleration",
-        "desc": "Set the stage acceleration",
-        "section": "Stage",
-        "key": "acceleration"
-    },
-    {
-        "type": "options",
-        "title": "Stage acceleration units",
-        "desc": "micrometer/sec^2 or millimeter/sec^2",
-        "section": "Stage",
-        "key": "acceleration_unit",
-        "options": ["mm/s^2", "um/s^2"]
-    },
-    {
-        "type": "numeric",
-        "title": "Scan maxspeed",
-        "desc": "Maximum stage speed during plate scanning",
-        "section": "Stage",
-        "key": "scan_maxspeed"
+        "key": "scan_speed"
     },
     {
         "type": "numeric",
@@ -105,10 +111,10 @@
     },
     {
         "type": "numeric",
-        "title": "Tracking maxspeed",
-        "desc": "Maximum stage speed during tracking",
+        "title": "Tracking speed",
+        "desc": "Stage speed during tracking",
         "section": "Stage",
-        "key": "track_maxspeed"
+        "key": "track_speed"
     },
     {
         "type": "numeric",
