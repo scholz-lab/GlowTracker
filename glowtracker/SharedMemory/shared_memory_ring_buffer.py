@@ -11,7 +11,7 @@ from .shared_memory_util import ArraySpec, SharedAtomicCounter
 
 class SharedMemoryRingBuffer:
     """
-    A Lock-Free FILO Shared Memory Data Structure.
+    A FILO Shared Memory Data Structure.
     Stores a sequence of dict of numpy arrays.
     """
 
@@ -21,7 +21,8 @@ class SharedMemoryRingBuffer:
             get_max_k: int,
             get_time_budget: float,
             put_desired_frequency: float,
-            safety_margin: float=1.5
+            safety_margin: float=1.5,
+            context=None,
         ):
         """
         shm_manager: Manages the life cycle of share memories 
@@ -34,8 +35,7 @@ class SharedMemoryRingBuffer:
             This influces the buffer size.
         """
 
-        # create atomic counter
-        counter = SharedAtomicCounter(shm_manager)
+        counter = SharedAtomicCounter(context)
 
         # compute buffer size
         # At any given moment, the past get_max_k items should never 
@@ -85,7 +85,8 @@ class SharedMemoryRingBuffer:
             examples: Dict[str, Union[np.ndarray, numbers.Number]], 
             get_max_k: int=32,
             get_time_budget: float=0.01,
-            put_desired_frequency: float=60
+            put_desired_frequency: float=60,
+            context=None,
             ):
         specs = list()
         for key, value in examples.items():
@@ -113,7 +114,8 @@ class SharedMemoryRingBuffer:
             array_specs=specs,
             get_max_k=get_max_k,
             get_time_budget=get_time_budget,
-            put_desired_frequency=put_desired_frequency
+            put_desired_frequency=put_desired_frequency,
+            context=context,
             )
         return obj
 

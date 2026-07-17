@@ -1,7 +1,7 @@
 from __future__ import annotations
+import ast
 import LabJackPython
 import u3
-import re
 from enum import Enum
 from collections import OrderedDict
 from copy import deepcopy
@@ -77,11 +77,59 @@ class DAQControl():
         return self.daq is not None
 
 
-    def close(self):
-        if self.isConnected():
-            # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
-            self.daq.close()
-            self.daq = None
+    def safe_off(self) -> bool:
+        if not self.isConnected():
+            return True
+
+        try:
+            dac0Val = self.daq.voltageToDACBits(
+                volts=0.0, dacNumber=0, is16Bits=False
+            )
+            dac1Val = self.daq.voltageToDACBits(
+                volts=0.0, dacNumber=1, is16Bits=False
+            )
+            self.daq.getFeedback(
+                u3.DAC0_8(dac0Val),
+                u3.DAC1_8(dac1Val),
+            )
+            return True
+        except Exception as e:
+            print(f'Setting DAQ outputs to zero failed: {e}')
+            safe = True
+            for dacNumber, commandType in ((0, u3.DAC0_8), (1, u3.DAC1_8)):
+                try:
+                    value = self.daq.voltageToDACBits(
+                        volts=0.0, dacNumber=dacNumber, is16Bits=False
+                    )
+                    self.daq.getFeedback(commandType(value))
+                except Exception as channel_error:
+                    safe = False
+                    print(
+                        f'Setting DAQ{dacNumber} to zero failed: '
+                        f'{channel_error}'
+                    )
+            return safe
+        finally:
+            self.sequnceDictRunning.clear()
+
+
+    def close(self) -> bool:
+        if not self.isConnected():
+            return True
+
+        daq = self.daq
+        safe = False
+        try:
+            safe = self.safe_off()
+        finally:
+            try:
+                daq.close()
+            except Exception as e:
+                print(f'Closing DAQ connection failed: {e}')
+            finally:
+                self.daq = None
+
+        return safe
 
     
     def start(self, startRecordPosition: np.ndarray):
@@ -118,48 +166,79 @@ class DAQControl():
 
 
     def parseTextScript(self, text: str) -> None:
-
         try:
-            # Remove empty lines and surrounding whitespace
             lines = [line.strip() for line in text.splitlines() if line.strip()]
-
-            # Remove trailing commas from each line
-            lines = [re.sub(r',$', '', line) for line in lines]
-
-            # Wrap into a dict literal
-            preprocessdText = "{\n" + ",\n".join(lines) + "\n}"
-            
-            # Parse the text to be a dict object. Highlight keywords "on", "off"
-            processedDict = eval(preprocessdText, {
-                "on": "on", 
-                "off": "off", 
-                "mode": "mode",
-                "frame": "frame",
-                "time": "time"
-            })
-
-            # Check if empty
-            if len(processedDict) == 0:
+            lines = [line[:-1].rstrip() if line.endswith(',') else line for line in lines]
+            if not lines:
                 self.sequncerDict.clear()
                 return
+            expression = ast.parse("{\n" + ",\n".join(lines) + "\n}", mode='eval')
+            processedDict = self._parseScriptNode(expression.body)
+            if not isinstance(processedDict, dict):
+                raise ValueError('script must contain key-value entries')
+            if 'mode' not in processedDict:
+                raise ValueError("missing 'mode' entry")
+            modeValue = processedDict.pop('mode')
+            if not isinstance(modeValue, (list, tuple)) or len(modeValue) != 1:
+                raise ValueError("'mode' must be [frame] or [time]")
+            mode = modeValue[0]
+            if mode not in ('frame', 'time'):
+                raise ValueError("'mode' must be [frame] or [time]")
 
-            # Get running mode
-            mode = processedDict.pop('mode')[0]
-            
-            # Sort and convert to OrderedDict
-            self.sequncerDict = OrderedDict( {key:val for key, val in sorted(processedDict.items(), key= lambda x: x[0])} )
+            commands = {}
+            for trigger, command in processedDict.items():
+                if isinstance(trigger, bool) or not isinstance(trigger, (int, float)):
+                    raise ValueError('command keys must be numeric')
+                if not math.isfinite(trigger) or trigger < 0:
+                    raise ValueError('command keys must be finite and non-negative')
+                if mode == 'frame' and (not isinstance(trigger, int) or isinstance(trigger, bool)):
+                    raise ValueError('frame command keys must be integers')
+                commands[trigger] = self._validateScriptCommand(command)
 
-            if mode == 'frame':
-                self.sequencerMode = SequencerMode.Frame
-
-            elif mode == 'time':
-                self.sequencerMode = SequencerMode.Time
-                
-            else:
-                raise ValueError(f"Failed to parse DAQ script text: Invalid 'mode' argument. Options are ['frame', 'time']")
-
+            self.sequncerDict = OrderedDict(sorted(commands.items()))
+            self.sequencerMode = SequencerMode.Frame if mode == 'frame' else SequencerMode.Time
         except Exception as e:
             raise ValueError(f"Failed to parse DAQ script text: {e}")
+
+
+    @staticmethod
+    def _parseScriptNode(node):
+        if isinstance(node, ast.Dict):
+            result = {}
+            for keyNode, valueNode in zip(node.keys, node.values):
+                key = DAQControl._parseScriptNode(keyNode)
+                if key in result:
+                    raise ValueError(f'duplicate key {key!r}')
+                result[key] = DAQControl._parseScriptNode(valueNode)
+            return result
+        if isinstance(node, (ast.List, ast.Tuple)):
+            return [DAQControl._parseScriptNode(value) for value in node.elts]
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off'}:
+            return node.id
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = DAQControl._parseScriptNode(node.operand)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError('signs may only be applied to numbers')
+            return value if isinstance(node.op, ast.UAdd) else -value
+        raise ValueError(f'unsupported syntax: {type(node).__name__}')
+
+
+    @staticmethod
+    def _validateScriptCommand(command):
+        if not isinstance(command, (list, tuple)) or not command:
+            raise ValueError("commands must be [off] or [on, voltage]")
+        if command[0] == 'off' and len(command) == 1:
+            return ['off']
+        if command[0] == 'on' and len(command) == 2:
+            voltage = command[1]
+            if isinstance(voltage, bool) or not isinstance(voltage, (int, float)):
+                raise ValueError('voltage must be numeric')
+            if not math.isfinite(voltage) or not 0 <= voltage <= 4.95:
+                raise ValueError('voltage must be between 0 and 4.95')
+            return ['on', float(voltage)]
+        raise ValueError("commands must be [off] or [on, voltage]")
     
 
     def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = []) -> None:
@@ -320,7 +399,7 @@ class DAQStageProgram():
         if exterior:
             self.exterior = exterior
         
-        if exteriorConstant:
+        if exteriorConstant is not None:
             self.exteriorConstant = exteriorConstant
         
         if isFourPointRelative is not None:

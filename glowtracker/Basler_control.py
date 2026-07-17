@@ -115,20 +115,21 @@ class Camera(pylon.InstantCamera):
                 #   The function pylon.InstantCamera is not well-ported to Python API.
                 #   If the grab is succeeded it will return pylon.GrabResult object.
                 #   Otherwise, it will return False.
-                grabResult: pylon.GrabResult | bool = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+                grabResult: pylon.GrabResult | bool = self.RetrieveResult(
+                    1000, pylon.TimeoutHandling_Return
+                )
 
-                if isinstance(grabResult, bool) and grabResult == False:
-                    pass
-
-                else:
-                    # Need to double check
-                    if grabResult.GrabSucceeded():
-
-                        isSuccess = True
-                        img = grabResult.Array
-                        retrieveTimestamp = time.perf_counter()
-                        conversion_factor = 1e6  # for conversion in ms
-                        timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
+                if not isinstance(grabResult, bool):
+                    try:
+                        if grabResult.GrabSucceeded():
+                            img = np.array(grabResult.Array, copy=True)
+                            retrieveTimestamp = time.perf_counter()
+                            conversion_factor = 1e6  # for conversion in ms
+                            timestamp = round(
+                                grabResult.TimeStamp / conversion_factor, 1
+                            )
+                            isSuccess = True
+                    finally:
                         grabResult.Release()
 
             except genicam.RuntimeException as e:
@@ -360,4 +361,3 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
         print(e)
     
     return None
-

@@ -82,6 +82,7 @@ class Stage:
 
         self._jog_velocity = [0.0, 0.0, 0.0]
         self._jog_watchdog: threading.Thread | None = None
+        self._disconnecting = False
 
         self._last_pos: List[float] | None = None
         self._last_pos_time: float = 0.0
@@ -212,16 +213,28 @@ class Stage:
 
 
     #  Stage homing
-    def home_stage(self):
+    def home_stage(self, cancel_event=None) -> bool:
         '''
         homes all connected devices & moves axes to starting positions
         necessary if device was disconnected from power source
         '''
-        if self.connection is not None:
-            # Home and wwait the Z axis first to prevent accident
+        if self.connection is None:
+            return False
+
+        def cancelled():
+            return cancel_event is not None and cancel_event.is_set()
+
+        if cancelled():
+            return False
+        if self.axis_z is not None:
             self.axis_z.home(wait_until_idle= True)
-            self.axis_y.home(wait_until_idle= False)
-            self.axis_x.home(wait_until_idle= True)
+        if cancelled():
+            return False
+        self.axis_y.home(wait_until_idle= False)
+        if cancelled():
+            return False
+        self.axis_x.home(wait_until_idle= True)
+        return not cancelled()
     
     def wait_until_idle(self) -> None:
         """Wait until all axes
@@ -466,6 +479,9 @@ class Stage:
                     velocity (Vec3, float): can be positive or negative, position indicates which axis to move eg. (0,1,0) moves y axis only.
                     units(str, optional): has to be zaber units eg.  Units.LENGTH_MICROMETRES
         """
+        if self.connection is None or self._disconnecting:
+            return False
+
         try:
             # Move each axis simultaneously
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
@@ -482,13 +498,9 @@ class Stage:
                 self.state.isMoving_z = True
                 self._jog_velocity[2] = velocity[2]
                 self.axis_z.move_velocity(float(velocity[2]), units_from_literals(unit))
-        except MovementFailedException as e:
+        except MotionLibException as e:
             print(f'start_move at velocity {velocity} {unit} failed: {e}')
-            # The command faulted: clear the flags so the axis isn't left stuck
-            #   in a "moving" state that would block the next start_move.
-            self.state.isMoving_x = False
-            self.state.isMoving_y = False
-            self.state.isMoving_z = False
+            self.emergency_stop()
             return False
 
         if self.axis_z is not None and (self._jog_watchdog is None or not self._jog_watchdog.is_alive()):
@@ -506,6 +518,7 @@ class Stage:
                 self.state.isMoving_x or self.state.isMoving_y or self.state.isMoving_z):
             pos = self.get_position(unit='mm', isAsync=False)
             if pos is None or len(pos) < 3:
+                self.emergency_stop()
                 break
             x, y, z = pos[0], pos[1], pos[2]
             vy, vz = self._jog_velocity[1], self._jog_velocity[2]
@@ -518,6 +531,33 @@ class Stage:
             time.sleep(0.02)
 
 
+    def emergency_stop(self) -> bool:
+        if self.connection is None:
+            self.state = StageState()
+            self._jog_velocity = [0.0, 0.0, 0.0]
+            return False
+
+        stopped = False
+        try:
+            self.connection.stop_all(wait_until_idle=False)
+            stopped = True
+        except Exception as e:
+            print(f'Stage stop-all failed: {e}')
+            for axis in (self.axis_x, self.axis_y, self.axis_z):
+                if axis is None:
+                    continue
+                try:
+                    axis.stop(wait_until_idle=False)
+                    stopped = True
+                except Exception as axis_error:
+                    print(f'Stage axis stop failed: {axis_error}')
+        finally:
+            self.state = StageState()
+            self._jog_velocity = [0.0, 0.0, 0.0]
+
+        return stopped
+
+
     def stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> None:
         """Stop movement of an axis or all axes
 
@@ -526,21 +566,13 @@ class Stage:
         """
         if self.connection is None:
             return
+
+        if stopAxis == AxisEnum.ALL:
+            self.emergency_stop()
+            return
         
         try:
-            if stopAxis == AxisEnum.ALL:
-                self.axis_x.stop(wait_until_idle = False)
-                self.axis_y.stop(wait_until_idle = False)
-                if self.axis_z is not None:
-                    self.axis_z.stop(wait_until_idle = False)
-
-                self.state.isMoving_x = False
-                self.state.isMoving_y = False
-                self.state.isMoving_z = False
-                self._jog_velocity = [0.0, 0.0, 0.0]
-
-
-            elif stopAxis == AxisEnum.X:
+            if stopAxis == AxisEnum.X:
                 self.axis_x.stop(wait_until_idle = False)
                 self.state.isMoving_x = False
                 self._jog_velocity[0] = 0.0
@@ -555,7 +587,7 @@ class Stage:
                 self.state.isMoving_z = False
                 self._jog_velocity[2] = 0.0
 
-        except MovementFailedException as e:
+        except MotionLibException as e:
             print(e)
 
 
@@ -664,26 +696,66 @@ class Stage:
         return rangelimits
 
 
-    def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155)) -> None:
+    def on_connect(self, home = True, startloc = True,  start = (20,75, 130), limits =(160,160,155), cancel_event=None) -> bool:
         """startup routine to home, set range and move to start if desired. """
 
+        def cancelled():
+            return cancel_event is not None and cancel_event.is_set()
+
+        if cancelled() or self.connection is None:
+            return False
+
         if home:
-            self.home_stage()
+            if not self.home_stage(cancel_event):
+                return False
+
+        if cancelled() or self.connection is None:
+            return False
         
         self.set_rangelimits(limits)
 
+        if cancelled() or self.connection is None:
+            return False
+
         if startloc:
-            self.move_abs(start)
+            if not self.move_abs(start):
+                return False
+
+        if cancelled() or self.connection is None:
+            return False
         
         device_list = self.connection.detect_devices()
         for device in device_list:
+            if cancelled() or self.connection is None:
+                return False
             device.all_axes.wait_until_idle(throw_error_on_fault = True)
 
+        return not cancelled() and self.connection is not None
+
     
-    def disconnect(self):
+    def disconnect(self) -> bool:
         """close com port connection."""
-        if self.connection is not None:
-            self.connection.close()
+        self._disconnecting = True
+        stopped = False
+        connection = self.connection
+        try:
+            stopped = self.emergency_stop()
+        finally:
+            try:
+                if connection is not None:
+                    connection.close()
+            except Exception as e:
+                print(f'Closing stage connection failed: {e}')
+            finally:
+                self.connection = None
+                self.axis_x = None
+                self.axis_y = None
+                self.axis_z = None
+                self.devices = []
+                self.state = StageState()
+                self._jog_velocity = [0.0, 0.0, 0.0]
+
+        return stopped
     
     
     def is_busy(self) -> bool:

@@ -426,14 +426,14 @@
     {
         "type": "numeric",
         "title": "Minimum Brightness",
-        "desc": "Minimum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value below this threshold will be set to 0.",
+        "desc": "Minimum raw camera brightness used for tracking. Pixels below this value are ignored.",
         "section": "Tracking",
         "key": "min_brightness"
     },
     {
         "type": "numeric",
         "title": "Maximum Brightness",
-        "desc": "Maximum brightness threshold for tracking within integer range [0, 255]. \nPixels with brightness value heigher than this threshold will be set to 0.",
+        "desc": "Maximum raw camera brightness used for tracking. Pixels above this value are ignored.",
         "section": "Tracking",
         "key": "max_brightness"
     },
@@ -516,5 +516,4 @@
         "key": "showfps"
     }
 ]
-
 

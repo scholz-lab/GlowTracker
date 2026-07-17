@@ -10,19 +10,19 @@ from .shared_ndarray import SharedNDArray
 
 class SharedMemoryQueue:
     """
-    A Lock-Free FIFO Shared Memory Data Structure.
+    A FIFO Shared Memory Data Structure.
     Stores a sequence of dict of numpy arrays.
     """
 
     def __init__(self,
             shm_manager: SharedMemoryManager,
             array_specs: List[ArraySpec],
-            buffer_size: int
+            buffer_size: int,
+            context=None,
         ):
 
-        # create atomic counter
-        write_counter = SharedAtomicCounter(shm_manager)
-        read_counter = SharedAtomicCounter(shm_manager)
+        write_counter = SharedAtomicCounter(context)
+        read_counter = SharedAtomicCounter(context)
 
         # allocate shared memory
         shared_arrays = dict()
@@ -45,7 +45,8 @@ class SharedMemoryQueue:
     def create_from_examples(cls, 
             shm_manager: SharedMemoryManager,
             examples: Dict[str, Union[np.ndarray, numbers.Number]], 
-            buffer_size: int
+            buffer_size: int,
+            context=None,
             ):
         specs = list()
         for key, value in examples.items():
@@ -71,7 +72,8 @@ class SharedMemoryQueue:
         obj = cls(
             shm_manager=shm_manager,
             array_specs=specs,
-            buffer_size=buffer_size
+            buffer_size=buffer_size,
+            context=context,
             )
         return obj
     
@@ -89,6 +91,33 @@ class SharedMemoryQueue:
         self.read_counter.store(self.write_counter.load())
     
     def put(self, data: Dict[str, Union[np.ndarray, numbers.Number]]):
+        expected_keys = {spec.name for spec in self.array_specs}
+        actual_keys = set(data)
+        if actual_keys != expected_keys:
+            raise KeyError(
+                f'queue fields differ: expected {sorted(expected_keys)}, '
+                f'got {sorted(actual_keys)}'
+            )
+
+        for spec in self.array_specs:
+            value = data[spec.name]
+            if isinstance(value, np.ndarray):
+                if value.shape != spec.shape:
+                    raise ValueError(
+                        f'{spec.name!r} shape changed: expected {spec.shape}, '
+                        f'got {value.shape}'
+                    )
+                if value.dtype != spec.dtype:
+                    raise TypeError(
+                        f'{spec.name!r} dtype changed: expected {spec.dtype}, '
+                        f'got {value.dtype}'
+                    )
+            elif not isinstance(value, numbers.Number):
+                raise TypeError(
+                    f'{spec.name!r} must be a numpy array or number, '
+                    f'got {type(value).__name__}'
+                )
+
         read_count = self.read_counter.load()
         write_count = self.write_counter.load()
         n_data = write_count - read_count

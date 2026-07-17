@@ -20,6 +20,7 @@ import tifffile
 import Basler_control as basler
 import Zaber_control as zaber
 from AutoFocus import FocusEstimationMethod, estimateFocus
+from image_utils import effective_max_brightness, normalize_image
 
 # 
 # Math
@@ -259,7 +260,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
 
 
-def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int = 255):
+def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int | None = None):
     '''
     use image to detect motion of object.
     input: image of shape (N,M) 
@@ -271,6 +272,9 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     img1_sm = cropCenterImage(img1, capture_radius * 2, capture_radius * 2)
 
     # Set pixels that are outside of the brightness range to 0
+    max_brightness = effective_max_brightness(img1_sm, max_brightness)
+    if min_brightness > max_brightness:
+        raise ValueError('minimum brightness exceeds maximum brightness')
     img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
     
     # Compute tracking mask
@@ -293,6 +297,10 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
    
     # show intermediate steps for debugging
     if display:
+        xmin = (img1.shape[1] - img1_sm.shape[1]) // 2
+        ymin = (img1.shape[0] - img1_sm.shape[0]) // 2
+        xmax = xmin + img1_sm.shape[1]
+        ymax = ymin + img1_sm.shape[0]
         plt.subplot(231)
         plt.imshow(img1, cmap='gray')
         plt.title('img original')
@@ -354,10 +362,7 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
     else:
         resize_factor = 1/bin_factor
     
-    # check if the range is not between 0 and 1 
-    # if not then rescale the image
-    if np.max(img) > 1:
-        img = img / 255
+    img = normalize_image(img)
 
     if dark_bg:
 
@@ -368,8 +373,9 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
             print(f'Error computing mask: {e}')
         
         # gamma correction
-        gamma = np.log(np.mean(img))/np.log(0.5)
-        gamma = np.clip(gamma, 0.5, 2)
+        mean = float(np.mean(img))
+        gamma = np.log(mean) / np.log(0.5) if 0 < mean < 1 else 1.0
+        gamma = np.clip(gamma, 0.5, 2.0)
         img = img**(1/gamma)
 
     else:
@@ -380,8 +386,7 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
     
     # rescale the image to [0, 255] so that further steps
     # including adaptive thresholding works properly
-    img = img * 255
-    img = img.astype(np.uint8)
+    img = np.rint(img * 255).astype(np.uint8)
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
@@ -442,6 +447,9 @@ def find_CMS(mask, K=5, display=False):
     ValueError
         The input image is invalid. Either completely black or white.
     '''
+    if mask.size == 0 or not np.any(mask) or np.all(mask != 0):
+        raise ValueError('Cannot find a centroid in a uniform mask.')
+
     labels = measure.label(mask)
     regionprop = regionprops_table(labels, properties=('centroid', 'area'))
     props = pd.DataFrame(regionprop)
@@ -685,7 +693,10 @@ def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
     # Sin(theta)
     cosTheta = np.dot(vec1normalized, vec2normalized)
     # Cos(theta)
-    sinTheta = np.cross(vec1normalized, vec2normalized)
+    sinTheta = (
+        vec1normalized[0] * vec2normalized[1]
+        - vec1normalized[1] * vec2normalized[0]
+    )
     # Compute angle
     theta = math.atan2(sinTheta, cosTheta)
 
@@ -1127,6 +1138,9 @@ class DepthOfFieldEstimator:
             RuntimeError: When taking an image is unsuccessful
         """
         
+        if numImages < 1:
+            raise ValueError('numImages must be at least 1')
+
         # Create an empty DataFrame
         df = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'], index= range(numImages))
         
@@ -1134,8 +1148,12 @@ class DepthOfFieldEstimator:
         startingPos = stage.get_position(unit='mm')
 
         # Compute moving position
-        currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
-        stepSize_z = searchDistance / (numImages - 1)
+        if numImages == 1:
+            currentPos = list(startingPos)
+            stepSize_z = 0.0
+        else:
+            currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
+            stepSize_z = searchDistance / (numImages - 1)
 
         # Go to the beginning position
         stage.move_abs(currentPos, wait_until_idle= True)
@@ -1184,11 +1202,12 @@ class DepthOfFieldEstimator:
             df.iloc[i] = [currentPos[2], image, estimatedFocus]
 
             # Step Z. In follow mode move Z relatively so the XY following is preserved.
-            currentPos[2] = currentPos[2] + stepSize_z
-            if followWorm:
-                stage.move_z(stepSize_z, unit= 'mm', wait_until_idle= True)
-            else:
-                stage.move_abs(currentPos, wait_until_idle= True)
+            if i + 1 < numImages:
+                currentPos[2] = currentPos[2] + stepSize_z
+                if followWorm:
+                    stage.move_z(stepSize_z, unit= 'mm', wait_until_idle= True)
+                else:
+                    stage.move_abs(currentPos, wait_until_idle= True)
 
         if followWorm:
             # Keep the followed XY; only return Z to the starting height.
@@ -1332,36 +1351,52 @@ class IntensitySweeper:
         self.midZ = None
 
 
-    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> None:
+    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', stopRequested=None) -> None:
+        if numImages < 1:
+            raise ValueError('numImages must be at least 1')
+
         df = pd.DataFrame(columns=['pos_z', 'mean_intensity'], index= range(numImages))
 
         startingPos = stage.get_position(unit='mm')
 
-        stepSize_z = (zEnd - zStart) / (numImages - 1)
-        currentPos = [startingPos[0], startingPos[1], zStart]
+        if numImages == 1:
+            stepSize_z = 0.0
+            currentPos = [startingPos[0], startingPos[1], (zStart + zEnd) / 2]
+        else:
+            stepSize_z = (zEnd - zStart) / (numImages - 1)
+            currentPos = [startingPos[0], startingPos[1], zStart]
 
-        stage.move_abs(currentPos, wait_until_idle= True)
+        try:
+            if stopRequested is not None and stopRequested():
+                raise InterruptedError('Z sweep cancelled')
+            if not stage.move_abs(currentPos, wait_until_idle= True):
+                raise RuntimeError('Moving to the Z-sweep start failed')
 
-        for i in range(numImages):
+            for i in range(numImages):
+                if stopRequested is not None and stopRequested():
+                    raise InterruptedError('Z sweep cancelled')
 
-            isSuccess, image = camera.singleTake()
+                isSuccess, image = camera.singleTake()
 
-            if not isSuccess:
-                raise RuntimeError('Taking an image is unsuccessful')
+                if not isSuccess:
+                    raise RuntimeError('Taking an image is unsuccessful')
 
-            if dualColorMode:
-                w = image.shape[1]
-                if dualColorModeMainSide == 'Left':
-                    image = image[:, :w//2]
-                elif dualColorModeMainSide == 'Right':
-                    image = image[:, w//2:]
+                if dualColorMode:
+                    w = image.shape[1]
+                    if dualColorModeMainSide == 'Left':
+                        image = image[:, :w//2]
+                    elif dualColorModeMainSide == 'Right':
+                        image = image[:, w//2:]
 
-            df.iloc[i] = [currentPos[2], np.mean(image)]
+                df.iloc[i] = [currentPos[2], np.mean(image)]
 
-            currentPos[2] = currentPos[2] + stepSize_z
-            stage.move_abs(currentPos, wait_until_idle= True)
-
-        stage.move_abs(startingPos)
+                if i + 1 < numImages:
+                    currentPos[2] = currentPos[2] + stepSize_z
+                    if not stage.move_abs(currentPos, wait_until_idle= True):
+                        raise RuntimeError('Moving during the Z sweep failed')
+        finally:
+            if stopRequested is None or not stopRequested():
+                stage.move_abs(startingPos)
 
         self.dataFrame = df
 
@@ -1616,4 +1651,3 @@ class Vertex2D:
                 val = exteriorConstant
             
         return val
-        

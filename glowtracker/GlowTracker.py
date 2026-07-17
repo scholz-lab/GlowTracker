@@ -5,9 +5,21 @@ from multiprocessing.managers import SharedMemoryManager
 from SharedMemory import SharedMemoryQueue
 from scan import CenterRadiusFromThreePoints
 import image_saver
-from threading import Thread, Lock, Event
+from image_utils import prepare_texture_data
+from runtime_control import (
+    ManagedStageMove,
+    append_new_focus_values,
+    controller_velocity,
+)
+from threading import Thread, Lock, Event, current_thread
 
 USE_SHARED_MEMORY_SAVER = sys.platform != 'win32'
+SAVE_HANDOFF_JOIN_TIMEOUT = 2.0
+SAVE_ACQUISITION_JOIN_TIMEOUT = 5.0
+SAVE_WORKER_JOIN_TIMEOUT = 15.0
+SAVE_WORKER_TERMINATE_TIMEOUT = 2.0
+SAVE_STATUS_JOIN_TIMEOUT = 2.0
+COORDINATE_CLOSE_TIMEOUT = 2.0
 
 import os
 # Suppress kivy normal initialization logs in the beginning
@@ -132,17 +144,17 @@ def imageToTexture(image: np.ndarray) -> Texture:
     Returns:
         texture (Texture): image as a Kivy Texture
     """    
+    image, bufferfmt = prepare_texture_data(image)
     height, width = image.shape[0], image.shape[1]
-    
-    colorfmt = 'luminance'
+
     if image.ndim == 2:
         colorfmt = 'luminance'
-    elif image.ndim == 3:
+    elif image.ndim == 3 and image.shape[2] == 3:
         colorfmt = 'rgb'
-    elif image.ndim == 4:
+    elif image.ndim == 3 and image.shape[2] == 4:
         colorfmt = 'rgba'
-        
-    bufferfmt = 'ubyte'
+    else:
+        raise ValueError(f'unsupported image shape: {image.shape}')
     
     # Create a new Kivy Texture
     image_texture = Texture.create(
@@ -308,7 +320,7 @@ class LeftColumn(BoxLayout):
             self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a running camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-            
+
         else:
 
             # Check if acquiring image
@@ -336,6 +348,8 @@ class RightColumn(BoxLayout):
         super(RightColumn, self).__init__(**kwargs)
         # Class instance attributes
         self.app: GlowTrackerApp = App.get_running_app()
+        self._macroWidget = None
+        self._macroWidgets = []
 
 
     def dismiss_popup(self):
@@ -356,6 +370,8 @@ class RightColumn(BoxLayout):
 
         # Create MacroScriptWidget Draggable Popup
         widget = MacroScriptWidget(app = self.app)
+        self._macroWidget = widget
+        self._macroWidgets.append(widget)
         widget.closeCallback = self.dismiss_popup
         self._popup = MacroScriptWidgetPopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
         self._popup.closeCallback = self.dismiss_popup
@@ -521,13 +537,21 @@ class MacroScriptWidget(BoxLayout):
             recordingTime (float): recording duratino in seconds
         """
 
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
+
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
 
             # Wait until the camera really stop grabbing
-            while self.app.camera.IsGrabbing():
+            while self.app.camera is not None and self.app.camera.IsGrabbing():
+                if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+                    return
                 time.sleep(0.01)
+
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
         
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', False)
@@ -554,13 +578,21 @@ class MacroScriptWidget(BoxLayout):
         """Start the recording mode.
         """
 
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
+
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
 
             # Wait until the camera really stop grabbing
-            while self.app.camera.IsGrabbing():
+            while self.app.camera is not None and self.app.camera.IsGrabbing():
+                if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+                    return
                 time.sleep(0.01)
+
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
         
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', True)
@@ -887,7 +919,7 @@ class DualColorCalibration(BoxLayout):
         translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
 
         # Combine main and minor side
-        combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= np.uint8)
+        combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= mainSideImage.dtype)
         combinedImage[:,:,0] = mainSideImage
         combinedImage[:,:,1] = translatedMinorSideImage
 
@@ -1515,10 +1547,16 @@ class ZControls(StageAxisController):
 
 
 class GoToControls(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._moveWorker = ManagedStageMove(blocked=True)
+
+    @property
+    def _moveThread(self):
+        return self._moveWorker.thread
+
     def go_to(self):
         app = App.get_running_app()
-        if app.stage is None:
-            return
         try:
             target = [
                 float(self.ids.gotox.text),
@@ -1529,11 +1567,31 @@ class GoToControls(BoxLayout):
             print('invalid coordinate input')
             return
 
-        def _move():
-            app.stage.move_abs(target, 'mm', wait_until_idle= True)
-            app.update_coordinates(isAsync= False)
+        stage = app.stage
+        started = self._moveWorker.start(
+            stage,
+            target,
+            on_success=lambda: app.update_coordinates(isAsync=False),
+            teardown_requested=lambda: (
+                getattr(app, '_hardware_teardown', False)
+                or app.stage is not stage
+            ),
+        )
+        if not started and self._moveWorker.is_active():
+            print('Go To movement is already active')
 
-        Thread(target= _move, daemon= True).start()
+    def request_stop(self, block_new=False):
+        self._moveWorker.request_stop(block_new)
+
+    def wait(self, timeout=None):
+        return self._moveWorker.wait(timeout)
+
+    def is_active(self):
+        return self._moveWorker.is_active()
+
+    def allow_moves(self):
+        self._moveWorker.allow()
+
 
     def prefill(self):
         coords = App.get_running_app().coords
@@ -1735,11 +1793,13 @@ class ImageAcquisitionButton(ToggleButton):
         self.runtimeControls: RuntimeControls | None = None
         self.updateDisplayImageEvent: ClockEvent | None = None
         self.image: np.ndarray = np.zeros((1,1))
+        self.originalImage: np.ndarray = np.zeros((1,1))
         self.imageTimeStamp: float = 0
         self.imageRetrieveTimeStamp: float = 0
         self.dualColorMainSideImage: np.ndarray = np.zeros((1,1))
         self.dualColorMinorSideImage: np.ndarray = np.zeros((1,1))
         self.dualColorMinorToMainMat: np.ndarray | None = None
+        self.acquisitionError: Exception | None = None
 
     
     def on_state(self, widget: Widget, state: str):
@@ -1770,38 +1830,37 @@ class ImageAcquisitionButton(ToggleButton):
             - Stop the acquisition looping thread if not already.
             - Reset GUI back 
         """        
-        if self.camera is None:
-            return
-        
-        # Unschedule the display event thread
-        Clock.unschedule(self.updateDisplayImageEvent)
+        try:
+            if self.updateDisplayImageEvent is not None:
+                Clock.unschedule(self.updateDisplayImageEvent)
+                self.updateDisplayImageEvent = None
+        except Exception as e:
+            print(f'Unscheduling image display failed: {e}')
 
-        # Stop grabbing
-        if self.camera.IsGrabbing():
-            self.camera.StopGrabbing()
+        try:
+            if self.camera is not None and self.camera.IsGrabbing():
+                self.camera.StopGrabbing()
+        except Exception as e:
+            print(f'Stopping camera grabbing failed: {e}')
 
-        # Flag recompute dual color transformation matrix
         self.dualColorMinorToMainMat = None
-        
-        # Reset displayed framecounter
-        self.runtimeControls.framecounter.value = 0
 
-        # reset scale of image
-        self.app.root.ids.middlecolumn.ids.scalableimage.reset()
-
-        # Set self button state to normal.
-        self.state = 'normal'
-
-        # Reset liveAnalysisData
-        liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
-        with liveAnalysisData.lock:
-            liveAnalysisData.minBrightness = 0
-            liveAnalysisData.maxBrightness = 0
-            liveAnalysisData.meanBrightness = 0
-            liveAnalysisData.medianBrightness = 0
-            liveAnalysisData.skewness = 0
-            liveAnalysisData.percentile_5 = 0
-            liveAnalysisData.percentile_95 = 0
+        try:
+            self.runtimeControls.framecounter.value = 0
+            self.app.root.ids.middlecolumn.ids.scalableimage.reset()
+            liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
+            with liveAnalysisData.lock:
+                liveAnalysisData.minBrightness = 0
+                liveAnalysisData.maxBrightness = 0
+                liveAnalysisData.meanBrightness = 0
+                liveAnalysisData.medianBrightness = 0
+                liveAnalysisData.skewness = 0
+                liveAnalysisData.percentile_5 = 0
+                liveAnalysisData.percentile_95 = 0
+        except Exception as e:
+            print(f'Resetting acquisition UI failed: {e}')
+        finally:
+            self.state = 'normal'
     
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
@@ -1815,46 +1874,48 @@ class ImageAcquisitionButton(ToggleButton):
             5. Finished looping callback.
         """   
 
-        if grabArgs.isContinuous:
-            self.camera.StartGrabbing(grabArgs.grabStrategy)
+        self.acquisitionError = None
+        try:
+            if grabArgs.isContinuous:
+                self.camera.StartGrabbing(grabArgs.grabStrategy)
+            else:
+                self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
 
-        else:
-            # Grab for a specific number of frames
-            self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
-            
-        fps = self.camera.ResultingFrameRate()
-        print(f'Grabbing Framerate: {fps:.3f} fps')
+            fps = self.camera.ResultingFrameRate()
+            print(f'Grabbing Framerate: {fps:.3f} fps')
 
-        # Schedule a display update
-        fps = self.app.config.getfloat('Camera', 'display_fps')
-        self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
-        print(f'Displaying at {fps:.3f} fps')
+            fps = self.app.config.getfloat('Camera', 'display_fps')
+            self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
+            print(f'Displaying at {fps:.3f} fps')
 
-        returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+            returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+            imageAcquisitionManager: ImageAcquisitionManager = self.parent
+            imageAcquisitionManager.startTime = time.perf_counter()
 
-        # Register start acquisition time
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
-        imageAcquisitionManager.startTime = time.perf_counter()
+            while self.acquisitionCondition():
+                isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
 
-        # Start image acquisition loop
-        while self.acquisitionCondition():
+                if isSuccess:
+                    if returnCameraOnHoldFlag:
+                        self.camera.setIsOnHold(False)
+                        returnCameraOnHoldFlag = False
 
-            # retrieve an image
-            isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
-
-            if isSuccess:
-
-                if returnCameraOnHoldFlag:
-                    self.camera.setIsOnHold(False)
-                    returnCameraOnHoldFlag = False
-
-                # Process the received image
-                self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
-
-                # Trigger image callback
-                self.receiveImageCallback()
-
-        self.finishAcquisitionCallback()
+                    self.processImageCallback(image, imageTimeStamp, imageRetrieveTimeStamp)
+                    self.receiveImageCallback()
+        except Exception as e:
+            self.acquisitionError = e
+            print(f'Image acquisition failed: {e}')
+        finally:
+            try:
+                self.finishAcquisitionCallback()
+            except Exception as e:
+                print(f'Finishing image acquisition failed: {e}')
+            finally:
+                if self.state == 'down':
+                    try:
+                        self.stopImageAcquisition()
+                    except Exception as e:
+                        print(f'Stopping image acquisition failed: {e}')
 
 
     def acquisitionCondition(self) -> bool:
@@ -1876,10 +1937,11 @@ class ImageAcquisitionButton(ToggleButton):
             imageRetrieveTimeStamp (float): the timestamp when receiving image in the software.
         """        
 
-        # Crop image
         h, w = image.shape
         cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
         image = image[ cropY : h - cropY, cropX : w - cropX ]
+        self.originalImage = image
+        h, w = image.shape
         
         # Process image. For now this is only the case for dual color mode
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
@@ -1889,14 +1951,16 @@ class ImageAcquisitionButton(ToggleButton):
         if dualcolorMode:
             # If in dual color mode then post process the image
 
-            # Split image into main and minor side
+            splitWidth = w // 2
+            leftImage = image[:, :splitWidth]
+            rightImage = image[:, w - splitWidth:]
             if mainSide == 'Left':
-                self.dualColorMainSideImage = image[:,:w//2]
-                self.dualColorMinorSideImage = image[:,w//2:]
+                self.dualColorMainSideImage = leftImage
+                self.dualColorMinorSideImage = rightImage
 
             elif mainSide == 'Right':
-                self.dualColorMainSideImage = image[:,w//2:]
-                self.dualColorMinorSideImage = image[:,:w//2]
+                self.dualColorMainSideImage = rightImage
+                self.dualColorMinorSideImage = leftImage
             
             # Compute minor to main calibration matrix if first time
             if self.dualColorMinorToMainMat is None:
@@ -1914,7 +1978,11 @@ class ImageAcquisitionButton(ToggleButton):
             if dualcolorViewMode == 'Merged':
 
                 # Combine main and minor side
-                combinedImage = np.zeros(shape= (self.dualColorMainSideImage.shape[0], self.dualColorMainSideImage.shape[1], 3), dtype= np.uint8)
+                combinedImage = np.zeros(
+                    shape=(self.dualColorMainSideImage.shape[0],
+                           self.dualColorMainSideImage.shape[1], 3),
+                    dtype=self.dualColorMainSideImage.dtype,
+                )
                 combinedImage[:,:,0] = self.dualColorMainSideImage
                 combinedImage[:,:,1] = self.dualColorMinorSideImage
 
@@ -2039,7 +2107,7 @@ class LiveViewButton(ImageAcquisitionButton):
         self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
-        if self.camera is None:
+        if self.camera is None or getattr(self.app, '_hardware_teardown', False):
             self.state = 'normal'
             return
         
@@ -2100,6 +2168,10 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = 'normal'
         self.prevLiveAnalysisButtonState: str = 'normal'
+        self._recordingCleanupLock = Lock()
+        self._saveFailureLock = Lock()
+        self._recordingCleanupStarted = False
+        self._abandonedSavers = []
         
 
     @override
@@ -2114,9 +2186,19 @@ class RecordButton(ImageAcquisitionButton):
         self.camera = self.app.camera
 
         if self.camera is None:
+            if state == 'down':
+                self.state = 'normal'
             return
 
         if state == 'down':
+            if getattr(self.app, '_hardware_teardown', False):
+                self.state = 'normal'
+                return
+            if self.imageAcquisitionThread is not None \
+                    and self.imageAcquisitionThread.is_alive():
+                print('Previous recording acquisition is still stopping')
+                self.state = 'normal'
+                return
             self.startImageAcquisition()
             
         else:
@@ -2145,7 +2227,7 @@ class RecordButton(ImageAcquisitionButton):
         self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
 
         # If there is no camera or recording file path doesn't exists
-        if self.camera is None:
+        if self.camera is None or getattr(self.app, '_hardware_teardown', False):
             self.state = 'normal'
             return
         
@@ -2177,71 +2259,381 @@ class RecordButton(ImageAcquisitionButton):
         # self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
         # self.savingthread.start()
         
-        # Prep DAQ control
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.start( np.array(self.app.coords[:2]) )
-
-        # Setup image acquisition thread parameters
-        self.initRecordingParams()
         self.frameCounter = 0
-        self.droppedSaveFrames = 0
+        self.saveHandoffError = None
+        self._saverFailureReported = False
+        self._imageSaverStarted = False
+        self._recordingCleanupStarted = False
+        self.shm_manager = None
+        self.saveproc = None
+        self.saveThreads = []
+        self.stop_event = None
+        self.saveFailureEvent = None
+        self.saveStatusQueue = None
+        self.saveStatusThread = None
+        self.saveStatusStopEvent = Event()
+        self._saveStatusAbandoned = False
+        self.saveHandoffThread = None
+        self.saveHandoffQueue = None
+        self.saveHandoffStopEvent = Event()
+        self.coordinateFile = None
+        self.saveAcknowledgements = None
 
-        if USE_SHARED_MEMORY_SAVER:
-            # Offload frame saving to a separate process through a shared-memory queue
-            self.shm_manager = SharedMemoryManager()
-            self.shm_manager.start()
-            example = {
-                'img': np.zeros((self.camera.Height(), self.camera.Width()), dtype= np.uint8),
-                'idx': 0,
-            }
-            self.imageQueue = SharedMemoryQueue.create_from_examples(self.shm_manager, example, buffer_size= 60)
-            self.stop_event = mp.Event()
-            ctx = mp.get_context('forkserver')
-            self.saveproc = ctx.Process(
-                target=image_saver.save_worker,
-                args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
-                daemon=True)
-            self.saveproc.start()
-        else:
+        try:
+            if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
+                self.app.daqControl.start(np.array(self.app.coords[:2]))
+
+            self.initRecordingParams()
+            grabArgs = basler.CameraGrabParameters(
+                bufferSize=self.app.config.getint('Experiment', 'buffersize'),
+                isContinuous=self.isContinuous,
+                numberOfImagesToGrab=self.numberRecordframes,
+                grabStrategy=pylon.GrabStrategy_OneByOne
+            )
+
+            self.coordinateFile = self.initCoordinateFile()
+            self.saveAcknowledgements = image_saver.SaveAcknowledgements(
+                self.coordinateFile
+            )
+            self.imageAcquisitionThread = Thread(
+                target=self.imageAcquisitionLoopingThread,
+                daemon=True,
+                kwargs={'grabArgs': grabArgs}
+            )
+            self.imageAcquisitionThread.start()
+        except Exception as e:
+            self.acquisitionError = e
+            print(f'Starting image acquisition failed: {e}')
+            self.stopImageAcquisition()
+
+
+    def _startImageSaver(self, example_image: np.ndarray) -> None:
+        if self._imageSaverStarted:
+            return
+
+        try:
+            if USE_SHARED_MEMORY_SAVER:
+                processMethod = 'spawn' if sys.platform == 'win32' \
+                    else 'forkserver'
+                ctx = mp.get_context(processMethod)
+                self.shm_manager = SharedMemoryManager(ctx=ctx)
+                self.shm_manager.start()
+                example = {
+                    'img': np.empty(example_image.shape, dtype=example_image.dtype),
+                    'idx': 0,
+                    'channel': 0,
+                }
+                self.imageQueue = SharedMemoryQueue.create_from_examples(
+                    self.shm_manager, example, buffer_size=60,
+                    context=ctx,
+                )
+                self.stop_event = ctx.Event()
+                self.saveFailureEvent = ctx.Event()
+                self.saveStatusQueue = ctx.Queue()
+                self.saveproc = ctx.Process(
+                    target=image_saver.save_worker,
+                    args=(self.imageQueue, self.saveFilePath,
+                          self.imageFilenameFormat, self.stop_event,
+                          self.saveStatusQueue, self.saveFailureEvent),
+                    daemon=True)
+                self.saveproc.start()
+            else:
+                self.imageQueue = Queue(maxsize=60)
+                self.stop_event = Event()
+                self.saveFailureEvent = Event()
+                self.saveStatusQueue = Queue()
+                self.saveThreads = [
+                    Thread(
+                        target=image_saver.save_worker,
+                        args=(self.imageQueue, self.saveFilePath,
+                              self.imageFilenameFormat, self.stop_event,
+                              self.saveStatusQueue, self.saveFailureEvent),
+                        daemon=True)
+                    for _ in range(3)
+                ]
+                for saveThread in self.saveThreads:
+                    saveThread.start()
+
+            self.saveStatusThread = Thread(
+                target=self._saveStatusLoop,
+                args=(
+                    self.saveStatusQueue,
+                    self.saveStatusStopEvent,
+                    self.saveAcknowledgements,
+                    self.saveproc,
+                    self.saveThreads,
+                    self.saveFailureEvent,
+                ),
+                daemon=True,
+            )
+            self.saveStatusThread.start()
+            self.saveHandoffQueue = Queue(maxsize=16)
+            self.saveHandoffThread = Thread(
+                target=self._saveHandoffLoop,
+                args=(
+                    self.saveHandoffQueue,
+                    self.saveHandoffStopEvent,
+                    self.imageQueue,
+                    self.saveFailureEvent,
+                    self.saveAcknowledgements,
+                ),
+                daemon=True,
+            )
+            self.saveHandoffThread.start()
+            self._imageSaverStarted = True
+        except Exception as e:
+            self._setSaverFailure(f'Starting image saver failed: {e}')
+            self._cleanupImageSaver()
+            raise
+
+
+    def _cleanupImageSaver(self) -> None:
+        if self.saveHandoffStopEvent is not None:
+            self.saveHandoffStopEvent.set()
+        handoffThread = self.saveHandoffThread
+        handoffAlive = False
+        try:
+            if handoffThread is not None and handoffThread is not current_thread():
+                if handoffThread.is_alive():
+                    handoffThread.join(SAVE_HANDOFF_JOIN_TIMEOUT)
+                handoffAlive = handoffThread.is_alive()
+                if handoffAlive:
+                    self._setSaverFailure(
+                        'Image handoff did not stop before the shutdown deadline'
+                    )
+        except Exception as e:
+            print(f'Stopping image handoff failed: {e}')
+
+        try:
+            if self.stop_event is not None:
+                self.stop_event.set()
+        except Exception as e:
+            print(f'Setting image saver stop event failed: {e}')
+
+        processAlive = False
+        try:
+            if self.saveproc is not None and self.saveproc.pid is not None:
+                self.saveproc.join(SAVE_WORKER_JOIN_TIMEOUT)
+                processAlive = self.saveproc.is_alive()
+                if processAlive:
+                    self._setSaverFailure(
+                        'Image saver did not stop before the shutdown deadline'
+                    )
+                    self.saveproc.terminate()
+                    self.saveproc.join(SAVE_WORKER_TERMINATE_TIMEOUT)
+                    processAlive = self.saveproc.is_alive()
+                if processAlive and hasattr(self.saveproc, 'kill'):
+                    self.saveproc.kill()
+                    self.saveproc.join(SAVE_WORKER_TERMINATE_TIMEOUT)
+                    processAlive = self.saveproc.is_alive()
+                if self.saveproc.exitcode not in (None, 0):
+                    self._setSaverFailure(
+                        f'Image saver exited with code {self.saveproc.exitcode}'
+                    )
+        except Exception as e:
+            print(f'Stopping image saver process failed: {e}')
+            self._setSaverFailure(f'Stopping image saver process failed: {e}')
+
+        threadDeadline = time.monotonic() + SAVE_WORKER_JOIN_TIMEOUT
+        liveSaveThreads = []
+        for saveThread in self.saveThreads:
+            try:
+                if saveThread is not current_thread() and saveThread.is_alive():
+                    saveThread.join(max(0.0, threadDeadline - time.monotonic()))
+                if saveThread.is_alive():
+                    liveSaveThreads.append(saveThread)
+            except Exception as e:
+                print(f'Stopping image saver thread failed: {e}')
+        if liveSaveThreads:
+            self._setSaverFailure(
+                'Image saver threads did not stop before the shutdown deadline'
+            )
+
+        if self.saveFailureEvent is not None \
+                and self.saveFailureEvent.is_set() \
+                and self.saveHandoffError is None:
+            self._setSaverFailure('Image saver stopped without an acknowledgement')
+
+        if self.saveStatusStopEvent is not None:
+            self.saveStatusStopEvent.set()
+        statusThread = self.saveStatusThread
+        statusAlive = False
+        try:
+            if statusThread is not None and statusThread is not current_thread():
+                if statusThread.is_alive():
+                    statusThread.join(SAVE_STATUS_JOIN_TIMEOUT)
+                statusAlive = statusThread.is_alive()
+                if statusAlive:
+                    self._setSaverFailure(
+                        'Image saver status monitor did not stop before the shutdown deadline'
+                    )
+        except Exception as e:
+            print(f'Stopping image saver status monitor failed: {e}')
+
+        if self.saveAcknowledgements is not None \
+                and not statusAlive and not handoffAlive:
+            try:
+                unresolved = self.saveAcknowledgements.discard_pending()
+                if unresolved:
+                    self._setSaverFailure(
+                        f'{unresolved} image frames were not acknowledged'
+                    )
+            except Exception as e:
+                self._setSaverFailure(
+                    f'Finalizing image acknowledgements failed: {e}'
+                )
+
+        try:
+            if self.shm_manager is not None \
+                    and not processAlive and not handoffAlive:
+                self.shm_manager.shutdown()
+        except Exception as e:
+            print(f'Shutting down shared memory failed: {e}')
+        finally:
+            self._saveStatusAbandoned = statusAlive or handoffAlive
+            if processAlive or handoffAlive or liveSaveThreads or statusAlive:
+                self._abandonedSavers.append((
+                    self.shm_manager,
+                    self.saveproc,
+                    self.saveThreads,
+                    self.saveHandoffThread,
+                    self.saveStatusThread,
+                    self.imageQueue,
+                    self.saveStatusQueue,
+                ))
+            self._imageSaverStarted = False
             self.shm_manager = None
             self.saveproc = None
-            self.imageQueue = Queue(maxsize= 60)
-            self.stop_event = Event()
-            self.saveThreads = [
-                Thread(
-                    target=image_saver.save_worker,
-                    args=(self.imageQueue, self.saveFilePath, self.imageFilenameFormat, self.stop_event),
-                    daemon=True)
-                for _ in range(3)
-            ]
-            for saveThread in self.saveThreads:
-                saveThread.start()
+            self.saveThreads = []
+            self.stop_event = None
+            self.saveFailureEvent = None
+            self.saveStatusQueue = None
+            self.saveStatusThread = None
+            self.saveStatusStopEvent = None
+            self.saveHandoffThread = None
+            self.saveHandoffQueue = None
+            self.saveHandoffStopEvent = None
 
-        self.saveHandoffQueue = Queue(maxsize=16)
-        self._saveHandoffStop = False
-        self.saveHandoffThread = Thread(target=self._saveHandoffLoop, daemon=True)
-        self.saveHandoffThread.start()
 
-        grabArgs = basler.CameraGrabParameters(
-            bufferSize= self.app.config.getint('Experiment', 'buffersize'),
-            isContinuous= self.isContinuous,
-            numberOfImagesToGrab= self.numberRecordframes,
-            grabStrategy= pylon.GrabStrategy_OneByOne
-        )
+    def _setSaverFailure(self, message: str) -> None:
+        with self._saveFailureLock:
+            if self._saverFailureReported:
+                return
+            self._saverFailureReported = True
+            self.saveHandoffError = message
+            self.acquisitionError = RuntimeError(message)
+            try:
+                if self.saveFailureEvent is not None:
+                    self.saveFailureEvent.set()
+            except Exception:
+                pass
 
-        # open coordinate file
-        self.coordinateFile = self.initCoordinateFile()
+        print(f'Image saver failed: {message}')
+        try:
+            if self.camera is not None and self.camera.IsGrabbing():
+                self.camera.StopGrabbing()
+        except Exception as e:
+            print(f'Stopping acquisition after image saver failure failed: {e}')
 
-        # Spawn image acquisition thread
-        self.imageAcquisitionThread = Thread(
-            target= self.imageAcquisitionLoopingThread,
-            daemon= True,
-            kwargs= {
-                'grabArgs' : grabArgs,
-            }
-        )
+        def showError(*args):
+            if getattr(self.app, '_hardware_teardown', False):
+                return
+            WarningPopup(
+                title='Recording stopped',
+                text=f'Image saving failed:\n{message}',
+                size_hint=(0.6, 0.3),
+                closeTime=10,
+            ).open()
 
-        self.imageAcquisitionThread.start()
+        try:
+            Clock.schedule_once(showError)
+        except Exception:
+            pass
+
+
+    def _setRunSaverFailure(self, message, failureEvent) -> None:
+        if failureEvent is self.saveFailureEvent:
+            self._setSaverFailure(message)
+        else:
+            print(f'Abandoned image saver failed: {message}')
+
+
+    def _failSaveFrame(
+            self, index: int, message: str,
+            acknowledgements=None, failureEvent=None) -> None:
+        if acknowledgements is None:
+            acknowledgements = self.saveAcknowledgements
+        if failureEvent is None:
+            failureEvent = self.saveFailureEvent
+        try:
+            if acknowledgements is not None:
+                acknowledgements.failed(index)
+        except Exception as e:
+            message = f'{message}; updating coordinate acknowledgements failed: {e}'
+        self._setRunSaverFailure(message, failureEvent)
+
+
+    def _saverWorkerExited(self, saveproc, saveThreads) -> bool:
+        try:
+            if saveproc is not None and saveproc.pid is not None:
+                return not saveproc.is_alive()
+            if saveThreads:
+                return any(not thread.is_alive() for thread in saveThreads)
+        except Exception:
+            return True
+        return False
+
+
+    def _saveStatusLoop(
+            self, statusQueue, stopEvent, acknowledgements,
+            saveproc, saveThreads, failureEvent) -> None:
+        while True:
+            try:
+                status, index, channel, error = statusQueue.get(
+                    timeout=0.1
+                )
+            except Empty:
+                if stopEvent.is_set():
+                    break
+                if failureEvent is self.saveFailureEvent \
+                        and not self._recordingCleanupStarted \
+                        and self._saverWorkerExited(saveproc, saveThreads):
+                    self._setRunSaverFailure(
+                        'Image saver worker exited unexpectedly',
+                        failureEvent,
+                    )
+                continue
+            except Exception as e:
+                self._setRunSaverFailure(
+                    f'Receiving image saver acknowledgement failed: {e}',
+                    failureEvent,
+                )
+                break
+
+            if status == 'saved':
+                try:
+                    if acknowledgements is None:
+                        raise RuntimeError('save acknowledgements are unavailable')
+                    acknowledgements.saved(int(index), int(channel))
+                except Exception as e:
+                    self._failSaveFrame(
+                        int(index),
+                        f'Writing acknowledged coordinates failed: {e}',
+                        acknowledgements,
+                        failureEvent,
+                    )
+            elif status == 'failed':
+                self._failSaveFrame(
+                    int(index),
+                    f'Writing frame {index}, channel {channel} failed: {error}',
+                    acknowledgements,
+                    failureEvent,
+                )
+            else:
+                self._setRunSaverFailure(
+                    f'Image saver returned an unknown status: {status}',
+                    failureEvent,
+                )
 
 
     def initCoordinateFile(self) -> TextIOWrapper:
@@ -2349,43 +2741,73 @@ class RecordButton(ImageAcquisitionButton):
             - Un-disabled (enable if) the LiveView button
         """        
 
-        if self.camera is None or self.frameCounter == 0:
-            return
-        
-        # If the live view button was previously running, 
-        #   then set the transitioning "OnHold" flag.
-        if self.prevLiveViewButtonState == 'down':
-            self.camera.setIsOnHold(True)
+        with self._recordingCleanupLock:
+            if self._recordingCleanupStarted:
+                return
+            self._recordingCleanupStarted = True
 
-        print(f'Recorded {self.frameCounter} frames')
-
-        # Reset frame counter
+        recordedFrames = self.frameCounter
         self.frameCounter = 0
+        print(f'Recorded {recordedFrames} frames')
 
-        # Stop the camera and clear values
+        try:
+            if self.camera is not None and self.prevLiveViewButtonState == 'down':
+                self.camera.setIsOnHold(True)
+        except Exception as e:
+            print(f'Setting camera hold state failed: {e}')
+
         super().stopImageAcquisition()
-
         print('Stopped recording')
 
-        # Schedule closing coordinate file a bit later
-        Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
-        
-        # Close saving threads
-        # if self.savingthread:
-        #     self.imageQueue.put(None)
-        #     self.savingthread.join()
-        # Flush the handoff thread so all queued frames reach the saver, then stop it.
-        self._saveHandoffStop = True
-        self.saveHandoffThread.join()
-        self.stop_event.set()
-        if USE_SHARED_MEMORY_SAVER:
-            self.saveproc.join()
-            self.shm_manager.shutdown()
-        else:
-            for saveThread in self.saveThreads:
-                saveThread.join()
-        if getattr(self, 'droppedSaveFrames', 0):
-            print(f'WARNING: dropped {self.droppedSaveFrames} frames from saving (disk could not keep up)')
+        acquisitionThread = self.imageAcquisitionThread
+        if acquisitionThread is not None \
+                and acquisitionThread is not current_thread() \
+                and acquisitionThread.is_alive():
+            acquisitionThread.join(SAVE_ACQUISITION_JOIN_TIMEOUT)
+            if acquisitionThread.is_alive():
+                self._setSaverFailure(
+                    'Image acquisition did not stop before saver shutdown'
+                )
+
+        try:
+            self._cleanupImageSaver()
+        except Exception as e:
+            print(f'Stopping image saver failed: {e}')
+
+        if not self._saveStatusAbandoned:
+            try:
+                if self.coordinateFile is not None \
+                        and not self.coordinateFile.closed:
+                    coordinateFile = self.coordinateFile
+                    closed, closeError, closeThread = \
+                        image_saver.close_file_with_timeout(
+                            coordinateFile, COORDINATE_CLOSE_TIMEOUT
+                        )
+                    self.coordinateFile = None
+                    if not closed:
+                        if closeThread.is_alive():
+                            self._abandonedSavers.append(
+                                (coordinateFile, closeThread)
+                            )
+                            message = 'Coordinate file did not close before the shutdown deadline'
+                        else:
+                            message = f'Closing coordinate file failed: {closeError}'
+                        print(message)
+                        self._setSaverFailure(message)
+            except Exception as e:
+                print(f'Closing coordinate file failed: {e}')
+
+        savedFrames = 0
+        failedFrames = 0
+        if self.saveAcknowledgements is not None:
+            savedFrames = self.saveAcknowledgements.saved_frames
+            failedFrames = self.saveAcknowledgements.failed_frames
+        print(
+            f'Image saving completed: {savedFrames} saved, '
+            f'{failedFrames} failed, {recordedFrames} captured'
+        )
+        if self.saveHandoffError is not None:
+            print(f'WARNING: recording stopped after saver failure: {self.saveHandoffError}')
  
 
 
@@ -2399,16 +2821,29 @@ class RecordButton(ImageAcquisitionButton):
         #   within the same Kivy render timeframe as this thread. By calling it through Clock.schedule_once,
         #   we essentially schedule the on_state to be call in the next Kivy render timeframe, ensuring that
         #   it is not invoked from a thread but from the main thread always.
+        recordingCamera = self.camera
+
         def resumeButtonsState(*args):
             # LiveView
             self.parent.liveviewbutton.disabled = False
-            self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+            if not getattr(self.app, '_hardware_teardown', False) \
+                    and self.app.camera is recordingCamera:
+                self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+            else:
+                self.parent.liveviewbutton.state = 'normal'
         
-        Clock.schedule_once( resumeButtonsState )
+        try:
+            Clock.schedule_once(resumeButtonsState)
+        except Exception as e:
+            print(f'Restoring acquisition buttons failed: {e}')
 
         # Reset the DAQ state
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.reset()
+            try:
+                self.app.daqControl.reset()
+            except Exception as e:
+                print(f'Resetting DAQ after acquisition failed: {e}')
+                self.app.daqControl.safe_off()
     
 
     @override
@@ -2417,6 +2852,7 @@ class RecordButton(ImageAcquisitionButton):
         return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
             and (self.isContinuous or (self.frameCounter < self.numberRecordframes)) \
+            and (self.saveFailureEvent is None or not self.saveFailureEvent.is_set()) \
             and self.state == 'down'
 
     
@@ -2441,33 +2877,47 @@ class RecordButton(ImageAcquisitionButton):
             - Put the image into an image saving queue.
         """
 
-        # Write coordinate into file.
-        if not self.coordinateFile.closed:
+        if self.isDualColorMode and self.dualColorRecordingMode == 'Splitted':
+            saveImages = (
+                (self.dualColorMainSideImage, 1),
+                (self.dualColorMinorSideImage, 2),
+            )
+        else:
+            saveImages = ((self.originalImage, 0),)
+
+        frameIndex = self.frameCounter
+        coords = tuple(self.app.coords[:3])
+        with self.parent.liveAnalysisData.lock:
+            analysis = self.parent.liveAnalysisData
+            coordinateRow = (
+                f'{frameIndex} {self.imageTimeStamp} '
+                f'{coords[0]} {coords[1]} {coords[2]} '
+                f'{analysis.minBrightness} {analysis.maxBrightness} '
+                f'{analysis.meanBrightness} {analysis.medianBrightness} '
+                f'{analysis.skewness} {analysis.percentile_5} '
+                f'{analysis.percentile_95} \n'
+            )
+
+        self._startImageSaver(saveImages[0][0])
+        if self.saveAcknowledgements is None:
+            raise RuntimeError('save acknowledgements are unavailable')
+        self.saveAcknowledgements.add(
+            frameIndex,
+            coordinateRow,
+            (channel for _, channel in saveImages),
+        )
+
+        for saveImage, channel in saveImages:
             try:
-                with self.parent.liveAnalysisData.lock:
-                    self.coordinateFile.write(f"{self.frameCounter} \
-{self.imageTimeStamp} \
-{self.app.coords[0]} \
-{self.app.coords[1]} \
-{self.app.coords[2]} \
-{self.parent.liveAnalysisData.minBrightness} \
-{self.parent.liveAnalysisData.maxBrightness} \
-{self.parent.liveAnalysisData.meanBrightness} \
-{self.parent.liveAnalysisData.medianBrightness} \
-{self.parent.liveAnalysisData.skewness} \
-{self.parent.liveAnalysisData.percentile_5} \
-{self.parent.liveAnalysisData.percentile_95} \n")
-
-            #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
-            except ValueError as e:
-                print(f'Error writing coordinateFile: {e}')
-
-        # Hand the frame reference to the handoff thread (no copy here). Never block
-        # the acquisition thread: if the handoff queue is full, drop the save.
-        try:
-            self.saveHandoffQueue.put_nowait((self.image, self.frameCounter))
-        except Full:
-            self.droppedSaveFrames += 1
+                self.saveHandoffQueue.put_nowait(
+                    (saveImage, frameIndex, channel)
+                )
+            except Full:
+                self._failSaveFrame(
+                    frameIndex,
+                    f'Image handoff queue filled at frame {frameIndex}'
+                )
+                break
 
         self.frameCounter += 1
 
@@ -2494,28 +2944,54 @@ class RecordButton(ImageAcquisitionButton):
         super().receiveImageCallback()
     
 
-    def _saveHandoffLoop(self) -> None:
+    def _saveHandoffLoop(
+            self, handoffQueue, stopEvent, imageQueue,
+            failureEvent, acknowledgements) -> None:
         while True:
             try:
-                image, idx = self.saveHandoffQueue.get(timeout=0.1)
+                image, idx, channel = handoffQueue.get(timeout=0.1)
             except Empty:
-                if self._saveHandoffStop:
+                if stopEvent.is_set():
                     break
                 continue
+
+            if failureEvent is not None and failureEvent.is_set():
+                try:
+                    if acknowledgements is not None:
+                        acknowledgements.failed(idx)
+                except Exception as e:
+                    print(f'Discarding failed image acknowledgement failed: {e}')
+                continue
+
             try:
-                self.imageQueue.put({'img': image, 'idx': idx})
+                if USE_SHARED_MEMORY_SAVER:
+                    imageQueue.put(
+                        {'img': image, 'idx': idx, 'channel': channel}
+                    )
+                else:
+                    imageQueue.put(
+                        {'img': image, 'idx': idx, 'channel': channel}, timeout=0.1
+                    )
             except Full:
-                self.droppedSaveFrames += 1
+                self._failSaveFrame(
+                    idx,
+                    f'Image saver queue filled at frame {idx}',
+                    acknowledgements,
+                    failureEvent,
+                )
+            except Exception as e:
+                self._failSaveFrame(
+                    idx,
+                    f'Passing frame {idx} to the image saver failed: {e}',
+                    acknowledgements,
+                    failureEvent,
+                )
 
 
     @override
     def finishAcquisitionCallback(self) -> None:
         """Send stop signal to image saving threads and stop image acquisition.
         """
-        # Reset the DAQ state
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.reset()
-
         # There are two ways to reach this point:
         #   a. Manually stop recording by clicking the Record button
         #   b. Automatically after recorded target number of frames.
@@ -3206,6 +3682,7 @@ class RuntimeControls(BoxLayout):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
         self.liveFocusThread = None
+        self.trackthread = None
         self.focus_motion = 0
         self.track_done = Event()
         self.isTracking = False
@@ -3381,17 +3858,20 @@ class RuntimeControls(BoxLayout):
             if autoFocusPID.focusLog:
                 print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
-            # Move relative z-position
-            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
+            if self.livefocuscheckbox.state != 'down' \
+                    or getattr(app, '_hardware_teardown', False):
+                break
 
-            # Update App's internal stage coordinate
-            app.coords[2] = app.coords[2] + relPosZ
+            if stage.move_z(relPosZ, unit='mm', wait_until_idle= False):
+                app.coords[2] = app.coords[2] + relPosZ
             
             if isShowGraph:
-                # Update live graph data
-                with graph_data_lock:
-                    graph_x_data.append(len(autoFocusPID.focusLog) - 1)
-                    graph_y_data.append(autoFocusPID.focusLog[-1])
+                append_new_focus_values(
+                    autoFocusPID.focusLog,
+                    graph_x_data,
+                    graph_y_data,
+                    graph_data_lock,
+                )
             
             endTime = time.perf_counter()
 
@@ -3403,8 +3883,7 @@ class RuntimeControls(BoxLayout):
             if waitTime > 0:
                 time.sleep(waitTime)
         
-        # The live focus has stopped
-        self.livefocuscheckbox.state == 'normal'
+        self.livefocuscheckbox.state = 'normal'
     
 
     def stopLiveFocus(self):
@@ -3454,6 +3933,11 @@ class RuntimeControls(BoxLayout):
         """        
         app = App.get_running_app()
         stage = app.stage
+        if getattr(app, '_hardware_teardown', False):
+            self.trackingcheckbox.state = 'normal'
+            return
+        if self.trackthread is not None and self.trackthread.is_alive():
+            return
         units = app.config.get('Calibration', 'step_units')
         minstep = app.config.getfloat('Tracking', 'min_step')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
@@ -3497,12 +3981,20 @@ class RuntimeControls(BoxLayout):
 
         # Move the stage
         if abs(xstep) > minstep:
-            stage.move_x(xstep, unit= units, wait_until_idle= True)
+            if not stage.move_x(xstep, unit= units, wait_until_idle= True):
+                self.trackingcheckbox.state = 'normal'
+                return
         if abs(ystep) > minstep:
-            stage.move_y(ystep, unit= units, wait_until_idle= True)
+            if not stage.move_y(ystep, unit= units, wait_until_idle= True):
+                self.trackingcheckbox.state = 'normal'
+                return
 
         # Update stage coordinate in the app
-        app.coords =  app.stage.get_position()
+        position = app.stage.get_position()
+        if position is None:
+            self.trackingcheckbox.state = 'normal'
+            return
+        app.coords = position
 
         # 
         # Start the tracking
@@ -3538,10 +4030,14 @@ class RuntimeControls(BoxLayout):
         self.track_done.clear()
         
         def _start(dt):
+            if self.track_done.is_set() or getattr(app, '_hardware_teardown', False):
+                return
             mgr.liveviewbutton.state = 'down'
             Clock.schedule_interval(_go, 0.1)
         
         def _go(dt):
+            if self.track_done.is_set() or getattr(app, '_hardware_teardown', False):
+                return False
             if app.camera is None or not app.camera.IsGrabbing():
                 return
             h, w = app.image.shape[0], app.image.shape[1]
@@ -3554,7 +4050,7 @@ class RuntimeControls(BoxLayout):
 
         Clock.schedule_once(_start)
         self.track_done.wait()
-        if record:
+        if record and not getattr(app, '_hardware_teardown', False):
             Clock.schedule_once(lambda dt: setattr(mgr.recordbutton, 'state', 'normal'))
     
 
@@ -3574,11 +4070,41 @@ class RuntimeControls(BoxLayout):
     
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
+        try:
+            self._trackingLoop(
+                minstep, units, capture_radius, binning, dark_bg, area,
+                threshold, mode, min_brightness, max_brightness
+            )
+        except Exception as e:
+            print(f'Tracking failed: {e}')
+        finally:
+            self.isTracking = False
+            self.track_done.set()
+            self.cmsOffset_x = None
+            self.cmsOffset_y = None
+            self.trackingMask = None
+            if self.trackingcheckbox.state == 'down':
+                Clock.schedule_once(
+                    lambda dt: setattr(self.trackingcheckbox, 'state', 'normal')
+                )
+
+
+    def _trackingLoop(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
         stage = app.stage
         camera = app.camera
+
+        unitToMm = {'mm': 1.0, 'um': 0.001}.get(units)
+        if unitToMm is None:
+            raise ValueError(f'Unsupported tracking unit {units!r}')
+
+        def cameraActive():
+            try:
+                return camera is not None and (camera.IsGrabbing() or camera.isOnHold())
+            except Exception:
+                return False
 
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         
@@ -3593,12 +4119,17 @@ class RuntimeControls(BoxLayout):
         bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
         bench_start = time.perf_counter()
 
-        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
+        while cameraActive() and self.trackingcheckbox.state == 'down':
 
             wait_begin = time.perf_counter()
             wait_ready = ready_time
-            while self.trackingcheckbox.state == 'down' and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
+            while self.trackingcheckbox.state == 'down' \
+                    and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
+                if not cameraActive():
+                    return
                 time.sleep(0.001)
+            if self.trackingcheckbox.state != 'down' or not cameraActive():
+                return
             wait_end = time.perf_counter()
 
             tracking_frame_start_time = wait_end
@@ -3641,18 +4172,30 @@ class RuntimeControls(BoxLayout):
             _t_convert = time.perf_counter()
 
             # getting stage coord is slow so we will interpolate from movements
+            if self.trackingcheckbox.state != 'down' \
+                    or getattr(app, '_hardware_teardown', False):
+                return
+            movedDistances = []
             if abs(xstep) > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle =False)
-                app.coords[0] += xstep/1000.
+                if not stage.move_x(xstep, unit=units, wait_until_idle =False):
+                    print('Tracking stopped because the X move was refused or failed')
+                    stage.emergency_stop()
+                    return
+                app.coords[0] += xstep * unitToMm
+                movedDistances.append(abs(xstep) * unitToMm)
                 prevImage = image
             if abs(ystep) > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = False, check_safety = False)
-                app.coords[1] += ystep/1000.
+                if not stage.move_y(ystep, unit=units, wait_until_idle = False):
+                    print('Tracking stopped because the Y move was refused or failed')
+                    stage.emergency_stop()
+                    return
+                app.coords[1] += ystep * unitToMm
+                movedDistances.append(abs(ystep) * unitToMm)
                 prevImage = image
             _t_move = time.perf_counter()
 
-            max_travel_dist = max(abs(xstep), abs(ystep))
-            settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist * 1e-3)
+            max_travel_dist = max(movedDistances, default=0.0)
+            settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist)
             ready_time = time.perf_counter() + settle
 
             settle_wait = max(0.0, min(wait_ready, wait_end) - wait_begin)
@@ -3679,22 +4222,12 @@ class RuntimeControls(BoxLayout):
                 bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
                 bench_start = time.perf_counter()
 
-        # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
-        self.trackingcheckbox.state = 'normal'
-        self.cmsOffset_x = None
-        self.cmsOffset_y = None
-        self.trackingMask = None
-
-
     def stopTracking(self):
         """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
         """
         self.track_done.set()
         app: GlowTrackerApp = App.get_running_app()
         camera = app.camera
-
-        if camera is None:
-            return
         
         if getattr(self, '_track_timeout', None) is not None:
             self._track_timeout.cancel()
@@ -3717,7 +4250,8 @@ class RuntimeControls(BoxLayout):
 
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         # If in single color mode
-        if not dualColorMode:
+        if not dualColorMode and camera is not None \
+                and not getattr(app, '_hardware_teardown', False):
 
             # Reset the camera params back: Width, Height, OffsetX, OffsetY, center flag
             cameraConfig: dict = app.root.ids.leftcolumn.cameraConfig
@@ -3985,6 +4519,10 @@ class Connections(BoxLayout):
 
     def __init__(self,  **kwargs):
         super(Connections, self).__init__(**kwargs)
+        self._stageSetupCancel = Event()
+        self._stageSetupThread = None
+        self._suppressCameraState = False
+        self._suppressStageState = False
         Clock.schedule_once(self._do_setup)
 
 
@@ -3997,6 +4535,8 @@ class Connections(BoxLayout):
 
 
     def connectCamera(self):
+        if self._suppressCameraState:
+            return
         print('Connecting Camera')
         # connect camera
         app = App.get_running_app()
@@ -4011,13 +4551,41 @@ class Connections(BoxLayout):
 
 
     def disconnectCamera(self):
-        camera = App.get_running_app().camera
+        if self._suppressCameraState:
+            return
+        app = App.get_running_app()
+        camera = app.camera
         if camera is not None:
             print('Disconnecting camera')
-            camera.Close()
+            app._hardware_teardown = True
+            activeWorkers = app.stop_active_workers(timeout=10.0)
+            if activeWorkers:
+                print(f'Camera disconnect cancelled; workers still active: {activeWorkers}')
+                app._hardware_teardown = False
+                self._suppressCameraState = True
+                try:
+                    self.cam_connection.state = 'down'
+                finally:
+                    self._suppressCameraState = False
+                return
+            try:
+                camera.Close()
+            finally:
+                if app.camera is camera:
+                    app.camera = None
+                app._hardware_teardown = False
 
 
     def connectStage(self):
+        if self._suppressStageState:
+            return
+        if self._stageSetupThread is not None and self._stageSetupThread.is_alive():
+            self._suppressStageState = True
+            try:
+                self.stage_connection.state = 'normal'
+            finally:
+                self._suppressStageState = False
+            return
         print('Connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
@@ -4033,6 +4601,10 @@ class Connections(BoxLayout):
 
         else:
             app.stage: Stage = stage # type: ignore
+            self._stageSetupCancel = Event()
+            app.root.ids.leftcolumn.ids.xcontrols.disable_all()
+            app.root.ids.leftcolumn.ids.ycontrols.disable_all()
+            app.root.ids.leftcolumn.ids.zcontrols.disable_all()
             
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
@@ -4040,44 +4612,91 @@ class Connections(BoxLayout):
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
             
             def connect_async():
+                success = False
+                position = None
+                try:
+                    success = stage.on_connect(
+                        homing, move_start, startloc, limits,
+                        cancel_event=self._stageSetupCancel
+                    )
+                    if success and not self._stageSetupCancel.is_set():
+                        position = stage.get_position(isAsync=False)
+                        success = position is not None
+                except Exception as e:
+                    print(f'Stage setup failed: {e}')
 
-                # home stage - do this in a thread, it is slow, ~2 sec
-                app.stage.on_connect(homing, move_start, startloc, limits)
+                def finishSetup(dt):
+                    if self._stageSetupCancel.is_set() or app.stage is not stage:
+                        return
+                    if not success:
+                        stage.disconnect()
+                        if app.stage is stage:
+                            app.stage = None
+                        self._suppressStageState = True
+                        try:
+                            self.stage_connection.state = 'normal'
+                        finally:
+                            self._suppressStageState = False
+                        return
+                    app.coords = position
+                    if getattr(app, 'coord_updateevent', None) is not None:
+                        app.coord_updateevent.cancel()
+                    app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
+                    app.root.ids.leftcolumn.ids.xcontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.ycontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.zcontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.gotocontrols.allow_moves()
 
-                # Call update_coordinates once.
-                #   We have to specify not to run 'update_coordinates' in async mode because it's going to
-                #   be run inside a thread.
+                Clock.schedule_once(finishSetup)
 
-                app.update_coordinates(isAsync= False)  
-                app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
-                
-
+            self._stageSetupThread = Thread(target=connect_async, daemon=True)
+            self._stageSetupThread.start()
             
-            thread_connect_async = Thread(target= connect_async)
-            thread_connect_async.daemon = True
-            thread_connect_async.start()
-                        
-            app.root.ids.leftcolumn.ids.xcontrols.enable_all()
-            app.root.ids.leftcolumn.ids.ycontrols.enable_all()
-            app.root.ids.leftcolumn.ids.zcontrols.enable_all()
-            
 
-    def disconnectStage(self):
+    def disconnectStage(self, wait=True, timeout=10.0):
+        if self._suppressStageState:
+            return True
         print('Disconnecting Stage')
         app = App.get_running_app()
-        if app.stage is None:
-            self.stage_connection.state = 'normal'
-        else:
-            if getattr(app, 'coord_updateevent', None) is not None:
-                app.coord_updateevent.cancel()
-                app.coord_updateevent = None
-                
-            app.stage.disconnect()
-            app.stage = None
-        # disable buttons
+        self._stageSetupCancel.set()
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+        if app.stage is None:
+            return True
+        else:
+            goToControls = app.root.ids.leftcolumn.ids.gotocontrols
+            goToControls.request_stop(block_new=True)
+            if wait and not goToControls.wait(timeout):
+                print('Stage disconnect deferred because Go To movement is still active')
+                goToControls.allow_moves()
+                self._suppressStageState = True
+                try:
+                    self.stage_connection.state = 'down'
+                finally:
+                    self._suppressStageState = False
+                return False
+
+            if getattr(app, 'coord_updateevent', None) is not None:
+                app.coord_updateevent.cancel()
+                app.coord_updateevent = None
+
+            app.stage.emergency_stop()
+            setupThread = self._stageSetupThread
+            if wait and setupThread is not None and setupThread.is_alive():
+                setupThread.join(timeout)
+            if setupThread is not None and setupThread.is_alive():
+                print('Stage disconnect deferred because setup is still active')
+                self._suppressStageState = True
+                try:
+                    self.stage_connection.state = 'down'
+                finally:
+                    self._suppressStageState = False
+                return False
+
+            app.stage.disconnect()
+            app.stage = None
+            return True
     
 
 class DAQConnectionButton(ToggleButton):
@@ -4235,6 +4854,7 @@ class GlowTrackerApp(App):
         self.stage: Stage = Stage(None)
         self.daqControl: DAQControl = DAQControl()
         self.updateFpsEvent = None
+        self._hardware_teardown = False
     
 
     def getDefaultUserConfigFilePath(self) -> str:
@@ -4352,7 +4972,7 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '255'
+            'max_brightness': '65535'
         })
 
         config.setdefaults('LiveAnalysis', {
@@ -4578,9 +5198,8 @@ class GlowTrackerApp(App):
         if self.stopevent is not None:
             Clock.unschedule(self.stopevent)
             
-        #scale velocity
-        v = self.vhigh*value/32767
-        if v < self.vlow*0.01:
+        v = controller_velocity(value, self.vhigh, self.vlow)
+        if v is None:
             self.stage_stop()
         else:
             direction = {
@@ -4829,8 +5448,7 @@ class GlowTrackerApp(App):
                 max_brightness = int(value)
                 min_brightness = self.config.getint('Tracking', 'min_brightness')
 
-                # Bound the value between [min_brightness, 255]
-                max_brightness = max(min_brightness, min(max_brightness, 255))
+                max_brightness = max(min_brightness, max_brightness)
 
                 self.config.set('Tracking', 'max_brightness', max_brightness)
                 self.config.write()
@@ -4919,10 +5537,16 @@ class GlowTrackerApp(App):
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
         """
-        imageHeight, imageWidth = self.image.shape[0], self.image.shape[1]
-        imageColorFormat = 'rgb' if self.image.ndim == 3 else 'luminance'
-        # Force unsign byte format
-        imageDataFormat = 'ubyte'
+        textureImage, imageDataFormat = prepare_texture_data(self.image)
+        imageHeight, imageWidth = textureImage.shape[0], textureImage.shape[1]
+        if textureImage.ndim == 2:
+            imageColorFormat = 'luminance'
+        elif textureImage.ndim == 3 and textureImage.shape[2] == 3:
+            imageColorFormat = 'rgb'
+        elif textureImage.ndim == 3 and textureImage.shape[2] == 4:
+            imageColorFormat = 'rgba'
+        else:
+            raise ValueError(f'unsupported image shape: {textureImage.shape}')
 
         # Check if need to recreate texture
         if self.texture is None \
@@ -4933,7 +5557,8 @@ class GlowTrackerApp(App):
             # Recreate texture
             self.texture = Texture.create(
                 size= (imageWidth, imageHeight),
-                colorfmt= imageColorFormat
+                colorfmt= imageColorFormat,
+                bufferfmt= imageDataFormat,
             )
 
             # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
@@ -4943,7 +5568,7 @@ class GlowTrackerApp(App):
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
         # Upload image data to texture
-        imageByteBuffer: bytes = self.image.tobytes()
+        imageByteBuffer: bytes = textureImage.tobytes()
         self.texture.blit_buffer(imageByteBuffer, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
 
         # Update tracking overlay if the option is enabled
@@ -4964,21 +5589,131 @@ class GlowTrackerApp(App):
         self._popup.dismiss()
 
 
+    def stop_active_workers(self, timeout=10.0):
+        if self.root is None:
+            return []
+
+        deadline = time.monotonic() + timeout
+        activeWorkers = []
+        runtimeControls = self.root.ids.middlecolumn.ids.runtimecontrols
+        acquisitionManager = runtimeControls.ids.imageacquisitionmanager
+        rightColumn = self.root.ids.rightcolumn
+        goToControls = self.root.ids.leftcolumn.ids.gotocontrols
+        scanPanel = getattr(rightColumn, '_scanPanel', None)
+        macroWidgets = list(getattr(rightColumn, '_macroWidgets', []))
+
+        try:
+            goToControls.request_stop()
+        except Exception as e:
+            print(f'Stopping Go To movement failed: {e}')
+
+        if scanPanel is not None:
+            scanPanel.request_shutdown()
+        for macroWidget in macroWidgets:
+            macroWidget.macroScriptExecutor.stop()
+
+        try:
+            if runtimeControls.trackingcheckbox.state == 'down':
+                runtimeControls.trackingcheckbox.state = 'normal'
+            elif runtimeControls.trackthread is not None \
+                    and runtimeControls.trackthread.is_alive():
+                runtimeControls.stopTracking()
+        except Exception as e:
+            print(f'Stopping tracking failed: {e}')
+
+        try:
+            if runtimeControls.livefocuscheckbox.state == 'down':
+                runtimeControls.livefocuscheckbox.state = 'normal'
+            elif runtimeControls.liveFocusThread is not None \
+                    and runtimeControls.liveFocusThread.is_alive():
+                runtimeControls.stopLiveFocus()
+        except Exception as e:
+            print(f'Stopping live focus failed: {e}')
+
+        for button in (acquisitionManager.recordbutton, acquisitionManager.liveviewbutton):
+            try:
+                thread = button.imageAcquisitionThread
+                if button.state == 'down':
+                    button.state = 'normal'
+                if thread is not None and thread.is_alive():
+                    button.stopImageAcquisition()
+            except Exception as e:
+                print(f'Stopping image acquisition failed: {e}')
+
+        motionThreads = (
+            goToControls._moveThread,
+            runtimeControls.trackthread,
+            runtimeControls.liveFocusThread,
+            *(getattr(widget.macroScriptExecutor, '_executorThread', None)
+              for widget in macroWidgets),
+        )
+        if self.stage is not None and any(
+                thread is not None and thread.is_alive() for thread in motionThreads):
+            self.stage.emergency_stop()
+
+        threads = (
+            ('Go To movement', goToControls._moveThread),
+            ('tracking', runtimeControls.trackthread),
+            ('live focus', runtimeControls.liveFocusThread),
+            ('recording acquisition', acquisitionManager.recordbutton.imageAcquisitionThread),
+            ('live acquisition', acquisitionManager.liveviewbutton.imageAcquisitionThread),
+        )
+        for name, thread in threads:
+            if thread is None or thread is current_thread() or not thread.is_alive():
+                continue
+            thread.join(max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                activeWorkers.append(name)
+
+        if scanPanel is not None:
+            if not scanPanel.wait(max(0.0, deadline - time.monotonic())):
+                activeWorkers.append('scan')
+
+        for macroWidget in macroWidgets:
+            if not macroWidget.macroScriptExecutor.wait(
+                    max(0.0, deadline - time.monotonic())):
+                if 'macro' not in activeWorkers:
+                    activeWorkers.append('macro')
+
+        return activeWorkers
+
+
     def graceful_exit(self):
-        # disconnect hardware
-        # stop remaining stage motion
-        if self.stage is not None:
-            print('Disconnecting Stage')
-            self.stage.stop()
-            self.stage.disconnect()
-        
-        if self.camera is not None:
-            print('Disconnecting Camera')
-            self.camera.Close()
-        
-        if self.daqControl.isConnected():
-            print('Disconnecting DAQ')
-            self.daqControl.close()
+        self._hardware_teardown = True
+        activeWorkers = self.stop_active_workers(timeout=10.0)
+
+        if activeWorkers:
+            print(f'Hardware connections left open because workers did not stop: {activeWorkers}')
+            if self.stage is not None:
+                self.stage.emergency_stop()
+            if self.daqControl.isConnected():
+                self.daqControl.safe_off()
+        else:
+            connections = self.root.ids.rightcolumn.ids.connections
+            if self.stage is not None:
+                print('Disconnecting Stage')
+                try:
+                    connections.disconnectStage(wait=True, timeout=10.0)
+                except Exception as e:
+                    print(f'Disconnecting Stage failed: {e}')
+
+            if self.daqControl.isConnected():
+                print('Disconnecting DAQ')
+                try:
+                    self.daqControl.close()
+                except Exception as e:
+                    print(f'Disconnecting DAQ failed: {e}')
+
+            if self.camera is not None:
+                print('Disconnecting Camera')
+                camera = self.camera
+                try:
+                    camera.Close()
+                except Exception as e:
+                    print(f'Disconnecting Camera failed: {e}')
+                finally:
+                    if self.camera is camera:
+                        self.camera = None
 
         # stop the app
         self.stop()
@@ -5064,6 +5799,7 @@ class GlowTrackerApp(App):
 
 
 def reset():
+    global Window
     # Cleaner for the events in memory
     if not EventLoop.event_listeners:
         

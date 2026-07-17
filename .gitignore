@@ -1,13 +1,36 @@
-# VSCode 
 .vscode/
+.idea/
+*.swp
+*~
 
-# Package building related
+.DS_Store
+._*
+Thumbs.db
+
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.coverage
+.coverage.*
+htmlcov/
+
+.venv/
+.venv-*/
+*.venv/
+venv/
+env/
+
 build/
 dist/
-glowtracker.egg-info/
+*.egg-info/
+pip-wheel-metadata/
+/requirements.txt
 
-# Python cache
-__pycache__/*
-
-# Convenience
 *.log
+*.part.tiff
+*-basler_*.tiff
+*-coords.txt
