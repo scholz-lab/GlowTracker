@@ -2577,6 +2577,15 @@ class ImageAcquisitionManager(BoxLayout):
 
 class StencilFloatLayout(FloatLayout, StencilView):
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.minimapMesh: Line = Line()
+        self.minimapColor: Color = Color(1.0, 0, 0.5, 1.0)
+
+        self.app: GlowTrackerApp = App.get_running_app()
+
+
     def on_touch_down(self, touch):
         """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
@@ -2586,6 +2595,7 @@ class StencilFloatLayout(FloatLayout, StencilView):
         else:
             return False
     
+
     def on_touch_up(self, touch):
         """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
@@ -2593,6 +2603,70 @@ class StencilFloatLayout(FloatLayout, StencilView):
             return super().on_touch_up(touch)
         else:
             return False
+    
+
+    def on_size(self, *args) -> None:
+        """Called everytime the widget is resized. Resize the overlay to match the image and redraw.
+        """        
+        self.updateOverlay()
+    
+
+    @mainthread
+    def updateOverlay(self, doClear: bool = False) -> None:
+        """Clear and redraw the overlay depending on the app config.
+            1. Clear all the overlay
+            2. Redraw all the overlay
+        """
+
+        # Clear all the overlay
+        self.clearOverlay()
+
+        # Update tracking overlay
+        showminimap = self.app.config.getboolean('Tracking', 'showminimap')
+        
+        if showminimap:
+            self.updateMinimap(doClear= False)
+
+
+    def updateMinimap(self, doClear= False) -> None:
+        # 
+        #   Draw minimap boarder
+        # 
+        # Draw 100 x 100 at top right corner
+        minimapSize = np.array([100, 100])
+
+        widgetSize = np.array(self.size)
+        widgetOrigin = np.array(self.pos)
+
+        topRight = widgetSize + widgetOrigin
+        btmLeft = topRight - minimapSize
+
+        verts = np.array([
+            btmLeft, 
+            [btmLeft[0] + minimapSize[0], btmLeft[1]], 
+            topRight, 
+            [btmLeft[0], btmLeft[1] + minimapSize[1]],
+        ])
+
+        #   [x1, y1, x2, y2, ...]
+        verts = verts.flatten()
+        vertices = verts.tolist()
+
+        # Construct index array
+        self.minimapMesh.points = vertices
+        self.minimapMesh.close = True
+
+        if self.minimapMesh not in self.canvas.children:
+            self.canvas.add(self.minimapColor)
+            self.canvas.add(self.minimapMesh)
+
+    
+    def clearOverlay(self) -> None:
+        """Clear both tracking and dual color overlay.
+        """
+        if self.minimapMesh in self.canvas.children:
+            self.canvas.remove(self.minimapMesh)
+            self.canvas.remove(self.minimapColor)
 
         
 class ScalableImage(ScatterLayout):
@@ -4059,6 +4133,7 @@ class TrackingOverlayQuickButton(ToggleButton):
         #   Prevent at startup
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            app.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
 
 class LiveAnalysisQuickButton(ToggleButton):
@@ -4197,6 +4272,7 @@ class DualColorViewModeQuickButton(ToggleButton):
         #   Prevent at startup
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            app.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
 
 # display if hardware is connected
@@ -4564,7 +4640,8 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '255'
+            'max_brightness': '255',
+            'showminimap': 'true'
         })
 
         config.setdefaults('LiveAnalysis', {
@@ -5081,6 +5158,7 @@ class GlowTrackerApp(App):
         # Update overlay
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
         
 
     def startShowFpsEvent(self):
@@ -5135,6 +5213,7 @@ class GlowTrackerApp(App):
 
             # Update overlay
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
         # Upload image data to texture
         imageByteBuffer: bytes = self.image.tobytes()
@@ -5143,6 +5222,8 @@ class GlowTrackerApp(App):
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay(doClear= False)
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay(doClear= False)
+
     
 
     # ask for confirmation of closing
