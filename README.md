@@ -18,61 +18,50 @@
 
 ## Getting started
 ### Software Setup
-1. Create a Python environment using **uv** (recommend) or **venv**.
-    - Using **uv** (Recommend)
-        1. Install uv [[Link]](https://docs.astral.sh/uv/getting-started/installation/).
-        2. Create a virtual environment
-            ```bash
-            uv venv glowtracker.venv
-            ```
-    - Using **venv**
-        1. Create the environment
-            ```bash
-            python -m venv glowtracker.venv
-            ```
+GlowTracker supports Python 3.11 through 3.13. Python 3.12 is the recommended version.
 
-2. Activate the environment
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+2. Install GlowTracker from PyPI:
+
     ```bash
-    source glowtracker.venv/Scripts/activate
+    uv venv --python 3.12
+    uv pip install glowtracker
     ```
 
-3. Install GlowTracker
-    You can choose to either install GlowTracker from a distributed Python package from PyPI or clone the git repository and run them locally.
+    Or install a development checkout using the locked dependencies:
 
-    - Using `pip` to install from PyPI repository:
-        ```bash
-        uv pip install glowtracker
-        ```
-    - Or clone and run the package locally.
-        1. Clone the pository
-            ```bash
-            git clone https://github.com/scholz-lab/GlowTracker.git
-            ```
-        2. Update the conda environment to download the dependencies
-            ```bash
-            cd Glowtracker;
-            uv pip install -r pyproject.toml;
-            ```
+    ```bash
+    git clone https://github.com/scholz-lab/GlowTracker.git
+    cd GlowTracker
+    uv sync --extra test
+    uv run pytest -q
+    ```
 
-
-4. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
+3. Install the **BASLER** pylon software and runtime library [[Link]](https://www.baslerweb.com/en/software/pylon/)
     - pylon Camera Software Suite
     - pylon runtime library
 
-5. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
+4. (Optional) Install **Zaber Launcher** for inspecting and updating stage firmware [[Link]](https://software.zaber.com/zaber-launcher/download)
 
-6. After finished installation, the software can be started in several ways
-    - If you have installed it via pip
+5. Start the application.
+
+    - From an activated environment:
+
         ```bash
         python -m glowtracker
         ```
-        or simply
+
+        or:
+
         ```bash
         glowtracker
         ```
-    - If you have installed it by cloning the package and running them locally
+
+    - From a development checkout without activating the environment:
+
         ```bash
-        python glowtracker/__main__.py
+        uv run glowtracker
         ```
 
 ### Device Setup

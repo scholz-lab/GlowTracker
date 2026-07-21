@@ -1,6 +1,7 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
 #:import Image kivy.uix.image.Image
+#:import ScanMinimap Scan_map.ScanMinimap
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -41,7 +42,7 @@ MainWindow:
                 text_size: self.size
                 halign: 'center'
                 valign: 'middle'
-                
+
             Label:
                 size_hint: (1, 1)
                 font_size: 18
@@ -90,7 +91,7 @@ MainWindow:
     orientation: 'vertical'
     pos: root.pos
     spacing: 5
-    MyLabel: 
+    MyLabel:
         text: 'Stage Controls'
     XControls:
         id: xcontrols
@@ -98,11 +99,9 @@ MainWindow:
         id: ycontrols
     ZControls:
         id: zcontrols
-    MyButton:
-        text: 'Autofocus'
-        pos_hint: {'x': 0.25}
-        on_release: root.autoFocusButtonCallback()
-    MyLabel: 
+    GoToControls:
+        id: gotocontrols
+    MyLabel:
         text: 'Camera Settings'
     CameraProperties:
         id: camprops
@@ -111,8 +110,8 @@ MainWindow:
         text: 'Load camera settings'
         pos_hint: {'x': 0.25}
         on_release: root.show_load()
-        
-    MyLabel: 
+
+    MyLabel:
         text: 'Experiment'
     TextInput:
         id: saveloc
@@ -122,15 +121,15 @@ MainWindow:
         text: root.savefile
         on_text_validate: root.createRecordingPath()
         on_focus: app.toggle_key_binding(self.focus)
-        on_focus: 
-            if not self.focus: root.createRecordingPath()  
-                
+        on_focus:
+            if not self.focus: root.createRecordingPath()
+
     MyButton:
         text: 'Save Location'
         pos_hint: {'x': 0.25}
         on_release: root.show_save()
-    
-        
+
+
 ### Display camera properties
 <CameraProperties>:
     cols: 3
@@ -155,7 +154,7 @@ MainWindow:
         on_text_validate: root.change_exposure()
         on_focus: app.toggle_key_binding(self.focus)
         on_focus: if not self.focus: root.change_exposure()
-    Label: 
+    Label:
         text: 'Framerate (fps)'
         size_hint: (.25, 1)
     Slider:
@@ -197,9 +196,9 @@ MainWindow:
         on_focus: app.toggle_key_binding(self.focus)
         on_focus:  if not self.focus: root.change_gain()
         text: str(root.gain)
-    
-        
-    
+
+
+
 #################################
 # Stage motion buttons
 #################################
@@ -210,21 +209,21 @@ MainWindow:
     background_normal: 'icons/LeftButtonNormal_Double.jpg'
     background_down: 'icons/LeftButtonOnPress_Double.jpg'
     background_disabled_normal: 'icons/LeftButtonDisabled_Double.jpg'
-    
+
 <StageButtonLeft@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/LeftButtonNormal.jpg'
     background_down: 'icons/LeftButtonOnPress.jpg'
     background_disabled_normal: 'icons/LeftButtonDisabled.jpg'
-    
+
 <StageButtonRightFast@ToggleButton>:
     size_hint: .5, .9
     pos_hint: {"x":0.1, "y":0.1}
     background_normal: 'icons/RightButtonNormal_Double.jpg'
     background_down: 'icons/RightButtonOnPress_Double.jpg'
     background_disabled_normal: 'icons/RightButtonDisabled_Double.jpg'
-    
+
 <StageButtonRight@ToggleButton>:
     size_hint: .25, .9
     pos_hint: {"x":0.1, "y":0.1}
@@ -236,14 +235,14 @@ MainWindow:
     orientation: 'horizontal'
     pos: root.pos
     size: root.size
-    
+
     StageButtonLeftFast:
         id: sbl1
-        on_state: app.stage.start_move((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
+        on_state: app.jog((-1,0,0), True)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     StageButtonLeft:
         id: sbl2
-        on_state: app.stage.start_move((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((-1,0,0), False)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     Label:
         text: 'X'
@@ -251,11 +250,11 @@ MainWindow:
         size_hint: (0.2,1)
     StageButtonRight:
         id: sbl3
-        on_state: app.stage.start_move((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((1,0,0), False)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     StageButtonRightFast:
-        id: sbl4       
-        on_state: app.stage.start_move((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        id: sbl4
+        on_state: app.jog((1,0,0), True)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
 
 <YControls>:
@@ -263,14 +262,14 @@ MainWindow:
         pos: root.pos
         size: root.size
         orientation: 'horizontal'
-        
+
         StageButtonLeftFast:
-            id: sbl1        
-            on_state: app.stage.start_move((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            id: sbl1
+            on_state: app.jog((0,-1,0), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.stage.start_move((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,-1,0), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Y'
@@ -279,27 +278,27 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.stage.start_move((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonRightFast:
             id: sbl4
-            on_state: app.stage.start_move((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
-            
-            
+
+
 <ZControls>:
     BoxLayout:
         pos: root.pos
         size: root.size
         orientation: 'horizontal'
-        
-        StageButtonLeftFast: 
+
+        StageButtonLeftFast:
             id: sbl1
-            on_state: app.stage.start_move((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.stage.start_move((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Z'
@@ -307,12 +306,285 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.stage.start_move((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.jog((0,0,1), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
-        StageButtonRightFast:   
-            id: sbl4    
-            on_state: app.stage.start_move((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
+        StageButtonRightFast:
+            id: sbl4
+            on_state: app.jog((0,0,1), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
+
+<GoToControls>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: 40
+    spacing: 5
+    TextInput:
+        id: gotox
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'X'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoy
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Y'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoz
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Z'
+        on_focus: app.toggle_key_binding(self.focus)
+    Button:
+        text: 'Fill'
+        on_release: root.prefill()
+    Button:
+        text: 'Go'
+        on_release: root.go_to()
+
+
+<CenterRadiusFromThreePoints>:
+    orientation: 'horizontal'
+    padding: 10
+    spacing: 10
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: 0.35
+        spacing: 5
+        MyLabel:
+            text: 'Plate Region'
+            size_hint_y: None
+            height: 30
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Capture point'
+                on_release: root.capture_points()
+            Label:
+                id: countlabel
+                text: 'Points: {}'.format(len(root.points))
+                size_hint_x: 0.3
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Calculate'
+                disabled: len(root.points) < 3
+                on_release: root.calculate()
+            Button:
+                text: 'Reset'
+                on_release: root.reset()
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: pointstext
+                multiline: False
+                hint_text: 'x,y; x,y; x,y'
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.set_points_from_text(self.text)
+            Button:
+                text: 'Set'
+                size_hint_x: 0.3
+                on_release: root.set_points_from_text(pointstext.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: scenarioname
+                multiline: False
+                hint_text: 'scenario name'
+                on_focus: app.toggle_key_binding(self.focus)
+            Button:
+                text: 'Save'
+                size_hint_x: 0.3
+                on_release: root.save_scenario(scenarioname.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Spinner:
+                id: scenariospinner
+                text: 'load scenario'
+                values: root.saved_scenarios
+            Button:
+                text: 'Load'
+                size_hint_x: 0.3
+                on_release: root.load_scenario(scenariospinner.text)
+        Label:
+            id: resultlabel
+            text: 'Diameter: -    Center: -'
+            size_hint_y: None
+            height: 30
+        MyLabel:
+            text: 'Scan Settings'
+            size_hint_y: None
+            height: 30
+        ScrollView:
+            do_scroll_x: False
+            GridLayout:
+                cols: 2
+                size_hint_y: None
+                height: self.minimum_height
+                row_default_height: 34
+                row_force_default: True
+                spacing: 8
+                Label:
+                    text: 'Scan exposure (us)'
+                TextInput:
+                    text: str(root.scan_exposure)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_exposure = float(self.text)
+                Label:
+                    text: 'Z axis (mm)'
+                TextInput:
+                    text: str(root.scan_z)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z = float(self.text)
+                Label:
+                    text: 'Scan gain'
+                TextInput:
+                    text: str(root.scan_gain)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_gain = float(self.text)
+                Label:
+                    text: 'Track exposure (us)'
+                TextInput:
+                    text: str(root.track_exposure)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_exposure = float(self.text)
+                Label:
+                    text: 'Track gain'
+                TextInput:
+                    text: str(root.track_gain)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_gain = float(self.text)
+                Label:
+                    text: 'Track framerate (fps)'
+                TextInput:
+                    text: str(root.track_framerate)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_framerate = float(self.text)
+                Label:
+                    text: 'Track timeout (s)'
+                TextInput:
+                    text: str(root.track_interval)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_interval = float(self.text)
+                Label:
+                    text: 'Settle (s)'
+                TextInput:
+                    text: str(root.scan_settle)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_settle = float(self.text)
+                Label:
+                    text: 'Brightness threshold'
+                TextInput:
+                    text: str(root.scan_threshold)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_threshold = float(self.text)
+                Label:
+                    text: 'Min bright pixels'
+                TextInput:
+                    text: str(root.scan_min_pixels)
+                    input_filter: 'int'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_min_pixels = int(self.text)
+                Label:
+                    text: 'Tile overlap W (%)'
+                TextInput:
+                    text: str(root.scan_overlap_w)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_overlap_w = float(self.text)
+                Label:
+                    text: 'Tile overlap H (%)'
+                TextInput:
+                    text: str(root.scan_overlap_h)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_overlap_h = float(self.text)
+                Label:
+                    text: 'Z sweep range (mm)'
+                TextInput:
+                    text: str(root.scan_z_range)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z_range = float(self.text)
+                Label:
+                    text: 'Z sweep frames'
+                TextInput:
+                    text: str(root.scan_z_frames)
+                    input_filter: 'int'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z_frames = int(self.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 40
+            spacing: 5
+            Button:
+                text: 'Live'
+                on_release: root.toggle_preview()
+            Button:
+                text: 'Scan'
+                on_release: root.scan_area()
+            Button:
+                text: 'Stop'
+                on_release: root.stop_scan()
+        ProgressBar:
+            max: 1
+            value: root.scan_progress
+            size_hint_y: None
+            height: 20
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: 0.65
+        spacing: 5
+        Image:
+            id: scanpreview
+            size_hint_y: 0.6
+            fit_mode: 'contain'
+            texture: app.texture
+        ScanMinimap:
+            id: minimap
+            size_hint_y: 0.4
+
+
 #################################
 # Load camera properties - Popup
 #################################
@@ -336,7 +608,7 @@ MainWindow:
             Button:
                 text: "Load"
                 on_release: root.load(filechooser2.path, filechooser2.selection)
-                
+
 #################################
 # save location experiment - Popup
 #################################
@@ -368,20 +640,20 @@ MainWindow:
 
             Button:
                 text: "Save"
-                on_release: root.save(filechooser.path, text_input.text)        
-         
+                on_release: root.save(filechooser.path, text_input.text)
+
 #################################
 # autofocus - Popup
 #################################
 <AutoFocus>:
     id: autofocus
     orientation: 'vertical'
-    
+
     GridLayout:
         id: multipleimages
         cols: root.nsteps//2#app.config.getint('Autofocus', 'nsteps')//2
         spacing: 30,30
-        
+
     BoxLayout:
         size_hint_y: 0.05
         Label:
@@ -405,7 +677,7 @@ MainWindow:
         Label:
             text: str(root.stepunits)
             multiline: False
-        
+
     BoxLayout:
         size_hint_y: None
         height: 30
@@ -415,7 +687,7 @@ MainWindow:
 
         Button:
             text: "Run Autofocus"
-            on_release: root.run_autofocus()   
+            on_release: root.run_autofocus()
 
 #################################
 # Middle column
@@ -428,7 +700,7 @@ MainWindow:
     pos: root.pos
     size_hint: (0.6,1)
     orientation: 'vertical'
-    
+
     StencilFloatLayout:
         id: stencil
         size_hint: (1, 0.75)
@@ -475,7 +747,7 @@ MainWindow:
             pos: stencil.pos
             disabled: app.config.getboolean('LiveAnalysis', 'showliveanalysis') is False
             opacity: 1 if app.config.getboolean('LiveAnalysis', 'showliveanalysis') else 0
-    
+
 
     GridLayout:
         cols: 2
@@ -497,7 +769,7 @@ MainWindow:
             id: pixelvalue
             text: 'x:0, y:0, intensity:0'
             halign: 'right'
-        
+
     RuntimeControls:
         id:runtimecontrols
         size_hint: (1, 0.2)
@@ -511,7 +783,7 @@ MainWindow:
         Line:
             circle: self.circle
             id: circle
-            
+
 
 ### toggle tracking or autofocus
 <RuntimeControls>:
@@ -541,7 +813,7 @@ MainWindow:
         CheckBox:
             id: livefocuscheckbox
             on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
-            
+
         MyLabel:
             text: 'Tracking'
             color: '#ffffff'
@@ -569,7 +841,7 @@ MainWindow:
         DualColorViewModeQuickButtonLayout:
             id: dualcolorviewmodequickbuttonlayout
             padding: [dp(5), dp(5), dp(5), 0]
-            
+
 
 ### LiveView, Record, Snap
 <ImageAcquisitionManager>:
@@ -579,35 +851,35 @@ MainWindow:
     recordbutton: recordbutton
     liveviewbutton: liveviewbutton
     snapbutton: snapbutton
-    
+
     LiveViewButton:
         id: liveviewbutton
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/play_off.png'
         background_down: 'icons/play_on.png'
         background_disabled_normal: 'icons/play_disabled.png'
         background_disabled_down: 'icons/play_disabled.png'
 
-    RecordButton: 
+    RecordButton:
         id: recordbutton
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/record_inactive.png'
         background_down: 'icons/record_active.png'
-    
-    Button: 
+
+    Button:
         id: snapbutton
         border: 0,0,0,0
         size_hint_x: 0.1
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/snap_inactive.png'
         background_down: 'icons/snap_active.png'
@@ -633,7 +905,7 @@ MainWindow:
         size_hint: (1, 0.1)
         text: 'Macro'
         on_release: root.open_macro()
-    MyButton: 
+    MyButton:
         id:recording
         size_hint: (1, 0.1)
         text: 'Recording'
@@ -644,22 +916,26 @@ MainWindow:
         on_release: root.show_calibration()
     MyButton:
         size_hint: (1, 0.1)
+        text: 'Plate Scan'
+        on_release: root.show_scan()
+    MyButton:
+        size_hint: (1, 0.1)
         text: 'DAQ'
         on_release: root.open_daq_widget()
     MyLabel:
         text: 'Hardware'
         size_hint: (1, 0.1)
     Connections:
-        id: connections 
+        id: connections
         size_hint: (1,0.2)
- 
+
 ### Popup recording Settings
 <RecordingSettings>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
 
-    Label: 
+    Label:
         text: "    Press Enter after edited Duration or Framerate to update it's counterpart value."
         text_size: root.width, None
         size: self.texture_size
@@ -675,17 +951,17 @@ MainWindow:
         padding: [dp(10), dp(5), dp(10), dp(10)]
         spacing: [0, dp(15)]
 
-        Label: 
+        Label:
             text: 'Framerate (1/s)'
         Label:
             text: str(root.framerate)
 
-        Label: 
+        Label:
             text: 'Continuous Recording'
         ContinuousSwitch:
             id: continuousswitch
-            
-        Label: 
+
+        Label:
             text: 'Duration (sec)'
         TextInput:
             id: duration
@@ -695,8 +971,8 @@ MainWindow:
             on_text_validate: root.duration = self.text
             on_text_validate: root.nframes = int(float(self.text)*root.framerate)
             disabled: app.config.getboolean('Experiment', 'iscontinuous')
-        
-        Label: 
+
+        Label:
             text: 'Frames'
         TextInput:
             id: frames
@@ -707,7 +983,7 @@ MainWindow:
             on_text_validate: root.duration = float(self.text)/root.framerate
             disabled: app.config.getboolean('Experiment', 'iscontinuous')
 
-        Label: 
+        Label:
             text: 'Extension'
         TextInput:
             id: fileformat
@@ -716,7 +992,7 @@ MainWindow:
             halign: 'center'
             on_text_validate: root.fileformat = self.text
 
-        
+
     BoxLayout:
         size_hint_y: None
         height: dp(30)
@@ -739,7 +1015,7 @@ MainWindow:
 <MacroScriptWidget>:
     size: root.size
     pos: root.pos
-    
+
     orientation: 'vertical'
 
     BoxLayout:
@@ -750,7 +1026,7 @@ MainWindow:
             id: macroscriptfile
             text: app.config.get('MacroScript', 'recentscript')
             size_hint_x: 0.8
-        
+
         Button:
             text: "Load"
             on_release: root.openLoadMacroScriptWidget()
@@ -770,15 +1046,15 @@ MainWindow:
             size_hint_x: 0.9
             do_wrap: False
             auto_indent: True
-        
+
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: None
-            
+
             BoxLayout:
                 # Filler
                 size_hint_y: 0.05
-                
+
             Button:
                 id: runbutton
                 text: "[b]Run[/b]"
@@ -786,7 +1062,7 @@ MainWindow:
                 on_release: root.runMacroScript()
                 size_hint_y: 0.2
                 background_color: [94/255, 190/255, 88/255, 1]
-                
+
             BoxLayout:
                 # Filler
                 size_hint_y: 0.05
@@ -797,11 +1073,11 @@ MainWindow:
                 on_release: root.stopMacroScript()
                 size_hint_y: 0.2
                 background_color: [226/255, 54/255, 18/255, 1]
-            
+
             BoxLayout:
                 # Filler
                 size_hint_y: 0.3
-            
+
             Button:
                 text: "Wiki"
                 background_color: (0, 0, 0, 0)  # Transparent background
@@ -809,17 +1085,17 @@ MainWindow:
                 underline: True
                 size_hint_y: 0.1
 
-                on_release: 
-                    # importing webbrowser module 
-                    import webbrowser 
-                    # it will open google window in your browser 
-                    webbrowser.open('https://scholz-lab.github.io/GlowTracker/software/macro_script.html') 
-            
+                on_release:
+                    # importing webbrowser module
+                    import webbrowser
+                    # it will open google window in your browser
+                    webbrowser.open('https://scholz-lab.github.io/GlowTracker/software/macro_script.html')
+
             Button:
                 text: "Close"
                 on_release: root.closeCallback()
                 size_hint_y: 0.1
-                
+
 
 <LoadScriptWidget>:
     BoxLayout:
@@ -850,7 +1126,7 @@ MainWindow:
     pos: root.pos
     do_default_tab: False
     tab_width: 260
-            
+
     TabbedPanelItem:
         text: 'Camera & Stage Calibration'
 
@@ -859,15 +1135,21 @@ MainWindow:
 
     TabbedPanelItem:
         text: 'Dual Color Calibration'
-        
+
         DualColorCalibration:
             id: dualcolorcalibration
-    
+
     TabbedPanelItem:
         text: 'Depth of Field Calibration'
 
         DepthOfFieldCalibration:
             id: depthoffieldcalibration
+
+    TabbedPanelItem:
+        text: 'Intensity Sweep'
+
+        IntensitySweepCalibration:
+            id: intensitysweepcalibration
 
 
 <CameraAndStageCalibration>:
@@ -887,7 +1169,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: fixedimage
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -895,7 +1177,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: movingimagex
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -903,7 +1185,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: movingimagey
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -911,7 +1193,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: cameraandstageaxes
-    
+
     BoxLayout:
         size_hint_y: .08
 
@@ -938,11 +1220,11 @@ MainWindow:
     pos: root.pos
     orientation: 'vertical'
     spacing: 20
-    
+
     GridLayout:
         cols: 3
         spacing: 10
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -950,7 +1232,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: mainsideimage
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -958,7 +1240,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: minorsideimage
-        
+
         BoxLayout:
             orientation: 'vertical'
             Label:
@@ -966,10 +1248,10 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: calibratedimage
-    
+
     BoxLayout:
         size_hint_y: .08
-        
+
         Label:
             id: translation
             size_hint_x: .25
@@ -1015,7 +1297,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: estimateddofplot
-    
+
     BoxLayout:
         size_hint_y: .08
 
@@ -1030,6 +1312,58 @@ MainWindow:
         Button:
             text: "Close"
             size_hint_x: .15
+            on_release: root.closeCallback()
+
+
+<IntensitySweepCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: 'Mean intensity over Z sweep'
+            size_hint_y: 0.1
+        Image:
+            id: intensitysweepplot
+
+    BoxLayout:
+        size_hint_y: .08
+        spacing: 10
+
+        Label:
+            text: 'Z start (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zstart
+            text: '0'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Z end (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zend
+            text: '1'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Num photos'
+            size_hint_x: .1
+        TextInput:
+            id: numphotos
+            text: '50'
+            multiline: False
+            size_hint_x: .12
+        Button:
+            text: "Sweep"
+            size_hint_x: .18
+            on_release: root.sweep()
+        Button:
+            text: "Close"
+            size_hint_x: .14
             on_release: root.closeCallback()
 
 
@@ -1073,7 +1407,7 @@ MainWindow:
     pos: root.pos
     do_default_tab: False
     tab_width: 220
-            
+
     TabbedPanelItem:
         text: 'Sequencer'
 
@@ -1082,13 +1416,13 @@ MainWindow:
 
     TabbedPanelItem:
         text: 'Stage program'
-        
+
         StageProgramWidget:
             id: stageprogramwidget
-    
+
     TabbedPanelItem:
         text: 'Reversal'
-        
+
         ReversalWidget:
             id: reversalwidget
 
@@ -1096,7 +1430,7 @@ MainWindow:
 <SequencerWidget>:
     size: root.size
     pos: root.pos
-    
+
     orientation: 'vertical'
 
     BoxLayout:
@@ -1107,7 +1441,7 @@ MainWindow:
             id: daqscriptfile
             text: app.config.get('DaqControl', 'sequencescript')
             size_hint_x: 0.8
-        
+
         Button:
             text: "Load"
             on_release: root.openLoadSequencerWidget()
@@ -1127,7 +1461,7 @@ MainWindow:
             size_hint_x: 0.9
             do_wrap: False
             auto_indent: True
-        
+
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: None
@@ -1194,7 +1528,7 @@ MainWindow:
             orientation: 'tb-lr'
             size_hint_x: 0.5
             spacing: [0, dp(5)]
-            
+
             BoxLayout:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
@@ -1205,7 +1539,7 @@ MainWindow:
                     valign: 'middle'
                     size_hint_x: None
                     text_size: [dp(100), root.height]
-                
+
                 Spinner:
                     id: modeSpinner
                     text: 'Gaussian'
@@ -1213,7 +1547,7 @@ MainWindow:
                     on_text: root.updateMode(); root.updateParam()
                     size_hint_x: None
                     width: dp(100)
-                
+
             BoxLayout:
                 id: exterior_layout
                 orientation: 'horizontal'
@@ -1226,7 +1560,7 @@ MainWindow:
                     valign: 'middle'
                     size_hint_x: None
                     text_size: [dp(100), root.height]
-                
+
                 Spinner:
                     id: exteriorSpinner
                     text: 'Zero'
@@ -1234,7 +1568,7 @@ MainWindow:
                     on_text: root.updateExteriorChoice(); root.updateParam()
                     size_hint_x: None
                     width: dp(100)
-                
+
                 DaqTextInput:
                     id: constanttextinput
                     on_kv_post: root.updateExteriorChoice()
@@ -1254,10 +1588,10 @@ MainWindow:
 
                 Label:
                     text: 'x (mm)'
-                
+
                 Label:
                     text: 'y (mm)'
-                
+
                 Label:
                     text: 'Voltage'
 
@@ -1278,12 +1612,12 @@ MainWindow:
                     id: p1x
                     configKey: 'p1x'
                     root: root
-                
+
                 DaqTextInput:
                     id: p1y
                     configKey: 'p1y'
                     root: root
-                
+
                 DaqTextInput:
                     id: p1v
                     configKey: 'p1v'
@@ -1306,17 +1640,17 @@ MainWindow:
                     id: p2x
                     configKey: 'p2x'
                     root: root
-                
+
                 DaqTextInput:
                     id: p2y
                     configKey: 'p2y'
                     root: root
-                
+
                 DaqTextInput:
                     id: p2v
                     configKey: 'p2v'
                     root: root
-            
+
             BoxLayout:
                 id: p3_layout
                 orientation: 'horizontal'
@@ -1334,12 +1668,12 @@ MainWindow:
                     id: p3x
                     configKey: 'p3x'
                     root: root
-                
+
                 DaqTextInput:
                     id: p3y
                     configKey: 'p3y'
                     root: root
-                
+
                 DaqTextInput:
                     id: p3v
                     configKey: 'p3v'
@@ -1362,17 +1696,17 @@ MainWindow:
                     id: p4x
                     configKey: 'p4x'
                     root: root
-                
+
                 DaqTextInput:
                     id: p4y
                     configKey: 'p4y'
                     root: root
-                
+
                 DaqTextInput:
                     id: p4v
                     configKey: 'p4v'
                     root: root
-            
+
             BoxLayout:
                 id: relative_layout
                 orientation: 'horizontal'
@@ -1390,7 +1724,7 @@ MainWindow:
                         halign: 'left'
                         valign: 'middle'
                         text_size: self.size
-                
+
                 AnchorLayout:
                     anchor_x: 'right'
                     anchor_y: 'center'
@@ -1401,7 +1735,7 @@ MainWindow:
                         id: relative
                         configKey: 'relative'
                         root: root
-            
+
             BoxLayout:
                 id: g_amplitude_layout
                 orientation: 'horizontal'
@@ -1419,7 +1753,7 @@ MainWindow:
                     id: g_amplitude
                     configKey: 'g_amplitude'
                     root: root
-            
+
             BoxLayout:
                 id: g_x_mean_layout
                 orientation: 'horizontal'
@@ -1437,7 +1771,7 @@ MainWindow:
                     id: g_x_mean
                     configKey: 'g_x_mean'
                     root: root
-            
+
             BoxLayout:
                 id: g_x_sigma_layout
                 orientation: 'horizontal'
@@ -1455,7 +1789,7 @@ MainWindow:
                     id: g_x_sigma
                     configKey: 'g_x_sigma'
                     root: root
-            
+
 
             BoxLayout:
                 id: g_y_mean_layout
@@ -1474,8 +1808,8 @@ MainWindow:
                     id: g_y_mean
                     configKey: 'g_y_mean'
                     root: root
-            
-            
+
+
             BoxLayout:
                 id: g_y_sigma_layout
                 orientation: 'horizontal'
@@ -1493,7 +1827,7 @@ MainWindow:
                     id: g_y_sigma
                     configKey: 'g_y_sigma'
                     root: root
-            
+
             BoxLayout:
                 id: g_relative_layout
                 orientation: 'horizontal'
@@ -1511,7 +1845,7 @@ MainWindow:
                         halign: 'left'
                         valign: 'middle'
                         text_size: self.size
-                
+
                 AnchorLayout:
                     anchor_x: 'right'
                     anchor_y: 'center'
@@ -1522,7 +1856,7 @@ MainWindow:
                         id: g_relative
                         configKey: 'g_relative'
                         root: root
-            
+
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: 0.5
@@ -1531,7 +1865,7 @@ MainWindow:
                 size_hint_y: 0.1
             Image:
                 id: visualizationplot
-    
+
     BoxLayout:
         size_hint_y: .08
 
@@ -1541,13 +1875,13 @@ MainWindow:
             AnchorLayout:
                 anchor_x: 'center'
                 anchor_y: 'center'
-                
+
                 Button:
                     size_hint_x: 0.5
                     text: "Update"
                     on_release: root.updateParam()
                     background_color: [94.0/255, 190.0/255, 88.0/255, 1]
-        
+
         BoxLayout:
             size_hint_x: .3
 
@@ -1596,7 +1930,7 @@ MainWindow:
                         halign: 'left'
                         valign: 'middle'
                         text_size: self.size
-                
+
                 AnchorLayout:
                     anchor_x: 'right'
                     anchor_y: 'center'
@@ -1607,7 +1941,7 @@ MainWindow:
                         id: showtrail
                         configKey: 'showtrail'
                         root: root
-            
+
             BoxLayout:
                 id: relative_layout
                 orientation: 'horizontal'
@@ -1625,7 +1959,7 @@ MainWindow:
                         halign: 'left'
                         valign: 'middle'
                         text_size: self.size
-                
+
                 AnchorLayout:
                     anchor_x: 'right'
                     anchor_y: 'center'
@@ -1655,7 +1989,7 @@ MainWindow:
                     configKey: 'animallength'
                     root: root
                     size_hint_x: 0.6
-            
+
             BoxLayout:
                 id: traillimit_layout
                 orientation: 'horizontal'
@@ -1674,7 +2008,7 @@ MainWindow:
                     configKey: 'traillimit'
                     root: root
                     size_hint_x: 0.6
-            
+
             BoxLayout:
                 id: reversalthresholdradian_layout
                 orientation: 'horizontal'
@@ -1682,7 +2016,7 @@ MainWindow:
                 size_hint_x: 0.9
 
                 Label:
-                    text: 'Reversal threshold angle (radian)'
+                    text: 'Reversal threshold angle (degrees)'
                     halign: 'center'
                     valign: 'middle'
                     size_hint_x: 0.4
@@ -1693,7 +2027,7 @@ MainWindow:
                     configKey: 'reversalthresholdradian'
                     root: root
                     size_hint_x: 0.6
-            
+
             BoxLayout:
                 id: velocityhistorypercentage_layout
                 orientation: 'horizontal'
@@ -1712,7 +2046,7 @@ MainWindow:
                     configKey: 'velocityhistorypercentage'
                     root: root
                     size_hint_x: 0.6
-            
+
             BoxLayout:
                 id: reversalvoltage_layout
                 orientation: 'horizontal'
@@ -1731,7 +2065,7 @@ MainWindow:
                     configKey: 'reversalvoltage'
                     root: root
                     size_hint_x: 0.6
-                
+
             BoxLayout:
                 id: forwardvoltage_layout
                 orientation: 'horizontal'
@@ -1750,7 +2084,7 @@ MainWindow:
                     configKey: 'forwardvoltage'
                     root: root
                     size_hint_x: 0.6
-                
+
             BoxLayout:
                 id: relative_layout
                 orientation: 'horizontal'
@@ -1768,7 +2102,7 @@ MainWindow:
                         halign: 'left'
                         valign: 'middle'
                         text_size: self.size
-                
+
                 AnchorLayout:
                     anchor_x: 'right'
                     anchor_y: 'center'
@@ -1779,7 +2113,7 @@ MainWindow:
                         id: showguideline
                         configKey: 'showguideline'
                         root: root
-        
+
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: 0.5
@@ -1803,14 +2137,14 @@ MainWindow:
     size_hint_x: 1
     write_tab: False
 
-### display if hardware is connected successfully     
+### display if hardware is connected successfully
 <Connections>:
     orientation: 'vertical'
     size_hint: (0.3, 1)
     cam_connection: cam_connection
     stage_connection: stage_connection
     daq_connection: daq_connection
-    
+
     Label:
         text: 'Camera'
         size_hint: (1,0.33)
@@ -1819,7 +2153,7 @@ MainWindow:
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
@@ -1829,11 +2163,11 @@ MainWindow:
         text: 'Stage'
         size_hint: (1,0.33)
     OnOffButton:
-        id: stage_connection 
+        id: stage_connection
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
@@ -1843,16 +2177,16 @@ MainWindow:
         text: 'DAQ'
         size_hint: (1,0.33)
     DAQConnectionButton:
-        id: daq_connection 
+        id: daq_connection
         border: 0,0,0,0
         size_hint_x: 0.3
         size_hint_y: None
-        height: self.width 
+        height: self.width
         pos_hint: {'center_x': .5, 'center_y': .5}
         background_normal: 'icons/connection_off.png'
         background_down: 'icons/connection_on.png'
-        
-      
+
+
 #################################
 # Layout settings - custom
 #################################
@@ -1861,7 +2195,7 @@ MainWindow:
     size_hint: (0.5, 0.5)
     font_size: 18
     halign: 'center'
-    
+
 
 <MyLabel@Label>:
     #size: self.texture_size
@@ -1869,19 +2203,19 @@ MainWindow:
     font_size: 18
     halign: 'center'
     color: '#8e0045ff'
-    
-    
+
+
 <MyLogo@Image>:
     fit_mode: 'contain'
     source: 'icons/scholz-lab_logo.png'
     spacing: -10
     border: 0,0,0,0
-    
 
-<OnOffButton@ToggleButton>  
+
+<OnOffButton@ToggleButton>
     background_normal: 'icons/connection_off.png'
     background_down: 'icons/connection_on.png'
-    
+
 <MyCounter@Label>:
     value: 0
 
@@ -1902,7 +2236,7 @@ MainWindow:
 <WarningPopup>:
     BoxLayout:
         orientation: 'vertical'
-        
+
         Label:
 			text: root.text
 			size_hint_y: 0.9
