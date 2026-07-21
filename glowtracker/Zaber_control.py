@@ -14,6 +14,9 @@ DEFAULT_MAXSPEED = 20.0
 DEFAULT_MAXSPEED_UNIT = 'mm/s'
 DEFAULT_ACCEL = 60.0
 DEFAULT_ACCEL_UNIT = 'mm/s^2'
+POSITION_POLL_INTERVAL = 0.2
+JOG_SAFETY_POLL_INTERVAL = 0.1
+POSITION_POLLER_JOIN_TIMEOUT = 2.0
 
 # Declare common type
 Vec3: TypeAlias = Tuple[float, float, float]
@@ -81,11 +84,16 @@ class Stage:
         self.state = StageState()
 
         self._jog_velocity = [0.0, 0.0, 0.0]
-        self._jog_watchdog: threading.Thread | None = None
         self._disconnecting = False
 
         self._last_pos: List[float] | None = None
         self._last_pos_time: float = 0.0
+        self._position_cache_condition = threading.Condition()
+        self._position_read_lock = threading.Lock()
+        self._position_poller_lock = threading.Lock()
+        self._position_poll_stop = threading.Event()
+        self._position_poll_wake = threading.Event()
+        self._position_poll_thread: threading.Thread | None = None
             
             
     def connect_stage(self, port='COM3'):
@@ -482,6 +490,12 @@ class Stage:
         if self.connection is None or self._disconnecting:
             return False
 
+        safety_poll_required = self.axis_z is not None \
+            and (velocity[1] != 0 or velocity[2] != 0)
+        if safety_poll_required and not self.start_position_poller():
+            self.emergency_stop()
+            return False
+
         try:
             # Move each axis simultaneously
             if self.axis_x is not None and not self.state.isMoving_x and velocity[0] != 0:
@@ -503,32 +517,85 @@ class Stage:
             self.emergency_stop()
             return False
 
-        if self.axis_z is not None and (self._jog_watchdog is None or not self._jog_watchdog.is_alive()):
-            self._jog_watchdog = threading.Thread(target=self._jog_safety_watchdog, daemon=True)
-            self._jog_watchdog.start()
+        if safety_poll_required:
+            self._position_poll_wake.set()
 
         return True
 
-    def _jog_safety_watchdog(self) -> None:
+    def _check_jog_safety(self, pos: List[float]) -> None:
         y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
         z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
         BUFFER = 5.0
-        
-        while self.connection is not None and (
-                self.state.isMoving_x or self.state.isMoving_y or self.state.isMoving_z):
-            pos = self.get_position(unit='mm', isAsync=False)
-            if pos is None or len(pos) < 3:
-                self.emergency_stop()
+
+        y, z = pos[1], pos[2]
+        vy, vz = self._jog_velocity[1], self._jog_velocity[2]
+
+        if self.state.isMoving_y and z > z_lim and vy < 0 and y < y_lim + BUFFER:
+            self.stop(AxisEnum.Y)
+        if self.state.isMoving_z and y < y_lim and vz > 0 and z > z_lim - BUFFER:
+            self.stop(AxisEnum.Z)
+
+    def _position_poll_loop(self) -> None:
+        while not self._position_poll_stop.is_set():
+            if self.connection is None or self._disconnecting:
                 break
-            x, y, z = pos[0], pos[1], pos[2]
-            vy, vz = self._jog_velocity[1], self._jog_velocity[2]
 
-            if z > z_lim and vy < 0 and y < y_lim + BUFFER:
-                self.stop(AxisEnum.Y)
-            if y < y_lim and vz > 0 and z > z_lim - BUFFER:
-                self.stop(AxisEnum.Z)
+            safety_poll = self.axis_z is not None and (
+                self.state.isMoving_y or self.state.isMoving_z
+            )
+            try:
+                pos = self.get_position(unit='mm', isAsync=False)
+            except Exception as e:
+                print(f'Stage position polling failed: {e}')
+                pos = None
 
-            time.sleep(0.02)
+            if safety_poll:
+                if pos is None or len(pos) < 3:
+                    self.emergency_stop()
+                else:
+                    self._check_jog_safety(pos)
+
+            interval = JOG_SAFETY_POLL_INTERVAL if safety_poll else POSITION_POLL_INTERVAL
+            self._position_poll_wake.wait(interval)
+            self._position_poll_wake.clear()
+
+    def start_position_poller(self) -> bool:
+        if self.connection is None or self._disconnecting:
+            return False
+        with self._position_poller_lock:
+            if self._position_poll_thread is not None \
+                    and self._position_poll_thread.is_alive():
+                return True
+            self._position_poll_stop.clear()
+            self._position_poll_wake.clear()
+            self._position_poll_thread = threading.Thread(
+                target=self._position_poll_loop,
+                daemon=True,
+                name='StagePositionPoller',
+            )
+            self._position_poll_thread.start()
+        return True
+
+    def stop_position_poller(self, timeout: float = POSITION_POLLER_JOIN_TIMEOUT) -> bool:
+        self._position_poll_stop.set()
+        self._position_poll_wake.set()
+        with self._position_poller_lock:
+            thread = self._position_poll_thread
+        if thread is None or thread is threading.current_thread():
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
+
+    def get_cached_position(self, unit: str = 'mm', max_age: float | None = None) -> List[float] | None:
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            return None
+        with self._position_cache_condition:
+            if self._last_pos is None:
+                return None
+            if max_age is not None and time.monotonic() - self._last_pos_time > max_age:
+                return None
+            return [value / factor for value in self._last_pos]
 
 
     def emergency_stop(self) -> bool:
@@ -608,27 +675,28 @@ class Stage:
         pos: Vec3 | None = None
         
         try:
-            if isAsync:
+            with self._position_read_lock:
+                if isAsync:
 
-                loop = []
+                    loop = []
 
-                loop.append(self.axis_x.get_position_async(units_from_literals(unit)))
-                loop.append(self.axis_y.get_position_async(units_from_literals(unit)))
-                if self.axis_z is not None:
-                    loop.append(self.axis_z.get_position_async(units_from_literals(unit)))
+                    loop.append(self.axis_x.get_position_async(units_from_literals(unit)))
+                    loop.append(self.axis_y.get_position_async(units_from_literals(unit)))
+                    if self.axis_z is not None:
+                        loop.append(self.axis_z.get_position_async(units_from_literals(unit)))
 
-                move_coroutine = asyncio.gather(*loop)
-                event_loop = asyncio.get_event_loop()
-                pos = event_loop.run_until_complete(move_coroutine)
-                
-            else:
+                    move_coroutine = asyncio.gather(*loop)
+                    event_loop = asyncio.get_event_loop()
+                    pos = event_loop.run_until_complete(move_coroutine)
 
-                pos = []
-                
-                pos.append(self.axis_x.get_position(units_from_literals(unit)))
-                pos.append(self.axis_y.get_position(units_from_literals(unit)))
-                if self.axis_z is not None:
-                    pos.append(self.axis_z.get_position(units_from_literals(unit)))
+                else:
+
+                    pos = []
+
+                    pos.append(self.axis_x.get_position(units_from_literals(unit)))
+                    pos.append(self.axis_y.get_position(units_from_literals(unit)))
+                    if self.axis_z is not None:
+                        pos.append(self.axis_z.get_position(units_from_literals(unit)))
             
         except MotionLibException as e:
             # Handle exception
@@ -638,14 +706,27 @@ class Stage:
 
         if pos is not None:
             factor = self._UNIT_TO_MM.get(unit, 1.0)
-            self._last_pos = [p * factor for p in pos]
-            self._last_pos_time = time.monotonic()
+            with self._position_cache_condition:
+                self._last_pos = [p * factor for p in pos]
+                self._last_pos_time = time.monotonic()
+                self._position_cache_condition.notify_all()
 
         return pos
 
     def _safe_position_mm(self, max_age: float = 0.3) -> List[float] | None:
-        if self._last_pos is not None and (time.monotonic() - self._last_pos_time) < max_age:
-            return self._last_pos
+        pos = self.get_cached_position(unit='mm', max_age=max_age)
+        if pos is not None:
+            return pos
+        if self._position_poll_thread is not None and self._position_poll_thread.is_alive():
+            with self._position_cache_condition:
+                previous_update = self._last_pos_time
+                self._position_poll_wake.set()
+                self._position_cache_condition.wait_for(
+                    lambda: self._last_pos_time > previous_update
+                    or self._position_poll_stop.is_set(),
+                    timeout=max(POSITION_POLL_INTERVAL * 2, 0.5),
+                )
+            return self.get_cached_position(unit='mm', max_age=max_age)
         return self.get_position(unit='mm', isAsync=False)
 
 
@@ -740,6 +821,8 @@ class Stage:
         connection = self.connection
         try:
             stopped = self.emergency_stop()
+            if not self.stop_position_poller():
+                print('Stage position poller did not stop before disconnect')
         finally:
             try:
                 if connection is not None:

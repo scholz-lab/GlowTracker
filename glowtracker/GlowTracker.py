@@ -4621,7 +4621,7 @@ class Connections(BoxLayout):
                     )
                     if success and not self._stageSetupCancel.is_set():
                         position = stage.get_position(isAsync=False)
-                        success = position is not None
+                        success = position is not None and stage.start_position_poller()
                 except Exception as e:
                     print(f'Stage setup failed: {e}')
 
@@ -5166,7 +5166,9 @@ class GlowTrackerApp(App):
     def stage_stop(self):
         """stop all axes and report coordinates."""
         self.stage.stop()
-        self.coords = self.stage.get_position()
+        position = self.stage.get_cached_position()
+        if position is not None:
+            self.coords = position
         self.stopevent = None
         print('stopped')
 
@@ -5273,15 +5275,17 @@ class GlowTrackerApp(App):
         """Handle keyup callbacks. This is usually only for stopping axis movement"""
         if self.stage is None:
             return
+
+        movement_keys = [273, 274, 275, 276, 280, 281]
+        if key not in movement_keys:
+            return
         
         # Stopping axis depending on the movement mode
         if self.moveImageSpaceMode:
             
             # TODO: Improve this feature so that we can move in image space simultaneously
             #   in both X,Y axis. Will require additive velocity movement handling.
-            if key in [273, 274, 275, 276, 280, 281]:
-                self.stage.stop(stopAxis= AxisEnum.ALL)
-                self.coords = self.stage.get_position()
+            self.stage.stop(stopAxis= AxisEnum.ALL)
         
         else:
         
@@ -5289,15 +5293,16 @@ class GlowTrackerApp(App):
             #   Call the coresponding axis to stop and update te stage position
             if key == 275 or key == 276:
                 self.stage.stop(stopAxis= AxisEnum.X)
-                self.coords = self.stage.get_position()
 
             elif key == 273 or key == 274:
                 self.stage.stop(stopAxis= AxisEnum.Y)
-                self.coords = self.stage.get_position()
 
             elif key == 280 or key == 281:
                 self.stage.stop(stopAxis= AxisEnum.Z)
-                self.coords = self.stage.get_position()
+
+        position = self.stage.get_cached_position()
+        if position is not None:
+            self.coords = position
 
         stagePosString = f'Stage position: {self.coords[0]:.3f}, {self.coords[1]:.3f}'
         if len(self.coords) > 2:
@@ -5725,7 +5730,7 @@ class GlowTrackerApp(App):
     def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
-            pos = self.stage.get_position(isAsync= isAsync)
+            pos = self.stage.get_cached_position()
             if pos is not None:
                 self.coords = pos
 
