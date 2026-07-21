@@ -608,11 +608,41 @@ class Stage:
                             self.set_accel(float(accel), accel_unit)
                     self.start_move(velocity, unit)
                 else:
-                    self.stop(command[1])
+                    self._stop_jog_no_response(command[1])
             except Exception as e:
                 print(f'Stage jog command failed: {e}')
                 self.emergency_stop()
                 return
+
+    def _stop_jog_no_response(self, stopAxis: AxisEnum = AxisEnum.ALL) -> bool:
+        if self.connection is None:
+            return False
+
+        axes = (
+            (AxisEnum.X, self.axis_x, 'isMoving_x', 0),
+            (AxisEnum.Y, self.axis_y, 'isMoving_y', 1),
+            (AxisEnum.Z, self.axis_z, 'isMoving_z', 2),
+        )
+        selected = [
+            entry for entry in axes
+            if stopAxis == AxisEnum.ALL or entry[0] == stopAxis
+        ]
+
+        try:
+            for _, axis, _, _ in selected:
+                if axis is not None:
+                    axis.generic_command_no_response('stop')
+        except Exception as e:
+            print(f'Stage jog stop failed: {e}')
+            self.emergency_stop()
+            return False
+
+        for _, axis, state_name, index in selected:
+            if axis is not None:
+                setattr(self.state, state_name, False)
+                self._jog_velocity[index] = 0.0
+        self._position_poll_wake.set()
+        return True
 
     def _check_jog_safety(self, pos: List[float]) -> None:
         y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN

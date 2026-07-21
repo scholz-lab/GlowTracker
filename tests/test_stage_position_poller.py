@@ -12,6 +12,7 @@ class FakeAxis:
         self.read_threads = []
         self.velocities = []
         self.stops = 0
+        self.no_response_commands = []
 
     def get_position(self, unit):
         self.read_threads.append(threading.current_thread().name)
@@ -22,6 +23,9 @@ class FakeAxis:
 
     def stop(self, wait_until_idle=False):
         self.stops += 1
+
+    def generic_command_no_response(self, command):
+        self.no_response_commands.append(command)
 
 
 def make_stage(monkeypatch):
@@ -104,6 +108,7 @@ def test_y_jog_safety_uses_polled_coordinates(monkeypatch):
     try:
         assert stage.start_position_poller()
         assert wait_until(lambda: axes[1].stops == 1)
+        assert axes[1].no_response_commands == []
         assert not stage.state.isMoving_y
     finally:
         assert stage.stop_position_poller()
@@ -128,21 +133,25 @@ def test_interactive_stop_and_next_start_do_not_block_caller(monkeypatch):
     stage, axes = make_stage(monkeypatch)
     read_started = threading.Event()
     release_read = threading.Event()
-    stop_started = threading.Event()
-    release_stop = threading.Event()
+    events = []
 
     def slow_position(unit):
+        events.append('x-read')
         read_started.set()
         release_read.wait(1.0)
         return 10.0
 
-    def slow_stop(wait_until_idle=False):
-        stop_started.set()
-        release_stop.wait(1.0)
-        axes[0].stops += 1
+    def y_position(unit):
+        events.append('y-read')
+        return 20.0
+
+    def no_response(command):
+        events.append(command)
+        axes[0].no_response_commands.append(command)
 
     axes[0].get_position = slow_position
-    axes[0].stop = slow_stop
+    axes[0].generic_command_no_response = no_response
+    axes[1].get_position = y_position
     stage.state.isMoving_x = True
 
     try:
@@ -150,18 +159,17 @@ def test_interactive_stop_and_next_start_do_not_block_caller(monkeypatch):
         assert read_started.wait(1.0)
         assert stage.request_stop(zaber.AxisEnum.X)
         release_read.set()
-        assert stop_started.wait(1.0)
-        assert axes[1].read_threads == []
+        assert wait_until(lambda: axes[0].no_response_commands == ['stop'])
+        assert wait_until(lambda: 'y-read' in events)
+        assert events.index('stop') < events.index('y-read')
         assert stage.request_start_move((-1.0, 0.0, 0.0), 'mm/s')
         assert stage.request_stop(zaber.AxisEnum.X)
-        assert axes[0].velocities == []
-        release_stop.set()
         assert wait_until(lambda: axes[0].velocities == [-1.0])
-        assert wait_until(lambda: axes[0].stops == 2)
+        assert wait_until(lambda: axes[0].no_response_commands == ['stop', 'stop'])
+        assert axes[0].stops == 0
         assert not stage.state.isMoving_x
     finally:
         release_read.set()
-        release_stop.set()
         assert stage.stop_position_poller()
 
 
@@ -217,7 +225,19 @@ def test_ui_coordinate_paths_only_read_the_stage_cache():
     }
     assert 'start_move' not in key_down_calls
     assert 'set_accel' not in key_down_calls
+    assert 'convert_units' not in key_down_calls
     assert 'request_jog' in key_down_calls
+
+    key_down_assignments = {
+        target.attr
+        for node in ast.walk(key_down)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == 'self'
+    }
+    assert 'coords' not in key_down_assignments
 
     layout = (
         Path(__file__).resolve().parents[1]

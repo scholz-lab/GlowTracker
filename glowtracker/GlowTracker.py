@@ -5265,19 +5265,6 @@ class GlowTrackerApp(App):
         if not self.request_jog(velocity, fast):
             return
 
-        # Update stage position app.coords 
-        #   Extrapolated position by speed
-        #   Convert speed to cm/s
-        velocity_cm_per_sec = np.zeros(shape= (3), dtype= np.float32)
-        velocity_cm_per_sec[0] = UnitTable.convert_units(value= velocity[0], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-        velocity_cm_per_sec[1] = UnitTable.convert_units(value= velocity[1], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-        velocity_cm_per_sec[2] = UnitTable.convert_units(value= velocity[2], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-
-        # Very crude estimation. Need to consult Monika
-        spf = 1 / 30.0
-        extrapolatedPos = np.array(self.coords) + spf * velocity_cm_per_sec * 10
-        self.coords = extrapolatedPos.tolist()
-
 
     def _keyup(self, instance, key, scancode) -> None:
         """Handle keyup callbacks. This is usually only for stopping axis movement"""
