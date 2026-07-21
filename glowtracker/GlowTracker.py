@@ -2575,19 +2575,21 @@ class ImageAcquisitionManager(BoxLayout):
                 print('An error occured when taking an image')
 
 
-class StencilFloatLayout(FloatLayout, StencilView):
+class ViewingWidget(FloatLayout, StencilView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.minimapMesh: Line = Line()
-        self.minimapColor: Color = Color(1.0, 0, 0.5, 1.0)
+        self.minimapBorder: Line = Line()
+        self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
+
+        self.point1 = PointWithLabel(pos= [0, 0], text= 'Text')
 
         self.app: GlowTrackerApp = App.get_running_app()
 
 
     def on_touch_down(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
+        """Limits subsequent interactions to only be activated if it's within the ViewingWidget
         """
 
         if self.collide_point(*touch.pos):
@@ -2597,7 +2599,7 @@ class StencilFloatLayout(FloatLayout, StencilView):
     
 
     def on_touch_up(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
+        """Limits subsequent interactions to only be activated if it's within the ViewingWidget
         """
         if self.collide_point(*touch.pos):
             return super().on_touch_up(touch)
@@ -2638,14 +2640,15 @@ class StencilFloatLayout(FloatLayout, StencilView):
         widgetSize = np.array(self.size)
         widgetOrigin = np.array(self.pos)
 
-        topRight = widgetSize + widgetOrigin
-        btmLeft = topRight - minimapSize
+        minimapTopRight = widgetSize + widgetOrigin
+        minimapBtmLeft = minimapTopRight - minimapSize
+        minimapCenter = (minimapTopRight + minimapBtmLeft) / 2
 
         verts = np.array([
-            btmLeft, 
-            [btmLeft[0] + minimapSize[0], btmLeft[1]], 
-            topRight, 
-            [btmLeft[0], btmLeft[1] + minimapSize[1]],
+            minimapBtmLeft, 
+            [minimapBtmLeft[0] + minimapSize[0], minimapBtmLeft[1]], 
+            minimapTopRight, 
+            [minimapBtmLeft[0], minimapBtmLeft[1] + minimapSize[1]],
         ])
 
         #   [x1, y1, x2, y2, ...]
@@ -2653,21 +2656,100 @@ class StencilFloatLayout(FloatLayout, StencilView):
         vertices = verts.tolist()
 
         # Construct index array
-        self.minimapMesh.points = vertices
-        self.minimapMesh.close = True
+        self.minimapBorder.points = vertices
+        self.minimapBorder.close = True
 
-        if self.minimapMesh not in self.canvas.children:
-            self.canvas.add(self.minimapColor)
-            self.canvas.add(self.minimapMesh)
+        if self.minimapBorder not in self.canvas.children:
+            self.canvas.add(self.minimapBorderColor)
+            self.canvas.add(self.minimapBorder)
+
+        # 
+        # Draw Landmarks
+        # 
+        self.point1.updatePos(pos= [minimapBtmLeft[0], minimapBtmLeft[1]])
+        self.point1.attemptAddToWidget(self)
 
     
     def clearOverlay(self) -> None:
-        """Clear both tracking and dual color overlay.
+        """Remove all related elements from the canvas and widget
         """
-        if self.minimapMesh in self.canvas.children:
-            self.canvas.remove(self.minimapMesh)
-            self.canvas.remove(self.minimapColor)
+        if self.minimapBorder in self.canvas.children:
+            self.canvas.remove(self.minimapBorder)
+            self.canvas.remove(self.minimapBorderColor)
+        
+        self.point1.attempRemoveToWidget(self)
 
+
+class PointWithLabel():
+    """A composite class of kivy.uix.label and kivy.graphics.Point to specifically draw a point with a notated string anchored top-left to the point.
+    """
+
+    def __init__(self, 
+        pos: List[float], 
+        text: str, 
+        pointSize: float = 3, 
+        pointColor: List[float] = [1, 1, 1, 1],
+        fontSize: float = sp(18),
+        textColor: List[float] = [1, 1, 1, 1],
+        widget: Widget | None = None,
+    ) -> None:
+
+        self.point = Point(points= pos, pointsize= pointSize)
+        self.pointColor = Color(pointColor)
+
+        self.label = Label(
+            text= text, 
+            font_size= fontSize, 
+            color= textColor,
+            size_hint = [None, None]
+        )
+        # Call render texture once to get its size
+        self.label.texture_update()
+        self.label.size = self.label.texture_size
+        self.label.text_size = self.label.texture_size
+
+        # Off-set label to top-left of the point
+        textSize = np.array(self.label.size)
+        offset = np.array([textSize[0]/2 , -textSize[1]/2])
+        self.label.center = (np.array(pos) + offset).tolist()
+
+        if widget is not None:
+            self.attemptAddToWidget(widget= widget)
+
+    
+    def updatePos(self, pos: List[float]) -> None:
+
+        self.point.points = pos
+        
+        # Off-set label to top-left of the point
+        textSize = np.array(self.label.size)
+        offset = np.array([textSize[0]/2 , -textSize[1]/2])
+        self.label.center = (np.array(pos) + offset).tolist()
+    
+
+    def attemptAddToWidget(self, widget: Widget) -> None:
+        
+        # Point
+        if self.point not in widget.canvas.children:
+            widget.canvas.add(self.pointColor)
+            widget.canvas.add(self.point)
+        
+        # Label
+        if self.label not in widget.children:
+            widget.add_widget(self.label)
+    
+
+    def attempRemoveToWidget(self, widget: Widget) -> None:
+        
+        # Point
+        if self.point in widget.canvas.children:
+            widget.canvas.remove(self.pointColor)
+            widget.canvas.remove(self.point)
+        
+        # Label
+        if self.label not in widget.children:
+            widget.remove_widget(self.label)
+            
         
 class ScalableImage(ScatterLayout):
 
