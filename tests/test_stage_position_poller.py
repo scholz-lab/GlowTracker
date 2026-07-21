@@ -71,11 +71,15 @@ def test_position_poller_populates_cache_off_the_main_thread(monkeypatch):
 
 def test_failed_y_jog_position_poll_stops_stage(monkeypatch):
     monkeypatch.setattr(zaber, 'JOG_SAFETY_POLL_INTERVAL', 0.01)
-    stage, _ = make_stage(monkeypatch)
+    stage, axes = make_stage(monkeypatch)
     stopped = threading.Event()
     stage.state.isMoving_y = True
     stage._jog_velocity[1] = -1.0
-    stage.get_position = lambda unit='mm', isAsync=False: None
+
+    def fail_position(unit):
+        raise RuntimeError('position read failed')
+
+    axes[0].get_position = fail_position
 
     def emergency_stop():
         stage.state = zaber.StageState()
@@ -120,6 +124,47 @@ def test_x_jog_does_not_start_collision_poller(monkeypatch):
     assert axes[1].velocities == [-1.0]
 
 
+def test_interactive_stop_and_next_start_do_not_block_caller(monkeypatch):
+    stage, axes = make_stage(monkeypatch)
+    read_started = threading.Event()
+    release_read = threading.Event()
+    stop_started = threading.Event()
+    release_stop = threading.Event()
+
+    def slow_position(unit):
+        read_started.set()
+        release_read.wait(1.0)
+        return 10.0
+
+    def slow_stop(wait_until_idle=False):
+        stop_started.set()
+        release_stop.wait(1.0)
+        axes[0].stops += 1
+
+    axes[0].get_position = slow_position
+    axes[0].stop = slow_stop
+    stage.state.isMoving_x = True
+
+    try:
+        assert stage.start_position_poller()
+        assert read_started.wait(1.0)
+        assert stage.request_stop(zaber.AxisEnum.X)
+        release_read.set()
+        assert stop_started.wait(1.0)
+        assert axes[1].read_threads == []
+        assert stage.request_start_move((-1.0, 0.0, 0.0), 'mm/s')
+        assert stage.request_stop(zaber.AxisEnum.X)
+        assert axes[0].velocities == []
+        release_stop.set()
+        assert wait_until(lambda: axes[0].velocities == [-1.0])
+        assert wait_until(lambda: axes[0].stops == 2)
+        assert not stage.state.isMoving_x
+    finally:
+        release_read.set()
+        release_stop.set()
+        assert stage.stop_position_poller()
+
+
 def test_ui_coordinate_paths_only_read_the_stage_cache():
     source = (
         Path(__file__).resolve().parents[1]
@@ -146,3 +191,37 @@ def test_ui_coordinate_paths_only_read_the_stage_cache():
         }
         assert 'get_position' not in called_attributes
         assert 'get_cached_position' in called_attributes
+
+    key_up = next(
+        node
+        for node in app_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == '_keyup'
+    )
+    key_up_calls = {
+        node.func.attr
+        for node in ast.walk(key_up)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert 'stop' not in key_up_calls
+    assert 'request_stage_stop' in key_up_calls
+
+    key_down = next(
+        node
+        for node in app_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == '_keydown'
+    )
+    key_down_calls = {
+        node.func.attr
+        for node in ast.walk(key_down)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert 'start_move' not in key_down_calls
+    assert 'set_accel' not in key_down_calls
+    assert 'request_jog' in key_down_calls
+
+    layout = (
+        Path(__file__).resolve().parents[1]
+        / 'glowtracker'
+        / 'layout.kv'
+    ).read_text()
+    assert 'app.stage.stop()' not in layout

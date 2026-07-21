@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 import threading
 import time
 from zaber_motion import Library, Units, MotionLibException, MovementFailedException, CommandFailedException
@@ -17,6 +18,7 @@ DEFAULT_ACCEL_UNIT = 'mm/s^2'
 POSITION_POLL_INTERVAL = 0.2
 JOG_SAFETY_POLL_INTERVAL = 0.1
 POSITION_POLLER_JOIN_TIMEOUT = 2.0
+_POLL_INTERRUPTED = object()
 
 # Declare common type
 Vec3: TypeAlias = Tuple[float, float, float]
@@ -71,6 +73,7 @@ class Stage:
         self.axis_z: Axis | None = None
 
         self.devices: List[Device] = []
+        self._accel_signature = None
         
         # Try connecting to the stage
         self.connection = self.connect_stage(port)
@@ -94,6 +97,11 @@ class Stage:
         self._position_poll_stop = threading.Event()
         self._position_poll_wake = threading.Event()
         self._position_poll_thread: threading.Thread | None = None
+        self._jog_command_lock = threading.Lock()
+        self._jog_commands = deque()
+        self._requested_jog_axes = [False, False, False]
+        self._jog_generations = [0, 0, 0]
+        self._queued_stop_generations = [-1, -1, -1]
             
             
     def connect_stage(self, port='COM3'):
@@ -212,6 +220,7 @@ class Stage:
             self.accel = axis.settings.get("accel", units_from_literals(unit))
             print(f'Acceleration: {self.accel:.4f} {units_to_literals(unit)}')
 
+        self._accel_signature = (float(accel), units_to_literals(unit))
         return self.accel
 
 
@@ -522,6 +531,89 @@ class Stage:
 
         return True
 
+    def request_start_move(
+            self,
+            velocity: Vec3,
+            unit: str = 'um/s',
+            accel: float | None = None,
+            accel_unit: str | None = None) -> bool:
+        if self.connection is None or self._disconnecting:
+            return False
+        if not self.start_position_poller():
+            return False
+        with self._jog_command_lock:
+            moving_axes = [value != 0 for value in velocity]
+            if any(
+                    requested and moving
+                    for requested, moving
+                    in zip(self._requested_jog_axes, moving_axes)):
+                return False
+            for index, moving in enumerate(moving_axes):
+                if moving:
+                    self._requested_jog_axes[index] = True
+                    self._jog_generations[index] += 1
+            self._jog_commands.append(
+                ('start', tuple(velocity), unit, accel, accel_unit)
+            )
+        self._position_poll_wake.set()
+        return True
+
+    def request_stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> bool:
+        if self.connection is None or self._disconnecting:
+            return False
+        if not self.start_position_poller():
+            return False
+        with self._jog_command_lock:
+            if stopAxis == AxisEnum.ALL:
+                indices = range(3)
+            else:
+                indices = [stopAxis.value - 1]
+            indices = list(indices)
+            if all(
+                    self._queued_stop_generations[index]
+                    == self._jog_generations[index]
+                    for index in indices):
+                return True
+            for index in indices:
+                self._requested_jog_axes[index] = False
+                self._queued_stop_generations[index] = self._jog_generations[index]
+            self._jog_commands.append(('stop', stopAxis))
+        self._position_poll_wake.set()
+        return True
+
+    def _has_jog_commands(self) -> bool:
+        with self._jog_command_lock:
+            return bool(self._jog_commands)
+
+    def _clear_jog_commands(self) -> None:
+        with self._jog_command_lock:
+            self._jog_commands.clear()
+            self._requested_jog_axes = [False, False, False]
+            self._jog_generations = [0, 0, 0]
+            self._queued_stop_generations = [-1, -1, -1]
+
+    def _process_jog_commands(self) -> None:
+        while not self._disconnecting:
+            with self._jog_command_lock:
+                if not self._jog_commands:
+                    return
+                command = self._jog_commands.popleft()
+
+            try:
+                if command[0] == 'start':
+                    _, velocity, unit, accel, accel_unit = command
+                    if accel is not None and accel_unit is not None:
+                        signature = (float(accel), units_to_literals(accel_unit))
+                        if signature != self._accel_signature:
+                            self.set_accel(float(accel), accel_unit)
+                    self.start_move(velocity, unit)
+                else:
+                    self.stop(command[1])
+            except Exception as e:
+                print(f'Stage jog command failed: {e}')
+                self.emergency_stop()
+                return
+
     def _check_jog_safety(self, pos: List[float]) -> None:
         y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
         z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
@@ -540,14 +632,22 @@ class Stage:
             if self.connection is None or self._disconnecting:
                 break
 
+            self._process_jog_commands()
+            if self._position_poll_stop.is_set() \
+                    or self.connection is None or self._disconnecting:
+                break
+
             safety_poll = self.axis_z is not None and (
                 self.state.isMoving_y or self.state.isMoving_z
             )
             try:
-                pos = self.get_position(unit='mm', isAsync=False)
+                pos = self._get_polled_position()
             except Exception as e:
                 print(f'Stage position polling failed: {e}')
                 pos = None
+
+            if pos is _POLL_INTERRUPTED:
+                continue
 
             if safety_poll:
                 if pos is None or len(pos) < 3:
@@ -558,6 +658,23 @@ class Stage:
             interval = JOG_SAFETY_POLL_INTERVAL if safety_poll else POSITION_POLL_INTERVAL
             self._position_poll_wake.wait(interval)
             self._position_poll_wake.clear()
+
+    def _get_polled_position(self):
+        positions = []
+        axes = [self.axis_x, self.axis_y]
+        if self.axis_z is not None:
+            axes.append(self.axis_z)
+
+        with self._position_read_lock:
+            for axis in axes:
+                if self._has_jog_commands() or self._position_poll_stop.is_set():
+                    return _POLL_INTERRUPTED
+                positions.append(axis.get_position(units_from_literals('mm')))
+
+        if self._has_jog_commands() or self._position_poll_stop.is_set():
+            return _POLL_INTERRUPTED
+        self._cache_position(positions, 'mm')
+        return positions
 
     def start_position_poller(self) -> bool:
         if self.connection is None or self._disconnecting:
@@ -577,6 +694,7 @@ class Stage:
         return True
 
     def stop_position_poller(self, timeout: float = POSITION_POLLER_JOIN_TIMEOUT) -> bool:
+        self._clear_jog_commands()
         self._position_poll_stop.set()
         self._position_poll_wake.set()
         with self._position_poller_lock:
@@ -599,6 +717,7 @@ class Stage:
 
 
     def emergency_stop(self) -> bool:
+        self._clear_jog_commands()
         if self.connection is None:
             self.state = StageState()
             self._jog_velocity = [0.0, 0.0, 0.0]
@@ -705,13 +824,16 @@ class Stage:
             print(e)
 
         if pos is not None:
-            factor = self._UNIT_TO_MM.get(unit, 1.0)
-            with self._position_cache_condition:
-                self._last_pos = [p * factor for p in pos]
-                self._last_pos_time = time.monotonic()
-                self._position_cache_condition.notify_all()
+            self._cache_position(pos, unit)
 
         return pos
+
+    def _cache_position(self, pos, unit: str) -> None:
+        factor = self._UNIT_TO_MM.get(unit, 1.0)
+        with self._position_cache_condition:
+            self._last_pos = [p * factor for p in pos]
+            self._last_pos_time = time.monotonic()
+            self._position_cache_condition.notify_all()
 
     def _safe_position_mm(self, max_age: float = 0.3) -> List[float] | None:
         pos = self.get_cached_position(unit='mm', max_age=max_age)

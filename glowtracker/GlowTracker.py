@@ -5060,7 +5060,7 @@ class GlowTrackerApp(App):
 
         # manage xbox input
         Window.bind(on_joy_axis= self.on_controller_input)
-        self.stopevent = Clock.create_trigger(lambda dt: self.stage.stop(), 0.1)
+        self.stopevent = Clock.create_trigger(lambda dt: self.request_stage_stop(), 0.1)
 
         # Load and gen camera&stage transformation matricies
         rotation = self.config.getfloat('Camera', 'rotation')
@@ -5165,7 +5165,7 @@ class GlowTrackerApp(App):
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
-        self.stage.stop()
+        self.request_stage_stop()
         position = self.stage.get_cached_position()
         if position is not None:
             self.coords = position
@@ -5173,20 +5173,29 @@ class GlowTrackerApp(App):
         print('stopped')
 
 
-    def applyInputAcceleration(self, fast: bool) -> None:
-        state = self.stage.state
-        if state.isMoving_x or state.isMoving_y or state.isMoving_z:
-            return
+    def request_stage_stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> bool:
+        if self.stage is None:
+            return False
+        return self.stage.request_stop(stopAxis)
+
+
+    def request_jog(self, velocity: tuple, fast: bool) -> bool:
+        if self.stage is None:
+            return False
         key = 'input_fast_acceleration' if fast else 'input_slow_acceleration'
-        self.stage.set_accel(self.config.getfloat('Stage', key), self.config.get('Stage', 'acceleration_unit'))
+        return self.stage.request_start_move(
+            velocity,
+            self.unit,
+            self.config.getfloat('Stage', key),
+            self.config.get('Stage', 'acceleration_unit'),
+        )
 
 
     def jog(self, direction: tuple, fast: bool = True) -> None:
         if self.stage is None:
             return
         speed = self.vhigh if fast else self.vlow
-        self.applyInputAcceleration(fast)
-        self.stage.start_move(tuple(d * speed for d in direction), self.unit)
+        self.request_jog(tuple(d * speed for d in direction), fast)
 
 
     def on_controller_input(self, win, stickid, axisid, value) -> None:
@@ -5194,7 +5203,7 @@ class GlowTrackerApp(App):
 
         print(win, stickid, axisid, value)
 
-        if self.stage is None or self.stage.is_busy():
+        if self.stage is None:
             return
 
         if self.stopevent is not None:
@@ -5211,8 +5220,7 @@ class GlowTrackerApp(App):
             }
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
-                self.applyInputAcceleration(fast= True)
-                self.stage.start_move(direction[axisid], self.unit)
+                self.request_jog(direction[axisid], True)
 
     
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
@@ -5254,8 +5262,8 @@ class GlowTrackerApp(App):
             velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
         
         # Move
-        self.applyInputAcceleration(fast)
-        self.stage.start_move(velocity, self.unit)
+        if not self.request_jog(velocity, fast):
+            return
 
         # Update stage position app.coords 
         #   Extrapolated position by speed
@@ -5285,20 +5293,20 @@ class GlowTrackerApp(App):
             
             # TODO: Improve this feature so that we can move in image space simultaneously
             #   in both X,Y axis. Will require additive velocity movement handling.
-            self.stage.stop(stopAxis= AxisEnum.ALL)
+            self.request_stage_stop(AxisEnum.ALL)
         
         else:
         
             # Movement key up
             #   Call the coresponding axis to stop and update te stage position
             if key == 275 or key == 276:
-                self.stage.stop(stopAxis= AxisEnum.X)
+                self.request_stage_stop(AxisEnum.X)
 
             elif key == 273 or key == 274:
-                self.stage.stop(stopAxis= AxisEnum.Y)
+                self.request_stage_stop(AxisEnum.Y)
 
             elif key == 280 or key == 281:
-                self.stage.stop(stopAxis= AxisEnum.Z)
+                self.request_stage_stop(AxisEnum.Z)
 
         position = self.stage.get_cached_position()
         if position is not None:

@@ -238,11 +238,11 @@ MainWindow:
     
     StageButtonLeftFast:
         id: sbl1
-        on_state: app.jog((-1,0,0), True)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((-1,0,0), True)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     StageButtonLeft:
         id: sbl2
-        on_state: app.jog((-1,0,0), False)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((-1,0,0), False)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     Label:
         text: 'X'
@@ -250,11 +250,11 @@ MainWindow:
         size_hint: (0.2,1)
     StageButtonRight:
         id: sbl3
-        on_state: app.jog((1,0,0), False)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((1,0,0), False)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
     StageButtonRightFast:
         id: sbl4
-        on_state: app.jog((1,0,0), True)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((1,0,0), True)  if self.state=='down' else app.request_stage_stop()
         #disabled: app.stage.connection is None
 
 <YControls>:
@@ -265,11 +265,11 @@ MainWindow:
         
         StageButtonLeftFast:
             id: sbl1
-            on_state: app.jog((0,-1,0), True)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,-1,0), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.jog((0,-1,0), False)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,-1,0), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Y'
@@ -278,11 +278,11 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.jog((0,1,0), False)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonRightFast:
             id: sbl4
-            on_state: app.jog((0,1,0), True)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
             
             
@@ -294,11 +294,11 @@ MainWindow:
         
         StageButtonLeftFast:
             id: sbl1
-            on_state: app.jog((0,0,-1), True)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.jog((0,0,-1), False)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Z'
@@ -306,11 +306,11 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.jog((0,0,1), False)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,1), False)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
         StageButtonRightFast:
             id: sbl4
-            on_state: app.jog((0,0,1), True)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,1), True)  if self.state=='down' else app.request_stage_stop()
             #disabled: app.stage.connection is None
 
 <GoToControls>:
