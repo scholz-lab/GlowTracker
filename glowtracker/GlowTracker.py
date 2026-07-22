@@ -24,13 +24,13 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Mesh
+from kivy.graphics import Color, Line, Ellipse, Mesh, Rectangle, Point
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent, mainthread
-from kivy.metrics import Metrics
+from kivy.metrics import Metrics, sp
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -2583,7 +2583,10 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapBorder: Line = Line()
         self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
 
-        self.point1 = PointWithLabel(pos= [0, 0], text= 'Text')
+        self.currentPosPoint = PointWithLabel(pos= [0, 0], text= 'Text')
+
+        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text')
+        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text')
 
         self.app: GlowTrackerApp = App.get_running_app()
 
@@ -2623,28 +2626,84 @@ class ViewingWidget(FloatLayout, StencilView):
         # Clear all the overlay
         self.clearOverlay()
 
-        # Update tracking overlay
-        showminimap = self.app.config.getboolean('Tracking', 'showminimap')
+        # Update minimap
+        showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
         
-        if showminimap:
+        if showtrackingoverlay:
             self.updateMinimap(doClear= False)
 
 
     def updateMinimap(self, doClear= False) -> None:
+        # Minimap on top-left corner
+        
         # 
-        #   Draw minimap boarder
+        # Gather parameters
         # 
-        # Draw 100 x 100 at top right corner
-        minimapSize = np.array([100, 100])
+
+        # current stage position in XY
+        currentPos = np.array(self.app.coords[:2])
+
+        # Test
+        currentPos[0] = 25
+        currentPos[1] = 25
+
+        mode = self.app.config.get('Minimap', 'mode')
+        minimap_width = self.app.config.getfloat('Minimap', 'width')
+        minimap_height = self.app.config.getfloat('Minimap', 'height')
+        minimap_min_x = self.app.config.getfloat('Minimap', 'min_x')
+        minimap_min_y = self.app.config.getfloat('Minimap', 'min_y')
+        minimap_max_x = self.app.config.getfloat('Minimap', 'max_x')
+        minimap_max_y = self.app.config.getfloat('Minimap', 'max_y')
+        minimapSize = np.array([sp(minimap_width), sp(minimap_height)])
+        minimapPadding_topLeft = np.array([sp(10), -sp(10)])
 
         widgetSize = np.array(self.size)
-        widgetOrigin = np.array(self.pos)
+        widget_btmLeft = np.array(self.pos)
+        widget_topRight = widget_btmLeft + widgetSize
 
-        minimapTopRight = widgetSize + widgetOrigin
-        minimapBtmLeft = minimapTopRight - minimapSize
-        minimapCenter = (minimapTopRight + minimapBtmLeft) / 2
+        minimapBtmLeft = np.array([
+            widget_btmLeft[0],
+            widget_topRight[1] - minimapSize[1]
+        ]) + minimapPadding_topLeft
 
-        verts = np.array([
+        minimapTopRight = minimapBtmLeft + minimapSize
+
+        # Stage (mm) | Minimap (px)
+        minimapStageCoverage_btmLeft = np.zeros(2)
+        minimapStageCoverage_topRight = np.zeros(2)
+
+        if mode == 'Fixed':
+            
+            minimapStageCoverage_btmLeft[0] = minimap_min_x
+            minimapStageCoverage_btmLeft[1] = minimap_min_y
+            minimapStageCoverage_topRight[0] = minimap_max_x
+            minimapStageCoverage_topRight[1] = minimap_max_y
+
+        elif mode == 'Relative':
+            pass
+
+        minimapStageCoverage = minimapStageCoverage_topRight - minimapStageCoverage_btmLeft
+
+        # Stage (mm) -> Miminap (px)
+        miniMapScale = minimapSize / minimapStageCoverage
+
+        stageOrigin_mm = np.zeros(2)
+        stageOrigin_px = minimapBtmLeft - minimapStageCoverage_btmLeft * miniMapScale
+        
+        # Stage to Minimap transformation matrix as Scale-Translation
+        stageToMinimap = np.array([
+            [miniMapScale[0],     0,      stageOrigin_px[0]],
+            [0,     miniMapScale[1],      stageOrigin_px[1]],
+            [0,     0,      1],
+        ])
+
+        currentPos_px = stageToMinimap @ np.array(currentPos.tolist() + [1])
+
+        # 
+        #   Minimap border 
+        # 
+        
+        minimapBorderVerts = np.array([
             minimapBtmLeft, 
             [minimapBtmLeft[0] + minimapSize[0], minimapBtmLeft[1]], 
             minimapTopRight, 
@@ -2652,8 +2711,8 @@ class ViewingWidget(FloatLayout, StencilView):
         ])
 
         #   [x1, y1, x2, y2, ...]
-        verts = verts.flatten()
-        vertices = verts.tolist()
+        minimapBorderVerts = minimapBorderVerts.flatten()
+        vertices = minimapBorderVerts.tolist()
 
         # Construct index array
         self.minimapBorder.points = vertices
@@ -2664,12 +2723,32 @@ class ViewingWidget(FloatLayout, StencilView):
             self.canvas.add(self.minimapBorder)
 
         # 
-        # Draw Landmarks
+        # Draw minimap border btm-left and top-right landmarks
         # 
-        self.point1.updatePos(pos= [minimapBtmLeft[0], minimapBtmLeft[1]])
-        self.point1.attemptAddToWidget(self)
+        btmLeftText = f"({minimapStageCoverage_btmLeft[0]:.2f}, {minimapStageCoverage_btmLeft[1]:.2f})"
+        topRightText = f"({minimapStageCoverage_topRight[0]:.2f}, {minimapStageCoverage_topRight[1]:.2f})"
+        self.minimapBtmLeftPoint.update(pos= [minimapBtmLeft[0], minimapBtmLeft[1]], text= btmLeftText)
+        self.minimapBtmLeftPoint.attemptAddToWidget(self)
+
+        self.minimapTopRightPoint.update(pos= [minimapTopRight[0], minimapTopRight[1]], text= topRightText)
+        self.minimapTopRightPoint.attemptAddToWidget(self)
+
+        # Draw current stage position landmark
+        # TODO: Cap to be within border
+        self.currentPosPoint.update(pos= [currentPos_px[0], currentPos_px[1]], text= "Current")
+        self.currentPosPoint.attemptAddToWidget(self)
+
+
+    def capPointToBorder(self, point: np.ndarray) -> np.ndarray:
+        pass
 
     
+    def addAllToOverlay(self) -> None:
+        if self.minimapBorder not in self.canvas.children:
+            self.canvas.add(self.minimapBorderColor)
+            self.canvas.add(self.minimapBorder)
+
+        
     def clearOverlay(self) -> None:
         """Remove all related elements from the canvas and widget
         """
@@ -2677,7 +2756,9 @@ class ViewingWidget(FloatLayout, StencilView):
             self.canvas.remove(self.minimapBorder)
             self.canvas.remove(self.minimapBorderColor)
         
-        self.point1.attempRemoveToWidget(self)
+        self.currentPosPoint.attemptRemoveToWidget(self)
+        self.minimapBtmLeftPoint.attemptRemoveToWidget(self)
+        self.minimapTopRightPoint.attemptRemoveToWidget(self)
 
 
 class PointWithLabel():
@@ -2689,7 +2770,7 @@ class PointWithLabel():
         text: str, 
         pointSize: float = 3, 
         pointColor: List[float] = [1, 1, 1, 1],
-        fontSize: float = sp(18),
+        fontSize: float = sp(16),
         textColor: List[float] = [1, 1, 1, 1],
         widget: Widget | None = None,
     ) -> None:
@@ -2706,9 +2787,8 @@ class PointWithLabel():
         # Call render texture once to get its size
         self.label.texture_update()
         self.label.size = self.label.texture_size
-        self.label.text_size = self.label.texture_size
 
-        # Off-set label to top-left of the point
+        # Offset label to top-left of the point
         textSize = np.array(self.label.size)
         offset = np.array([textSize[0]/2 , -textSize[1]/2])
         self.label.center = (np.array(pos) + offset).tolist()
@@ -2717,15 +2797,30 @@ class PointWithLabel():
             self.attemptAddToWidget(widget= widget)
 
     
-    def updatePos(self, pos: List[float]) -> None:
+    def update(self, pos: List[float] | None = None, text: str | None = None) -> bool:
 
-        self.point.points = pos
-        
-        # Off-set label to top-left of the point
-        textSize = np.array(self.label.size)
-        offset = np.array([textSize[0]/2 , -textSize[1]/2])
-        self.label.center = (np.array(pos) + offset).tolist()
-    
+        needsRedraw = False
+
+        # If the text is changed we need to update it first to have the correct size for position update
+        if text is not None:
+            self.label.text = text
+            # Call render texture once to get its size
+            self.label.texture_update()
+            self.label.size = self.label.texture_size
+
+            needsRedraw = True
+
+
+        if pos is not None:
+            self.point.points = pos
+            # Offset label to top-left of the point
+            textSize = np.array(self.label.size)
+            offset = np.array([textSize[0]/2 , -textSize[1]/2])
+            self.label.center = (np.array(pos) + offset).tolist()
+
+
+        return needsRedraw
+
 
     def attemptAddToWidget(self, widget: Widget) -> None:
         
@@ -2739,7 +2834,7 @@ class PointWithLabel():
             widget.add_widget(self.label)
     
 
-    def attempRemoveToWidget(self, widget: Widget) -> None:
+    def attemptRemoveToWidget(self, widget: Widget) -> None:
         
         # Point
         if self.point in widget.canvas.children:
@@ -2747,7 +2842,7 @@ class PointWithLabel():
             widget.canvas.remove(self.point)
         
         # Label
-        if self.label not in widget.children:
+        if self.label in widget.children:
             widget.remove_widget(self.label)
             
         
@@ -4130,6 +4225,7 @@ class RuntimeControls(BoxLayout):
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+        app.root.ids.middlecolumn.ids.stencil.updateOverlay()
     
 
     def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
@@ -4723,7 +4819,16 @@ class GlowTrackerApp(App):
             'area': '400',
             'min_brightness': '0',
             'max_brightness': '255',
-            'showminimap': 'true'
+        })
+
+        config.setdefaults('Minimap', {
+            'width': '150',
+            'height': '112',
+            'mode': 'Fixed',
+            'min_x': '0',
+            'min_y': '0',
+            'max_x': '160',
+            'max_y': '160',
         })
 
         config.setdefaults('LiveAnalysis', {
