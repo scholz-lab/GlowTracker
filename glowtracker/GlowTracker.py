@@ -429,6 +429,24 @@ class RightColumn(BoxLayout):
         self._popup.open()
 
 
+    def open_minimap_widget(self):
+        """Open the Minimap settings widget popup
+        """
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+
+        # Unbind keyboard events
+        self.app.unbind_keys()
+
+        # Create MinimapSettings Widget
+        minimapSettings = MinimapSettings()
+        minimapSettings.setCloseCallback(closeCallback= self.dismiss_popup)
+        
+        # Launch the widget inside a popup window
+        self._popup = Popup(title= 'Minimap Settings', content= minimapSettings, size_hint= (0.7, 0.7))
+        self._popup.open()
+
+
 class MacroScriptWidgetPopup(DragBehavior, Popup):
 
     closeCallback = ObjectProperty(None)
@@ -984,10 +1002,9 @@ class DAQControlTabPanelHolder(FloatLayout):
         """        
         self.closeCallback = closeCallback
         self.ids.daqcontroltabpanel.setCloseCallback( closeCallback )
+
     
     def updateMode(self):
-        print(self.mode.text)
-
         app: GlowTrackerApp = App.get_running_app()
 
         # Update to config
@@ -1458,13 +1475,23 @@ class ReversalSwitch(Switch):
             return True
 
 
-class DaqTextInput(TextInput):
+class ConfigTextInput(TextInput):
+    """A metaclass for convenience TextInput that validates and updates its value directly to the config file.
+        Cannot be used directly. Must be inherited and modified the target self.configSection
+    """
+
     configKey = StringProperty()
     root = ObjectProperty()     # Reference to root, which must have a updateParam() function.
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Subclass must provide this
+        self.configSection = ''
+        
+
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
-        self.text = self.app.config.get('DaqControl', self.configKey)
+        self.text = self.app.config.get(self.configSection, self.configKey)
         self.value = float(self.text)
 
 
@@ -1498,10 +1525,10 @@ class DaqTextInput(TextInput):
 
     @override
     def on_text_validate(self, *args):
-        """Validate self.text. Then save to config and update DAQStageProgram.
+        """Validate self.text and save to config.
         """
         if self._validate():
-            self.app.config.set('DaqControl', self.configKey, self.value)
+            self.app.config.set(self.configSection, self.configKey, self.value)
             self.app.config.write()
             self.root.updateParam()
         
@@ -1526,6 +1553,53 @@ class DaqTextInput(TextInput):
             return True
 
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
+class DaqTextInput(ConfigTextInput):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.configSection = 'DaqControl'
+
+
+class MinimapTextInput(ConfigTextInput):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.configSection = 'Minimap'
+
+
+class MinimapSettings(BoxLayout):
+
+    modeSpinner: Spinner
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.mode = "Fixed"
+
+    
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self.closeCallback = closeCallback
+
+
+    def updateMode(self) -> None:
+
+        if not hasattr(self, 'app'):
+            return
+    
+        # Parse choice text to enum
+        prevMode = self.mode
+        self.mode = self.modeSpinner.text
+
+        # Save to config
+        self.app.config.set('Minimap', 'mode', self.mode)
+        self.app.config.write()
 
 
 class StageAxisController(BoxLayout):
@@ -2644,8 +2718,8 @@ class ViewingWidget(FloatLayout, StencilView):
         currentPos = np.array(self.app.coords[:2])
 
         # Test
-        currentPos[0] = 25
-        currentPos[1] = 25
+        currentPos[0] = 23
+        currentPos[1] = 0
 
         mode = self.app.config.get('Minimap', 'mode')
         minimap_width = self.app.config.getfloat('Minimap', 'width')
@@ -2654,6 +2728,9 @@ class ViewingWidget(FloatLayout, StencilView):
         minimap_min_y = self.app.config.getfloat('Minimap', 'min_y')
         minimap_max_x = self.app.config.getfloat('Minimap', 'max_x')
         minimap_max_y = self.app.config.getfloat('Minimap', 'max_y')
+        relative_width = self.app.config.getfloat('Minimap', 'relative_width')
+        relative_height = self.app.config.getfloat('Minimap', 'relative_height')
+
         minimapSize = np.array([sp(minimap_width), sp(minimap_height)])
         minimapPadding_topLeft = np.array([sp(10), -sp(10)])
 
@@ -4831,6 +4908,8 @@ class GlowTrackerApp(App):
             'min_y': '0',
             'max_x': '160',
             'max_y': '160',
+            'relative_width': '1',
+            'relative_height': '1'
         })
 
         config.setdefaults('LiveAnalysis', {

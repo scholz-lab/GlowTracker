@@ -31,7 +31,7 @@ MainWindow:
         FloatLayout:
             Label:
                 size_hint: (1, 1)
-                font_size: 18
+                font_size: sp(18)
                 color: '#8e0045ff'
 
                 text: "v. 1.0.1"
@@ -44,7 +44,7 @@ MainWindow:
                 
             Label:
                 size_hint: (1, 1)
-                font_size: 18
+                font_size: sp(18)
                 color: '#ffffff'
 
                 text: "FPS:"
@@ -247,7 +247,7 @@ MainWindow:
         #disabled: app.stage.connection is None
     Label:
         text: 'X'
-        font_size: 40
+        font_size: sp(40)
         size_hint: (0.2,1)
     StageButtonRight:
         id: sbl3
@@ -275,7 +275,7 @@ MainWindow:
         Label:
             text: 'Y'
             valign: 'bottom'
-            font_size: 40
+            font_size: sp(40)
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
@@ -303,7 +303,7 @@ MainWindow:
             #disabled: app.stage.connection is None
         Label:
             text: 'Z'
-            font_size: 40
+            font_size: sp(40)
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
@@ -646,6 +646,10 @@ MainWindow:
         size_hint: (1, 0.1)
         text: 'DAQ'
         on_release: root.open_daq_widget()
+    MyButton:
+        size_hint: (1, 0.1)
+        text: 'Minimap'
+        on_release: root.open_minimap_widget()
     MyLabel:
         text: 'Hardware'
         size_hint: (1, 0.1)
@@ -667,7 +671,7 @@ MainWindow:
         valign: 'top'
         halign: 'left'
         markup: True
-        font_size: 13
+        font_size: sp(13)
         padding: [dp(10), dp(0), dp(10), dp(5)]
 
     GridLayout:
@@ -1796,12 +1800,88 @@ MainWindow:
             on_release: root.closeCallback()
 
 
-<DaqTextInput>:
+<ConfigTextInput>:
     multiline: False
     input_filter: 'float'
     base_direction: 'rtl'
     size_hint_x: 1
     write_tab: False
+
+
+<MinimapSettings>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: dp(10)
+
+    modeSpinner: modeSpinner
+
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: dp(10)
+
+        StackLayout:
+            id: stacklayout
+            orientation: 'tb-lr'
+            size_hint_x: 0.5
+            spacing: [0, dp(5)]
+            
+            BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+
+                Label:
+                    text: 'Mode'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+                
+                Spinner:
+                    id: modeSpinner
+                    text: 'Fixed'
+                    values: 'Fixed', 'Relative'
+                    on_text: root.updateMode();
+                    size_hint_x: None
+                    width: dp(100)
+                    on_kv_post: self.text = app.config.get('Minimap', 'mode')
+
+
+            BoxLayout:
+                id: p1_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'btmLeft'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                MinimapTextInput:
+                    id: min_x
+                    configKey: 'min_x'
+                    root: root
+                
+                MinimapTextInput:
+                    id: min_y
+                    configKey: 'min_y'
+                    root: root
+            
+    
+    BoxLayout:
+        size_hint_y: .08
+
+        BoxLayout:
+            size_hint_x: .8
+
+        Button:
+            text: "Close"
+            size_hint_x: .2
+            on_release: root.closeCallback()
+
 
 ### display if hardware is connected successfully     
 <Connections>:
@@ -1859,14 +1939,14 @@ MainWindow:
 <MyButton@Button>:
     #size: self.texture_size
     size_hint: (0.5, 0.5)
-    font_size: 18
+    font_size: sp(18)
     halign: 'center'
     
 
 <MyLabel@Label>:
     #size: self.texture_size
     size_hint: (1, 1)
-    font_size: 18
+    font_size: sp(18)
     halign: 'center'
     color: '#8e0045ff'
     
