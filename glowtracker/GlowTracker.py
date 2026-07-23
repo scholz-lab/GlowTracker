@@ -2640,7 +2640,7 @@ class ViewingWidget(FloatLayout, StencilView):
         # Gather parameters
         # 
 
-        # current stage position in XY
+        # current stage position in XY (mm)
         currentPos = np.array(self.app.coords[:2])
 
         # Test
@@ -2672,6 +2672,7 @@ class ViewingWidget(FloatLayout, StencilView):
         minimapStageCoverage_btmLeft = np.zeros(2)
         minimapStageCoverage_topRight = np.zeros(2)
 
+        # Determine minimap stage cover depends on 
         if mode == 'Fixed':
             
             minimapStageCoverage_btmLeft[0] = minimap_min_x
@@ -2680,14 +2681,16 @@ class ViewingWidget(FloatLayout, StencilView):
             minimapStageCoverage_topRight[1] = minimap_max_y
 
         elif mode == 'Relative':
-            pass
+
+            relativeCoverage_half = np.array([relative_width, relative_height]) / 2
+
+            minimapStageCoverage_btmLeft = currentPos - relativeCoverage_half
+            minimapStageCoverage_topRight = currentPos + relativeCoverage_half
 
         minimapStageCoverage = minimapStageCoverage_topRight - minimapStageCoverage_btmLeft
 
         # Stage (mm) -> Miminap (px)
         miniMapScale = minimapSize / minimapStageCoverage
-
-        stageOrigin_mm = np.zeros(2)
         stageOrigin_px = minimapBtmLeft - minimapStageCoverage_btmLeft * miniMapScale
         
         # Stage to Minimap transformation matrix as Scale-Translation
@@ -2695,9 +2698,10 @@ class ViewingWidget(FloatLayout, StencilView):
             [miniMapScale[0],     0,      stageOrigin_px[0]],
             [0,     miniMapScale[1],      stageOrigin_px[1]],
             [0,     0,      1],
-        ])
+        ]) 
 
         currentPos_px = stageToMinimap @ np.array(currentPos.tolist() + [1])
+        currentPos_px = currentPos_px[:2]
 
         # 
         #   Minimap border 
@@ -2734,13 +2738,11 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapTopRightPoint.attemptAddToWidget(self)
 
         # Draw current stage position landmark
-        # TODO: Cap to be within border
-        self.currentPosPoint.update(pos= [currentPos_px[0], currentPos_px[1]], text= "Current")
+        currentPos_px_clipped = np.clip(currentPos_px, minimapBtmLeft, minimapTopRight)
+
+        self.currentPosPoint.update(pos= [currentPos_px_clipped[0], currentPos_px_clipped[1]], text= "Current")
         self.currentPosPoint.attemptAddToWidget(self)
 
-
-    def capPointToBorder(self, point: np.ndarray) -> np.ndarray:
-        pass
 
     
     def addAllToOverlay(self) -> None:

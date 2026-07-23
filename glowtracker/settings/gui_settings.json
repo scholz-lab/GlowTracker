@@ -444,6 +444,20 @@
         "key": "max_y"
     },
     {
+        "type": "numeric",
+        "title": "Relative coverage width (mm)",
+        "desc": "Minimap stage coverage width in relative mode.",
+        "section": "Minimap",
+        "key": "relative_width"
+    },
+    {
+        "type": "numeric",
+        "title": "Relative coverage height (mm)",
+        "desc": "Minimap stage coverage height in relative mode.",
+        "section": "Minimap",
+        "key": "relative_height"
+    },
+    {
         "type": "title",
         "title": "LiveAnalysis"
     },
