@@ -1831,6 +1831,22 @@ MainWindow:
             spacing: [0, dp(5)]
             
             BoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    size_hint_x: None
+                    width: dp(100)
+
+                Label:
+                    text: 'width (px)'
+                
+                Label:
+                    text: 'height (px)'
+            
+
+            BoxLayout:
                 id: minimapSize_layout
                 orientation: 'horizontal'
                 size_hint_y: 0.1

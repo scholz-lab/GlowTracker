@@ -2333,6 +2333,9 @@ class RecordButton(ImageAcquisitionButton):
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.start( np.array(self.app.coords[:2]) )
 
+        # Save starting position to Minimap
+        self.app.root.ids.middlecolumn.ids.stencil.startRecordingPos = np.array(self.app.coords[:2])
+
         # Setup image acquisition thread parameters
         self.initRecordingParams()
         self.frameCounter = 0
@@ -2727,10 +2730,13 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapBorder: Line = Line()
         self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
 
-        self.currentPosPoint = PointWithLabel(pos= [0, 0], text= 'Text')
+        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0])
+        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0])
 
-        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text')
-        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text')
+        self.currentPosPoint = PointWithLabel(pos= [0, 0], text= 'Current', pointColor= [0, 1, 0, 1])
+
+        self.startRecordingPos: np.ndarray = np.zeros(2)
+        self.startRecordingPosPoint = PointWithLabel(pos= [0, 0], text= 'Start', pointColor= [1, 0, 0, 1])
 
         self.app: GlowTrackerApp = App.get_running_app()
 
@@ -2887,9 +2893,19 @@ class ViewingWidget(FloatLayout, StencilView):
         # Draw current stage position landmark
         currentPos_px_clipped = np.clip(currentPos_px, minimapBtmLeft, minimapTopRight)
 
-        self.currentPosPoint.update(pos= [currentPos_px_clipped[0], currentPos_px_clipped[1]], text= "Current")
+        self.currentPosPoint.update(pos= [currentPos_px_clipped[0], currentPos_px_clipped[1]])
         self.currentPosPoint.attemptAddToWidget(self)
 
+        # If recording, draw start position landmark
+        recordButton: RecordButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.recordbutton
+        if recordButton.state == 'down':
+            #   Convert start recording pos from mm to px
+            startRecordingPos_px = stageToMinimap @ np.array(self.startRecordingPos.tolist() + [1])
+            startRecordingPos_px = startRecordingPos_px[:2]
+            startRecordingPos_px_clipped = np.clip(startRecordingPos_px, minimapBtmLeft, minimapTopRight)
+
+            self.startRecordingPosPoint.update(pos= [startRecordingPos_px_clipped[0], startRecordingPos_px_clipped[1]])
+            self.startRecordingPosPoint.attemptAddToWidget(self)
 
     
     def addAllToOverlay(self) -> None:
@@ -2905,9 +2921,10 @@ class ViewingWidget(FloatLayout, StencilView):
             self.canvas.remove(self.minimapBorder)
             self.canvas.remove(self.minimapBorderColor)
         
-        self.currentPosPoint.attemptRemoveToWidget(self)
         self.minimapBtmLeftPoint.attemptRemoveToWidget(self)
         self.minimapTopRightPoint.attemptRemoveToWidget(self)
+        self.currentPosPoint.attemptRemoveToWidget(self)
+        self.startRecordingPosPoint.attemptRemoveToWidget(self)
 
 
 class PointWithLabel():
@@ -2918,14 +2935,14 @@ class PointWithLabel():
         pos: List[float], 
         text: str, 
         pointSize: float = 3, 
-        pointColor: List[float] = [1, 1, 1, 1],
+        pointColor: List[float] = [1, 1, 0, 1],
         fontSize: float = sp(16),
         textColor: List[float] = [1, 1, 1, 1],
         widget: Widget | None = None,
     ) -> None:
 
         self.point = Point(points= pos, pointsize= pointSize)
-        self.pointColor = Color(pointColor)
+        self.pointColor = Color(*pointColor)
 
         self.label = Label(
             text= text, 
