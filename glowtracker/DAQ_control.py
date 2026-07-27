@@ -12,12 +12,13 @@ import math
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
-
+from Microscope_macros import computeAngleBetweenTwo2DVecs
 
 class DAQMode(Enum):
     Off = 'Off'
     Sequencer = 'Sequencer'
     StageProgram = 'StageProgram'
+    Reversal = 'Reversal'
 
 
 class SequencerMode(Enum):
@@ -71,6 +72,8 @@ class DAQControl():
         self.daqMode: DAQMode = DAQMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
+        self.reversalDetector: ReversalDetector = ReversalDetector()
+        self.currentVoltage: float = 0
     
 
     def isConnected(self) -> bool:
@@ -99,6 +102,7 @@ class DAQControl():
 
         # Set to factory default
         self.daq.setDefaults(SetToFactoryDefaults= True)
+        
         # Manually set DAC0 to 0 (off)
         dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
         dac0Command = u3.DAC0_8(dac0Val)
@@ -106,7 +110,9 @@ class DAQControl():
         self.setDAC1(0.0)
         # Clean running command queue
         self.sequnceDictRunning.clear()
+        
         self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
+        self.currentVoltage = 0
 
         
     def setDAC1(self, volts: float) -> None:
@@ -162,7 +168,7 @@ class DAQControl():
             raise ValueError(f"Failed to parse DAQ script text: {e}")
     
 
-    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = []) -> None:
+    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = [], posHist: np.ndarray = None) -> None:
         if self.daqMode == DAQMode.Off:
             return
         
@@ -171,6 +177,9 @@ class DAQControl():
         
         elif self.daqMode == DAQMode.StageProgram:
             self.updateStageProgram(stagePosition)
+        
+        elif self.daqMode == DAQMode.Reversal:
+            self.updateReversalDetection(posHist)
 
 
     def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
@@ -227,7 +236,26 @@ class DAQControl():
         #   We want to evalute this
         vol = self.daqStageProgram.getValue(stagePosition[0], stagePosition[1])
         
-        self._executeCommand(frameCommand= ['on', vol])
+        if math.isclose(vol, 0):
+            self._executeCommand(frameCommand= ['off'])
+
+        else:
+            self._executeCommand(frameCommand= ['on', vol])
+            
+
+    def updateReversalDetection(self, posHist: np.ndarray) -> None:
+        # Convert posHist to numpy and discard the z-axis position
+        #   and update unit from mm to meter.
+        trail = np.array(posHist)[:, (0, 1)] * 1e3
+        isReversing = self.reversalDetector.detectReversal(trail= trail)
+
+        vol = self.reversalDetector.reversalVoltage if isReversing else self.reversalDetector.forwardVoltage
+
+        if math.isclose(vol, 0):
+            self._executeCommand(frameCommand= ['off'])
+
+        else:
+            self._executeCommand(frameCommand= ['on', vol])
     
 
     def _executeCommand(self, frameCommand: list) -> None:
@@ -241,6 +269,7 @@ class DAQControl():
             
             vol = frameCommand[1]
 
+            # TODO: This should be in the setting to support High-voltage DAQ
             # Clip to 0, 4.95
             vol = max( min( vol, 4.95 ), 0 )
 
@@ -249,7 +278,7 @@ class DAQControl():
             dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
             dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
             self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
-
+            self.currentVoltage = vol
 
         elif command == 'off':
 
@@ -258,6 +287,7 @@ class DAQControl():
             dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
             dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
             self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+            self.currentVoltage = 0
 
 
 @dataclass
@@ -386,6 +416,7 @@ class DAQStageProgram():
                     )
                 )
                 
+        # TODO: This should be in the setting to support High-voltage DAQ
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
 
@@ -518,3 +549,73 @@ class DAQStageProgram():
         plt.ion()
 
         return imageArr
+
+
+class ReversalDetector():
+    
+    def __init__(self):
+        self.isReversing: bool = False
+        self.animalLength_mm: float = 0
+        self.trailLimit: int = 0
+        self.velocityHistoryPercentage: float = 0
+        self.reversalThresholdRadian: float = 0
+        self.reversalVoltage: float = 0
+        self.forwardVoltage: float = 0
+
+    
+    def detectReversal(self, trail: np.ndarray) -> bool:
+        
+        # Get last M (trial limit) vertices and 
+        #   apply transformation to each row vertex
+        croppedTrail = trail[-self.trailLimit::, :]
+
+        # Greedy sums up until equal or exceed animal's length
+        #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
+        revTrail = croppedTrail[::-1]
+        sumLength = 0
+        
+        tailIndex = 0
+        
+        for i in range(1, len(revTrail)):
+            length = np.linalg.norm(revTrail[i-1] - revTrail[i])
+            sumLength = sumLength + length
+            tailIndex = i
+
+            if sumLength >= self.animalLength_mm:
+                break
+        
+        # Copy points from head to tail
+        # We now have bodyVert: Bx2 (B:= body length), rows of point from head to tail
+        bodyVert = revTrail[0:tailIndex+1:1]
+
+        # Atleast two vertices
+        if len(bodyVert) > 1:
+
+            # 
+            # Estimate velocity
+            # 
+            numHistVert = round(len(bodyVert) * self.velocityHistoryPercentage / 100)
+            # Slice from head to numHistVert
+            histVert = bodyVert[0:numHistVert]
+
+            # Compute derivative between each pair of vertex. Assume equal delta time.
+            velocities = histVert[0:-1] - histVert[1:]
+
+            # Uniform weighted average
+            velocity = np.sum(velocities, axis= 0) / len(velocities)
+
+            # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
+            #   If yes, reversal -> red color.
+            #   If not, non-reversal -> green color.
+
+            vecTailToHead = bodyVert[0] - bodyVert[-1]
+            angle_radian = computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
+            angle_degree = angle_radian * 180 / math.pi
+
+            if angle_degree > self.reversalThresholdRadian or angle_degree < -self.reversalThresholdRadian:
+                self.isReversing = True
+
+            else:
+                self.isReversing = False
+        
+        return self.isReversing

@@ -1396,7 +1396,7 @@ MainWindow:
             size: '100dp', '40dp'
             id: mode
             text: 'Off'
-            values: 'Off', 'Sequencer', 'StageProgram'
+            values: 'Off', 'Sequencer', 'StageProgram', 'Reversal'
             on_text: root.updateMode()
             on_kv_post: self.text = app.config.get('DaqControl', 'mode')
 
@@ -1411,17 +1411,23 @@ MainWindow:
     TabbedPanelItem:
         text: 'Sequencer'
 
-        DAQControlWidget:
-            id: daqsequencer
+        SequencerWidget:
+            id: sequencerwidget
 
     TabbedPanelItem:
         text: 'Stage program'
         
-        DAQStageProgramWidget:
-            id: daqstageprogram
+        StageProgramWidget:
+            id: stageprogramwidget
+    
+    TabbedPanelItem:
+        text: 'Reversal'
+        
+        ReversalWidget:
+            id: reversalwidget
 
 
-<DAQControlWidget>:
+<SequencerWidget>:
     size: root.size
     pos: root.pos
     
@@ -1438,7 +1444,7 @@ MainWindow:
         
         Button:
             text: "Load"
-            on_release: root.openLoadDAQControlWidget()
+            on_release: root.openLoadSequencerWidget()
             size_hint_x: None
 
         Button:
@@ -1470,7 +1476,7 @@ MainWindow:
                 size_hint_y: 0.1
 
 
-<DAQStageProgramWidget>:
+<StageProgramWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
@@ -1538,7 +1544,7 @@ MainWindow:
                     id: modeSpinner
                     text: 'Gaussian'
                     values: 'Gaussian', 'FourPoint'
-                    on_text: root.updateMode(); root.updateDaqStageProgram()
+                    on_text: root.updateMode(); root.updateParam()
                     size_hint_x: None
                     width: dp(100)
                 
@@ -1559,11 +1565,11 @@ MainWindow:
                     id: exteriorSpinner
                     text: 'Zero'
                     values: 'Zero', 'Constant'
-                    on_text: root.updateExteriorChoice(); root.updateDaqStageProgram()
+                    on_text: root.updateExteriorChoice(); root.updateParam()
                     size_hint_x: None
                     width: dp(100)
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: constanttextinput
                     on_kv_post: root.updateExteriorChoice()
                     root: root
@@ -1602,17 +1608,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p1x
                     configKey: 'p1x'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p1y
                     configKey: 'p1y'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p1v
                     configKey: 'p1v'
                     root: root
@@ -1630,17 +1636,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p2x
                     configKey: 'p2x'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p2y
                     configKey: 'p2y'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p2v
                     configKey: 'p2v'
                     root: root
@@ -1658,17 +1664,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p3x
                     configKey: 'p3x'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p3y
                     configKey: 'p3y'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p3v
                     configKey: 'p3v'
                     root: root
@@ -1686,17 +1692,17 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p4x
                     configKey: 'p4x'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p4y
                     configKey: 'p4y'
                     root: root
                 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: p4v
                     configKey: 'p4v'
                     root: root
@@ -1725,7 +1731,7 @@ MainWindow:
                     size_hint_y: 1
                     size_hint_x: 0.2
 
-                    RelativePositionSwitch:
+                    DaqRelativePositionSwitch:
                         id: relative
                         configKey: 'relative'
                         root: root
@@ -1743,7 +1749,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: g_amplitude
                     configKey: 'g_amplitude'
                     root: root
@@ -1761,7 +1767,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: g_x_mean
                     configKey: 'g_x_mean'
                     root: root
@@ -1779,7 +1785,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: g_x_sigma
                     configKey: 'g_x_sigma'
                     root: root
@@ -1798,7 +1804,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: g_y_mean
                     configKey: 'g_y_mean'
                     root: root
@@ -1817,7 +1823,7 @@ MainWindow:
                     size_hint_x: None
                     text_size: [dp(100), root.height]
 
-                DAQStageTextInput:
+                DaqTextInput:
                     id: g_y_sigma
                     configKey: 'g_y_sigma'
                     root: root
@@ -1846,7 +1852,7 @@ MainWindow:
                     size_hint_y: 1
                     size_hint_x: 0.2
 
-                    RelativePositionSwitch:
+                    DaqRelativePositionSwitch:
                         id: g_relative
                         configKey: 'g_relative'
                         root: root
@@ -1873,7 +1879,7 @@ MainWindow:
                 Button:
                     size_hint_x: 0.5
                     text: "Update"
-                    on_release: root.updateDaqStageProgram()
+                    on_release: root.updateParam()
                     background_color: [94.0/255, 190.0/255, 88.0/255, 1]
         
         BoxLayout:
@@ -1885,7 +1891,246 @@ MainWindow:
             on_release: root.closeCallback()
 
 
-<DAQStageTextInput>:
+<ReversalWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+
+    animallength: animallength
+    traillimit: traillimit
+    reversalthresholdradian: reversalthresholdradian
+    velocityhistorypercentage: velocityhistorypercentage
+    reversalvoltage: reversalvoltage
+    forwardvoltage: forwardvoltage
+
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: dp(10)
+
+        StackLayout:
+            id: stacklayout
+            orientation: 'tb-lr'
+            size_hint_x: 0.5
+            spacing: [0, dp(5)]
+
+            BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Display trail in overlay'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    ReversalSwitch:
+                        id: showtrail
+                        configKey: 'showtrail'
+                        root: root
+            
+            BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Display reversal detection indicators'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    ReversalSwitch:
+                        id: showreversalindicator
+                        configKey: 'showreversalindicator'
+                        root: root
+
+            BoxLayout:
+                id: animallength_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Animal length (um)'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: animallength
+                    configKey: 'animallength'
+                    root: root
+                    size_hint_x: 0.6
+            
+            BoxLayout:
+                id: traillimit_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Max trail history (frame)'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: traillimit
+                    configKey: 'traillimit'
+                    root: root
+                    size_hint_x: 0.6
+            
+            BoxLayout:
+                id: reversalthresholdradian_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Reversal threshold angle (radian)'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: reversalthresholdradian
+                    configKey: 'reversalthresholdradian'
+                    root: root
+                    size_hint_x: 0.6
+            
+            BoxLayout:
+                id: velocityhistorypercentage_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Velocity history percentage (1-100%)'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: velocityhistorypercentage
+                    configKey: 'velocityhistorypercentage'
+                    root: root
+                    size_hint_x: 0.6
+            
+            BoxLayout:
+                id: reversalvoltage_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Reversal voltage'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: reversalvoltage
+                    configKey: 'reversalvoltage'
+                    root: root
+                    size_hint_x: 0.6
+                
+            BoxLayout:
+                id: forwardvoltage_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Forward voltage'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: 0.4
+                    text_size: [dp(150), root.height]
+
+                DaqTextInput:
+                    id: forwardvoltage
+                    configKey: 'forwardvoltage'
+                    root: root
+                    size_hint_x: 0.6
+                
+            BoxLayout:
+                id: relative_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: 1
+                    size_hint_x: 0.8
+                    padding: [dp(15), 0, 0, 0]
+
+                    Label:
+                        text: 'Display 1mm guideline'
+                        halign: 'left'
+                        valign: 'middle'
+                        text_size: self.size
+                
+                AnchorLayout:
+                    anchor_x: 'right'
+                    anchor_y: 'center'
+                    size_hint_y: 1
+                    size_hint_x: 0.2
+
+                    ReversalSwitch:
+                        id: showguideline
+                        configKey: 'showguideline'
+                        root: root
+        
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.5
+
+    BoxLayout:
+        size_hint_y: .08
+
+        BoxLayout:
+            size_hint_x: .8
+
+        Button:
+            text: "Close"
+            size_hint_x: .2
+            on_release: root.closeCallback()
+
+
+<DaqTextInput>:
     multiline: False
     input_filter: 'float'
     base_direction: 'rtl'

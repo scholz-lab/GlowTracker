@@ -218,8 +218,9 @@ class Stage:
         necessary if device was disconnected from power source
         '''
         if self.connection is not None:
-            # Home and wwait the Z axis first to prevent accident
-            self.axis_z.home(wait_until_idle= True)
+            # Home and wait the Z axis first to prevent accident
+            if self.axis_z is not None:
+                self.axis_z.home(wait_until_idle= True)
             self.axis_y.home(wait_until_idle= False)
             self.axis_x.home(wait_until_idle= True)
     
@@ -231,7 +232,8 @@ class Stage:
 
         self.axis_x.wait_until_idle()
         self.axis_y.wait_until_idle()
-        self.axis_z.wait_until_idle()
+        if self.axis_z is not None:
+            self.axis_z.wait_until_idle()
         
 
     # Stage moving to a given absolute position 
@@ -603,11 +605,17 @@ class Stage:
             #   This is usually a DeviceNotIdentifiedException from trying
             #   get_position_async() while device is not fully initiated
             print(e)
+            return None
 
-        if pos is not None:
-            factor = self._UNIT_TO_MM.get(unit, 1.0)
-            self._last_pos = [p * factor for p in pos]
-            self._last_pos_time = time.monotonic()
+        if pos is None:
+            return None
+
+        if self.axis_z is None:
+            pos = list(pos) + [0.0]
+
+        factor = self._UNIT_TO_MM.get(unit, 1.0)
+        self._last_pos = [p * factor for p in pos]
+        self._last_pos_time = time.monotonic()
 
         return pos
 
