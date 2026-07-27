@@ -6,8 +6,23 @@ build/
 dist/
 glowtracker.egg-info/
 
-# Python cache
-__pycache__/*
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local Python environments
+.venv/
+.venv-*/
+*.venv/
+venv/
+env/
+
+# OS metadata
+.DS_Store
+._*
+Thumbs.db
 
 # Convenience
 *.log
