@@ -1814,17 +1814,44 @@ MainWindow:
     orientation: 'vertical'
     spacing: dp(10)
 
+    minimapSize_layout: minimapSize_layout
     modeSpinner: modeSpinner
+    relative_size_layout: relative_size_layout
+    fixed_topRight_layout: fixed_topRight_layout
+    fixed_btmLeft_layout: fixed_btmLeft_layout
 
     BoxLayout:
         orientation: 'horizontal'
         spacing: dp(10)
 
         StackLayout:
-            id: stacklayout
+            id: params_stacklayout
             orientation: 'tb-lr'
             size_hint_x: 0.5
             spacing: [0, dp(5)]
+            
+            BoxLayout:
+                id: minimapSize_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Minimap size'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                MinimapTextInput:
+                    id: width
+                    configKey: 'width'
+                    root: root
+                
+                MinimapTextInput:
+                    id: height
+                    configKey: 'height'
+                    root: root
             
             BoxLayout:
                 orientation: 'horizontal'
@@ -1845,16 +1872,31 @@ MainWindow:
                     size_hint_x: None
                     width: dp(100)
                     on_kv_post: self.text = app.config.get('Minimap', 'mode')
-
+            
 
             BoxLayout:
-                id: p1_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                BoxLayout:
+                    size_hint_x: None
+                    width: dp(100)
+
+                Label:
+                    text: 'x (mm)'
+                
+                Label:
+                    text: 'y (mm)'
+
+            BoxLayout:
+                id: fixed_btmLeft_layout
                 orientation: 'horizontal'
                 size_hint_y: 0.1
                 size_hint_x: 0.9
 
                 Label:
-                    text: 'btmLeft'
+                    text: 'btm-left'
                     halign: 'center'
                     valign: 'middle'
                     size_hint_x: None
@@ -1870,7 +1912,85 @@ MainWindow:
                     configKey: 'min_y'
                     root: root
             
+            BoxLayout:
+                id: fixed_topRight_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'top-right'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                MinimapTextInput:
+                    id: max_x
+                    configKey: 'max_x'
+                    root: root
+                
+                MinimapTextInput:
+                    id: max_y
+                    configKey: 'max_y'
+                    root: root
+            
+            BoxLayout:
+                id: relative_size_layout
+                orientation: 'horizontal'
+                size_hint_y: 0.1
+                size_hint_x: 0.9
+
+                Label:
+                    text: 'Size'
+                    halign: 'center'
+                    valign: 'middle'
+                    size_hint_x: None
+                    text_size: [dp(100), root.height]
+
+                MinimapTextInput:
+                    id: relative_width
+                    configKey: 'relative_width'
+                    root: root
+                
+                MinimapTextInput:
+                    id: relative_height
+                    configKey: 'relative_height'
+                    root: root
+
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.5
+
+            Label:
+                text: 'Landmark'
+                size_hint_y: 0.1
+
+            StackLayout:
+                id: landmark_stacklayout
+                orientation: 'tb-lr'
+                size_hint_x: 0.5
+                spacing: [0, dp(5)]
+            
+                BoxLayout:
+                    id: minimapSize_layout
+                    orientation: 'horizontal'
+                    size_hint_y: 0.1
+                    size_hint_x: 0.9
+
+                    Label:
+                        text: 'No. of landmarks'
+                        halign: 'center'
+                        valign: 'middle'
+                        size_hint_x: None
+                        text_size: [dp(100), root.height]
+
+                    MinimapTextInput:
+                        id: no_landmarks
+                        configKey: 'no_landmarks'
+                        root: root
     
+
     BoxLayout:
         size_hint_y: .08
 

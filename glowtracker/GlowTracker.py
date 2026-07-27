@@ -78,6 +78,8 @@ from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from copy import deepcopy
+from enum import Enum
+
 
 # 
 # Own classes
@@ -1569,14 +1571,32 @@ class MinimapTextInput(ConfigTextInput):
         self.configSection = 'Minimap'
 
 
+class MinimapMode(Enum):
+    Fixed = 'Fixed'
+    Relative = 'Relative'
+
+
 class MinimapSettings(BoxLayout):
 
-    modeSpinner: Spinner
+    minimapSize_layout: BoxLayout
+    modeSpinner :  Spinner
+    fixed_btmLeft_layout: BoxLayout
+    fixed_topRight_layout: BoxLayout
+    relative_size_layout: BoxLayout
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app: GlowTrackerApp = App.get_running_app()
-        self.mode = "Fixed"
+        self.mode: MinimapMode = MinimapMode.Fixed
+
+        self.fixedParamWidgets = [self.fixed_btmLeft_layout, self.fixed_topRight_layout]
+                
+        self.relativeParamsWidgets = [self.relative_size_layout]
+
+        # Temporary containing to keep the removed widget alive
+        self._tempContainer = BoxLayout()
+
+        self.initModeWidget()
 
     
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1588,6 +1608,24 @@ class MinimapSettings(BoxLayout):
         self.closeCallback = closeCallback
 
 
+    def initModeWidget(self) -> None:
+        """On startup gui, remove other modes' unrelated widgets
+        """
+        params_stacklayout: StackLayout = self.ids.params_stacklayout
+
+        if self.mode == MinimapMode.Fixed:
+            # Remove Relative params widgets
+            for widget in self.relativeParamsWidgets:
+                params_stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+            
+        elif self.mode == MinimapMode.Relative:
+            # Remove Fixed params widgets
+            for widget in self.fixedParamWidgets:
+                params_stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+
+
     def updateMode(self) -> None:
 
         if not hasattr(self, 'app'):
@@ -1595,11 +1633,43 @@ class MinimapSettings(BoxLayout):
     
         # Parse choice text to enum
         prevMode = self.mode
-        self.mode = self.modeSpinner.text
+        self.mode = MinimapMode[self.modeSpinner.text]
+
+        # Update GUI
+        if prevMode != self.mode:
+
+            params_stacklayout: StackLayout = self.ids.params_stacklayout
+
+            if self.mode == MinimapMode.Fixed:
+                # Remove Relative params widgets
+                for widget in self.relativeParamsWidgets:
+                    params_stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+
+                # Add Fixed params widgets
+                for widget in self.fixedParamWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    params_stacklayout.add_widget(widget= widget)
+
+            elif self.mode == MinimapMode.Relative:
+                
+                # Remove Fixed params widgets
+                for widget in self.fixedParamWidgets:
+                    params_stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+                
+                # Add Relative params widgets
+                for widget in self.relativeParamsWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    params_stacklayout.add_widget(widget= widget)
 
         # Save to config
-        self.app.config.set('Minimap', 'mode', self.mode)
+        self.app.config.set('Minimap', 'mode', self.modeSpinner.text)
         self.app.config.write()
+
+
+    def updateParam(self) -> None:
+        pass
 
 
 class StageAxisController(BoxLayout):
@@ -2721,7 +2791,7 @@ class ViewingWidget(FloatLayout, StencilView):
         currentPos[0] = 23
         currentPos[1] = 0
 
-        mode = self.app.config.get('Minimap', 'mode')
+        mode: MinimapMode = MinimapMode(self.app.config.get('Minimap', 'mode'))
         minimap_width = self.app.config.getfloat('Minimap', 'width')
         minimap_height = self.app.config.getfloat('Minimap', 'height')
         minimap_min_x = self.app.config.getfloat('Minimap', 'min_x')
@@ -2750,14 +2820,14 @@ class ViewingWidget(FloatLayout, StencilView):
         minimapStageCoverage_topRight = np.zeros(2)
 
         # Determine minimap stage cover depends on 
-        if mode == 'Fixed':
+        if mode == MinimapMode.Fixed:
             
             minimapStageCoverage_btmLeft[0] = minimap_min_x
             minimapStageCoverage_btmLeft[1] = minimap_min_y
             minimapStageCoverage_topRight[0] = minimap_max_x
             minimapStageCoverage_topRight[1] = minimap_max_y
 
-        elif mode == 'Relative':
+        elif mode == MinimapMode.Relative:
 
             relativeCoverage_half = np.array([relative_width, relative_height]) / 2
 
@@ -4909,7 +4979,8 @@ class GlowTrackerApp(App):
             'max_x': '160',
             'max_y': '160',
             'relative_width': '1',
-            'relative_height': '1'
+            'relative_height': '1',
+            'no_landmarks': '1',
         })
 
         config.setdefaults('LiveAnalysis', {
