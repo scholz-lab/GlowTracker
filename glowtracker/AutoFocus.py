@@ -16,6 +16,8 @@ class FocusEstimationMethod(Enum):
     ModifiedLaplace = 'ModifiedLaplace'
     # Sum of High-Frequency DCT Coefficient
     SumOfHighDCT = 'SumOfHighDCT'
+    # Sum of strong gradients (Tenengrad thresholded at median * factor)
+    StrongTenengrad = 'StrongTenengrad'
 
 
 def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarray) -> float:
@@ -59,6 +61,16 @@ def estimateFocus(focusEstimationMethod: FocusEstimationMethod, image: np.ndarra
         hf_coeffs = dct[8:, 8:]  # Keep only high-freq block
         estimatedFocus = np.sum(np.abs(hf_coeffs))
 
+    elif focusEstimationMethod == FocusEstimationMethod.StrongTenengrad:
+        gx = cv2.Sobel(image, cv2.CV_64F, 1, 0)
+        gy = cv2.Sobel(image, cv2.CV_64F, 0, 1)
+        gmag = np.sqrt(gx**2 + gy**2)
+        gmag = gmag[gmag != 0]
+        if gmag.size > 0:
+            threshold = np.median(gmag) * 10.0
+            strong = gmag[gmag > threshold]
+            estimatedFocus = float(np.sum(strong))
+
     return estimatedFocus
 
 
@@ -71,11 +83,15 @@ class AutoFocusPID:
         KD: float = 0.1,
         SP: float = 1000,
         focusEstimationMethod: FocusEstimationMethod = FocusEstimationMethod.SumOfHighDCT,
-        minStepDist: float = 0.0001,
+        minStepDist: float = 0.002,
         integralLifeTime: int = 0,
         smoothingWindow: int = 1,
         minStepBeforeChangeDir: int = 0,
-        acceptableErrorPercentage: float = 0.05
+        acceptableErrorPercentage: float = 0.05,
+        coarseStep: float = 0.02,
+        peakEpsilonFrac: float = 0.02,
+        reacquireFraction: float = 0.7,
+        buffer_n = 5, 
     ) -> None:
         """Initialize attributes
 
@@ -97,7 +113,7 @@ class AutoFocusPID:
         self.KD = KD
         self.SP: float = SP
         self.focusEstimationMethod = focusEstimationMethod
-        self.minStepDist: float = minStepDist
+        self.minStepDist: float = min(minStepDist, coarseStep / 2)
         self.integralLifeTime: int = integralLifeTime
         self.smoothingWindow: int = smoothingWindow
         # Blending weight for PV smoothing
@@ -105,8 +121,13 @@ class AutoFocusPID:
         self.WEIHT_MIN = 1
         self.minStepBeforeChangeDir: int = minStepBeforeChangeDir
         self.acceptableErrorPercentage: float = acceptableErrorPercentage
-        
-        
+
+        self.coarseStep: float = coarseStep
+        self.peakEpsilonFrac: float = peakEpsilonFrac
+        self.reacquireFraction: float = reacquireFraction
+        self.step: float = self.coarseStep
+        self.bestFocus: float = 0.0
+
         self.posLog: List[float] = []
         self.focusLog: List[float] = []
         self.errorLog: List[float] = []
@@ -114,84 +135,144 @@ class AutoFocusPID:
         self.direction: int = 1
         self.directionResetCounter = 0
 
-
-    def executePIDStep(self, image: np.ndarray, pos: float) -> float:
-        """Perform one PID control step based on current image and lens position.
-
-        Args:
-            image (np.ndarray): gray-scaled image
-            pos (float): stage z-axis position
-
-        Returns:
-            relPosZ (float): estimated **relative** z-axis position to move to
-        """
-
-        # Estimate focus the image at current position
-        PV = estimateFocus(self.focusEstimationMethod, image)
-
-        # Apply a linear, weighted average to PV with emphasis on recent data
-        focuses = [PV]
-        if self.smoothingWindow > 1:
-            focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
-        focuses = np.array(focuses)
-
-        # Compute linear weight
-        t = np.array([1])
-
-        if (len(focuses) > 1):
-            t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+        self.buffer_n: int = buffer_n
+        self.buffer: List[float] = []
         
-        weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+        self.buffer = []
+        self.buffer_n = buffer_n
 
-        PV = sum(focuses * weights) / sum(weights)
 
-        # Compute error
-        err = self.SP - PV
-        U: float = 0.0
+    # def executePIDStep(self, image: np.ndarray, pos: float) -> float:
+    #     """Perform one PID control step based on current image and lens position.
 
-        if len(self.focusLog) == 0:
-            # If this is the first time executing, simply move by a minimum distance
-            U = self.minStepDist * self.direction
+    #     Args:
+    #         image (np.ndarray): gray-scaled image
+    #         pos (float): stage z-axis position
 
-        else:
-            prevErr = self.errorLog[-1]
-            # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
-            derivative = (err - prevErr)
+    #     Returns:
+    #         relPosZ (float): estimated **relative** z-axis position to move to
+    #     """
 
-            # If the PV is not close enough to the SP (percentage-wise), then execute 
-            errorRatio = abs( PV / self.SP - 1.0)
-            if errorRatio > self.acceptableErrorPercentage:
+    #     # Estimate focus the image at current position
+    #     PV = estimateFocus(self.focusEstimationMethod, image)
+
+    #     # Apply a linear, weighted average to PV with emphasis on recent data
+    #     focuses = [PV]
+    #     if self.smoothingWindow > 1:
+    #         focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+    #     focuses = np.array(focuses)
+
+    #     # Compute linear weight
+    #     t = np.array([1])
+
+    #     if (len(focuses) > 1):
+    #         t = np.arange(len(focuses)) / float( min(1, len(focuses) - 1) )
+        
+    #     weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+
+    #     PV = sum(focuses * weights) / sum(weights)
+
+    #     # Compute error
+    #     err = self.SP - PV
+    #     U: float = 0.0
+
+    #     if len(self.focusLog) == 0:
+    #         # If this is the first time executing, simply move by a minimum distance
+    #         U = self.minStepDist * self.direction
+
+    #     else:
+    #         prevErr = self.errorLog[-1]
+    #         # Here we assume t to be a discrete time of this function is call. Thus simplify the formula.
+    #         derivative = (err - prevErr)
+
+    #         # If the PV is not close enough to the SP (percentage-wise), then execute 
+    #         errorRatio = abs( PV / self.SP - 1.0)
+    #         if errorRatio > self.acceptableErrorPercentage:
                 
-                # PID calculations
-                if self.integralLifeTime > 0:
-                    self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
-                else:
-                    self.integral = np.sum(self.errorLog)
+    #             # PID calculations
+    #             if self.integralLifeTime > 0:
+    #                 self.integral = np.sum(self.errorLog[-self.integralLifeTime:])
+    #             else:
+    #                 self.integral = np.sum(self.errorLog)
 
-                U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
+    #             U = (self.KP * err) + (self.KI * self.integral) + (self.KD * derivative)
 
-                # Decide direction. If the error is increasing then we should flip direction.
-                if self.directionResetCounter > self.minStepBeforeChangeDir:
+    #             # Decide direction. If the error is increasing then we should flip direction.
+    #             if self.directionResetCounter > self.minStepBeforeChangeDir:
                     
-                    # Compute derivative of past error up to histLength
-                    pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
-                    diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
+    #                 # Compute derivative of past error up to histLength
+    #                 pastErrs = list(zip( self.errorLog[1:], self.errorLog ))[-(self.minStepBeforeChangeDir + 1):]
+    #                 diffs = list( map( lambda x: x[0] - x[1], pastErrs ) )
 
-                    # The averaing error is increasing
-                    if sum(diffs) > 0:
+    #                 # The averaing error is increasing
+    #                 if sum(diffs) > 0:
                         
-                        self.direction = self.direction * -1
+    #                     self.direction = self.direction * -1
+    #                     self.directionResetCounter = 0
+                
+    #             self.directionResetCounter += 1
+
+    #             U = U * self.direction
+                
+
+    #     # Record
+    #     self.focusLog.append(PV)
+    #     self.errorLog.append(err)
+    #     self.posLog.append(pos)
+
+    #     return U
+    
+    def executePIDStep(self, image, pos) -> float:
+        PV = estimateFocus(self.focusEstimationMethod, image)
+        self.buffer.append(PV)
+        batch_ready = len(self.buffer) == self.buffer_n
+        if batch_ready:
+            PV = np.median(self.buffer)
+            self.buffer = []
+
+            # Apply a linear, weighted average to PV with emphasis on recent data
+            focuses = [PV]
+            if self.smoothingWindow > 1:
+                focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+            focuses = np.array(focuses)
+
+            # Compute linear weight
+            t = np.array([1])
+
+            if (len(focuses) > 1):
+                t = np.arange(len(focuses)) / float( max(1, len(focuses) - 1) )
+
+            weights = self.WEIHT_MIN + (self.WEIGHT_MAX - self.WEIHT_MIN) * t
+
+            PV = sum(focuses * weights) / sum(weights)
+
+            if len(self.focusLog) == 0:
+                self.bestFocus = PV
+                self.directionResetCounter = 0
+            else:
+                prevPV = self.focusLog[-1]
+                if PV < self.bestFocus * self.reacquireFraction:
+                    self.step = self.coarseStep
+                    self.directionResetCounter = 0
+                    self.bestFocus = PV
+                else:
+                    if PV < prevPV * (1.0 - self.peakEpsilonFrac):
+                        self.directionResetCounter += 1
+                    else:
                         self.directionResetCounter = 0
-                
-                self.directionResetCounter += 1
+                    if self.directionResetCounter > self.minStepBeforeChangeDir:
+                        self.direction *= -1
+                        self.step = max(self.step * 0.75, self.minStepDist)
+                        self.directionResetCounter = 0
+                    self.bestFocus = max(self.bestFocus, PV)
+            self.focusLog.append(PV)
+            self.posLog.append(pos)
 
-                U = U * self.direction
-                
-
-        # Record
-        self.focusLog.append(PV)
-        self.errorLog.append(err)
-        self.posLog.append(pos)
+        if batch_ready and self.step > self.minStepDist:
+            U = self.step * self.direction
+        else:
+            U = 0.0
 
         return U
+
 

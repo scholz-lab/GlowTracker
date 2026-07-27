@@ -26,15 +26,15 @@ from AutoFocus import FocusEstimationMethod, estimateFocus
 # 
 import math
 import numpy as np
-import scipy.ndimage as ndi
 from scipy.optimize import curve_fit
 from scipy.stats import gennorm
 from scipy.special import gamma as gammafunc
+from scipy.signal import savgol_filter
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from skimage.filters import threshold_otsu, threshold_li, threshold_yen
+from skimage.filters import threshold_yen
 from skimage.transform import downscale_local_mean
 from skimage.registration import phase_cross_correlation
 import itk
@@ -99,6 +99,40 @@ def getStageDistances(deltaCoords, imageToStageMat):
     '''
     stageDistances = np.matmul(imageToStageMat, deltaCoords)
     return stageDistances
+
+
+def generate_scan_tiles(center, radius, fov_w, fov_h, overlap_w=0.0, overlap_h=0.0, edge_margin=0.0):
+    """scan a circle"""
+    cx, cy = center
+    step_x = max(fov_w * (1.0 - overlap_w), 1e-3)
+    step_y = max(fov_h * (1.0 - overlap_h), 1e-3)
+    keep_radius = max(radius - edge_margin, 0.0)
+    n_x = int(np.ceil(radius / step_x))
+    n_y = int(np.ceil(radius / step_y))
+
+    tiles = []
+    for row, iy in enumerate(range(-n_y, n_y + 1)):
+        y = cy + iy * step_y
+        xs = list(range(-n_x, n_x + 1))
+        if row % 2 == 1:
+            xs.reverse()   
+        for ix in xs:
+            x = cx + ix * step_x
+            if (x - cx) ** 2 + (y - cy) ** 2 <= keep_radius ** 2:
+                tiles.append((x, y))
+    return tiles
+
+
+def detect_worm(image, threshold, min_pixels=20):
+    bright = image > threshold
+    count = int(bright.sum())
+    if count < min_pixels: return False, None
+    ys, xs = np.nonzero(bright)
+    h, w = image.shape[:2]
+    offset_x = float(xs.mean()) - w / 2.0
+    offset_y = float(ys.mean()) - h / 2.0
+    return True, (offset_x, offset_y)
+
 
 # functions for tracking
 #%% Functions used for centering stage
@@ -751,14 +785,14 @@ class CameraAndStageCalibrator:
                     - pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
         """        
 
-        # Estimate camera basis X 
-        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
-    
+        # Estimate camera basis X
+        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 100, space= 'real', overlap_ratio= 0.5)
+
         camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
         camBasisXLen = np.linalg.norm(camBasisXVec)
 
         # Estimate camera basis Y
-        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
+        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 100, space= 'real', overlap_ratio= 0.5)
     
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
@@ -806,6 +840,14 @@ class CameraAndStageCalibrator:
         pixelSize_Y = self.stepsize / camBasisYLen
         #   Average between the two
         pixelSize = (pixelSize_X + pixelSize_Y) / 2
+
+        print(
+            f'[calib] step={self.stepsize} {self.stepunits} | '
+            f'shiftX={camBasisXLen:.1f}px shiftY={camBasisYLen:.1f}px | '
+            f'pxX={pixelSize_X:.4f} pxY={pixelSize_Y:.4f} (avg {pixelSize:.4f}) | '
+            f'angle(X^Y)={math.degrees(angleBetweenXYBasis):.2f} deg | '
+            f'rotation={math.degrees(rotationStageToCam):.2f} deg'
+        )
 
         return (rotationStageToCam, signAngleBetweenXYBasis, pixelSize)
 
@@ -1068,7 +1110,7 @@ class DepthOfFieldEstimator:
         return estimatedDof
     
 
-    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0, followWorm: bool = False, imageToStageMat = None, stageUnits: str = 'um', threshold: float = 150, minPixels: int = 50) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1107,7 +1149,7 @@ class DepthOfFieldEstimator:
                 raise RuntimeError('Taking an image is unsuccessful')
 
             h, w = image.shape
-            
+
             if dualColorMode:
 
                 if dualColorModeMainSide == 'Left':
@@ -1116,24 +1158,46 @@ class DepthOfFieldEstimator:
                 elif dualColorModeMainSide == 'Right':
                     image = image[:, w//2:]
 
-                w = image.shape[1]
-            
+                h, w = image.shape
 
-            # Center-crop the image
-            image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
-            
-            # Estimate focus of the image
-            estimatedFocus = estimateFocus(focusEstimationMethod, image)
-            
+            r = int(capturedRadius)
+
+            if followWorm:
+                # Locate the worm and measure focus on a fixed window around it.
+                present, offset = detect_worm(image, threshold, minPixels)
+                if present:
+                    cx = min(max(int(w/2 + offset[0]), r), w - r)
+                    cy = min(max(int(h/2 + offset[1]), r), h - r)
+                    crop = image[cy-r:cy+r, cx-r:cx+r]
+                    estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+                    # Move the camera (XY) to recenter on the worm for the next Z step.
+                    if imageToStageMat is not None:
+                        dy, dx = getStageDistances(np.array([-offset[1], offset[0]]), imageToStageMat)
+                        stage.move_rel((dx, dy, 0), unit= stageUnits, wait_until_idle= True)
+                else:
+                    estimatedFocus = np.nan   # reject this sample
+            else:
+                crop = cropCenterImage(image, r * 2, r * 2)
+                estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+
             # Store the image
             df.iloc[i] = [currentPos[2], image, estimatedFocus]
-            
-            # Move to a new position
-            currentPos[2] = currentPos[2] + stepSize_z
-            stage.move_abs(currentPos, wait_until_idle= True)
 
-        # Return stage to starting position
-        stage.move_abs(startingPos)
+            # Step Z. In follow mode move Z relatively so the XY following is preserved.
+            currentPos[2] = currentPos[2] + stepSize_z
+            if followWorm:
+                stage.move_z(stepSize_z, unit= 'mm', wait_until_idle= True)
+            else:
+                stage.move_abs(currentPos, wait_until_idle= True)
+
+        if followWorm:
+            # Keep the followed XY; only return Z to the starting height.
+            endPos = stage.get_position(unit= 'mm')
+            endPos[2] = startingPos[2]
+            stage.move_abs(endPos, wait_until_idle= True)
+        else:
+            # Return stage to starting position
+            stage.move_abs(startingPos)
 
         self.dofDataFrame = df
 
@@ -1257,6 +1321,157 @@ class DepthOfFieldEstimator:
         bestFocusImage = self.dofDataFrame.iloc[bestFocusIndex]['image']
         bestFocusValue = self.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
         return bestFocusPosition, bestFocusImage, bestFocusValue
+
+
+class IntensitySweeper:
+
+    def __init__(self):
+        self.dataFrame = pd.DataFrame(columns=['pos_z', 'mean_intensity'])
+        self.peakZ = None
+        self.zeroDerivZ = None
+        self.midZ = None
+
+
+    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right') -> None:
+        df = pd.DataFrame(columns=['pos_z', 'mean_intensity'], index= range(numImages))
+
+        startingPos = stage.get_position(unit='mm')
+
+        stepSize_z = (zEnd - zStart) / (numImages - 1)
+        currentPos = [startingPos[0], startingPos[1], zStart]
+
+        stage.move_abs(currentPos, wait_until_idle= True)
+
+        for i in range(numImages):
+
+            isSuccess, image = camera.singleTake()
+
+            if not isSuccess:
+                raise RuntimeError('Taking an image is unsuccessful')
+
+            if dualColorMode:
+                w = image.shape[1]
+                if dualColorModeMainSide == 'Left':
+                    image = image[:, :w//2]
+                elif dualColorModeMainSide == 'Right':
+                    image = image[:, w//2:]
+
+            df.iloc[i] = [currentPos[2], np.mean(image)]
+
+            currentPos[2] = currentPos[2] + stepSize_z
+            stage.move_abs(currentPos, wait_until_idle= True)
+
+        stage.move_abs(startingPos)
+
+        self.dataFrame = df
+
+
+    def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        n = len(means)
+        dz = (pos_z[-1] - pos_z[0]) / (n - 1) if n > 1 else 1.0
+
+        polyorder = 3
+        windowLength = min(11, n)
+        if windowLength % 2 == 0:
+            windowLength -= 1
+
+        if windowLength >= polyorder + 2:
+            smoothedMeans = savgol_filter(means, windowLength, polyorder)
+            firstDeriv = savgol_filter(means, windowLength, polyorder, deriv=1, delta=dz)
+            secondDeriv = savgol_filter(means, windowLength, polyorder, deriv=2, delta=dz)
+        else:
+            smoothedMeans = means
+            firstDeriv = np.gradient(means, pos_z)
+            secondDeriv = np.gradient(firstDeriv, pos_z)
+
+        return pos_z, smoothedMeans, firstDeriv, secondDeriv
+
+
+    @staticmethod
+    def _zeroCrossing(x: np.ndarray, y: np.ndarray, refIndex: int) -> float | None:
+        crossings = np.where(np.diff(np.sign(y)) != 0)[0]
+        if len(crossings) == 0:
+            return None
+
+        zeros = []
+        for i in crossings:
+            y0, y1 = y[i], y[i + 1]
+            t = 0.0 if y1 == y0 else -y0 / (y1 - y0)
+            zeros.append(x[i] + t * (x[i + 1] - x[i]))
+        zeros = np.array(zeros)
+
+        return float(zeros[np.argmin(np.abs(zeros - x[refIndex]))])
+
+
+    def computeFocusEstimates(self) -> None:
+        pos_z, _, firstDeriv, _ = self.derivatives()
+
+        peakIndex = int(np.argmax(firstDeriv))
+        self.peakZ = float(pos_z[peakIndex])
+
+        self.zeroDerivZ = self._zeroCrossing(pos_z, firstDeriv, peakIndex)
+
+        self.midZ = None if self.zeroDerivZ is None else (self.peakZ + self.zeroDerivZ) / 2
+
+
+    def findGradientPeak(self) -> float:
+        self.computeFocusEstimates()
+        return self.peakZ
+
+
+    def findScanZ(self) -> float:
+        self.computeFocusEstimates()
+        return self.peakZ if self.midZ is None else self.midZ
+
+
+    def genPlot(self) -> np.ndarray:
+        pos_z, smoothedMeans, firstDeriv, secondDeriv = self.derivatives()
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        self.computeFocusEstimates()
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 13), sharex=True)
+
+        def markLines(ax):
+            ax.axvline(self.peakZ, color='k', linestyle='--', label=f'max slope (z={self.peakZ:.4f})')
+            if self.zeroDerivZ is not None:
+                ax.axvline(self.zeroDerivZ, color='m', linestyle='--', label=f"d=0 (z={self.zeroDerivZ:.4f})")
+            if self.midZ is not None:
+                ax.axvline(self.midZ, color='c', linestyle='-.', label=f'midpoint (z={self.midZ:.4f})')
+
+        ax1.plot(pos_z, means, 'b.', label='mean')
+        ax1.plot(pos_z, smoothedMeans, 'b-', label='fit')
+        markLines(ax1)
+        ax1.set_ylabel('Intensity (brightness)')
+        ax1.legend()
+
+        ax2.plot(pos_z, firstDeriv, 'r-', label="d(intensity) (fit)")
+        ax2.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax2)
+        ax2.set_ylabel('d(intensity)')
+        ax2.legend()
+
+        ax3.plot(pos_z, secondDeriv, 'g-', label="d²(intensity) (fit)")
+        ax3.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax3)
+        ax3.set_xlabel('Position Z')
+        ax3.set_ylabel('d²(intensity)')
+        ax3.legend()
+
+        fig.tight_layout()
+
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        plotImage = plotImage[:, :, 1:4]
+
+        plt.close(fig= fig)
+
+        return plotImage
 
 
 class Exterior(Enum):

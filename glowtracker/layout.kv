@@ -1,6 +1,7 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
 #:import Image kivy.uix.image.Image
+#:import ScanMinimap Scan_map.ScanMinimap
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -98,11 +99,9 @@ MainWindow:
         id: ycontrols
     ZControls:
         id: zcontrols
-    MyButton:
-        text: 'Autofocus'
-        pos_hint: {'x': 0.25}
-        on_release: root.autoFocusButtonCallback()
-    MyLabel: 
+    GoToControls:
+        id: gotocontrols
+    MyLabel:
         text: 'Camera Settings'
     CameraProperties:
         id: camprops
@@ -239,11 +238,11 @@ MainWindow:
     
     StageButtonLeftFast:
         id: sbl1
-        on_state: app.stage.start_move((-app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()    
+        on_state: app.jog((-1,0,0), True)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
     StageButtonLeft:
         id: sbl2
-        on_state: app.stage.start_move((-app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((-1,0,0), False)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
     Label:
         text: 'X'
@@ -251,11 +250,11 @@ MainWindow:
         size_hint: (0.2,1)
     StageButtonRight:
         id: sbl3
-        on_state: app.stage.start_move((app.vlow,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        on_state: app.jog((1,0,0), False)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
     StageButtonRightFast:
-        id: sbl4       
-        on_state: app.stage.start_move((app.vhigh,0,0), app.unit)  if self.state=='down' else app.stage.stop()
+        id: sbl4
+        on_state: app.jog((1,0,0), True)  if self.state=='down' else app.stage.stop()
         #disabled: app.stage.connection is None
 
 <YControls>:
@@ -265,12 +264,12 @@ MainWindow:
         orientation: 'horizontal'
         
         StageButtonLeftFast:
-            id: sbl1        
-            on_state: app.stage.start_move((0,-app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            id: sbl1
+            on_state: app.jog((0,-1,0), True)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.stage.start_move((0,-app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,-1,0), False)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Y'
@@ -279,11 +278,11 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.stage.start_move((0,app.vlow,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), False)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         StageButtonRightFast:
             id: sbl4
-            on_state: app.stage.start_move((0,app.vhigh,0), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,1,0), True)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
             
             
@@ -293,13 +292,13 @@ MainWindow:
         size: root.size
         orientation: 'horizontal'
         
-        StageButtonLeftFast: 
+        StageButtonLeftFast:
             id: sbl1
-            on_state: app.stage.start_move((0,0,-app.vhigh), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), True)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         StageButtonLeft:
             id: sbl2
-            on_state: app.stage.start_move((0,0,-app.vlow), app.unit)  if self.state=='down' else app.stage.stop()
+            on_state: app.jog((0,0,-1), False)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
         Label:
             text: 'Z'
@@ -307,12 +306,285 @@ MainWindow:
             size_hint: (0.2,1)
         StageButtonRight:
             id: sbl3
-            on_state: app.stage.start_move((0,0,app.vlow), app.unit)  if self.state=='down' else app.stage.stop() 
+            on_state: app.jog((0,0,1), False)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
-        StageButtonRightFast:   
-            id: sbl4    
-            on_state: app.stage.start_move((0,0,app.vhigh), app.unit)  if self.state=='down' else app.stage.stop() 
+        StageButtonRightFast:
+            id: sbl4
+            on_state: app.jog((0,0,1), True)  if self.state=='down' else app.stage.stop()
             #disabled: app.stage.connection is None
+
+<GoToControls>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: 40
+    spacing: 5
+    TextInput:
+        id: gotox
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'X'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoy
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Y'
+        on_focus: app.toggle_key_binding(self.focus)
+    TextInput:
+        id: gotoz
+        input_filter: 'float'
+        multiline: False
+        hint_text: 'Z'
+        on_focus: app.toggle_key_binding(self.focus)
+    Button:
+        text: 'Fill'
+        on_release: root.prefill()
+    Button:
+        text: 'Go'
+        on_release: root.go_to()
+
+
+<CenterRadiusFromThreePoints>:
+    orientation: 'horizontal'
+    padding: 10
+    spacing: 10
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: 0.35
+        spacing: 5
+        MyLabel:
+            text: 'Plate Region'
+            size_hint_y: None
+            height: 30
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Capture point'
+                on_release: root.capture_points()
+            Label:
+                id: countlabel
+                text: 'Points: {}'.format(len(root.points))
+                size_hint_x: 0.3
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Button:
+                text: 'Calculate'
+                disabled: len(root.points) < 3
+                on_release: root.calculate()
+            Button:
+                text: 'Reset'
+                on_release: root.reset()
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: pointstext
+                multiline: False
+                hint_text: 'x,y; x,y; x,y'
+                on_focus: app.toggle_key_binding(self.focus)
+                on_text_validate: root.set_points_from_text(self.text)
+            Button:
+                text: 'Set'
+                size_hint_x: 0.3
+                on_release: root.set_points_from_text(pointstext.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            TextInput:
+                id: scenarioname
+                multiline: False
+                hint_text: 'scenario name'
+                on_focus: app.toggle_key_binding(self.focus)
+            Button:
+                text: 'Save'
+                size_hint_x: 0.3
+                on_release: root.save_scenario(scenarioname.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 30
+            spacing: 5
+            Spinner:
+                id: scenariospinner
+                text: 'load scenario'
+                values: root.saved_scenarios
+            Button:
+                text: 'Load'
+                size_hint_x: 0.3
+                on_release: root.load_scenario(scenariospinner.text)
+        Label:
+            id: resultlabel
+            text: 'Diameter: -    Center: -'
+            size_hint_y: None
+            height: 30
+        MyLabel:
+            text: 'Scan Settings'
+            size_hint_y: None
+            height: 30
+        ScrollView:
+            do_scroll_x: False
+            GridLayout:
+                cols: 2
+                size_hint_y: None
+                height: self.minimum_height
+                row_default_height: 34
+                row_force_default: True
+                spacing: 8
+                Label:
+                    text: 'Scan exposure (us)'
+                TextInput:
+                    text: str(root.scan_exposure)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_exposure = float(self.text)
+                Label:
+                    text: 'Z axis (mm)'
+                TextInput:
+                    text: str(root.scan_z)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z = float(self.text)
+                Label:
+                    text: 'Scan gain'
+                TextInput:
+                    text: str(root.scan_gain)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_gain = float(self.text)
+                Label:
+                    text: 'Track exposure (us)'
+                TextInput:
+                    text: str(root.track_exposure)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_exposure = float(self.text)
+                Label:
+                    text: 'Track gain'
+                TextInput:
+                    text: str(root.track_gain)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_gain = float(self.text)
+                Label:
+                    text: 'Track framerate (fps)'
+                TextInput:
+                    text: str(root.track_framerate)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_framerate = float(self.text)
+                Label:
+                    text: 'Track timeout (s)'
+                TextInput:
+                    text: str(root.track_interval)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.track_interval = float(self.text)
+                Label:
+                    text: 'Settle (s)'
+                TextInput:
+                    text: str(root.scan_settle)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_settle = float(self.text)
+                Label:
+                    text: 'Brightness threshold'
+                TextInput:
+                    text: str(root.scan_threshold)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_threshold = float(self.text)
+                Label:
+                    text: 'Min bright pixels'
+                TextInput:
+                    text: str(root.scan_min_pixels)
+                    input_filter: 'int'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_min_pixels = int(self.text)
+                Label:
+                    text: 'Tile overlap W (%)'
+                TextInput:
+                    text: str(root.scan_overlap_w)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_overlap_w = float(self.text)
+                Label:
+                    text: 'Tile overlap H (%)'
+                TextInput:
+                    text: str(root.scan_overlap_h)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_overlap_h = float(self.text)
+                Label:
+                    text: 'Z sweep range (mm)'
+                TextInput:
+                    text: str(root.scan_z_range)
+                    input_filter: 'float'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z_range = float(self.text)
+                Label:
+                    text: 'Z sweep frames'
+                TextInput:
+                    text: str(root.scan_z_frames)
+                    input_filter: 'int'
+                    multiline: False
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text_validate: root.scan_z_frames = int(self.text)
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 40
+            spacing: 5
+            Button:
+                text: 'Live'
+                on_release: root.toggle_preview()
+            Button:
+                text: 'Scan'
+                on_release: root.scan_area()
+            Button:
+                text: 'Stop'
+                on_release: root.stop_scan()
+        ProgressBar:
+            max: 1
+            value: root.scan_progress
+            size_hint_y: None
+            height: 20
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: 0.65
+        spacing: 5
+        Image:
+            id: scanpreview
+            size_hint_y: 0.6
+            fit_mode: 'contain'
+            texture: app.texture
+        ScanMinimap:
+            id: minimap
+            size_hint_y: 0.4
+
+
 #################################
 # Load camera properties - Popup
 #################################
@@ -644,6 +916,10 @@ MainWindow:
         on_release: root.show_calibration()
     MyButton:
         size_hint: (1, 0.1)
+        text: 'Plate Scan'
+        on_release: root.show_scan()
+    MyButton:
+        size_hint: (1, 0.1)
         text: 'DAQ'
         on_release: root.open_daq_widget()
     MyLabel:
@@ -869,6 +1145,12 @@ MainWindow:
         DepthOfFieldCalibration:
             id: depthoffieldcalibration
 
+    TabbedPanelItem:
+        text: 'Intensity Sweep'
+
+        IntensitySweepCalibration:
+            id: intensitysweepcalibration
+
 
 <CameraAndStageCalibration>:
     size: root.size
@@ -1030,6 +1312,58 @@ MainWindow:
         Button:
             text: "Close"
             size_hint_x: .15
+            on_release: root.closeCallback()
+
+
+<IntensitySweepCalibration>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    spacing: 20
+
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: 'Mean intensity over Z sweep'
+            size_hint_y: 0.1
+        Image:
+            id: intensitysweepplot
+
+    BoxLayout:
+        size_hint_y: .08
+        spacing: 10
+
+        Label:
+            text: 'Z start (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zstart
+            text: '0'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Z end (mm)'
+            size_hint_x: .1
+        TextInput:
+            id: zend
+            text: '1'
+            multiline: False
+            size_hint_x: .12
+        Label:
+            text: 'Num photos'
+            size_hint_x: .1
+        TextInput:
+            id: numphotos
+            text: '50'
+            multiline: False
+            size_hint_x: .12
+        Button:
+            text: "Sweep"
+            size_hint_x: .18
+            on_release: root.sweep()
+        Button:
+            text: "Close"
+            size_hint_x: .14
             on_release: root.closeCallback()
 
 
