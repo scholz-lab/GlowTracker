@@ -1601,12 +1601,6 @@ class LandmarkRow(BoxLayout):
             **kwargs,
         )
 
-        self.index_label = Label(
-            text= "",
-            size_hint_x= None,
-            width= dp(70),
-        )
-    
         self.x_input = TextInput(
             multiline= False,
             input_filter= "float",
@@ -1633,17 +1627,9 @@ class LandmarkRow(BoxLayout):
             write_tab= False
         )
 
-        self.add_widget(self.index_label)
         self.add_widget(self.x_input)
         self.add_widget(self.y_input)
         self.add_widget(self.text_input)
-
-        # Update Label whenever id is updated
-        self.bind(index= self._updateIndexLabel)
-
-
-    def _updateIndexLabel(self, *_):
-        self.index_label.text = f"Point {self.index + 1}"
 
 
     def setData(self, landmark: LandmarkData) -> None:
@@ -1727,7 +1713,6 @@ class LandmarkEditor(BoxLayout):
             height= dp(28),
         )
 
-        headings.add_widget( Label(text= "Landmark", size_hint_x= None, width= dp(70)) )
         headings.add_widget( Label(text= "x (mm)", size_hint_x= 0.25) )
         headings.add_widget( Label(text= "y (mm)", size_hint_x= 0.25) )
         headings.add_widget( Label(text= "Text", size_hint_x= 0.5) )
@@ -1781,7 +1766,7 @@ class LandmarkEditor(BoxLayout):
         Clock.schedule_once(self.reloadLandmarks, 0)
 
 
-    def _applyCount(self, *_):
+    def _applyCount(self, *args):
         count = int(self.count_input.text)
         # Apply an upper bound to protect the UI from accidental input.
         count = max(0, min(count, 100))
@@ -1838,32 +1823,32 @@ class LandmarkEditor(BoxLayout):
         self.status_label.text = ( f"Saved {len(self.landmarks)} landmarks" )
 
 
-    def reloadLandmarks(self, *_):
+    def reloadLandmarks(self, *args):
 
         landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
 
         try:
-            loaded = json.loads(landmarkJsonDump)
+            landmarkJson = json.loads(landmarkJsonDump)
             
         except (json.JSONDecodeError, TypeError):
-            loaded = []
+            landmarkJson = []
 
-        loaded = self.parseJsonToLandmarks(loaded)
+        landmarks = self.parseJsonToLandmarks(landmarkJson)
 
         self.rows_layout.clear_widgets()
         self.landmarkRows.clear()
 
-        for index, landmark in enumerate(loaded):
+        for index, landmark in enumerate(landmarks):
             row = LandmarkRow(index=index)
             row.setData(landmark)
 
             self.landmarkRows.append(row)
             self.rows_layout.add_widget(row)
 
-        self.count_input.text = str(len(loaded))
-        self.landmarks = loaded
+        self.count_input.text = str(len(landmarks))
+        self.landmarks = landmarks
 
-        self.status_label.text = ( f"Loaded {len(loaded)} landmarks" )
+        self.status_label.text = ( f"Loaded {len(landmarks)} landmarks" )
 
 
     @staticmethod
@@ -3046,6 +3031,8 @@ class ViewingWidget(FloatLayout, StencilView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        self.app: GlowTrackerApp = App.get_running_app()
+
         self.minimapBorder: Line = Line()
         self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
 
@@ -3057,7 +3044,28 @@ class ViewingWidget(FloatLayout, StencilView):
         self.startRecordingPos: np.ndarray = np.zeros(2)
         self.startRecordingPosPoint = PointWithLabel(pos= [0, 0], text= 'Start', pointColor= [1, 0, 0, 1])
 
-        self.app: GlowTrackerApp = App.get_running_app()
+        self.landmarks: List[LandmarkData] = []
+        self.landmarkPoints: List[PointWithLabel] = []
+
+        # Wait until App.config is available
+        Clock.schedule_once(self.updateLandmarkData)
+
+
+    def updateLandmarkData(self, *args) -> None:
+        # Load list of Landmark from config
+        landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
+        
+        # Parse them into List of Landmarks
+        try:
+            landmarkJson = json.loads(landmarkJsonDump)
+            
+        except (json.JSONDecodeError, TypeError):
+            landmarkJson = []
+
+        self.landmarks = LandmarkEditor.parseJsonToLandmarks(landmarkJson)
+
+        # Construct PointWithLable for each Landmark
+        self.landmarkPoints = [PointWithLabel(pos= [landmark.x, landmark.y], text= landmark.text) for landmark in self.landmarks]
 
 
     def on_touch_down(self, touch):
@@ -3226,6 +3234,18 @@ class ViewingWidget(FloatLayout, StencilView):
             self.startRecordingPosPoint.update(pos= [startRecordingPos_px_clipped[0], startRecordingPos_px_clipped[1]])
             self.startRecordingPosPoint.attemptAddToWidget(self)
 
+        # Draw user-input Landmarks
+        for i, landmarkPoint in enumerate(self.landmarkPoints):
+            # Get corresponding landmark
+            landmark = self.landmarks[i]
+            #   Convert landmark pos from mm to px
+            landmarkPos_px = stageToMinimap @ np.array([landmark.x, landmark.y, 1])
+            landmarkPos_px = landmarkPos_px[:2]
+            landmarkPos_px_clipped = np.clip(landmarkPos_px, minimapBtmLeft, minimapTopRight)
+
+            landmarkPoint.update(pos= [landmarkPos_px_clipped[0], landmarkPos_px_clipped[1]])
+            landmarkPoint.attemptAddToWidget(self)
+
     
     def addAllToOverlay(self) -> None:
         if self.minimapBorder not in self.canvas.children:
@@ -3244,6 +3264,9 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapTopRightPoint.attemptRemoveToWidget(self)
         self.currentPosPoint.attemptRemoveToWidget(self)
         self.startRecordingPosPoint.attemptRemoveToWidget(self)
+
+        for landmarkPoint in self.landmarkPoints:
+            landmarkPoint.attemptRemoveToWidget(self)
 
 
 class PointWithLabel():
