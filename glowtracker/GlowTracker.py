@@ -30,7 +30,7 @@ from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent, mainthread
-from kivy.metrics import Metrics, sp
+from kivy.metrics import Metrics, sp, dp
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -66,7 +66,7 @@ from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
 from overrides import override
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from zaber_motion.units import Units, units_from_literals
@@ -79,7 +79,7 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from copy import deepcopy
 from enum import Enum
-
+import json
 
 # 
 # Own classes
@@ -1576,6 +1576,324 @@ class MinimapMode(Enum):
     Relative = 'Relative'
 
 
+@dataclass
+class LandmarkData():
+    x: float = 0
+    y: float = 0
+    text: str = ""
+
+
+class LandmarkRow(BoxLayout):
+    """Editor widget for one landmark point.
+    """
+
+    index = NumericProperty(0)
+    landmark_text = StringProperty("")
+    position = ListProperty([0.0, 0.0])
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            orientation= "horizontal",
+            spacing= dp(6),
+            size_hint_y= None,
+            height= dp(42),
+            **kwargs,
+        )
+
+        self.index_label = Label(
+            text= "",
+            size_hint_x= None,
+            width= dp(70),
+        )
+    
+        self.x_input = TextInput(
+            multiline= False,
+            input_filter= "float",
+            hint_text= "x",
+            size_hint_x= 0.25,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.y_input = TextInput(
+            multiline= False,
+            input_filter= "float",
+            hint_text= "y",
+            size_hint_x= 0.25,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.text_input = TextInput(
+            multiline= False,
+            hint_text= "Landmark name",
+            size_hint_x= 0.5,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.add_widget(self.index_label)
+        self.add_widget(self.x_input)
+        self.add_widget(self.y_input)
+        self.add_widget(self.text_input)
+
+        # Update Label whenever id is updated
+        self.bind(index= self._updateIndexLabel)
+
+
+    def _updateIndexLabel(self, *_):
+        self.index_label.text = f"Point {self.index + 1}"
+
+
+    def setData(self, landmark: LandmarkData) -> None:
+        """Populate the widgets from a landmark.
+        """
+        self.x_input.text = str(landmark.x)
+        self.y_input.text = str(landmark.y)
+        self.text_input.text = str(landmark.text)
+
+
+    def getData(self) -> LandmarkData:
+        """Convert the UI state into LandmarkData.
+        """
+        return LandmarkData(
+            x= float(self.x_input.text),
+            y= float(self.y_input.text),
+            text= self.text_input.text.strip()
+        )
+    
+
+class LandmarkEditor(BoxLayout):
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            orientation= "vertical",
+            spacing= dp(8),
+            padding= dp(10),
+            **kwargs,
+        )
+
+        self.app = App.get_running_app()
+
+        self.landmarks: List[LandmarkData] = []
+
+        self.landmarkRows = []
+
+        # 
+        #   Number-of-landmarks widget
+        # 
+        count_bar = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(8),
+            size_hint_y= None,
+            height= dp(42),
+        )
+
+        count_bar.add_widget(
+            Label(
+                text= "Number of landmarks:",
+                size_hint_x= 0.55,
+            )
+        )
+
+        self.count_input = TextInput(
+            text= "0",
+            multiline= False,
+            input_filter= "int",
+            size_hint_x= 0.2,
+            base_direction=  'rtl',
+            write_tab=  False,
+        )
+
+        apply_button = Button(
+            text= "Apply",
+            size_hint_x= 0.25,
+        )
+        apply_button.bind(on_release= self._applyCount)
+
+        count_bar.add_widget(self.count_input)
+        count_bar.add_widget(apply_button)
+
+        self.add_widget(count_bar)
+
+        # 
+        #   Column headings
+        # 
+        headings = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(6),
+            size_hint_y= None,
+            height= dp(28),
+        )
+
+        headings.add_widget( Label(text= "Landmark", size_hint_x= None, width= dp(70)) )
+        headings.add_widget( Label(text= "x (mm)", size_hint_x= 0.25) )
+        headings.add_widget( Label(text= "y (mm)", size_hint_x= 0.25) )
+        headings.add_widget( Label(text= "Text", size_hint_x= 0.5) )
+
+        self.add_widget(headings)
+
+        # 
+        #   Scrollable dynamic row-container that stores each landmark point
+        # 
+        scroll = ScrollView(
+            do_scroll_x= False,
+            do_scroll_y= True,
+        )
+
+        self.rows_layout = StackLayout(
+            orientation= "lr-tb",
+            spacing= dp(4),
+            size_hint_y= None,
+        )
+        self.rows_layout.bind( minimum_height= self.rows_layout.setter("height") )
+
+        scroll.add_widget(self.rows_layout)
+        self.add_widget(scroll)
+
+        # 
+        #   Save and Reload buttons
+        # 
+        actionBar = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(8),
+            size_hint_y= None,
+            height= dp(42),
+        )
+
+        save_button = Button(text= "Save")
+        save_button.bind(on_release= self.saveLandmarks)
+
+        reload_button = Button(text= "Reload")
+        reload_button.bind(on_release= self.reloadLandmarks)
+
+        actionBar.add_widget(save_button)
+        actionBar.add_widget(reload_button)
+
+        self.add_widget(actionBar)
+
+        # Status text for feedback
+        self.status_label = Label(text= "", size_hint_y= None, height= dp(30))
+        self.add_widget(self.status_label)
+
+        # App.config is available after App.build() starts.
+        Clock.schedule_once(self.reloadLandmarks, 0)
+
+
+    def _applyCount(self, *_):
+        count = int(self.count_input.text)
+        # Apply an upper bound to protect the UI from accidental input.
+        count = max(0, min(count, 100))
+
+        self.count_input.text = str(count)
+        self.setLandmarkCount(count)
+    
+
+    def setLandmarkCount(self, count: int) -> None:
+        """Resize the editor while preserving existing row values.
+        """
+        # Congregrate landmark UI data into a list of LandmarkData
+        currentLandmarkData = self.collectLandmarks()
+
+        # Clear current UI
+        self.rows_layout.clear_widgets()
+        self.landmarkRows.clear()
+
+        # Iterate construct and append LandmarkRow
+        for index in range(count):
+            landmark = LandmarkData(text= f"Point {index + 1}")
+
+            if index < len(currentLandmarkData):
+                landmark = currentLandmarkData[index]
+
+            row = LandmarkRow(index= index)
+            row.setData(landmark)
+
+            self.landmarkRows.append(row)
+            self.rows_layout.add_widget(row)
+
+        self.landmarks = self.collectLandmarks()
+    
+
+    def collectLandmarks(self) -> List[LandmarkData]:
+        """Congregrate landmark UI data into a list of LandmarkData
+
+        Returns:
+            List[LandmarkData]: List of currently showing LandmarkData
+        """
+        return [ row.getData() for row in self.landmarkRows ]
+        
+
+    def saveLandmarks(self, *_) -> None:
+        self.landmarks = self.collectLandmarks()
+
+        # ConfigParser values must be strings.
+        landmarks_asdict = [ asdict(landmark) for landmark in self.landmarks ]
+        serialized = json.dumps(landmarks_asdict, ensure_ascii= False)
+
+        self.app.config.set("Minimap", "landmark_json", serialized)
+        self.app.config.write()
+
+        self.status_label.text = ( f"Saved {len(self.landmarks)} landmarks" )
+
+
+    def reloadLandmarks(self, *_):
+
+        landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
+
+        try:
+            loaded = json.loads(landmarkJsonDump)
+            
+        except (json.JSONDecodeError, TypeError):
+            loaded = []
+
+        loaded = self.parseJsonToLandmarks(loaded)
+
+        self.rows_layout.clear_widgets()
+        self.landmarkRows.clear()
+
+        for index, landmark in enumerate(loaded):
+            row = LandmarkRow(index=index)
+            row.setData(landmark)
+
+            self.landmarkRows.append(row)
+            self.rows_layout.add_widget(row)
+
+        self.count_input.text = str(len(loaded))
+        self.landmarks = loaded
+
+        self.status_label.text = ( f"Loaded {len(loaded)} landmarks" )
+
+
+    @staticmethod
+    def parseJsonToLandmarks(value: list[Dict[str:any]]) -> List[LandmarkData]:
+        """Validate and parse json dump into a list of LandmarkData
+        """
+        if not isinstance(value, list):
+            return []
+
+        result: List[LandmarkData] = []
+
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                x = float(item.get("x", 0.0))
+                y = float(item.get("y", 0.0))
+
+            except (TypeError, ValueError):
+                continue
+
+            text = str(
+                item.get("text", f"Point {index + 1}")
+            )
+
+            result.append(LandmarkData(x= x, y= y, text= text))
+
+        return result
+
+
 class MinimapSettings(BoxLayout):
 
     minimapSize_layout: BoxLayout
@@ -1587,7 +1905,7 @@ class MinimapSettings(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app: GlowTrackerApp = App.get_running_app()
-        self.mode: MinimapMode = MinimapMode.Fixed
+        self.mode: MinimapMode = MinimapMode[self.app.config.get('Minimap', 'mode')]
 
         self.fixedParamWidgets = [self.fixed_btmLeft_layout, self.fixed_topRight_layout]
                 
@@ -4990,14 +5308,14 @@ class GlowTrackerApp(App):
         config.setdefaults('Minimap', {
             'width': '150',
             'height': '112',
-            'mode': 'Fixed',
+            'mode': 'Relative',
             'min_x': '0',
             'min_y': '0',
             'max_x': '160',
             'max_y': '160',
-            'relative_width': '1',
-            'relative_height': '1',
-            'no_landmarks': '1',
+            'relative_width': '3',
+            'relative_height': '3',
+            'landmark_json': '[]'
         })
 
         config.setdefaults('LiveAnalysis', {

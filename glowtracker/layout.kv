@@ -1851,6 +1851,7 @@ MainWindow:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
                 size_hint_x: 0.9
+                spacing: dp(6)
 
                 Label:
                     text: 'Minimap size'
@@ -1910,6 +1911,7 @@ MainWindow:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
                 size_hint_x: 0.9
+                spacing: dp(6)
 
                 Label:
                     text: 'btm-left'
@@ -1933,6 +1935,7 @@ MainWindow:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
                 size_hint_x: 0.9
+                spacing: dp(6)
 
                 Label:
                     text: 'top-right'
@@ -1956,9 +1959,10 @@ MainWindow:
                 orientation: 'horizontal'
                 size_hint_y: 0.1
                 size_hint_x: 0.9
+                spacing: dp(6)
 
                 Label:
-                    text: 'Size'
+                    text: 'Coverage'
                     halign: 'center'
                     valign: 'middle'
                     size_hint_x: None
@@ -1974,37 +1978,8 @@ MainWindow:
                     configKey: 'relative_height'
                     root: root
 
-        BoxLayout:
-            orientation: 'vertical'
+        LandmarkEditor:
             size_hint_x: 0.5
-
-            Label:
-                text: 'Landmark'
-                size_hint_y: 0.1
-
-            StackLayout:
-                id: landmark_stacklayout
-                orientation: 'tb-lr'
-                size_hint_x: 0.5
-                spacing: [0, dp(5)]
-            
-                BoxLayout:
-                    id: minimapSize_layout
-                    orientation: 'horizontal'
-                    size_hint_y: 0.1
-                    size_hint_x: 0.9
-
-                    Label:
-                        text: 'No. of landmarks'
-                        halign: 'center'
-                        valign: 'middle'
-                        size_hint_x: None
-                        text_size: [dp(100), root.height]
-
-                    MinimapTextInput:
-                        id: no_landmarks
-                        configKey: 'no_landmarks'
-                        root: root
     
 
     BoxLayout:
