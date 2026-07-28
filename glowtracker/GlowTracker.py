@@ -76,7 +76,7 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from copy import deepcopy
 from enum import Enum
 import json
@@ -3112,8 +3112,8 @@ class ViewingWidget(FloatLayout, StencilView):
         currentPos = np.array(self.app.coords[:2])
 
         # Test
-        currentPos[0] = 23
-        currentPos[1] = 0
+        # currentPos[0] = 23
+        # currentPos[1] = 0
 
         mode: MinimapMode = MinimapMode(self.app.config.get('Minimap', 'mode'))
         minimap_width = self.app.config.getfloat('Minimap', 'width')
