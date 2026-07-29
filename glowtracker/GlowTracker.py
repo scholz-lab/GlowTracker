@@ -1769,7 +1769,7 @@ class LandmarkEditor(BoxLayout):
     def _applyCount(self, *args):
         count = int(self.count_input.text)
         # Apply an upper bound to protect the UI from accidental input.
-        count = max(0, min(count, 100))
+        count = max(0, min(count, 1000))
 
         self.count_input.text = str(count)
         self.setLandmarkCount(count)
