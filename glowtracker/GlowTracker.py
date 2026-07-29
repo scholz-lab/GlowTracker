@@ -1810,7 +1810,7 @@ class LandmarkEditor(BoxLayout):
         return [ row.getData() for row in self.landmarkRows ]
         
 
-    def saveLandmarks(self, *_) -> None:
+    def saveLandmarks(self, *args) -> None:
         self.landmarks = self.collectLandmarks()
 
         # ConfigParser values must be strings.
@@ -1891,6 +1891,9 @@ class MinimapSettings(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app: GlowTrackerApp = App.get_running_app()
+
+        self._afterCallback: callable = None
+
         self.mode: MinimapMode = MinimapMode[self.app.config.get('Minimap', 'mode')]
 
         self.fixedParamWidgets = [self.fixed_btmLeft_layout, self.fixed_topRight_layout]
@@ -1902,6 +1905,7 @@ class MinimapSettings(BoxLayout):
 
         self.initModeWidget()
 
+
     
     def setCloseCallback(self, closeCallback: callable) -> None:
         """API setting close callback event.
@@ -1909,7 +1913,18 @@ class MinimapSettings(BoxLayout):
         Args:
             closeCallback (callable): the closing callback event.
         """        
-        self.closeCallback = closeCallback
+        self._afterCallback = closeCallback
+        self.closeCallback = self._closeCallback
+    
+
+    def _closeCallback(self) -> None:
+        # Update internal Minimap landmarks and redraw
+        viewingWidget: ViewingWidget = self.app.root.ids.middlecolumn.ids.stencil
+        viewingWidget.updateLandmarkData()
+        viewingWidget.updateOverlay()
+        
+        if self._afterCallback is not None:
+            self._afterCallback()
 
 
     def initModeWidget(self) -> None:
@@ -3064,6 +3079,10 @@ class ViewingWidget(FloatLayout, StencilView):
 
         self.landmarks = LandmarkEditor.parseJsonToLandmarks(landmarkJson)
 
+        # Deconstruct current Landmarks
+        for landmarkPoint in self.landmarkPoints:
+            landmarkPoint.attemptRemoveToWidget(self)
+
         # Construct PointWithLable for each Landmark
         self.landmarkPoints = [PointWithLabel(pos= [landmark.x, landmark.y], text= landmark.text) for landmark in self.landmarks]
 
@@ -3094,7 +3113,7 @@ class ViewingWidget(FloatLayout, StencilView):
     
 
     @mainthread
-    def updateOverlay(self, doClear: bool = False) -> None:
+    def updateOverlay(self) -> None:
         """Clear and redraw the overlay depending on the app config.
             1. Clear all the overlay
             2. Redraw all the overlay
@@ -3107,10 +3126,10 @@ class ViewingWidget(FloatLayout, StencilView):
         showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
         
         if showtrackingoverlay:
-            self.updateMinimap(doClear= False)
+            self.updateMinimap()
 
 
-    def updateMinimap(self, doClear= False) -> None:
+    def updateMinimap(self) -> None:
         # Minimap on top-left corner
         
         # 
@@ -5337,8 +5356,8 @@ class GlowTrackerApp(App):
             'min_y': '0',
             'max_x': '160',
             'max_y': '160',
-            'relative_width': '3',
-            'relative_height': '3',
+            'relative_width': '6',
+            'relative_height': '6',
             'landmark_json': '[]'
         })
 
@@ -5920,7 +5939,7 @@ class GlowTrackerApp(App):
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay(doClear= False)
-            self.root.ids.middlecolumn.ids.stencil.updateOverlay(doClear= False)
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
     
 
