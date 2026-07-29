@@ -3042,6 +3042,10 @@ class ImageAcquisitionManager(BoxLayout):
 
 
 class ViewingWidget(FloatLayout, StencilView):
+    """This is the main viewing widget at the center of the app.
+    It the hosts a UI overlay element, Minimap, in itself and manage the drawing of it directly here. 
+    It's children are ScalableImage and LiveAnalysisLabel, each responsible for their own UI overlay draws.
+    """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -3051,8 +3055,8 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapBorder: Line = Line()
         self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
 
-        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0])
-        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0])
+        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0], textColor= [1, 1, 1, 0.5])
+        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0], textColor= [1, 1, 1, 0.5])
 
         self.currentPosPoint = PointWithLabel(pos= [0, 0], text= 'Current', pointColor= [0, 1, 0, 1])
 
@@ -3067,6 +3071,8 @@ class ViewingWidget(FloatLayout, StencilView):
 
 
     def updateLandmarkData(self, *args) -> None:
+        """Reload LandmarkData from config and reconstruct them to Points
+        """
         # Load list of Landmark from config
         landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
         
@@ -3130,6 +3136,11 @@ class ViewingWidget(FloatLayout, StencilView):
 
 
     def updateMinimap(self) -> None:
+        """Draw all minimap elements:
+            - Border
+            - Current-, Start-recording position
+            - User-specified landmarks
+        """
         # Minimap on top-left corner
         
         # 
@@ -3138,10 +3149,6 @@ class ViewingWidget(FloatLayout, StencilView):
 
         # current stage position in XY (mm)
         currentPos = np.array(self.app.coords[:2])
-
-        # Test
-        # currentPos[0] = 23
-        # currentPos[1] = 0
 
         mode: MinimapMode = MinimapMode(self.app.config.get('Minimap', 'mode'))
         minimap_width = self.app.config.getfloat('Minimap', 'width')
@@ -3236,13 +3243,17 @@ class ViewingWidget(FloatLayout, StencilView):
         self.minimapTopRightPoint.update(pos= [minimapTopRight[0], minimapTopRight[1]], text= topRightText)
         self.minimapTopRightPoint.attemptAddToWidget(self)
 
+        # 
         # Draw current stage position landmark
+        # 
         currentPos_px_clipped = np.clip(currentPos_px, minimapBtmLeft, minimapTopRight)
 
         self.currentPosPoint.update(pos= [currentPos_px_clipped[0], currentPos_px_clipped[1]])
         self.currentPosPoint.attemptAddToWidget(self)
 
+        # 
         # If recording, draw start position landmark
+        # 
         recordButton: RecordButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.recordbutton
         if recordButton.state == 'down':
             #   Convert start recording pos from mm to px
@@ -3253,7 +3264,9 @@ class ViewingWidget(FloatLayout, StencilView):
             self.startRecordingPosPoint.update(pos= [startRecordingPos_px_clipped[0], startRecordingPos_px_clipped[1]])
             self.startRecordingPosPoint.attemptAddToWidget(self)
 
+        # 
         # Draw user-input Landmarks
+        # 
         for i, landmarkPoint in enumerate(self.landmarkPoints):
             # Get corresponding landmark
             landmark = self.landmarks[i]
@@ -3265,15 +3278,9 @@ class ViewingWidget(FloatLayout, StencilView):
             landmarkPoint.update(pos= [landmarkPos_px_clipped[0], landmarkPos_px_clipped[1]])
             landmarkPoint.attemptAddToWidget(self)
 
-    
-    def addAllToOverlay(self) -> None:
-        if self.minimapBorder not in self.canvas.children:
-            self.canvas.add(self.minimapBorderColor)
-            self.canvas.add(self.minimapBorder)
-
         
     def clearOverlay(self) -> None:
-        """Remove all related elements from the canvas and widget
+        """Remove all Minimap elements from the canvas and widget
         """
         if self.minimapBorder in self.canvas.children:
             self.canvas.remove(self.minimapBorder)
@@ -3325,7 +3332,15 @@ class PointWithLabel():
 
     
     def update(self, pos: List[float] | None = None, text: str | None = None) -> bool:
+        """Update Label and Point position
 
+        Args:
+            pos (List[float] | None, optional): Target position. Defaults to None.
+            text (str | None, optional): New text for Label. Defaults to None.
+
+        Returns:
+            bool: True if at least one element has been updated.
+        """
         needsRedraw = False
 
         # If the text is changed we need to update it first to have the correct size for position update
@@ -3350,7 +3365,11 @@ class PointWithLabel():
 
 
     def attemptAddToWidget(self, widget: Widget) -> None:
-        
+        """Add Point and Label into canvas and widget if they has not been added
+
+        Args:
+            widget (Widget): A widget to add to
+        """
         # Point
         if self.point not in widget.canvas.children:
             widget.canvas.add(self.pointColor)
@@ -3362,7 +3381,11 @@ class PointWithLabel():
     
 
     def attemptRemoveToWidget(self, widget: Widget) -> None:
+        """Remove Point and Label into canvas and widget if they has not been added
         
+        Args:
+            widget (Widget): A widget to remove from
+        """
         # Point
         if self.point in widget.canvas.children:
             widget.canvas.remove(self.pointColor)
@@ -5786,6 +5809,9 @@ class GlowTrackerApp(App):
                 # Also update the DualColorViewMode Quick Button
                 button = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout.dualcolorviewmodequickbutton
                 button.state = 'down' if value == 'Merged' else 'normal'
+        
+        elif section == 'Tracking':
+            updateOverlayFlag = True
         
         elif section == 'Tracking':
 
