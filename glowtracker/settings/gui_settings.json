@@ -391,6 +391,74 @@
     },
     {
         "type": "title",
+        "title": "Minimap"
+    },
+    {
+        "type": "numeric",
+        "title": "Width",
+        "desc": "Minimap's width",
+        "section": "Minimap",
+        "key": "width"
+    },
+    {
+        "type": "numeric",
+        "title": "Height",
+        "desc": "Minimap's height",
+        "section": "Minimap",
+        "key": "height"
+    },
+    {
+        "type": "options",
+        "title": "Minimap mode",
+        "desc": "Display minimap in fixed region or relative to the current position.",
+        "section": "Minimap",
+        "key": "mode",
+        "options": ["Fixed", "Relative"]
+    },
+    {
+        "type": "numeric",
+        "title": "Fixed min X (mm)",
+        "desc": "Minimum stage X position in Fixed mode.",
+        "section": "Minimap",
+        "key": "min_x"
+    },
+    {
+        "type": "numeric",
+        "title": "Fixed min Y (mm)",
+        "desc": "Minimum stage Y position in Fixed mode.",
+        "section": "Minimap",
+        "key": "min_y"
+    },
+    {
+        "type": "numeric",
+        "title": "Fixed max X (mm)",
+        "desc": "Maximum stage X position in Fixed mode.",
+        "section": "Minimap",
+        "key": "max_x"
+    },
+    {
+        "type": "numeric",
+        "title": "Fixed max Y (mm)",
+        "desc": "Maximum stage Y position in Fixed mode.",
+        "section": "Minimap",
+        "key": "max_y"
+    },
+    {
+        "type": "numeric",
+        "title": "Relative coverage width (mm)",
+        "desc": "Minimap stage coverage width in relative mode.",
+        "section": "Minimap",
+        "key": "relative_width"
+    },
+    {
+        "type": "numeric",
+        "title": "Relative coverage height (mm)",
+        "desc": "Minimap stage coverage height in relative mode.",
+        "section": "Minimap",
+        "key": "relative_height"
+    },
+    {
+        "type": "title",
         "title": "LiveAnalysis"
     },
     {

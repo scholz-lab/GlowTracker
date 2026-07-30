@@ -24,13 +24,13 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Mesh
+from kivy.graphics import Color, Line, Ellipse, Mesh, Rectangle, Point
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent, mainthread
-from kivy.metrics import Metrics
+from kivy.metrics import Metrics, sp, dp
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -54,6 +54,7 @@ from kivy.uix.behaviors import DragBehavior, FocusBehavior
 from kivy.uix.switch import Switch
 from kivy.uix.spinner import Spinner
 from kivy.uix.stacklayout import StackLayout
+from kivy.uix.scrollview import ScrollView
 
 # 
 # IO, Utils
@@ -66,7 +67,7 @@ from multiprocessing.pool import ThreadPool
 from functools import partial
 from queue import Queue
 from overrides import override
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from io import TextIOWrapper
 import zaber_motion     # We need to import zaber_motion before pypylon to prevent environment crash
 from zaber_motion.units import Units, units_from_literals
@@ -76,8 +77,10 @@ import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from copy import deepcopy
+from enum import Enum
+import json
 
 # 
 # Own classes
@@ -426,6 +429,24 @@ class RightColumn(BoxLayout):
         
         # Launch the widget inside a popup window
         self._popup = Popup(title= '', separator_height= 0, content= daqControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup.open()
+
+
+    def open_minimap_widget(self):
+        """Open the Minimap settings widget popup
+        """
+        # Disabled interaction with preview image widget
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
+
+        # Unbind keyboard events
+        self.app.unbind_keys()
+
+        # Create MinimapSettings Widget
+        minimapSettings = MinimapSettings()
+        minimapSettings.setCloseCallback(closeCallback= self.dismiss_popup)
+        
+        # Launch the widget inside a popup window
+        self._popup = Popup(title= 'Minimap Settings', content= minimapSettings, size_hint= (0.7, 0.7))
         self._popup.open()
 
 
@@ -984,10 +1005,9 @@ class DAQControlTabPanelHolder(FloatLayout):
         """        
         self.closeCallback = closeCallback
         self.ids.daqcontroltabpanel.setCloseCallback( closeCallback )
+
     
     def updateMode(self):
-        print(self.mode.text)
-
         app: GlowTrackerApp = App.get_running_app()
 
         # Update to config
@@ -1458,13 +1478,23 @@ class ReversalSwitch(Switch):
             return True
 
 
-class DaqTextInput(TextInput):
+class ConfigTextInput(TextInput):
+    """A metaclass for convenience TextInput that validates and updates its value directly to the config file.
+        Cannot be used directly. Must be inherited and modified the target self.configSection
+    """
+
     configKey = StringProperty()
     root = ObjectProperty()     # Reference to root, which must have a updateParam() function.
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Subclass must provide this
+        self.configSection = ''
+        
+
     def on_kv_post(self, *args):
         self.app = App.get_running_app()
-        self.text = self.app.config.get('DaqControl', self.configKey)
+        self.text = self.app.config.get(self.configSection, self.configKey)
         self.value = float(self.text)
 
 
@@ -1498,10 +1528,10 @@ class DaqTextInput(TextInput):
 
     @override
     def on_text_validate(self, *args):
-        """Validate self.text. Then save to config and update DAQStageProgram.
+        """Validate self.text and save to config.
         """
         if self._validate():
-            self.app.config.set('DaqControl', self.configKey, self.value)
+            self.app.config.set(self.configSection, self.configKey, self.value)
             self.app.config.write()
             self.root.updateParam()
         
@@ -1526,6 +1556,439 @@ class DaqTextInput(TextInput):
             return True
 
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
+class DaqTextInput(ConfigTextInput):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.configSection = 'DaqControl'
+
+
+class MinimapTextInput(ConfigTextInput):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.configSection = 'Minimap'
+
+
+class MinimapMode(Enum):
+    Fixed = 'Fixed'
+    Relative = 'Relative'
+
+
+@dataclass
+class LandmarkData():
+    x: float = 0
+    y: float = 0
+    text: str = ""
+
+
+class LandmarkRow(BoxLayout):
+    """Editor widget for one landmark point.
+    """
+
+    index = NumericProperty(0)
+    landmark_text = StringProperty("")
+    position = ListProperty([0.0, 0.0])
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            orientation= "horizontal",
+            spacing= dp(6),
+            size_hint_y= None,
+            height= dp(42),
+            **kwargs,
+        )
+
+        self.x_input = TextInput(
+            multiline= False,
+            input_filter= "float",
+            hint_text= "x",
+            size_hint_x= 0.25,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.y_input = TextInput(
+            multiline= False,
+            input_filter= "float",
+            hint_text= "y",
+            size_hint_x= 0.25,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.text_input = TextInput(
+            multiline= False,
+            hint_text= "Landmark name",
+            size_hint_x= 0.5,
+            base_direction= 'rtl',
+            write_tab= False
+        )
+
+        self.add_widget(self.x_input)
+        self.add_widget(self.y_input)
+        self.add_widget(self.text_input)
+
+
+    def setData(self, landmark: LandmarkData) -> None:
+        """Populate the widgets from a landmark.
+        """
+        self.x_input.text = str(landmark.x)
+        self.y_input.text = str(landmark.y)
+        self.text_input.text = str(landmark.text)
+
+
+    def getData(self) -> LandmarkData:
+        """Convert the UI state into LandmarkData.
+        """
+        return LandmarkData(
+            x= float(self.x_input.text),
+            y= float(self.y_input.text),
+            text= self.text_input.text.strip()
+        )
+    
+
+class LandmarkEditor(BoxLayout):
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            orientation= "vertical",
+            spacing= dp(8),
+            padding= dp(10),
+            **kwargs,
+        )
+
+        self.app = App.get_running_app()
+
+        self.landmarks: List[LandmarkData] = []
+
+        self.landmarkRows = []
+
+        # 
+        #   Number-of-landmarks widget
+        # 
+        count_bar = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(8),
+            size_hint_y= None,
+            height= dp(42),
+        )
+
+        count_bar.add_widget(
+            Label(
+                text= "Number of landmarks:",
+                size_hint_x= 0.55,
+            )
+        )
+
+        self.count_input = TextInput(
+            text= "0",
+            multiline= False,
+            input_filter= "int",
+            size_hint_x= 0.2,
+            base_direction=  'rtl',
+            write_tab=  False,
+        )
+
+        apply_button = Button(
+            text= "Apply",
+            size_hint_x= 0.25,
+        )
+        apply_button.bind(on_release= self._applyCount)
+
+        count_bar.add_widget(self.count_input)
+        count_bar.add_widget(apply_button)
+
+        self.add_widget(count_bar)
+
+        # 
+        #   Column headings
+        # 
+        headings = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(6),
+            size_hint_y= None,
+            height= dp(28),
+        )
+
+        headings.add_widget( Label(text= "x (mm)", size_hint_x= 0.25) )
+        headings.add_widget( Label(text= "y (mm)", size_hint_x= 0.25) )
+        headings.add_widget( Label(text= "Text", size_hint_x= 0.5) )
+
+        self.add_widget(headings)
+
+        # 
+        #   Scrollable dynamic row-container that stores each landmark point
+        # 
+        scroll = ScrollView(
+            do_scroll_x= False,
+            do_scroll_y= True,
+        )
+
+        self.rows_layout = StackLayout(
+            orientation= "lr-tb",
+            spacing= dp(4),
+            size_hint_y= None,
+        )
+        self.rows_layout.bind( minimum_height= self.rows_layout.setter("height") )
+
+        scroll.add_widget(self.rows_layout)
+        self.add_widget(scroll)
+
+        # 
+        #   Save and Reload buttons
+        # 
+        actionBar = BoxLayout(
+            orientation= "horizontal",
+            spacing= dp(8),
+            size_hint_y= None,
+            height= dp(42),
+        )
+
+        save_button = Button(text= "Save")
+        save_button.bind(on_release= self.saveLandmarks)
+
+        reload_button = Button(text= "Reload")
+        reload_button.bind(on_release= self.reloadLandmarks)
+
+        actionBar.add_widget(save_button)
+        actionBar.add_widget(reload_button)
+
+        self.add_widget(actionBar)
+
+        # Status text for feedback
+        self.status_label = Label(text= "", size_hint_y= None, height= dp(30))
+        self.add_widget(self.status_label)
+
+        # App.config is available after App.build() starts.
+        Clock.schedule_once(self.reloadLandmarks, 0)
+
+
+    def _applyCount(self, *args):
+        count = int(self.count_input.text)
+        # Apply an upper bound to protect the UI from accidental input.
+        count = max(0, min(count, 1000))
+
+        self.count_input.text = str(count)
+        self.setLandmarkCount(count)
+    
+
+    def setLandmarkCount(self, count: int) -> None:
+        """Resize the editor while preserving existing row values.
+        """
+        # Congregrate landmark UI data into a list of LandmarkData
+        currentLandmarkData = self.collectLandmarks()
+
+        # Clear current UI
+        self.rows_layout.clear_widgets()
+        self.landmarkRows.clear()
+
+        # Iterate construct and append LandmarkRow
+        for index in range(count):
+            landmark = LandmarkData(text= f"Point {index + 1}")
+
+            if index < len(currentLandmarkData):
+                landmark = currentLandmarkData[index]
+
+            row = LandmarkRow(index= index)
+            row.setData(landmark)
+
+            self.landmarkRows.append(row)
+            self.rows_layout.add_widget(row)
+
+        self.landmarks = self.collectLandmarks()
+    
+
+    def collectLandmarks(self) -> List[LandmarkData]:
+        """Congregrate landmark UI data into a list of LandmarkData
+
+        Returns:
+            List[LandmarkData]: List of currently showing LandmarkData
+        """
+        return [ row.getData() for row in self.landmarkRows ]
+        
+
+    def saveLandmarks(self, *args) -> None:
+        self.landmarks = self.collectLandmarks()
+
+        # ConfigParser values must be strings.
+        landmarks_asdict = [ asdict(landmark) for landmark in self.landmarks ]
+        serialized = json.dumps(landmarks_asdict, ensure_ascii= False)
+
+        self.app.config.set("Minimap", "landmark_json", serialized)
+        self.app.config.write()
+
+        self.status_label.text = ( f"Saved {len(self.landmarks)} landmarks" )
+
+
+    def reloadLandmarks(self, *args):
+
+        landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
+
+        try:
+            landmarkJson = json.loads(landmarkJsonDump)
+            
+        except (json.JSONDecodeError, TypeError):
+            landmarkJson = []
+
+        landmarks = self.parseJsonToLandmarks(landmarkJson)
+
+        self.rows_layout.clear_widgets()
+        self.landmarkRows.clear()
+
+        for index, landmark in enumerate(landmarks):
+            row = LandmarkRow(index=index)
+            row.setData(landmark)
+
+            self.landmarkRows.append(row)
+            self.rows_layout.add_widget(row)
+
+        self.count_input.text = str(len(landmarks))
+        self.landmarks = landmarks
+
+        self.status_label.text = ( f"Loaded {len(landmarks)} landmarks" )
+
+
+    @staticmethod
+    def parseJsonToLandmarks(value: list[Dict[str:any]]) -> List[LandmarkData]:
+        """Validate and parse json dump into a list of LandmarkData
+        """
+        if not isinstance(value, list):
+            return []
+
+        result: List[LandmarkData] = []
+
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                x = float(item.get("x", 0.0))
+                y = float(item.get("y", 0.0))
+
+            except (TypeError, ValueError):
+                continue
+
+            text = str(
+                item.get("text", f"Point {index + 1}")
+            )
+
+            result.append(LandmarkData(x= x, y= y, text= text))
+
+        return result
+
+
+class MinimapSettings(BoxLayout):
+
+    minimapSize_layout: BoxLayout
+    modeSpinner :  Spinner
+    fixed_btmLeft_layout: BoxLayout
+    fixed_topRight_layout: BoxLayout
+    relative_size_layout: BoxLayout
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.app: GlowTrackerApp = App.get_running_app()
+
+        self._afterCallback: callable = None
+
+        self.mode: MinimapMode = MinimapMode[self.app.config.get('Minimap', 'mode')]
+
+        self.fixedParamWidgets = [self.fixed_btmLeft_layout, self.fixed_topRight_layout]
+                
+        self.relativeParamsWidgets = [self.relative_size_layout]
+
+        # Temporary containing to keep the removed widget alive
+        self._tempContainer = BoxLayout()
+
+        self.initModeWidget()
+
+
+    
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        """API setting close callback event.
+
+        Args:
+            closeCallback (callable): the closing callback event.
+        """        
+        self._afterCallback = closeCallback
+        self.closeCallback = self._closeCallback
+    
+
+    def _closeCallback(self) -> None:
+        # Update internal Minimap landmarks and redraw
+        viewingWidget: ViewingWidget = self.app.root.ids.middlecolumn.ids.stencil
+        viewingWidget.updateLandmarkData()
+        viewingWidget.updateOverlay()
+        
+        if self._afterCallback is not None:
+            self._afterCallback()
+
+
+    def initModeWidget(self) -> None:
+        """On startup gui, remove other modes' unrelated widgets
+        """
+        params_stacklayout: StackLayout = self.ids.params_stacklayout
+
+        if self.mode == MinimapMode.Fixed:
+            # Remove Relative params widgets
+            for widget in self.relativeParamsWidgets:
+                params_stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+            
+        elif self.mode == MinimapMode.Relative:
+            # Remove Fixed params widgets
+            for widget in self.fixedParamWidgets:
+                params_stacklayout.remove_widget(widget= widget)
+                self._tempContainer.add_widget(widget= widget)
+
+
+    def updateMode(self) -> None:
+
+        if not hasattr(self, 'app'):
+            return
+    
+        # Parse choice text to enum
+        prevMode = self.mode
+        self.mode = MinimapMode[self.modeSpinner.text]
+
+        # Update GUI
+        if prevMode != self.mode:
+
+            params_stacklayout: StackLayout = self.ids.params_stacklayout
+
+            if self.mode == MinimapMode.Fixed:
+                # Remove Relative params widgets
+                for widget in self.relativeParamsWidgets:
+                    params_stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+
+                # Add Fixed params widgets
+                for widget in self.fixedParamWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    params_stacklayout.add_widget(widget= widget)
+
+            elif self.mode == MinimapMode.Relative:
+                
+                # Remove Fixed params widgets
+                for widget in self.fixedParamWidgets:
+                    params_stacklayout.remove_widget(widget= widget)
+                    self._tempContainer.add_widget(widget= widget)
+                
+                # Add Relative params widgets
+                for widget in self.relativeParamsWidgets:
+                    self._tempContainer.remove_widget(widget= widget)
+                    params_stacklayout.add_widget(widget= widget)
+
+        # Save to config
+        self.app.config.set('Minimap', 'mode', self.modeSpinner.text)
+        self.app.config.write()
+
+
+    def updateParam(self) -> None:
+        pass
 
 
 class StageAxisController(BoxLayout):
@@ -2189,6 +2652,9 @@ class RecordButton(ImageAcquisitionButton):
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
             self.app.daqControl.start( np.array(self.app.coords[:2]) )
 
+        # Save starting position to Minimap
+        self.app.root.ids.middlecolumn.ids.stencil.startRecordingPos = np.array(self.app.coords[:2])
+
         # Setup image acquisition thread parameters
         self.initRecordingParams()
         self.frameCounter = 0
@@ -2575,10 +3041,60 @@ class ImageAcquisitionManager(BoxLayout):
                 print('An error occured when taking an image')
 
 
-class StencilFloatLayout(FloatLayout, StencilView):
+class ViewingWidget(FloatLayout, StencilView):
+    """This is the main viewing widget at the center of the app.
+    It the hosts a UI overlay element, Minimap, in itself and manage the drawing of it directly here. 
+    It's children are ScalableImage and LiveAnalysisLabel, each responsible for their own UI overlay draws.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.app: GlowTrackerApp = App.get_running_app()
+
+        self.minimapBorder: Line = Line()
+        self.minimapBorderColor: Color = Color(1.0, 0, 0.5, 1.0)
+
+        self.minimapBtmLeftPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0], textColor= [1, 1, 1, 0.5])
+        self.minimapTopRightPoint = PointWithLabel(pos= [0, 0], text= 'Text', pointColor= [0, 0, 0, 0], textColor= [1, 1, 1, 0.5])
+
+        self.currentPosPoint = PointWithLabel(pos= [0, 0], text= 'Current', pointColor= [0, 1, 0, 1])
+
+        self.startRecordingPos: np.ndarray = np.zeros(2)
+        self.startRecordingPosPoint = PointWithLabel(pos= [0, 0], text= 'Start', pointColor= [1, 0, 0, 1])
+
+        self.landmarks: List[LandmarkData] = []
+        self.landmarkPoints: List[PointWithLabel] = []
+
+        # Wait until App.config is available
+        Clock.schedule_once(self.updateLandmarkData)
+
+
+    def updateLandmarkData(self, *args) -> None:
+        """Reload LandmarkData from config and reconstruct them to Points
+        """
+        # Load list of Landmark from config
+        landmarkJsonDump = self.app.config.get("Minimap", "landmark_json")
+        
+        # Parse them into List of Landmarks
+        try:
+            landmarkJson = json.loads(landmarkJsonDump)
+            
+        except (json.JSONDecodeError, TypeError):
+            landmarkJson = []
+
+        self.landmarks = LandmarkEditor.parseJsonToLandmarks(landmarkJson)
+
+        # Deconstruct current Landmarks
+        for landmarkPoint in self.landmarkPoints:
+            landmarkPoint.attemptRemoveToWidget(self)
+
+        # Construct PointWithLable for each Landmark
+        self.landmarkPoints = [PointWithLabel(pos= [landmark.x, landmark.y], text= landmark.text) for landmark in self.landmarks]
+
 
     def on_touch_down(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
+        """Limits subsequent interactions to only be activated if it's within the ViewingWidget
         """
 
         if self.collide_point(*touch.pos):
@@ -2586,14 +3102,299 @@ class StencilFloatLayout(FloatLayout, StencilView):
         else:
             return False
     
+
     def on_touch_up(self, touch):
-        """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
+        """Limits subsequent interactions to only be activated if it's within the ViewingWidget
         """
         if self.collide_point(*touch.pos):
             return super().on_touch_up(touch)
         else:
             return False
+    
 
+    def on_size(self, *args) -> None:
+        """Called everytime the widget is resized. Resize the overlay to match the image and redraw.
+        """        
+        self.updateOverlay()
+    
+
+    @mainthread
+    def updateOverlay(self) -> None:
+        """Clear and redraw the overlay depending on the app config.
+            1. Clear all the overlay
+            2. Redraw all the overlay
+        """
+
+        # Clear all the overlay
+        self.clearOverlay()
+
+        # Update minimap
+        showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
+        
+        if showtrackingoverlay:
+            self.updateMinimap()
+
+
+    def updateMinimap(self) -> None:
+        """Draw all minimap elements:
+            - Border
+            - Current-, Start-recording position
+            - User-specified landmarks
+        """
+        # Minimap on top-left corner
+        
+        # 
+        # Gather parameters
+        # 
+
+        # current stage position in XY (mm)
+        currentPos = np.array(self.app.coords[:2])
+
+        mode: MinimapMode = MinimapMode(self.app.config.get('Minimap', 'mode'))
+        minimap_width = self.app.config.getfloat('Minimap', 'width')
+        minimap_height = self.app.config.getfloat('Minimap', 'height')
+        minimap_min_x = self.app.config.getfloat('Minimap', 'min_x')
+        minimap_min_y = self.app.config.getfloat('Minimap', 'min_y')
+        minimap_max_x = self.app.config.getfloat('Minimap', 'max_x')
+        minimap_max_y = self.app.config.getfloat('Minimap', 'max_y')
+        relative_width = self.app.config.getfloat('Minimap', 'relative_width')
+        relative_height = self.app.config.getfloat('Minimap', 'relative_height')
+
+        minimapSize = np.array([sp(minimap_width), sp(minimap_height)])
+        minimapPadding_topLeft = np.array([sp(10), -sp(10)])
+
+        widgetSize = np.array(self.size)
+        widget_btmLeft = np.array(self.pos)
+        widget_topRight = widget_btmLeft + widgetSize
+
+        minimapBtmLeft = np.array([
+            widget_btmLeft[0],
+            widget_topRight[1] - minimapSize[1]
+        ]) + minimapPadding_topLeft
+
+        minimapTopRight = minimapBtmLeft + minimapSize
+
+        # Stage (mm) | Minimap (px)
+        minimapStageCoverage_btmLeft = np.zeros(2)
+        minimapStageCoverage_topRight = np.zeros(2)
+
+        # Determine minimap stage cover depends on 
+        if mode == MinimapMode.Fixed:
+            
+            minimapStageCoverage_btmLeft[0] = minimap_min_x
+            minimapStageCoverage_btmLeft[1] = minimap_min_y
+            minimapStageCoverage_topRight[0] = minimap_max_x
+            minimapStageCoverage_topRight[1] = minimap_max_y
+
+        elif mode == MinimapMode.Relative:
+
+            relativeCoverage_half = np.array([relative_width, relative_height]) / 2
+
+            minimapStageCoverage_btmLeft = currentPos - relativeCoverage_half
+            minimapStageCoverage_topRight = currentPos + relativeCoverage_half
+
+        minimapStageCoverage = minimapStageCoverage_topRight - minimapStageCoverage_btmLeft
+
+        # Stage (mm) -> Miminap (px)
+        miniMapScale = minimapSize / minimapStageCoverage
+        stageOrigin_px = minimapBtmLeft - minimapStageCoverage_btmLeft * miniMapScale
+        
+        # Stage to Minimap transformation matrix as Scale-Translation
+        stageToMinimap = np.array([
+            [miniMapScale[0],     0,      stageOrigin_px[0]],
+            [0,     miniMapScale[1],      stageOrigin_px[1]],
+            [0,     0,      1],
+        ]) 
+
+        currentPos_px = stageToMinimap @ np.array(currentPos.tolist() + [1])
+        currentPos_px = currentPos_px[:2]
+
+        # 
+        #   Minimap border 
+        # 
+        
+        minimapBorderVerts = np.array([
+            minimapBtmLeft, 
+            [minimapBtmLeft[0] + minimapSize[0], minimapBtmLeft[1]], 
+            minimapTopRight, 
+            [minimapBtmLeft[0], minimapBtmLeft[1] + minimapSize[1]],
+        ])
+
+        #   [x1, y1, x2, y2, ...]
+        minimapBorderVerts = minimapBorderVerts.flatten()
+        vertices = minimapBorderVerts.tolist()
+
+        # Construct index array
+        self.minimapBorder.points = vertices
+        self.minimapBorder.close = True
+
+        if self.minimapBorder not in self.canvas.children:
+            self.canvas.add(self.minimapBorderColor)
+            self.canvas.add(self.minimapBorder)
+
+        # 
+        # Draw minimap border btm-left and top-right landmarks
+        # 
+        btmLeftText = f"({minimapStageCoverage_btmLeft[0]:.2f}, {minimapStageCoverage_btmLeft[1]:.2f})"
+        topRightText = f"({minimapStageCoverage_topRight[0]:.2f}, {minimapStageCoverage_topRight[1]:.2f})"
+        self.minimapBtmLeftPoint.update(pos= [minimapBtmLeft[0], minimapBtmLeft[1]], text= btmLeftText)
+        self.minimapBtmLeftPoint.attemptAddToWidget(self)
+
+        self.minimapTopRightPoint.update(pos= [minimapTopRight[0], minimapTopRight[1]], text= topRightText)
+        self.minimapTopRightPoint.attemptAddToWidget(self)
+
+        # 
+        # Draw current stage position landmark
+        # 
+        currentPos_px_clipped = np.clip(currentPos_px, minimapBtmLeft, minimapTopRight)
+
+        self.currentPosPoint.update(pos= [currentPos_px_clipped[0], currentPos_px_clipped[1]])
+        self.currentPosPoint.attemptAddToWidget(self)
+
+        # 
+        # If recording, draw start position landmark
+        # 
+        recordButton: RecordButton = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.recordbutton
+        if recordButton.state == 'down':
+            #   Convert start recording pos from mm to px
+            startRecordingPos_px = stageToMinimap @ np.array(self.startRecordingPos.tolist() + [1])
+            startRecordingPos_px = startRecordingPos_px[:2]
+            startRecordingPos_px_clipped = np.clip(startRecordingPos_px, minimapBtmLeft, minimapTopRight)
+
+            self.startRecordingPosPoint.update(pos= [startRecordingPos_px_clipped[0], startRecordingPos_px_clipped[1]])
+            self.startRecordingPosPoint.attemptAddToWidget(self)
+
+        # 
+        # Draw user-input Landmarks
+        # 
+        for i, landmarkPoint in enumerate(self.landmarkPoints):
+            # Get corresponding landmark
+            landmark = self.landmarks[i]
+            #   Convert landmark pos from mm to px
+            landmarkPos_px = stageToMinimap @ np.array([landmark.x, landmark.y, 1])
+            landmarkPos_px = landmarkPos_px[:2]
+            landmarkPos_px_clipped = np.clip(landmarkPos_px, minimapBtmLeft, minimapTopRight)
+
+            landmarkPoint.update(pos= [landmarkPos_px_clipped[0], landmarkPos_px_clipped[1]])
+            landmarkPoint.attemptAddToWidget(self)
+
+        
+    def clearOverlay(self) -> None:
+        """Remove all Minimap elements from the canvas and widget
+        """
+        if self.minimapBorder in self.canvas.children:
+            self.canvas.remove(self.minimapBorder)
+            self.canvas.remove(self.minimapBorderColor)
+        
+        self.minimapBtmLeftPoint.attemptRemoveToWidget(self)
+        self.minimapTopRightPoint.attemptRemoveToWidget(self)
+        self.currentPosPoint.attemptRemoveToWidget(self)
+        self.startRecordingPosPoint.attemptRemoveToWidget(self)
+
+        for landmarkPoint in self.landmarkPoints:
+            landmarkPoint.attemptRemoveToWidget(self)
+
+
+class PointWithLabel():
+    """A composite class of kivy.uix.label and kivy.graphics.Point to specifically draw a point with a notated string anchored top-left to the point.
+    """
+
+    def __init__(self, 
+        pos: List[float], 
+        text: str, 
+        pointSize: float = 3, 
+        pointColor: List[float] = [1, 1, 0, 1],
+        fontSize: float = sp(16),
+        textColor: List[float] = [1, 1, 1, 1],
+        widget: Widget | None = None,
+    ) -> None:
+
+        self.point = Point(points= pos, pointsize= pointSize)
+        self.pointColor = Color(*pointColor)
+
+        self.label = Label(
+            text= text, 
+            font_size= fontSize, 
+            color= textColor,
+            size_hint = [None, None]
+        )
+        # Call render texture once to get its size
+        self.label.texture_update()
+        self.label.size = self.label.texture_size
+
+        # Offset label to top-left of the point
+        textSize = np.array(self.label.size)
+        offset = np.array([textSize[0]/2 , -textSize[1]/2])
+        self.label.center = (np.array(pos) + offset).tolist()
+
+        if widget is not None:
+            self.attemptAddToWidget(widget= widget)
+
+    
+    def update(self, pos: List[float] | None = None, text: str | None = None) -> bool:
+        """Update Label and Point position
+
+        Args:
+            pos (List[float] | None, optional): Target position. Defaults to None.
+            text (str | None, optional): New text for Label. Defaults to None.
+
+        Returns:
+            bool: True if at least one element has been updated.
+        """
+        needsRedraw = False
+
+        # If the text is changed we need to update it first to have the correct size for position update
+        if text is not None:
+            self.label.text = text
+            # Call render texture once to get its size
+            self.label.texture_update()
+            self.label.size = self.label.texture_size
+
+            needsRedraw = True
+
+
+        if pos is not None:
+            self.point.points = pos
+            # Offset label to top-left of the point
+            textSize = np.array(self.label.size)
+            offset = np.array([textSize[0]/2 , -textSize[1]/2])
+            self.label.center = (np.array(pos) + offset).tolist()
+
+
+        return needsRedraw
+
+
+    def attemptAddToWidget(self, widget: Widget) -> None:
+        """Add Point and Label into canvas and widget if they has not been added
+
+        Args:
+            widget (Widget): A widget to add to
+        """
+        # Point
+        if self.point not in widget.canvas.children:
+            widget.canvas.add(self.pointColor)
+            widget.canvas.add(self.point)
+        
+        # Label
+        if self.label not in widget.children:
+            widget.add_widget(self.label)
+    
+
+    def attemptRemoveToWidget(self, widget: Widget) -> None:
+        """Remove Point and Label into canvas and widget if they has not been added
+        
+        Args:
+            widget (Widget): A widget to remove from
+        """
+        # Point
+        if self.point in widget.canvas.children:
+            widget.canvas.remove(self.pointColor)
+            widget.canvas.remove(self.point)
+        
+        # Label
+        if self.label in widget.children:
+            widget.remove_widget(self.label)
+            
         
 class ScalableImage(ScatterLayout):
 
@@ -3974,6 +4775,7 @@ class RuntimeControls(BoxLayout):
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+        app.root.ids.middlecolumn.ids.stencil.updateOverlay()
     
 
     def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
@@ -4059,6 +4861,7 @@ class TrackingOverlayQuickButton(ToggleButton):
         #   Prevent at startup
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            app.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
 
 class LiveAnalysisQuickButton(ToggleButton):
@@ -4197,6 +5000,7 @@ class DualColorViewModeQuickButton(ToggleButton):
         #   Prevent at startup
         if app.root is not None:
             app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            app.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
 
 # display if hardware is connected
@@ -4564,7 +5368,20 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '255'
+            'max_brightness': '255',
+        })
+
+        config.setdefaults('Minimap', {
+            'width': '150',
+            'height': '112',
+            'mode': 'Relative',
+            'min_x': '0',
+            'min_y': '0',
+            'max_x': '160',
+            'max_y': '160',
+            'relative_width': '6',
+            'relative_height': '6',
+            'landmark_json': '[]'
         })
 
         config.setdefaults('LiveAnalysis', {
@@ -4994,6 +5811,9 @@ class GlowTrackerApp(App):
                 button.state = 'down' if value == 'Merged' else 'normal'
         
         elif section == 'Tracking':
+            updateOverlayFlag = True
+        
+        elif section == 'Tracking':
 
             if key == 'showtrackingoverlay':
                 updateOverlayFlag = True
@@ -5081,6 +5901,7 @@ class GlowTrackerApp(App):
         # Update overlay
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
         
 
     def startShowFpsEvent(self):
@@ -5135,6 +5956,7 @@ class GlowTrackerApp(App):
 
             # Update overlay
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
 
         # Upload image data to texture
         imageByteBuffer: bytes = self.image.tobytes()
@@ -5143,6 +5965,8 @@ class GlowTrackerApp(App):
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay(doClear= False)
+            self.root.ids.middlecolumn.ids.stencil.updateOverlay()
+
     
 
     # ask for confirmation of closing
