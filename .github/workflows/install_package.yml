@@ -33,9 +33,9 @@ jobs:
           echo "matrix os: ${{ matrix.os }}"
       - name: Update pip
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade setuptools wheel pip-tools typing-extensions
-          python -m pip check
+          # The newest pip version (25.3) force support of PEP 517 and will cause error in pip-tools.
+          python -m pip install --upgrade "pip<25.3"
+          python -m pip install --upgrade setuptools wheel pip-tools "pip-tools==7.5.3"
       - name: Compile requirements
         # Generate the requirements.txt file listed in pyproject.toml
         # NOTE: This step overwrites any previously existing requirements.txt file
