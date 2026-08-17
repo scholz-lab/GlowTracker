@@ -25,6 +25,7 @@ Add `--python 3.12` to select the recommended Python version.
 
 
 # Running
+Print something 
 Once the package is installed, the application can be started by
 ```bash
 python -m glowtracker

@@ -234,9 +234,30 @@
     {
         "type": "custom_numeric",
         "title": "Coarse step (mm)",
-        "desc": "Initial Z step (mm) the peak-seeking autofocus climbs with; it halves on overshoot down to the depth of field. Defaults to 0.02.",
+        "desc": "Initial Z step (mm) the peak-seeking autofocus climbs with; it halves on overshoot down to the depth of field. Defaults to 0.02. Must be smaller than about 0.85x the half-width of the focus-vs-Z curve, otherwise a single step costs more than the re-acquire fraction and the climb cannot converge.",
         "section": "Autofocus",
         "key": "coarsestep"
+    },
+    {
+        "type": "bool",
+        "title": "Reverse direction on re-acquire",
+        "desc": "When focus collapses below the re-acquire fraction, also flip the climb direction instead of only resetting the step to coarse. ON is the fix; OFF reproduces the previous behaviour, which walks away in Z without ever reversing. Defaults to ON.",
+        "section": "Autofocus",
+        "key": "reverseonreacquire"
+    },
+    {
+        "type": "custom_numeric",
+        "title": "Step growth factor",
+        "desc": "Factor the Z step grows by on each batch where focus improved, capped at the coarse step. Lets the climb follow a sample drifting in Z. Set to 1.0 to disable growth (previous behaviour, step only ever shrinks). Defaults to 1.3.",
+        "section": "Autofocus",
+        "key": "stepgrowth"
+    },
+    {
+        "type": "bool",
+        "title": "Park at minimum step",
+        "desc": "When ON, the climb stops moving entirely once the step decays to the minimum and only wakes on a re-acquire. This is the previous behaviour and suits a stationary sample. OFF keeps dithering at the minimum step so slow drift is still corrected. Defaults to OFF.",
+        "section": "Autofocus",
+        "key": "holdatminstep"
     },
     {
         "type": "numeric",

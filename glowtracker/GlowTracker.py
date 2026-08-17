@@ -4069,6 +4069,14 @@ class RuntimeControls(BoxLayout):
             minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
             coarsestep = app.config.getfloat('Autofocus', 'coarsestep')
             buffer_n = app.config.getint('Autofocus', 'buffer_n')
+            reverseonreacquire = app.config.getboolean('Autofocus', 'reverseonreacquire')
+            stepgrowth = app.config.getfloat('Autofocus', 'stepgrowth')
+            holdatminstep = app.config.getboolean('Autofocus', 'holdatminstep')
+
+            print(
+                f'Live focus climb: reverseOnReacquire={reverseonreacquire} '
+                f'stepGrowth={stepgrowth} holdAtMinStep={holdatminstep}'
+            )
 
             autoFocusPID = AutoFocusPID(
                 KP= KP,
@@ -4081,7 +4089,10 @@ class RuntimeControls(BoxLayout):
                 smoothingWindow= smoothingwindow,
                 minStepBeforeChangeDir= minstepbeforechangedir,
                 coarseStep= coarsestep,
-                buffer_n= buffer_n
+                buffer_n= buffer_n,
+                reverseOnReacquire= reverseonreacquire,
+                stepGrowth= stepgrowth,
+                holdAtMinStep= holdatminstep
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -5301,6 +5312,9 @@ class GlowTrackerApp(App):
             'isshowgraph': 'false',
             'coarsestep': '0.02',
             'buffer_n': '5',
+            'reverseonreacquire': 'true',
+            'stepgrowth': '1.3',
+            'holdatminstep': 'false',
         })
 
         config.setdefaults('Calibration', {

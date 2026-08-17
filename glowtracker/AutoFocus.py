@@ -92,6 +92,9 @@ class AutoFocusPID:
         peakEpsilonFrac: float = 0.02,
         reacquireFraction: float = 0.7,
         buffer_n = 5,
+        reverseOnReacquire: bool = True,
+        stepGrowth: float = 1.3,
+        holdAtMinStep: bool = False,
     ) -> None:
         """Initialize attributes
 
@@ -106,6 +109,9 @@ class AutoFocusPID:
             smoothingWindow (int, optional): How far back (iteration step) do we smooth the PV over. Defaults to 1, which means no smoothing.
             minStepBeforeChangeDir (int, optional): Minimum number of steps to perform before allowing changing of direction. Defaults to 0, which means can change direction at any time.
             acceptableErrorPercentage (float, optional): Acceptable error ratio between PV / SP . Defaults to 0.05 which means PV is acceptable within 0.95 <= PV / SP <= 1.05 range
+            reverseOnReacquire (bool, optional): When the focus collapses below reacquireFraction of the best seen value, also flip the climb direction. A collapse is the signature of stepping away from the peak, so continuing in the same direction (the pre-2026 behaviour, reverseOnReacquire=False) makes the next collapse worse and the loop walks away in Z without ever reversing. Defaults to True. Set False to reproduce the old behaviour.
+            stepGrowth (float, optional): Factor the step grows by on every batch where the focus improved, capped at coarseStep. Lets the loop follow a sample that drifts in Z instead of only ever shrinking toward minStepDist. Defaults to 1.3. Set 1.0 to disable growth (the old behaviour).
+            holdAtMinStep (bool, optional): When True, stop emitting any move once the step has decayed to minStepDist, so the loop parks until a re-acquire wakes it. This is the old behaviour and only makes sense for a stationary sample. Defaults to False, which keeps dithering at minStepDist so slow drift is still corrected.
         """
 
         self.KP = KP
@@ -125,6 +131,9 @@ class AutoFocusPID:
         self.coarseStep: float = coarseStep
         self.peakEpsilonFrac: float = peakEpsilonFrac
         self.reacquireFraction: float = reacquireFraction
+        self.reverseOnReacquire: bool = reverseOnReacquire
+        self.stepGrowth: float = max(1.0, stepGrowth)
+        self.holdAtMinStep: bool = holdAtMinStep
         self.step: float = self.coarseStep
         self.bestFocus: float = 0.0
 
@@ -255,11 +264,20 @@ class AutoFocusPID:
                     self.step = self.coarseStep
                     self.directionResetCounter = 0
                     self.bestFocus = PV
+                    if self.reverseOnReacquire:
+                        # The focus collapsing is what stepping away from the peak
+                        # looks like, so climb back the other way. Without this the
+                        # loop re-arms at coarseStep still pointing downhill, which
+                        # guarantees a deeper collapse on the next batch.
+                        self.direction *= -1
                 else:
                     if PV < prevPV * (1.0 - self.peakEpsilonFrac):
                         self.directionResetCounter += 1
                     else:
                         self.directionResetCounter = 0
+                        # Still improving, so open the step back up (bounded by
+                        # coarseStep) to keep up with a sample drifting in Z.
+                        self.step = min(self.step * self.stepGrowth, self.coarseStep)
                     if self.directionResetCounter > self.minStepBeforeChangeDir:
                         self.direction *= -1
                         self.step = max(self.step * 0.75, self.minStepDist)
@@ -268,7 +286,7 @@ class AutoFocusPID:
             self.focusLog.append(PV)
             self.posLog.append(pos)
 
-        if batch_ready and self.step > self.minStepDist:
+        if batch_ready and (not self.holdAtMinStep or self.step > self.minStepDist):
             U = self.step * self.direction
         else:
             U = 0.0
