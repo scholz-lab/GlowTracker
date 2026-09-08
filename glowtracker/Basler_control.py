@@ -95,7 +95,7 @@ class Camera(pylon.InstantCamera):
             print(f"Camera features could not be loaded. {e}")
 
 
-    def retrieveGrabbingResult(self) -> Tuple[ bool, np.ndarray, int, int]:
+    def retrieveGrabbingResult(self, timeout_ms=1000) -> Tuple[ bool, np.ndarray, int, int]:
         """Retrieve a grabbed image from a camera
 
         Returns:
@@ -116,7 +116,7 @@ class Camera(pylon.InstantCamera):
                 #   If the grab is succeeded it will return pylon.GrabResult object.
                 #   Otherwise, it will return False.
                 grabResult: pylon.GrabResult | bool = self.RetrieveResult(
-                    1000, pylon.TimeoutHandling_Return
+                    timeout_ms, pylon.TimeoutHandling_Return
                 )
 
                 if not isinstance(grabResult, bool):

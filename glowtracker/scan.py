@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from kivy.uix.boxlayout import BoxLayout
-from kivy.properties import NumericProperty, ListProperty
+from kivy.properties import NumericProperty, ListProperty, BooleanProperty, StringProperty
 import os
 from threading import Event, Thread, current_thread
 import asyncio
@@ -12,17 +12,22 @@ from kivy.app import App
 
 import Microscope_macros as macro
 import numpy as np
+from plate_run import PlateRunController
+from plate_plan import FIELDS, validate_plate
+from platformdirs import user_config_dir
+from continuous_scan import ContinuousScanMixin
 
-class CenterRadiusFromThreePoints(BoxLayout):
+class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLayout):
     points = ListProperty([])
     _stop_scan = False
     _stop_all = False
     _preview_saved = None
     scan_progress = NumericProperty(0)
+    scan_mode = StringProperty('Sequential')
     saved_scenarios = ListProperty([])
     scan_z = NumericProperty(140)
     scan_exposure = NumericProperty(100000)
-    scan_gain = NumericProperty(0)
+    scan_gain = NumericProperty(30)
     scan_settle = NumericProperty(0.01)
     scan_threshold = NumericProperty(150)
     scan_min_pixels = NumericProperty(50)
@@ -33,27 +38,50 @@ class CenterRadiusFromThreePoints(BoxLayout):
     scan_z_range = NumericProperty(1.0)
     scan_z_frames = NumericProperty(30)
     track_exposure = NumericProperty(5000)
-    track_gain = NumericProperty(0)
+    track_gain = NumericProperty(22)
     track_framerate = NumericProperty(30)
-    track_interval = NumericProperty(3600) # in seconds
+    track_interval = NumericProperty(120)
+    search_seconds = NumericProperty(60)
+    search_passes = NumericProperty(1)
+    plates = ListProperty([])
+    selected_plate = NumericProperty(-1)
+    running = BooleanProperty(False)
+    paused = BooleanProperty(False)
+    pause_requested = BooleanProperty(False)
+    repeat_run = BooleanProperty(False)
+    record_enabled = BooleanProperty(False)
+    record_directory = StringProperty('')
+    record_name = StringProperty('plate_run')
+    record_format = StringProperty('tiff')
+    run_status = StringProperty('Define a plate or load a saved plate to begin')
+    cycle_summary = StringProperty('No plates enabled')
     _found = False
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
         self._scan_thread = None
         self._plates_thread = None
         self._teardown_requested = False
         self._run_generation = 0
+        self._fields = []
+        self._active_plate_name = ''
+        super().__init__(**kwargs)
 
     def on_kv_post(self, *args):
+        from scan_ui import build_scan_ui
+        build_scan_ui(self)
+        app = App.get_running_app()
+        self.record_directory = app.root.ids.leftcolumn.savefile if app.root is not None else ''
         self.refresh_scenarios()
 
     def _scenario_path(self):
-        return os.path.join(os.path.dirname(__file__), 'settings', 'scan_scenarios.json')
+        return os.path.join(user_config_dir('GlowTracker', 'Monika Scholz'), 'scan_scenarios.json')
 
     def _read_scenarios(self):
         try:
-            with open(self._scenario_path()) as f:
+            path = self._scenario_path()
+            if not os.path.exists(path):
+                path = os.path.join(os.path.dirname(__file__), 'settings', 'scan_scenarios.json')
+            with open(path) as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
@@ -62,13 +90,15 @@ class CenterRadiusFromThreePoints(BoxLayout):
         self.saved_scenarios = sorted(self._read_scenarios().keys())
 
     def save_scenario(self, name):
+        if not self.commit_fields():
+            return
         name = name.strip()
         if not name:
             print('enter a scenario name')
             return
         app = App.get_running_app()
         data = self._read_scenarios()
-        entry = {'points': [list(p) for p in self.points]}
+        entry = {'points': [list(p) for p in self.points], 'settings': self._profile()}
         if app.plateCenter is not None:
             entry['center'] = list(app.plateCenter)
             entry['radius'] = app.plateRadius
@@ -78,11 +108,16 @@ class CenterRadiusFromThreePoints(BoxLayout):
         with open(path, 'w') as f:
             json.dump(data, f, indent=2)
         self.refresh_scenarios()
+        self.run_status = f'Saved plate preset: {name}'
 
     def load_scenario(self, name):
         entry = self._read_scenarios().get(name)
         if entry is None:
             return
+        self.selected_plate = -1
+        self.ids.scenarioname.text = name
+        for key, spec in FIELDS.items():
+            setattr(self, key, entry.get('settings', {}).get(key, spec[1]))
         self.points = [list(p) for p in entry.get('points', [])]
         if len(self.points) >= 3:
             self.calculate()
@@ -91,6 +126,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
             app.plateCenter = tuple(entry['center'])
             app.plateRadius = entry['radius']
             self.ids.resultlabel.text = 'Diameter: {:.2f} mm    Center: ({:.2f}, {:.2f})'.format(2 * entry['radius'], *entry['center'])
+        self.run_status = f'Loaded {name}; add it to the run'
 
     def set_points_from_text(self, text):
         if not text.strip():
@@ -107,10 +143,17 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 return
             pts.append([x, y])
         self.points = pts
+        self.calculate()
 
     def capture_points(self):
-        coords = App.get_running_app().coords
+        stage = App.get_running_app().stage
+        coords = stage.get_cached_position(max_age=1) if stage is not None else None
+        if coords is None:
+            self.run_status = 'Connect the stage before capturing a rim point'
+            return
         self.points.append(list(coords[:2]))
+        if len(self.points) >= 3:
+            self.calculate()
 
     def compute_circle(self):
         if len(self.points) < 3:
@@ -140,6 +183,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
             app.plateCenter = None
             app.plateRadius = None
             self.ids.resultlabel.text = 'Diameter: -    Center: -'
+            self.run_status = 'Capture three distinct points around the plate rim'
             return
         (xc, yc), radius = result
         app.plateCenter = (xc, yc)
@@ -198,6 +242,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
         self._scan_thread.start()
 
     def _scan(self, z: float = None) -> bool:
+        if self.scan_mode == 'Continuous':
+            return self._scan_continuous(z)
         app = App.get_running_app()
         if app.stage is None:
             print('connect the stage first')
@@ -221,7 +267,9 @@ class CenterRadiusFromThreePoints(BoxLayout):
         tiles = macro.generate_scan_tiles(app.plateCenter, app.plateRadius, *fov,
                                           overlap_w= self.scan_overlap_w / 100.0,
                                           overlap_h= self.scan_overlap_h / 100.0)
-        tiles = [(x, y) for (x, y) in tiles if app.stage.is_safe(x, y, z)]
+        limits = [float(v) for v in app.config.get('Stage', 'stage_limits').split(',')]
+        tiles = [(x, y) for (x, y) in tiles if 0 <= x <= limits[0]
+                 and 0 <= y <= limits[1] and 0 <= z <= limits[2] and app.stage.is_safe(x, y, z)]
         if not tiles:
             print('no safe tiles to scan at this Z')
             return False
@@ -234,9 +282,11 @@ class CenterRadiusFromThreePoints(BoxLayout):
         scan_accel = float(app.config.get('Stage', 'scan_acceleration'))
 
         found = False
+        deadline = time.monotonic() + self.search_seconds
         try:
             scan_pass = 0
-            while not self._stop_scan and not self._stop_all:
+            while (not self._stop_scan and not self._stop_all
+                   and scan_pass < self.search_passes and time.monotonic() < deadline):
                 scan_pass += 1
                 Clock.schedule_once(lambda dt: setattr(self, 'scan_progress', 0))
                 t_move = t_settle = t_grab = t_detect = t_disp = 0.0
@@ -245,10 +295,12 @@ class CenterRadiusFromThreePoints(BoxLayout):
                 print(f'scan pass {scan_pass}')
                 app.stage.set_motion(precise_speed, precise_accel, speed_unit, accel_unit)
                 for i, (x, y) in enumerate(tiles):
-                    if self._stop_scan or self._stop_all:
+                    if self._stop_scan or self._stop_all or time.monotonic() >= deadline:
                         break
                     frac = (i + 1) / len(tiles)
                     Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
+                    status = f'{self._active_plate_name or "Plate"} • Searching • pass {scan_pass}, tile {i + 1}/{len(tiles)}'
+                    Clock.schedule_once(lambda dt, text=status: setattr(self, 'run_status', text))
 
                     t0 = time.perf_counter()
                     moved = app.stage.move_abs((x, y, z), 'mm', wait_until_idle= True)
@@ -284,7 +336,7 @@ class CenterRadiusFromThreePoints(BoxLayout):
                         print('Found a worm !!')
                         units = app.config.get('Calibration', 'step_units')
                         for _ in range(int(self.scan_recenter_iters)):
-                            if self._stop_scan or self._stop_all:
+                            if self._stop_scan or self._stop_all or time.monotonic() >= deadline:
                                 break
                             dy, dx = macro.getStageDistances(
                                 np.array([-offset[1], offset[0]]), app.imageToStageMat)
@@ -465,73 +517,20 @@ class CenterRadiusFromThreePoints(BoxLayout):
         print(f'z-sweep picked scan_z = {scanZ:.4f} mm')
         return scanZ
 
-    def run_plates(self, plates= None, record_duration= None):
-        app = App.get_running_app()
-
-        if self._plates_thread is not None and self._plates_thread.is_alive():
-            return
-        if self._scan_thread is not None and self._scan_thread.is_alive():
-            return
-        if app.camera is None or app.stage is None or getattr(app, '_hardware_teardown', False):
-            print('camera or stage not connected')
-            return
-
-        if plates is None:
-            if app.plateCenter is None or app.plateRadius is None:
-                print('calculate plate region first')
-                return
-            plates = [(list(app.plateCenter), app.plateRadius)]
-
-        if record_duration is None:
-            record_duration = self.track_interval
-
-        self._stop_all = False
-        self._stop_scan = False
-        self._teardown_requested = False
-        self._run_generation += 1
-        runGeneration = self._run_generation
-
-        def orchestrator():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            rc = app.root.ids.middlecolumn.ids.runtimecontrols
-            try:
-                for center, radius in plates:
-                    if self._stop_all or runGeneration != self._run_generation:
-                        break
-
-                    plateReady = Event()
-
-                    def setPlate(dt, c=center, r=radius):
-                        if not self._stop_all \
-                                and runGeneration == self._run_generation:
-                            self._set_plate(c, r)
-                        plateReady.set()
-
-                    Clock.schedule_once(setPlate)
-                    while not plateReady.wait(0.05):
-                        if self._stop_all or runGeneration != self._run_generation:
-                            break
-                    if self._stop_all or runGeneration != self._run_generation:
-                        break
-                    found = False
-                    cameraPrepared = self._begin_scan_camera()
-                    if not cameraPrepared:
-                        break
-                    try:
-                        z = self._find_scan_z()
-                        if z is not None and not self._stop_all:
-                            found = self._scan(z)
-                    finally:
-                        self._end_scan_camera(found)
-                    if not found or self._stop_all:
-                        continue
-                    rc._track(record_duration, record= True)
-            finally:
-                asyncio.get_event_loop().close()
-                print('finished plate run')
-
-        self._plates_thread = Thread(target= orchestrator, daemon= True)
-        self._plates_thread.start()
+    def run_plates(self, plates=None, record_duration=None):
+        """Compatibility entry point; the visible run controls use start_run()."""
+        if plates is not None:
+            from uuid import uuid4
+            profile = self._profile()
+            if record_duration is not None:
+                profile['track_interval'] = record_duration
+            self.plates = [validate_plate({
+                'id': uuid4().hex[:8], 'name': f'Plate {index + 1}',
+                'center': list(center), 'radius': radius,
+                'settings': dict(profile), 'enabled': True,
+            }) for index, (center, radius) in enumerate(plates)]
+            self.selected_plate = -1
+        self.start_run()
 
     def _set_plate(self, center, radius):
         app = App.get_running_app()
@@ -539,12 +538,20 @@ class CenterRadiusFromThreePoints(BoxLayout):
         app.plateRadius = radius
 
     def stop_plates(self):
+        if not self.running and not any(t is not None and t.is_alive()
+                                        for t in (self._scan_thread, self._plates_thread)):
+            return
         self._run_generation += 1
         self._stop_all = True
         self.stop_scan()
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        rc.isTracking = False
+        rc.livefocuscheckbox.state = 'normal'
         rc.track_done.set()
+        self.run_status = 'Stopping run…'
+        if hasattr(self, '_resume_run'):
+            self._resume_run.set()
 
     def request_shutdown(self):
         self._run_generation += 1
@@ -574,6 +581,8 @@ class CenterRadiusFromThreePoints(BoxLayout):
         )
 
     def toggle_preview(self):
+        if self.running or not self.commit_fields():
+            return
         app = App.get_running_app()
         if app.camera is None:
             return

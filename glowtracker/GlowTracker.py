@@ -423,7 +423,10 @@ class RightColumn(BoxLayout):
             self._scanPanel = CenterRadiusFromThreePoints()
         if self._scanPanel.parent is not None:
             self._scanPanel.parent.remove_widget(self._scanPanel)
-        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel, size_hint= (0.95, 0.95))
+        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel,
+                            size_hint= (0.95, 0.95), auto_dismiss=False)
+        self._scanPanel._popup = self._popup
+        self._popup.bind(on_dismiss=lambda *_: self._scanPanel.running)
         self._popup.open()
 
 
@@ -5563,7 +5566,7 @@ class GlowTrackerApp(App):
 
 
     def request_jog(self, velocity: tuple, fast: bool) -> bool:
-        if self.stage is None:
+        if self.stage is None or getattr(self, '_plate_run_active', False):
             return False
         key = 'input_fast_acceleration' if fast else 'input_slow_acceleration'
         return self.stage.request_start_move(
@@ -5582,6 +5585,8 @@ class GlowTrackerApp(App):
 
 
     def on_controller_input(self, win, stickid, axisid, value) -> None:
+        if getattr(self, '_plate_run_active', False):
+            return
         """Handle controller input from Kivi App"""
 
         print(win, stickid, axisid, value)
