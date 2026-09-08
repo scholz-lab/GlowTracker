@@ -2,6 +2,7 @@
 #:import NumericProperty kivy.properties.NumericProperty
 #:import Image kivy.uix.image.Image
 #:import ScanMinimap Scan_map.ScanMinimap
+#:import StageMinimap Stage_minimap.StageMinimap
 #: import partial functools.partial
 # main Window has 3 columns
 # left most is settings  and setting displays
@@ -101,6 +102,21 @@ MainWindow:
         id: zcontrols
     GoToControls:
         id: gotocontrols
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_y: None
+        height: dp(205)
+        Label:
+            text: 'XY Minimap (mm)'
+            size_hint_y: None
+            height: dp(22)
+        StageMinimap:
+            id: stage_minimap
+        Label:
+            text: stage_minimap.status_text
+            font_size: sp(12)
+            size_hint_y: None
+            height: dp(20)
     MyLabel:
         text: 'Camera Settings'
     CameraProperties:
