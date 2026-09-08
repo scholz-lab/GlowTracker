@@ -4444,7 +4444,8 @@ class RuntimeControls(BoxLayout):
             self.cmsOffset_x = None
             self.cmsOffset_y = None
             self.trackingMask = None
-            if self.trackingcheckbox.state == 'down':
+            if self.trackingcheckbox.state == 'down' \
+                    and not getattr(App.get_running_app(), '_plate_run_active', False):
                 Clock.schedule_once(
                     lambda dt: setattr(self.trackingcheckbox, 'state', 'normal')
                 )
@@ -4624,11 +4625,12 @@ class RuntimeControls(BoxLayout):
             cameraConfig: dict = app.root.ids.leftcolumn.cameraConfig
 
             # Set camera on hold flag
+            wasGrabbing = camera.IsGrabbing()
             camera.setIsOnHold(True)
-            # cam stop
-            camera.AcquisitionStop.Execute()
-            # Wait for camera acquisition to fully stop.
-            time.sleep(2/camera.AcquisitionFrameRate()) # Wait 2 frame
+            if wasGrabbing:
+                camera.AcquisitionStop.Execute()
+                # Wait for camera acquisition to fully stop.
+                time.sleep(2/camera.AcquisitionFrameRate())
             # grab unlock
             camera.TLParamsLocked.Value = False
 
@@ -4645,9 +4647,9 @@ class RuntimeControls(BoxLayout):
             camera.OffsetY.Value = int(cameraConfig['OffsetY'])
 
             # grab lock
-            camera.TLParamsLocked.Value = True
-            # cam start
-            camera.AcquisitionStart.Execute()
+            if wasGrabbing:
+                camera.TLParamsLocked.Value = True
+                camera.AcquisitionStart.Execute()
             # Set camera on hold flag
             camera.setIsOnHold(False)
 

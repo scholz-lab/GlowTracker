@@ -74,6 +74,7 @@ class PlateRunController:
             return
         self.selected_plate = index
         self._load_plate(self.plates[index])
+        self.run_status = f'Editing {self.plates[index]["name"]}'
 
     def _load_plate(self, plate):
         self.points = deepcopy(plate.get('points', []))
@@ -115,7 +116,7 @@ class PlateRunController:
         track = sum(p['settings']['track_interval'] for p in enabled)
         search = sum(p['settings']['search_seconds'] for p in enabled)
         self.cycle_summary = (f'{len(enabled)} enabled • {track / 60:g} min tracking per cycle\n'
-                              f'Plus up to {search / 60:g} min searching, focus and travel')
+                              f'Up to {search / 60:g} min searching; focus/travel extra')
 
     def _ui(self, callback, cleanup=False):
         """Wait for UI-owned state changes; abandoned callbacks cannot start work."""
@@ -222,6 +223,7 @@ class PlateRunController:
         self._resume_run.set()
         self.pause_requested = self.paused = False
         self.running = True
+        self._recording_owned = False
         app._plate_run_active = True
         self.run_status = 'Starting plate run…'
         app.unbind_keys()
@@ -333,6 +335,7 @@ class PlateRunController:
                 rc.livefocuscheckbox.state = 'down'
             self._ui(begin)
             if folder:
+                self._recording_owned = True
                 saved = self._ui(lambda: (left.savefile, {k: app.config.get('Experiment', k)
                                       for k in ('iscontinuous', 'extension', 'duration', 'nframes')}))
                 def record():
@@ -382,21 +385,24 @@ class PlateRunController:
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
         mgr = rc.ids.imageacquisitionmanager
         def stop():
-            if mgr.recordbutton.state == 'down':
-                mgr.recordbutton.state = 'normal'
             rc.livefocuscheckbox.state = 'normal'
             rc.isTracking = False
             rc.track_done.set()
         self._ui(stop, cleanup=True)
         self._join_workers([getattr(rc, key, None) for key in ('trackthread', 'liveFocusThread')])
         def stop_camera():
+            if mgr.recordbutton.state == 'down':
+                # The run owns the next camera transition; suppress auto-preview.
+                mgr.recordbutton.prevLiveViewButtonState = 'normal'
+                mgr.recordbutton.state = 'normal'
             rc.trackingcheckbox.state = 'normal'
             mgr.liveviewbutton.state = 'normal'
         self._ui(stop_camera, cleanup=True)
         self._join_workers([getattr(button, 'imageAcquisitionThread', None)
                             for button in (mgr.recordbutton, mgr.liveviewbutton)])
-        if getattr(mgr.recordbutton, 'saveHandoffError', None):
+        if getattr(self, '_recording_owned', False) and getattr(mgr.recordbutton, 'saveHandoffError', None):
             raise RuntimeError(str(mgr.recordbutton.saveHandoffError))
+        self._recording_owned = False
 
     @staticmethod
     def _join_workers(threads):

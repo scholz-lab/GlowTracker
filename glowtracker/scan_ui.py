@@ -142,7 +142,8 @@ def build_scan_ui(panel):
     mode.bind(text=lambda _, value: setattr(panel, 'scan_mode', value))
     panel.bind(scan_mode=lambda _, value: setattr(mode, 'text', value))
     setup.add_widget(row(label('Scan mode', 34), mode))
-    mode_help = label('', 48, font_size=sp(12))
+    mode_help = label('', 48)
+    mode_help.font_size = sp(12)
     mode_help.bind(size=lambda widget, size: setattr(widget, 'text_size', size))
     def update_mode_help(*args):
         mode_help.text = ('Continuous: capture while sweeping each row.\n'
@@ -191,6 +192,7 @@ def build_scan_ui(panel):
     start = button('Start run', panel.start_run)
     preview = button('Live preview', panel.toggle_preview)
     record = button('Record…', lambda: open_record_settings(panel))
+    panel.bind(record_enabled=lambda _, active: setattr(record, 'text', 'Record: ON…' if active else 'Record…'))
     panel.bind(running=lambda _, value: [setattr(w, 'disabled', value) for w in (start, preview, record)])
     left.add_widget(row(preview, record, start))
     pause = button('Pause after plate', panel.toggle_pause)
