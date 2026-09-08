@@ -2,9 +2,9 @@
 from __future__ import annotations
 from enum import Enum
 
-# 
+#
 # IO, Utils
-# 
+#
 import os
 from multiprocessing.pool import ThreadPool
 from queue import Queue
@@ -14,27 +14,28 @@ from skimage import measure
 import pandas as pd
 import tifffile
 
-# 
+#
 # Own classes
-# 
+#
 import Basler_control as basler
 import Zaber_control as zaber
 from AutoFocus import FocusEstimationMethod, estimateFocus
+from image_utils import effective_max_brightness, normalize_image
 
-# 
+#
 # Math
-# 
+#
 import math
 import numpy as np
-import scipy.ndimage as ndi
 from scipy.optimize import curve_fit
 from scipy.stats import gennorm
 from scipy.special import gamma as gammafunc
+from scipy.signal import savgol_filter
 import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from skimage.filters import threshold_otsu, threshold_li, threshold_yen
+from skimage.filters import threshold_yen
 from skimage.transform import downscale_local_mean
 from skimage.registration import phase_cross_correlation
 import itk
@@ -46,7 +47,7 @@ import cv2
 # def extractWorms(img, area=0, bin_factor=4, li_init=10, display = True):
 #     '''
 #     use otsu threshold to obtain mask of pharynx & label them
-#     input: image of shape (N,M) 
+#     input: image of shape (N,M)
 #     output: array of worm coordinates.
 #     '''
 #     img = img[::bin_factor, ::bin_factor]
@@ -61,7 +62,7 @@ import cv2
 #         plt.imshow(img)
 #         plt.subplot(212)
 #         plt.imshow(labeled)
-        
+
 #     coords = []
 #     for region in regionprops(labeled):
 #         if region.area >=area:
@@ -85,7 +86,7 @@ import cv2
 #     for (y,x) in coords:
 #         distanceToCenter = (h//2 - y)**2 + (w//2-x)**2
 #         if distanceToCenter < current_distance:
-#             current_distance  = distanceToCenter    
+#             current_distance  = distanceToCenter
 #             yc, xc = y,x
 #     # return offset from center for closest object
 #     return yc-h//2, xc-w//2
@@ -100,12 +101,46 @@ def getStageDistances(deltaCoords, imageToStageMat):
     stageDistances = np.matmul(imageToStageMat, deltaCoords)
     return stageDistances
 
+
+def generate_scan_tiles(center, radius, fov_w, fov_h, overlap_w=0.0, overlap_h=0.0, edge_margin=0.0):
+    """scan a circle"""
+    cx, cy = center
+    step_x = max(fov_w * (1.0 - overlap_w), 1e-3)
+    step_y = max(fov_h * (1.0 - overlap_h), 1e-3)
+    keep_radius = max(radius - edge_margin, 0.0)
+    n_x = int(np.ceil(radius / step_x))
+    n_y = int(np.ceil(radius / step_y))
+
+    tiles = []
+    for row, iy in enumerate(range(-n_y, n_y + 1)):
+        y = cy + iy * step_y
+        xs = list(range(-n_x, n_x + 1))
+        if row % 2 == 1:
+            xs.reverse()
+        for ix in xs:
+            x = cx + ix * step_x
+            if (x - cx) ** 2 + (y - cy) ** 2 <= keep_radius ** 2:
+                tiles.append((x, y))
+    return tiles
+
+
+def detect_worm(image, threshold, min_pixels=20):
+    bright = image > threshold
+    count = int(bright.sum())
+    if count < min_pixels: return False, None
+    ys, xs = np.nonzero(bright)
+    h, w = image.shape[:2]
+    offset_x = float(xs.mean()) - w / 2.0
+    offset_y = float(ys.mean()) - h / 2.0
+    return True, (offset_x, offset_y)
+
+
 # functions for tracking
 #%% Functions used for centering stage
 def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, threshold = 10, dark_bg = True, display = False):
     '''
     use image difference to detect motion of object.
-    input: image of shape (N,M) 
+    input: image of shape (N,M)
     minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
@@ -117,11 +152,11 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     img1_sm = img1[ymin:ymax, xmin:xmax]
     img2_sm = img2[ymin:ymax, xmin:xmax]
-    
+
     # reduce image size
     img1_sm = downscale_local_mean(img1_sm, (bin_factor, bin_factor), cval=0, clip=True)
     img2_sm = downscale_local_mean(img2_sm, (bin_factor, bin_factor), cval=0, clip=True)
-    
+
     # threshold
     # threshold = threshold_yen(img1_sm)
     # if dark_bg:
@@ -130,10 +165,10 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
     # else:
     #     img1_sm = img1_sm < threshold
     #     img2_sm = img2_sm < threshold
-   
+
      # generate image difference - use floats!
     diff = img1_sm.astype(float) - img2_sm.astype(float)
-    
+
     h,w = diff.shape
     # reduced image size
     # print('image shape after binning', diff.shape)
@@ -176,7 +211,7 @@ def extractWormsDiff(img1, img2, capture_radius = -1,  bin_factor=4, area = 0, t
 def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False):
     '''
     use image to detect motion of object.
-    input: image of shape (N,M) 
+    input: image of shape (N,M)
     minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
@@ -185,7 +220,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     h,w = img1.shape
     #to region of interest
     ymin, ymax, xmin, xmax = 0,h,0,w
-    
+
     if capture_radius > 0 :
         ymin, ymax, xmin, xmax = np.max([0,h//2-capture_radius]), np.min([h,h//2+capture_radius]), np.max([0,w//2-capture_radius]), np.min([w,w//2+capture_radius])
     print(xmin, xmax, ymin, ymax)
@@ -197,7 +232,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     # print('image shape after binning',h,w)
     # get cms
     h,w = img1_sm.shape
-    
+
     # simply use max or min location
     if dark_bg:
         yc, xc = np.unravel_index(img1_sm.argmax(), img1_sm.shape)
@@ -213,7 +248,7 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
         rect = mpl.patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='r', facecolor='none')
         # Add the patch to the Axes
         plt.gca().add_patch(rect)
-        
+
         plt.colorbar()
         plt.subplot(212)
         plt.imshow(img1_sm)
@@ -225,10 +260,10 @@ def extractWorms(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, displ
     return (yc-h//2)*bin_factor, (xc - w//2)*bin_factor
 
 
-def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int = 255):
+def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, display = False, min_brightness: int = 0, max_brightness: int | None = None):
     '''
     use image to detect motion of object.
-    input: image of shape (N,M) 
+    input: image of shape (N,M)
     minimal_difference: fraction of pixel that need to have changed to consider a difference
     output: vector of maximal/minimal change indicating where stage should compensate.
     '''
@@ -237,8 +272,11 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     img1_sm = cropCenterImage(img1, capture_radius * 2, capture_radius * 2)
 
     # Set pixels that are outside of the brightness range to 0
+    max_brightness = effective_max_brightness(img1_sm, max_brightness)
+    if min_brightness > max_brightness:
+        raise ValueError('minimum brightness exceeds maximum brightness')
     img1_sm[ (img1_sm < min_brightness) | (img1_sm > max_brightness) ] = 0
-    
+
     # Compute tracking mask
     mask, resize_factor, intermediate_images = create_mask(img1_sm, dark_bg, display= display, bin_factor= bin_factor)
 
@@ -247,18 +285,22 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
     result = None
     try:
         result = find_CMS(mask, display=display)
-    
+
     except ValueError as e:
         raise e
-    
+
     # Unpack return values
     if display:
         (xc, yc), annotated_mask = result
     else:
         xc, yc = result
-   
+
     # show intermediate steps for debugging
     if display:
+        xmin = (img1.shape[1] - img1_sm.shape[1]) // 2
+        ymin = (img1.shape[0] - img1_sm.shape[0]) // 2
+        xmax = xmin + img1_sm.shape[1]
+        ymax = ymin + img1_sm.shape[0]
         plt.subplot(231)
         plt.imshow(img1, cmap='gray')
         plt.title('img original')
@@ -267,17 +309,17 @@ def extractWormsCMS(img1, capture_radius = -1,  bin_factor=4, dark_bg = True, di
         rect = mpl.patches.Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, linewidth=1, edgecolor='r', facecolor='none')
         # Add the patch to the Axes
         plt.gca().add_patch(rect)
-        
+
         plt.subplot(232)
         plt.imshow(img1_sm, cmap='gray')
         plt.title('img reduced')
         plt.plot(xc/resize_factor, yc/resize_factor, 'ro')
 
         return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, intermediate_images, mask
-    
+
     else:
         return (yc-h//2)/resize_factor, (xc-w//2)/resize_factor, mask
-    
+
 
 
 def create_mask(img, dark_bg, display=False, bin_factor=None):
@@ -287,7 +329,7 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
     2. Resize the image
     3. Blur the image again to remove high frequency noise
     4. Perform adaptive thresholding to binarize the image
-    5. Erode the image to remove small white spots 
+    5. Erode the image to remove small white spots
     6. Dilate the image to fill in the holes and roughly get back the original size
 
     Parameters
@@ -301,7 +343,7 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
     bin_factor : int
         Factor by which the image should be binned. If None, the image is resized
         such that the width is 200 pixels and the height is scaled accordingly
-    
+
     Returns
     -------
     img : np.array
@@ -312,42 +354,39 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
         List of intermediate images for debugging
     '''
     intermediate_images = [] # keep track of intermediate images for debugging
-    
-    # Compute resize_factor such that the width of image is 200 
+
+    # Compute resize_factor such that the width of image is 200
     # pixels and the height is scaled accordingly
     if bin_factor is None:
         resize_factor = 200 / img.shape[1]
     else:
         resize_factor = 1/bin_factor
-    
-    # check if the range is not between 0 and 1 
-    # if not then rescale the image
-    if np.max(img) > 1:
-        img = img / 255
+
+    img = normalize_image(img)
 
     if dark_bg:
 
         try:
             img = downscale_local_mean(img, (int(1/resize_factor), int(1/resize_factor)), clip=True)
-        
+
         except ValueError as e:
             print(f'Error computing mask: {e}')
-        
+
         # gamma correction
-        gamma = np.log(np.mean(img))/np.log(0.5)
-        gamma = np.clip(gamma, 0.5, 2)
+        mean = float(np.mean(img))
+        gamma = np.log(mean) / np.log(0.5) if 0 < mean < 1 else 1.0
+        gamma = np.clip(gamma, 0.5, 2.0)
         img = img**(1/gamma)
 
     else:
         img = cv2.GaussianBlur(img, (7, 7), 0)
         img = cv2.resize(img, (0, 0), fx=resize_factor, fy=resize_factor)
-        
+
     intermediate_images.append(img)
-    
+
     # rescale the image to [0, 255] so that further steps
     # including adaptive thresholding works properly
-    img = img * 255
-    img = img.astype(np.uint8)
+    img = np.rint(img * 255).astype(np.uint8)
 
     # blur the image to remove high frequency noise/content
     img = cv2.GaussianBlur(img, (7, 7), 3)
@@ -373,7 +412,7 @@ def create_mask(img, dark_bg, display=False, bin_factor=None):
 
     if display:
         return img, resize_factor, intermediate_images
-        
+
     else:
         return img, resize_factor, None
 
@@ -395,19 +434,22 @@ def find_CMS(mask, K=5, display=False):
         the CMS is always at the center or close to it)
     K : int
         Number of regions to keep
-        
+
     Returns
     -------
     cms_x_center
         x coordinate of the CMS
     cms_y_center
         y coordinate of the CMS
-    
+
     Raise
     -------
     ValueError
         The input image is invalid. Either completely black or white.
     '''
+    if mask.size == 0 or not np.any(mask) or np.all(mask != 0):
+        raise ValueError('Cannot find a centroid in a uniform mask.')
+
     labels = measure.label(mask)
     regionprop = regionprops_table(labels, properties=('centroid', 'area'))
     props = pd.DataFrame(regionprop)
@@ -416,34 +458,34 @@ def find_CMS(mask, K=5, display=False):
         raise ValueError("Cannot find any centroid.")
 
     props = props.rename(columns={'centroid-1': 'x', 'centroid-0': 'y'})
-    
+
     # keep only the K biggest regions
     props = props.sort_values(by='area', ascending=False).head(K)
 
     middle_point = (mask.shape[1]//2, mask.shape[0]//2) # (x, y)
     props['dist'] = np.sqrt((props['x'] - middle_point[0])**2 + (props['y'] - middle_point[1])**2)
-    
+
     # keep the closest to the previous center
-    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']] 
-    
+    cms_x_center, cms_y_center = props.sort_values(by='dist').iloc[0][['x', 'y']]
+
     if display:
         annotated_mask = mask.copy()
         for i in range(len(props['y'])):
             # Draw circle
             cv2.circle(annotated_mask, (int(props['x'].iloc[i]), int(props['y'].iloc[i])), 2, (128, 0, 0), -1)
-            
+
             # Write their area
-            dist = np.sqrt((props['y'].iloc[i] - (annotated_mask.shape[0] // 2)) ** 2 + 
+            dist = np.sqrt((props['y'].iloc[i] - (annotated_mask.shape[0] // 2)) ** 2 +
                         (props['x'].iloc[i] - (annotated_mask.shape[1] // 2)) ** 2)
-            
+
             # Convert distance to string
             dist_str = f'd={dist:.1f}'
-            
+
             # Put text on the image
             font_scale = min(*annotated_mask.shape) / 500 # adjust the font size based on the image size
             cv2.putText(annotated_mask, dist_str, (int(props['x'].iloc[i]), int(props['y'].iloc[i])),
                         cv2.FONT_HERSHEY_SIMPLEX, font_scale, (128, 0, 0), 1, cv2.LINE_AA)
-    
+
     if display:
         return (cms_x_center, cms_y_center), annotated_mask
     else:
@@ -452,37 +494,37 @@ def find_CMS(mask, K=5, display=False):
 
 class ImageSaver:
     """An image saver static class that manages multiples small saving threads.
-    """    
+    """
 
     def __init__(self) -> None:
         pass
-    
+
 
     @staticmethod
     def startSavingImageInQueueThread(imageQueue: Queue, numMaxThreads: int | None = None) -> None:
         """An image saving thread manager that spawn a fix number of threads that iteratively consume an image from a queue and save it.
 
         Args:
-            imageQueue (Queue): 
+            imageQueue (Queue):
             numMaxThreads (int | None, optional): Maximum number of small threads. Defaults to None.
         """
 
         # Create a thread pool
         consumerThreadPool = ThreadPool(processes= numMaxThreads)
-        
+
         # Start spawn image saving workers
         for i in range(consumerThreadPool._processes):
             consumerThreadPool.apply_async(
-                func= ImageSaver._imageSavingThreadWorker, 
+                func= ImageSaver._imageSavingThreadWorker,
                 args= (imageQueue,)
             )
-        
+
         # Wait until all workers are done
         consumerThreadPool.close()
         consumerThreadPool.join()
 
         print(f'Finished saving all the images')
-    
+
 
     @staticmethod
     def _imageSavingThreadWorker(imageQueue: Queue):
@@ -492,7 +534,7 @@ class ImageSaver:
 
         Args:
             imageQueue (Queue): _description_
-        """        
+        """
         # Run until there is no more work
         while True:
 
@@ -501,9 +543,9 @@ class ImageSaver:
 
             # check for signal of no more work
             if queueItem is not None:
-                
+
                 img, imgPath, imgFileName = queueItem
-                # Save the image    
+                # Save the image
                 tifffile.imwrite(os.path.join(imgPath, imgFileName), img)
 
             else:
@@ -523,7 +565,7 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
 
     Returns:
         croppedImage (np.ndarray): the center cropped image
-    """    
+    """
 
     h,w = image.shape
 
@@ -531,7 +573,7 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
 
     halfCropWidth = cropWidth // 2
     halfCropHeight = cropHeight // 2
-    
+
     if halfCropWidth > 0 :
         xmin = np.max([0, w//2 - halfCropWidth])
         xmax = np.min([w, w//2 + halfCropWidth])
@@ -539,7 +581,7 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
     if halfCropHeight > 0 :
         ymin = np.max([0, h//2 - halfCropHeight])
         ymax = np.min([h, h//2 + halfCropHeight])
-    
+
     # Crop the region of interest.
     #   Also, we have to copy. Otherwise, we would modified the original image.
     img1_sm = np.copy( image[ymin:ymax, xmin:xmax] )
@@ -548,7 +590,7 @@ def cropCenterImage( image: np.ndarray, cropWidth: int, cropHeight: int) -> np.n
 
 
 def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
-    """Modified a matrix such that the the multiplication operation 
+    """Modified a matrix such that the the multiplication operation
     is suitable for vectors of order (y,x,..) from (x,y,...) or vice versa.
 
     Args:
@@ -556,7 +598,7 @@ def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
 
     Returns:
         matrixXYSwapped: An X,Y swapped version of the matrix
-    """    
+    """
     matrixXYSwapped = np.copy(matrix)
 
     # Swap 1st and 2nd row
@@ -564,7 +606,7 @@ def swapMatXYOrder(matrix: np.ndarray) -> np.ndarray:
 
     # Swap 1st and 2nd column
     matrixXYSwapped[:, [0, 1]] = matrixXYSwapped[:, [1, 0]]
-    
+
     return matrixXYSwapped
 
 
@@ -577,10 +619,10 @@ def createTranslationMatrix(translation_x: float, translation_y: float) -> np.fl
 
     Returns:
         translationMat (np.float32): A 3x3 translation matrix
-    """    
+    """
 
     translationMat = np.array([
-        [1, 0, translation_x], 
+        [1, 0, translation_x],
         [0, 1, translation_y],
         [0, 0, 1]
     ], np.float32)
@@ -599,7 +641,7 @@ def createScaleAndRotationMatrix(scale: float, rotation: float, center_rot_x: fl
 
     Returns:
         matrix (np.ndarray): A 3x3 transformation matrix.
-    """    
+    """
     cos = scale * math.cos(rotation)
     sin = scale * math.sin(rotation)
 
@@ -622,7 +664,7 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
 
     Returns:
         mat (np.ndarray): the transformation matrix
-    """    
+    """
     cos = math.cos(rotation)
     sin = math.sin(rotation)
 
@@ -631,12 +673,12 @@ def createRigidTransformationMat(translation_x: float, translation_y: float, rot
         [sin,   cos,    translation_y],
         [0,     0,      1],
     ], np.float32)
-    
+
     return matrix
 
 
 def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
-    """Compute angle between the two vector 
+    """Compute angle between the two vector
 
     Args:
         vec1 (np.ndarray): vector of starting angle
@@ -651,7 +693,10 @@ def computeAngleBetweenTwo2DVecs(vec1: np.ndarray, vec2: np.ndarray) -> float:
     # Sin(theta)
     cosTheta = np.dot(vec1normalized, vec2normalized)
     # Cos(theta)
-    sinTheta = np.cross(vec1normalized, vec2normalized)
+    sinTheta = (
+        vec1normalized[0] * vec2normalized[1]
+        - vec1normalized[1] * vec2normalized[0]
+    )
     # Compute angle
     theta = math.atan2(sinTheta, cosTheta)
 
@@ -667,7 +712,7 @@ def rotatePointAboutOrig(point: np.ndarray, rotation: float) -> np.ndarray:
 
     Returns:
         point (np.ndarray): the rotated point
-    """    
+    """
     rotationMatrix = createScaleAndRotationMatrix(1, rotation, 0, 0)[:2,:2]
     return rotationMatrix @ point
 
@@ -699,7 +744,7 @@ class CameraAndStageCalibrator:
         Returns:
             - None: if taking images is not successful
             - Tuple(basisImageOrig, basisImageX, basisYImage): if taking images is successful
-        """        
+        """
 
         self.stepsize = stepsize
         self.stepunits = stepunits
@@ -721,7 +766,7 @@ class CameraAndStageCalibrator:
         # If taking image is not successful then return None
         if not (isSuccessImageOrig and isSuccessImageX and isSuccessImageY):
             return None, None, None
-        
+
         # If in dual color mode then crop only relavent region
         if dualColorMode:
             h, w = self.basisXImage.shape
@@ -735,9 +780,9 @@ class CameraAndStageCalibrator:
                 self.basisOrigImage = self.basisOrigImage[:,w//2:]
                 self.basisXImage = self.basisXImage[:,w//2:]
                 self.basisYImage = self.basisYImage[:,w//2:]
-        
+
         return self.basisOrigImage, self.basisXImage, self.basisYImage
-    
+
 
     def calibrateCameraAndStageTransform(self) -> None | Tuple[float, int, float]:
         """Estimate the transformation from stage space to image space using phase cross correlation in X and Y bases.
@@ -749,17 +794,17 @@ class CameraAndStageCalibrator:
                     - rotationStageToCam (float): rotation angle from stage
                     - imageNormalDir (int): image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix. Possible results are +1 (for +Z) and -1 (for -Z).
                     - pixelsize (float): ratio bettween unit in stage space and pixel space (e.g. mm/px).
-        """        
+        """
 
-        # Estimate camera basis X 
-        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
-    
+        # Estimate camera basis X
+        basisXPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisXImage, upsample_factor= 100, space= 'real', overlap_ratio= 0.5)
+
         camBasisXVec = np.array([basisXPhaseShift[1], -basisXPhaseShift[0]], np.float32)
         camBasisXLen = np.linalg.norm(camBasisXVec)
 
         # Estimate camera basis Y
-        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 1, space= 'real', overlap_ratio= 0.5)    
-    
+        basisYPhaseShift, _, _ = phase_cross_correlation(self.basisOrigImage, self.basisYImage, upsample_factor= 100, space= 'real', overlap_ratio= 0.5)
+
         camBasisYVec = np.array([basisYPhaseShift[1], -basisYPhaseShift[0]], np.float32)
         camBasisYLen = np.linalg.norm(camBasisYVec)
 
@@ -768,7 +813,7 @@ class CameraAndStageCalibrator:
             or np.equal(camBasisXLen, 0) or np.equal(camBasisYLen, 0):
             return None
 
-        # Compute angle between the two basis 
+        # Compute angle between the two basis
         angleBetweenXYBasis = computeAngleBetweenTwo2DVecs( camBasisXVec, camBasisYVec )
         signAngleBetweenXYBasis = int(np.sign(angleBetweenXYBasis))
 
@@ -780,9 +825,9 @@ class CameraAndStageCalibrator:
         diffAngleHalf = absDiffAngle / 2
         basisXCompensatedAngle = 0
         basisYCompensatedAngle = 0
-        
+
         if absAngleBetweenXYBasis < math.pi/2:
-        
+
             basisXCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
             basisYCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
 
@@ -790,14 +835,14 @@ class CameraAndStageCalibrator:
 
             basisXCompensatedAngle = +1 * signAngleBetweenXYBasis * diffAngleHalf
             basisYCompensatedAngle = -1 * signAngleBetweenXYBasis * diffAngleHalf
-        
+
         camBasisXVec = rotatePointAboutOrig(camBasisXVec, basisXCompensatedAngle)
         camBasisYVec = rotatePointAboutOrig(camBasisYVec, basisYCompensatedAngle)
 
         # Compute rotation angle from stage to camera
         normCamBasisXVec = camBasisXVec / camBasisXLen
-        rotationStageToCam = computeAngleBetweenTwo2DVecs( 
-            np.array([1., 0.], np.float32), 
+        rotationStageToCam = computeAngleBetweenTwo2DVecs(
+            np.array([1., 0.], np.float32),
             normCamBasisXVec
         )
 
@@ -807,9 +852,17 @@ class CameraAndStageCalibrator:
         #   Average between the two
         pixelSize = (pixelSize_X + pixelSize_Y) / 2
 
+        print(
+            f'[calib] step={self.stepsize} {self.stepunits} | '
+            f'shiftX={camBasisXLen:.1f}px shiftY={camBasisYLen:.1f}px | '
+            f'pxX={pixelSize_X:.4f} pxY={pixelSize_Y:.4f} (avg {pixelSize:.4f}) | '
+            f'angle(X^Y)={math.degrees(angleBetweenXYBasis):.2f} deg | '
+            f'rotation={math.degrees(rotationStageToCam):.2f} deg'
+        )
+
         return (rotationStageToCam, signAngleBetweenXYBasis, pixelSize)
 
-    
+
     @staticmethod
     def genImageToStageMatrix(rotation: float, imageNormalDir: int, pixelSize: float) -> Tuple[np.ndarray, np.ndarray]:
         """Compute trasnformation matrix from image space to stage space using the given rotation angle, sign of cross product between Camera Space X,Y basis, and pixelsize. Assume only rotation and uniform scaling.
@@ -822,7 +875,7 @@ class CameraAndStageCalibrator:
         Returns:
             - imageToStageMat (np.ndarray): transformation matrix from image space to stage space
             - imageToStageRotOnlyMat (np.ndarray): transformation matrix from image space to stage space without uniform scaling
-        """    
+        """
         # Stage to Image. Standard 2D rotation matrix
         cosval, sinval = math.cos(rotation), math.sin(rotation)
 
@@ -842,7 +895,7 @@ class CameraAndStageCalibrator:
 
         return pixelSize * imageToStageMat, imageToStageMat
 
-    
+
     @staticmethod
     def renderChangeOfBasisImage(stageToImageMat: np.ndarray) -> np.ndarray:
         """A utility function for plotting a 2D Change of Basis matrix and saving into an image data.
@@ -852,7 +905,7 @@ class CameraAndStageCalibrator:
 
         Returns:
             np.ndarray: _description_
-        """    
+        """
         # Define the coordinates for the vectors
         stageX = [1, 0]  # Vector from origin to (1,0)
         stageY = [0, 1]  # Vector from origin to (0,1)
@@ -861,12 +914,12 @@ class CameraAndStageCalibrator:
 
         # Create the plot
         fig = plt.figure(figsize=(6, 6))
-        
+
         def drawVectorFromOrigWithAnnotation(point: List[float], color: str, name: str, linestyle: str) -> None:
             plt.quiver(*[0, 0], *point, color= color, scale= 1, scale_units= 'xy', angles= 'xy', label= name, linestyle= linestyle, linewidth= 1, facecolor= color)
             plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
                             ha= 'center', fontsize= 12, color= 'black')
-        
+
         drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
         drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
         drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
@@ -897,19 +950,19 @@ class CameraAndStageCalibrator:
 
 
 class DualColorImageCalibrator:
-    
+
     # Class attributes
     mainSide: str
     dualColorImage: np.ndarray
     mainSideImage: np.ndarray
     minorSideImage: np.ndarray
-    
+
     def __init__(self) -> None:
         pass
 
-    
+
     def processDualColorImage(self, dualColorImage: np.ndarray, mainSide: str) -> None:
-        """Crop dual color image into main and minor side and apply histrogram equalization 
+        """Crop dual color image into main and minor side and apply histrogram equalization
         for better visibility.
 
         Args:
@@ -935,7 +988,7 @@ class DualColorImageCalibrator:
             # Main at right side, minor at left
             self.mainSideImage = self.dualColorImage[:,:fullImg_w//2]
             self.minorSideImage = self.dualColorImage[:,fullImg_w//2:]
-        
+
         # Equalize Histogram
         #   create a CLAHE object (Arguments are optional).
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -943,7 +996,7 @@ class DualColorImageCalibrator:
         self.minorSideImage = clahe.apply(self.minorSideImage)
 
         return self.mainSideImage, self.minorSideImage
-    
+
 
     def calibrateMinorToMainTransformationMatrix(self) -> Tuple[float, float, float]:
         """Estimate transformation from minor side to main side. Only account for translation and rotation.
@@ -952,12 +1005,12 @@ class DualColorImageCalibrator:
             translation_x (float): translation x
             translation_y (float): translation y
             rotation (float): rotation in radian
-        """        
+        """
 
         # Create an ITK image from the numpy array
         mainSideImageITK = itk.GetImageFromArray(self.mainSideImage)
         minorSideImageITK = itk.GetImageFromArray(self.minorSideImage)
-        
+
         # Create registration parameter object
         parameter_object = itk.ParameterObject.New()
         #   Set regid estimation parameters
@@ -975,7 +1028,7 @@ class DualColorImageCalibrator:
             parameter_object= parameter_object,
             log_to_console= False
         )
-        
+
         # Get transformation matrix result
         result_parameter_map = result_transform_parameters.GetParameterMap(0)
         rotation, translation_x, translation_y = ( float(x) for x in result_parameter_map['TransformParameters'] )
@@ -994,11 +1047,11 @@ class DualColorImageCalibrator:
         theta = math.atan2( sinTheta, cosTheta )
 
         return translation_x, translation_y, theta
-    
+
 
     @staticmethod
     def genMinorToMainMatrix(translation_x: float, translation_y: float, rotation: float, center_x: float, center_y: float):
-        """Create a rigid transformation matrix (scale = 1) from minor to main side. 
+        """Create a rigid transformation matrix (scale = 1) from minor to main side.
 
         Args:
             translation_x (float): translation in X axis
@@ -1009,7 +1062,7 @@ class DualColorImageCalibrator:
 
         Returns:
             transformationMatrix (np.ndarray): transformation matrix from minor to main
-        """        
+        """
         # Compute the rotation matrix.
         rotationMat = createScaleAndRotationMatrix(1, rotation, center_x, center_y)
 
@@ -1018,14 +1071,14 @@ class DualColorImageCalibrator:
 
         # Compute transformation matrix
         transformationMat = translationMat @ rotationMat
-        
+
         return transformationMat
 
 
 class DepthOfFieldEstimator:
-    
+
     def __init__(self):
-        # Create a DataFrame to store DoF data 
+        # Create a DataFrame to store DoF data
         self.dofDataFrame = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'])
         # C, A, mu, alpha, beta
         self.normDistParams: list[float, float, float, float, float] = [0, 0, 0, 0, 0]
@@ -1050,9 +1103,9 @@ class DepthOfFieldEstimator:
         Returns:
             dof (float): estimated Depth of Field
         """
-        
+
         self.takeCalibrationImages(camera, stage, searchDistance, numImages, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
-        
+
         self.fitDataToNormalDist()
 
         # Find the x position where cumulative area from mu to x is 10%
@@ -1066,9 +1119,9 @@ class DepthOfFieldEstimator:
         estimatedDof = x_pct_end - x_pct_begin
 
         return estimatedDof
-    
 
-    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0) -> None:
+
+    def takeCalibrationImages(self, camera: basler.Camera, stage: zaber.Stage, searchDistance: float, numImages: int, focusEstimationMethod: FocusEstimationMethod, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', capturedRadius: float = 0, followWorm: bool = False, imageToStageMat = None, stageUnits: str = 'um', threshold: float = 150, minPixels: int = 50) -> None:
         """Scan over the searchDistance area and take sample images.
 
         Args:
@@ -1084,16 +1137,23 @@ class DepthOfFieldEstimator:
         Raises:
             RuntimeError: When taking an image is unsuccessful
         """
-        
+
+        if numImages < 1:
+            raise ValueError('numImages must be at least 1')
+
         # Create an empty DataFrame
         df = pd.DataFrame(columns=['pos_z', 'image', 'estimatedFocus'], index= range(numImages))
-        
+
         # Save current position
         startingPos = stage.get_position(unit='mm')
 
         # Compute moving position
-        currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
-        stepSize_z = searchDistance / (numImages - 1)
+        if numImages == 1:
+            currentPos = list(startingPos)
+            stepSize_z = 0.0
+        else:
+            currentPos = [startingPos[0], startingPos[1], startingPos[2] - searchDistance / 2]
+            stepSize_z = searchDistance / (numImages - 1)
 
         # Go to the beginning position
         stage.move_abs(currentPos, wait_until_idle= True)
@@ -1107,7 +1167,7 @@ class DepthOfFieldEstimator:
                 raise RuntimeError('Taking an image is unsuccessful')
 
             h, w = image.shape
-            
+
             if dualColorMode:
 
                 if dualColorModeMainSide == 'Left':
@@ -1116,28 +1176,51 @@ class DepthOfFieldEstimator:
                 elif dualColorModeMainSide == 'Right':
                     image = image[:, w//2:]
 
-                w = image.shape[1]
-            
+                h, w = image.shape
 
-            # Center-crop the image
-            image = cropCenterImage(image, capturedRadius * 2, capturedRadius * 2)
-            
-            # Estimate focus of the image
-            estimatedFocus = estimateFocus(focusEstimationMethod, image)
-            
+            r = int(capturedRadius)
+
+            if followWorm:
+                # Locate the worm and measure focus on a fixed window around it.
+                present, offset = detect_worm(image, threshold, minPixels)
+                if present:
+                    cx = min(max(int(w/2 + offset[0]), r), w - r)
+                    cy = min(max(int(h/2 + offset[1]), r), h - r)
+                    crop = image[cy-r:cy+r, cx-r:cx+r]
+                    estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+                    # Move the camera (XY) to recenter on the worm for the next Z step.
+                    if imageToStageMat is not None:
+                        dy, dx = getStageDistances(np.array([-offset[1], offset[0]]), imageToStageMat)
+                        stage.move_rel((dx, dy, 0), unit= stageUnits, wait_until_idle= True)
+                else:
+                    estimatedFocus = np.nan   # reject this sample
+            else:
+                crop = cropCenterImage(image, r * 2, r * 2)
+                estimatedFocus = estimateFocus(focusEstimationMethod, crop)
+
             # Store the image
             df.iloc[i] = [currentPos[2], image, estimatedFocus]
-            
-            # Move to a new position
-            currentPos[2] = currentPos[2] + stepSize_z
-            stage.move_abs(currentPos, wait_until_idle= True)
 
-        # Return stage to starting position
-        stage.move_abs(startingPos)
+            # Step Z. In follow mode move Z relatively so the XY following is preserved.
+            if i + 1 < numImages:
+                currentPos[2] = currentPos[2] + stepSize_z
+                if followWorm:
+                    stage.move_z(stepSize_z, unit= 'mm', wait_until_idle= True)
+                else:
+                    stage.move_abs(currentPos, wait_until_idle= True)
+
+        if followWorm:
+            # Keep the followed XY; only return Z to the starting height.
+            endPos = stage.get_position(unit= 'mm')
+            endPos[2] = startingPos[2]
+            stage.move_abs(endPos, wait_until_idle= True)
+        else:
+            # Return stage to starting position
+            stage.move_abs(startingPos)
 
         self.dofDataFrame = df
 
-    
+
     @staticmethod
     def shiftedGeneralizedNormalDist(x: float, C: float, A: float, mu: float, alpha: float, beta: float) -> float:
         """Shifted and scaled generalized normal distribution model
@@ -1165,7 +1248,7 @@ class DepthOfFieldEstimator:
             )
         )
         return y
-        
+
 
     def fitDataToNormalDist(self):
         """Fit self.normDistParams into a shifted generalized normal distribution model that best represent self.dofDataFrame
@@ -1181,11 +1264,11 @@ class DepthOfFieldEstimator:
         beta0 = 2 # normal distribution
 
         p0 = [C0, A0, mu0, alpha0, beta0]
-        
+
         # Curve fitting
         self.normDistParams, _ = curve_fit(DepthOfFieldEstimator.shiftedGeneralizedNormalDist, x_data, y_data, p0= p0)
 
-    
+
     def genEstimatedDofPlot(self) -> np.ndarray:
         """Generate pyplot image of the fitted self.normDistParams and the estimated DoF from it.
 
@@ -1197,7 +1280,7 @@ class DepthOfFieldEstimator:
 
         x_data = self.dofDataFrame['pos_z'].tolist()
         y_data = self.dofDataFrame['estimatedFocus'].tolist()
-        
+
         # Plotting
         x_fit = np.linspace(min(x_data), max(x_data), 500)
 
@@ -1242,7 +1325,7 @@ class DepthOfFieldEstimator:
         plt.close(fig= fig)
 
         return plotImage
-    
+
 
     def getBestFocusImage(self) -> Tuple[float, np.ndarray, float]:
         """Get a sampled image that has the best focus
@@ -1259,6 +1342,173 @@ class DepthOfFieldEstimator:
         return bestFocusPosition, bestFocusImage, bestFocusValue
 
 
+class IntensitySweeper:
+
+    def __init__(self):
+        self.dataFrame = pd.DataFrame(columns=['pos_z', 'mean_intensity'])
+        self.peakZ = None
+        self.zeroDerivZ = None
+        self.midZ = None
+
+
+    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', stopRequested=None) -> None:
+        if numImages < 1:
+            raise ValueError('numImages must be at least 1')
+
+        df = pd.DataFrame(columns=['pos_z', 'mean_intensity'], index= range(numImages))
+
+        startingPos = stage.get_position(unit='mm')
+
+        if numImages == 1:
+            stepSize_z = 0.0
+            currentPos = [startingPos[0], startingPos[1], (zStart + zEnd) / 2]
+        else:
+            stepSize_z = (zEnd - zStart) / (numImages - 1)
+            currentPos = [startingPos[0], startingPos[1], zStart]
+
+        try:
+            if stopRequested is not None and stopRequested():
+                raise InterruptedError('Z sweep cancelled')
+            if not stage.move_abs(currentPos, wait_until_idle= True):
+                raise RuntimeError('Moving to the Z-sweep start failed')
+
+            for i in range(numImages):
+                if stopRequested is not None and stopRequested():
+                    raise InterruptedError('Z sweep cancelled')
+
+                isSuccess, image = camera.singleTake()
+
+                if not isSuccess:
+                    raise RuntimeError('Taking an image is unsuccessful')
+
+                if dualColorMode:
+                    w = image.shape[1]
+                    if dualColorModeMainSide == 'Left':
+                        image = image[:, :w//2]
+                    elif dualColorModeMainSide == 'Right':
+                        image = image[:, w//2:]
+
+                df.iloc[i] = [currentPos[2], np.mean(image)]
+
+                if i + 1 < numImages:
+                    currentPos[2] = currentPos[2] + stepSize_z
+                    if not stage.move_abs(currentPos, wait_until_idle= True):
+                        raise RuntimeError('Moving during the Z sweep failed')
+        finally:
+            if stopRequested is None or not stopRequested():
+                stage.move_abs(startingPos)
+
+        self.dataFrame = df
+
+
+    def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        n = len(means)
+        dz = (pos_z[-1] - pos_z[0]) / (n - 1) if n > 1 else 1.0
+
+        polyorder = 3
+        windowLength = min(11, n)
+        if windowLength % 2 == 0:
+            windowLength -= 1
+
+        if windowLength >= polyorder + 2:
+            smoothedMeans = savgol_filter(means, windowLength, polyorder)
+            firstDeriv = savgol_filter(means, windowLength, polyorder, deriv=1, delta=dz)
+            secondDeriv = savgol_filter(means, windowLength, polyorder, deriv=2, delta=dz)
+        else:
+            smoothedMeans = means
+            firstDeriv = np.gradient(means, pos_z)
+            secondDeriv = np.gradient(firstDeriv, pos_z)
+
+        return pos_z, smoothedMeans, firstDeriv, secondDeriv
+
+
+    @staticmethod
+    def _zeroCrossing(x: np.ndarray, y: np.ndarray, refIndex: int) -> float | None:
+        crossings = np.where(np.diff(np.sign(y)) != 0)[0]
+        if len(crossings) == 0:
+            return None
+
+        zeros = []
+        for i in crossings:
+            y0, y1 = y[i], y[i + 1]
+            t = 0.0 if y1 == y0 else -y0 / (y1 - y0)
+            zeros.append(x[i] + t * (x[i + 1] - x[i]))
+        zeros = np.array(zeros)
+
+        return float(zeros[np.argmin(np.abs(zeros - x[refIndex]))])
+
+
+    def computeFocusEstimates(self) -> None:
+        pos_z, _, firstDeriv, _ = self.derivatives()
+
+        peakIndex = int(np.argmax(firstDeriv))
+        self.peakZ = float(pos_z[peakIndex])
+
+        self.zeroDerivZ = self._zeroCrossing(pos_z, firstDeriv, peakIndex)
+
+        self.midZ = None if self.zeroDerivZ is None else (self.peakZ + self.zeroDerivZ) / 2
+
+
+    def findGradientPeak(self) -> float:
+        self.computeFocusEstimates()
+        return self.peakZ
+
+
+    def findScanZ(self) -> float:
+        self.computeFocusEstimates()
+        return self.peakZ if self.midZ is None else self.midZ
+
+
+    def genPlot(self) -> np.ndarray:
+        pos_z, smoothedMeans, firstDeriv, secondDeriv = self.derivatives()
+        means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
+
+        self.computeFocusEstimates()
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 13), sharex=True)
+
+        def markLines(ax):
+            ax.axvline(self.peakZ, color='k', linestyle='--', label=f'max slope (z={self.peakZ:.4f})')
+            if self.zeroDerivZ is not None:
+                ax.axvline(self.zeroDerivZ, color='m', linestyle='--', label=f"d=0 (z={self.zeroDerivZ:.4f})")
+            if self.midZ is not None:
+                ax.axvline(self.midZ, color='c', linestyle='-.', label=f'midpoint (z={self.midZ:.4f})')
+
+        ax1.plot(pos_z, means, 'b.', label='mean')
+        ax1.plot(pos_z, smoothedMeans, 'b-', label='fit')
+        markLines(ax1)
+        ax1.set_ylabel('Intensity (brightness)')
+        ax1.legend()
+
+        ax2.plot(pos_z, firstDeriv, 'r-', label="d(intensity) (fit)")
+        ax2.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax2)
+        ax2.set_ylabel('d(intensity)')
+        ax2.legend()
+
+        ax3.plot(pos_z, secondDeriv, 'g-', label="d²(intensity) (fit)")
+        ax3.axhline(0, color='gray', linewidth=0.8)
+        markLines(ax3)
+        ax3.set_xlabel('Position Z')
+        ax3.set_ylabel('d²(intensity)')
+        ax3.legend()
+
+        fig.tight_layout()
+
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        width, height = fig.get_size_inches() * fig.get_dpi()
+        plotImage = np.frombuffer(canvas.tostring_argb(), dtype='uint8').reshape(int(height), int(width), 4)
+        plotImage = plotImage[:, :, 1:4]
+
+        plt.close(fig= fig)
+
+        return plotImage
+
+
 class Exterior(Enum):
     Zero = 'Zero'
     Constant = 'Constant'
@@ -1270,36 +1520,36 @@ class Vertex2D:
         self.point = point
         self.value = value
         self.name = name
-    
+
 
     @staticmethod
     def lerp2d(a: Vertex2D, b: Vertex2D, t: float) -> Vertex2D:
             point = a.point + (b.point - a.point) * t
             value = a.value + (b.value - a.value) * t
             return Vertex2D(point, value)
-    
+
 
     @staticmethod
     def cross(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         return x[..., 0] * y[..., 1] - x[..., 1] * y[..., 0]
-    
+
 
     @staticmethod
     def isInsideFourPoints(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray) -> bool:
-        
+
         def isOnLeftSide(a: np.ndarray, b: np.ndarray, p: np.ndarray) -> bool:
             vab = b - a
             vap = p - a
             if Vertex2D.cross(vab, vap) >= 0:
                 return True
             return False
-        
+
         return isOnLeftSide(v0.point, v1.point, p) \
             and isOnLeftSide(v1.point, v2.point, p) \
             and isOnLeftSide(v2.point, v3.point, p) \
             and isOnLeftSide(v3.point, v0.point, p)
-    
-    
+
+
     @staticmethod
     def invBilinear( a, b, c, d, p ) -> np.ndarray:
         """Solve for u,v parameter in quadrilateral through bilinear.
@@ -1316,49 +1566,49 @@ class Vertex2D:
             np.ndarray: u,v parameters
         """
         uv = np.array([0,0], np.float32)
-        
+
         e = b-a
         f = d-a
         g = a-b+c-d
         h = p-a
-            
+
         k2 = Vertex2D.cross( g, f )
         k1 = Vertex2D.cross( e, f ) + Vertex2D.cross( h, g )
         k0 = Vertex2D.cross( h, e )
-        
+
         w = k1*k1 - 4*k0*k2
-        
+
         if w<=0.001:
             uv[0] = -1
             uv[1] = -1
             return uv
 
         w = np.sqrt( w )
-        
-        # will fail for k0=0, which is only on the ba edge 
+
+        # will fail for k0=0, which is only on the ba edge
         if k0 <= 0.001 and k0 >= -0.001:
             uv[0] = -1
             uv[1] = -1
             return uv
-        
-        v = 2*k0/(-k1 - w) 
+
+        v = 2*k0/(-k1 - w)
 
         if v < 0 or v > 1:
             v = 2*k0 / (-k1 + w)
 
         ta = e[0] + g[0]*v
         ta = ta + 0.001 * (1 - np.abs(math.copysign(1,ta)))
-        
+
         u = (h[0] - f[0]*v)/ta
         if u < 0 or u > 1 or v < 0 or v > 1:
             uv[0] = -1
             uv[1] = -1
             return uv
-            
+
         uv[0] = u
         uv[1] = v
         return uv
-    
+
 
     @staticmethod
     def bilerp(v0: Vertex2D, v1: Vertex2D, v2: Vertex2D, v3: Vertex2D, p: np.ndarray, exterior: Exterior = Exterior.Zero, exteriorConstant: float = 0) -> float:
@@ -1393,12 +1643,11 @@ class Vertex2D:
                 val = 0
 
         else:
-            
+
             if exterior == Exterior.Zero:
                 val = 0
 
             else:
                 val = exteriorConstant
-            
+
         return val
-        

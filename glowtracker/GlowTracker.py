@@ -1,4 +1,25 @@
 from __future__ import annotations
+import sys
+import multiprocessing as mp
+from multiprocessing.managers import SharedMemoryManager
+from SharedMemory import SharedMemoryQueue
+from scan import CenterRadiusFromThreePoints
+import image_saver
+from image_utils import prepare_texture_data
+from runtime_control import (
+    ManagedStageMove,
+    append_new_focus_values,
+    controller_velocity,
+)
+from threading import Thread, Lock, Event, current_thread
+
+USE_SHARED_MEMORY_SAVER = sys.platform != 'win32'
+SAVE_HANDOFF_JOIN_TIMEOUT = 2.0
+SAVE_ACQUISITION_JOIN_TIMEOUT = 5.0
+SAVE_WORKER_JOIN_TIMEOUT = 15.0
+SAVE_WORKER_TERMINATE_TIMEOUT = 2.0
+SAVE_STATUS_JOIN_TIMEOUT = 2.0
+COORDINATE_CLOSE_TIMEOUT = 2.0
 
 import os
 # Suppress kivy normal initialization logs in the beginning
@@ -7,9 +28,13 @@ os.environ["KCFG_KIVY_LOG_LEVEL"] = "warning"
 # Emulate camera
 # os.environ["PYLON_CAMEMU"] = "1"
 
-# 
+if __name__ == '__mp_main__':
+    os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+    os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
+#
 # Kivy Imports
-# 
+#
 import kivy
 # Require modern version
 kivy.require('2.0.0')
@@ -28,43 +53,39 @@ from kivy.graphics import Color, Line, Ellipse, Mesh
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
-from kivy.properties import ObjectProperty, StringProperty, BoundedNumericProperty, NumericProperty, ConfigParserProperty, ListProperty
+from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty
 from kivy.clock import Clock, ClockEvent, mainthread
-from kivy.metrics import Metrics
-from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.scatterlayout import ScatterLayout
-from kivy.uix.scatter import Scatter
 from kivy.uix.tabbedpanel import TabbedPanel
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
-from kivy.uix.slider import Slider
-from kivy.uix.behaviors import DragBehavior, FocusBehavior
+from kivy.uix.behaviors import DragBehavior
 from kivy.uix.switch import Switch
 from kivy.uix.spinner import Spinner
 from kivy.uix.stacklayout import StackLayout
 
-# 
+#
 # IO, Utils
-# 
+#
+import asyncio
 import datetime
+import json
 import time
-from pathlib import Path
 from threading import Thread, Lock
-from multiprocessing.pool import ThreadPool
-from functools import partial
-from queue import Queue
+# from multiprocessing.pool import ThreadPool
+# from functools import partial
+from queue import Queue, Full, Empty
 from overrides import override
 from typing import List, Tuple
 from io import TextIOWrapper
@@ -72,16 +93,16 @@ import zaber_motion     # We need to import zaber_motion before pypylon to preve
 from zaber_motion.units import Units, units_from_literals
 from zaber_motion.unit_table import UnitTable
 from pypylon import pylon
-import platformdirs 
+import platformdirs
 import shutil
 from pyparsing import ParseException
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from copy import deepcopy
 
-# 
+#
 # Own classes
-# 
+#
 from Zaber_control import Stage, AxisEnum, Vec3
 import Microscope_macros as macro
 from Microscope_macros import Vertex2D
@@ -90,17 +111,24 @@ from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
 from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 
-# 
+#
 # Math
-# 
+#
 import math
 import numpy as np
-from skimage.io import imsave
 import cv2
 from scipy.stats import skew
 
 import gc
 
+@dataclass
+class Plate:
+    name: str
+    center: tuple
+    radius: float
+    scan_z: float
+    scan_exposure: float
+    track_exposure: float
 
 # helper functions
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S-%f-{fname}'):
@@ -116,19 +144,19 @@ def imageToTexture(image: np.ndarray) -> Texture:
 
     Returns:
         texture (Texture): image as a Kivy Texture
-    """    
+    """
+    image, bufferfmt = prepare_texture_data(image)
     height, width = image.shape[0], image.shape[1]
-    
-    colorfmt = 'luminance'
+
     if image.ndim == 2:
         colorfmt = 'luminance'
-    elif image.ndim == 3:
+    elif image.ndim == 3 and image.shape[2] == 3:
         colorfmt = 'rgb'
-    elif image.ndim == 4:
+    elif image.ndim == 3 and image.shape[2] == 4:
         colorfmt = 'rgba'
-        
-    bufferfmt = 'ubyte'
-    
+    else:
+        raise ValueError(f'unsupported image shape: {image.shape}')
+
     # Create a new Kivy Texture
     image_texture = Texture.create(
         size=(width, height), colorfmt= colorfmt, bufferfmt= bufferfmt
@@ -136,7 +164,7 @@ def imageToTexture(image: np.ndarray) -> Texture:
 
     # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
     image_texture.flip_vertical()
-    
+
     # Upload data to texture
     buf = image.tobytes()
     image_texture.blit_buffer(buf, colorfmt= colorfmt, bufferfmt= bufferfmt)
@@ -178,7 +206,7 @@ class LeftColumn(BoxLayout):
 
         # Camera config value
         self.cameraConfig: dict[str:any] = dict()
-        
+
         Clock.schedule_once(self._do_setup)
 
     def _do_setup(self, *l):
@@ -203,10 +231,10 @@ class LeftColumn(BoxLayout):
 
         self.savefile = absPath
         print(f'Set recording path to {self.savefile}')
-        
+
         # reset the stage keys
         self.app.bind_keys()
-    
+
 
     def dismiss_popup(self):
         self.app.bind_keys()
@@ -293,7 +321,7 @@ class LeftColumn(BoxLayout):
             self._popup = WarningPopup(title="Autofocus", text='Autofocus requires a stage and a running camera!',
                             size_hint=(0.5, 0.25))
             self._popup.open()
-            
+
         else:
 
             # Check if acquiring image
@@ -304,32 +332,7 @@ class LeftColumn(BoxLayout):
             prevLiveViewButtonState: str = liveViewButton.state
             liveViewButton.state = 'normal'
 
-            #   Load settings
-            depthoffield = self.app.config.getfloat('Camera', 'depthoffield')
-            depthoffieldsearchdistance = self.app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
-            dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
-            dualColorModeMainSide = self.app.config.get('DualColor', 'mainside')
-            capturedRadius = self.app.config.getint('Tracking', 'capture_radius')
-            focusEstimationMethod = FocusEstimationMethod(self.app.config.get('Autofocus', 'focusestimationmethod'))
-
-            #   Reuse DepthOfFieldEstimator to scan and search for the best focus position
-            depthOfFieldEstimator = macro.DepthOfFieldEstimator()
-            numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
-            depthOfFieldEstimator.takeCalibrationImages(camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod, dualColorMode, dualColorModeMainSide, capturedRadius)
-
-            #   Get best-focused position
-            bestFocusIndex = depthOfFieldEstimator.dofDataFrame['estimatedFocus'].idxmax()
-            bestFocusPosition = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['pos_z']
-            
-            # Move to the best-focus position
-            stagePosition = stage.get_position()
-            stagePosition[2] = bestFocusPosition
-            stage.move_abs(stagePosition, unit= 'mm')
-
-            # Remember best focus value for later auto focus
-            bestFocusValue = depthOfFieldEstimator.dofDataFrame.iloc[bestFocusIndex]['estimatedFocus']
-            self.app.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
-            self.app.config.write()
+            self.app.autofocus()
 
             # Return LiveView state
             liveViewButton.state = prevLiveViewButtonState
@@ -346,6 +349,8 @@ class RightColumn(BoxLayout):
         super(RightColumn, self).__init__(**kwargs)
         # Class instance attributes
         self.app: GlowTrackerApp = App.get_running_app()
+        self._macroWidget = None
+        self._macroWidgets = []
 
 
     def dismiss_popup(self):
@@ -353,12 +358,12 @@ class RightColumn(BoxLayout):
         self.app.bind_keys()
         self.app.root.ids.middlecolumn.ids.scalableimage.disabled = False
         self._popup.dismiss()
-    
+
 
     def open_macro(self):
         """Open the macro script widget popup.
         """
-        
+
         # Disabled interaction with preview image widget
         self.app.root.ids.middlecolumn.ids.scalableimage.disabled = True
         # Unbind keyboard events
@@ -366,6 +371,8 @@ class RightColumn(BoxLayout):
 
         # Create MacroScriptWidget Draggable Popup
         widget = MacroScriptWidget(app = self.app)
+        self._macroWidget = widget
+        self._macroWidgets.append(widget)
         widget.closeCallback = self.dismiss_popup
         self._popup = MacroScriptWidgetPopup(title= "Macro Script", content= widget, size_hint= (0.5, 0.7), auto_dismiss = False)
         self._popup.closeCallback = self.dismiss_popup
@@ -393,7 +400,7 @@ class RightColumn(BoxLayout):
 
     def show_calibration(self):
         """Show calibration window popup.
-        """        
+        """
         camera = self.app.camera
         stage: Stage = self.app.stage
 
@@ -404,12 +411,21 @@ class RightColumn(BoxLayout):
             # Launch the widget inside a popup window
             self._popup = Popup(title= '', separator_height= 0, content= calibrationTabPanel, size_hint= (0.9, 0.75))
             self._popup.open()
-        
+
         else:
             self._popup = WarningPopup(title="Calibration", text='Autocalibration requires a stage and a camera. Connect a stage or use a calibration slide.', size_hint=(0.5, 0.25), closeTime= 5)
             self._popup.open()
 
-    
+
+    def show_scan(self):
+        if getattr(self, '_scanPanel', None) is None:
+            self._scanPanel = CenterRadiusFromThreePoints()
+        if self._scanPanel.parent is not None:
+            self._scanPanel.parent.remove_widget(self._scanPanel)
+        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel, size_hint= (0.95, 0.95))
+        self._popup.open()
+
+
     def open_daq_widget(self):
         """Open the DAQ Control Sequence widget popup.
         """
@@ -423,7 +439,7 @@ class RightColumn(BoxLayout):
         # Create DAQControlTabPanel Widget
         daqControlTabPanelHolder = DAQControlTabPanelHolder()
         daqControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
-        
+
         # Launch the widget inside a popup window
         self._popup = Popup(title= '', separator_height= 0, content= daqControlTabPanelHolder, size_hint= (0.7, 0.7))
         self._popup.open()
@@ -448,14 +464,14 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
         """Override handle_keyboard function to always close the widget when ESC is pressed,
         regardless whether the self.auto_dismiss is True or False
         """
-        # ESC 
+        # ESC
         if key == 27:
             # Call closing the popup procedure
             self.closeCallback()
             # Tell the caller to stop propagating keyboard event
             return True
 
-    
+
     @override
     def on_touch_down(self, touch) -> bool:
         """Override on_touch_down function to check if the touch is inside the CodeInput region.
@@ -464,10 +480,10 @@ class MacroScriptWidgetPopup(DragBehavior, Popup):
             has_been_handled(bool): Flag to indicate if the touch event has been handled or not to stop propagation.
         """
         discardRegion: CodeInput = self.content.ids.scripttext
-        
+
         if discardRegion.collide_point(*touch.pos):
             return discardRegion.on_touch_down(touch)
-            
+
         else:
             return super().on_touch_down(touch)
 
@@ -481,10 +497,10 @@ class MacroScriptWidget(BoxLayout):
 
         # Intercept GlowTrackerApp reference object.
         #   There is a bug that if we call to get reference directly by App().get_running_app(),
-        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc. 
+        #   we would get a new GlowTrackerApp object that has different object id, and no config, root, etc.
         #   like a completely new object.
         self.app: GlowTrackerApp = kwargs.pop('app', None)
-        
+
         super(MacroScriptWidget, self).__init__(**kwargs)
 
         # Attributes
@@ -522,14 +538,22 @@ class MacroScriptWidget(BoxLayout):
             recordingTime (float): recording duratino in seconds
         """
 
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
+
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
 
             # Wait until the camera really stop grabbing
-            while self.app.camera.IsGrabbing():
+            while self.app.camera is not None and self.app.camera.IsGrabbing():
+                if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+                    return
                 time.sleep(0.01)
-        
+
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
+
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', False)
 
@@ -542,27 +566,35 @@ class MacroScriptWidget(BoxLayout):
         @mainthread
         def setNFrames():
             self.app.config.set('Experiment', 'nframes', nframes)
-        
+
         setNFrames()
 
         self.app.config.write()
-        
+
         # Start the recording mode
         self.recordButton.state = 'down'
 
-    
+
     def _start_recording_handle(self):
         """Start the recording mode.
         """
+
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
 
         # Check if still in recording mode, if so, overwrite it
         if self.recordButton.state == 'down':
             self.recordButton.state = 'normal'
 
             # Wait until the camera really stop grabbing
-            while self.app.camera.IsGrabbing():
+            while self.app.camera is not None and self.app.camera.IsGrabbing():
+                if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+                    return
                 time.sleep(0.01)
-        
+
+        if self.macroScriptExecutor.is_stopping() or getattr(self.app, '_hardware_teardown', False):
+            return
+
         # Set recording config
         self.app.config.set('Experiment', 'iscontinuous', True)
         self.app.config.write()
@@ -580,7 +612,7 @@ class MacroScriptWidget(BoxLayout):
     def openLoadMacroScriptWidget(self):
         """Open a popup to load the macro script.
         """
-        
+
         loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
             size_hint= (0.9, 0.9), auto_dismiss= False)
@@ -588,7 +620,7 @@ class MacroScriptWidget(BoxLayout):
         loadWidget.cancel = self._popup.dismiss
         self._popup.open()
 
-    
+
     def _loadScriptWidgetCallback(self, selection: list[str]):
         """Load the macro script from a list of given file path. Will choose only the first file.
         Used for handler of LoadScriptWidget.
@@ -602,10 +634,10 @@ class MacroScriptWidget(BoxLayout):
 
         if len(selection) == 0:
             return
-        
+
         self.loadMacroScript(selection[0])
-    
-    
+
+
     def loadMacroScript(self, filePath: str):
         """Load the macro script from a given file path.
 
@@ -614,7 +646,7 @@ class MacroScriptWidget(BoxLayout):
         """
         # Get the absolute file path
         self.macroScriptFile = os.path.abspath(filePath)
-        
+
         # Load the script text
         print(f'Loading the macro script {self.macroScriptFile}')
 
@@ -627,7 +659,7 @@ class MacroScriptWidget(BoxLayout):
 
         except IOError:
             print(f'An error occurred while reading the file {self.macroScriptFile}.')
-        
+
         # Set display text
         self.ids.macroscriptfile.text = self.macroScriptFile
         self.ids.scripttext.text = self.macroScript
@@ -635,7 +667,7 @@ class MacroScriptWidget(BoxLayout):
         # Set as recent script
         self.app.config.set('MacroScript', 'recentscript', self.macroScriptFile)
         self.app.config.write()
-    
+
 
     def saveMacroScript(self):
         """Save the current macro script into the same file (overwrite if exists).
@@ -646,12 +678,12 @@ class MacroScriptWidget(BoxLayout):
         try:
             # Convert to absolute path if it's a relative path
             abs_file_path = os.path.abspath(file_path)
-            
+
             # Ensure the directory exists
             directory = os.path.dirname(abs_file_path)
             if directory:
                 os.makedirs(directory, exist_ok=True)
-            
+
             # Open the file in overwrite mode, creating it if it doesn't exist
             with open(abs_file_path, 'w') as file:
                 file.write(script)
@@ -666,7 +698,7 @@ class MacroScriptWidget(BoxLayout):
 
         except Exception as e:
             print(f"Error saving macro script: {e}")
-    
+
 
     def runMacroScript(self):
         """Run the current macro script.
@@ -681,16 +713,16 @@ class MacroScriptWidget(BoxLayout):
 
         except ParseException as e:
             print(f"Parsing error: {e}")
-        
+
 
     def finishedMacroScript(self):
         """Callback when the macro script is finished. Simply enable the run button back.
         """
         print('Finished running the macro script.')
-        
+
         # Enable the run button
         self.ids.runbutton.disabled = False
-        
+
 
     def stopMacroScript(self):
         """Stop running the macro script.
@@ -708,52 +740,53 @@ class LoadScriptWidget(BoxLayout):
 
 class CalibrationTabPanel(TabbedPanel):
     """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
-    """    
+    """
 
     def setCloseCallback(self, closeCallback: callable) -> None:
         """API setting close callback event for children' tab.
 
         Args:
             closeCallback (callable): the closing callback event.
-        """        
+        """
         self.closeCallback = closeCallback
         self.ids.stagecalibration.setCloseCallback( closeCallback )
         self.ids.dualcolorcalibration.setCloseCallback( closeCallback )
         self.ids.depthoffieldcalibration.setCloseCallback( closeCallback )
+        self.ids.intensitysweepcalibration.setCloseCallback( closeCallback )
 
 
 class CameraAndStageCalibration(BoxLayout):
     """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
-    """    
+    """
     closeCallback = ObjectProperty(None)
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """        
+        """
         self.closeCallback = closeCallback
-    
+
 
     def calibrate(self):
         """Execute the camera and stage calibration process.
             1. Take calibration images.
             2. Estimate camera to stage transformation matrix.
             3. Display results.
-        """        
+        """
         app: GlowTrackerApp = App.get_running_app()
         camera = app.camera
         stage = app.stage
 
         if camera is None or stage is None:
             return
-        
+
         # stop camera if already running
         liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
         prevLiveViewButtonState = liveViewButton.state
         liveViewButton.state = 'normal'
-        
+
         # get config values
         stepsize = app.config.getfloat('Calibration', 'step_size')
         stepunits = app.config.get('Calibration', 'step_units')
@@ -768,14 +801,14 @@ class CameraAndStageCalibration(BoxLayout):
             stepsize,
             stepunits,
             dualcolormode,
-            mainside 
+            mainside
         )
-        
+
         # Update display calibration images
         self.ids.fixedimage.texture = imageToTexture(basisImageOrig)
         self.ids.movingimagex.texture = imageToTexture(basisImageX)
         self.ids.movingimagey.texture = imageToTexture(basisImageY)
-            
+
         # Estimate camera to stage transformation parameters
         calibratedParameters = cameraAndStageCalibrator.calibrateCameraAndStageTransform()
 
@@ -786,12 +819,12 @@ class CameraAndStageCalibration(BoxLayout):
                             size_hint=(0.35, 0.2), closeTime = 6)
             warningPopup.open()
             return
-        
+
         rotation, imageNormDir, pixelSize = calibratedParameters
         app.config.set('Camera', 'rotation', rotation)
         app.config.set('Camera', 'imagenormaldir', '+Z' if imageNormDir == 1 else '-Z')
         app.config.set('Camera', 'pixelsize', pixelSize)
-        
+
         # update calibration matrix
         app.imageToStageMat, app.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormDir, pixelSize)
 
@@ -813,17 +846,17 @@ class CameraAndStageCalibration(BoxLayout):
 
 class DualColorCalibration(BoxLayout):
     """Dual color calibration widget that handles linking button callbacks and the calibration algorithm class.
-    """    
+    """
     closeCallback = ObjectProperty(None)
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """     
+        """
         self.closeCallback = closeCallback
-    
+
 
     def calibrate(self) -> None:
         """Execute the dual color calibration process.
@@ -831,19 +864,19 @@ class DualColorCalibration(BoxLayout):
             2. Process the dual color image.
             3. Calibrate main side to minor side transformation matrix.
             4. Display results.
-        """        
+        """
         app: GlowTrackerApp = App.get_running_app()
         camera: basler.Camera = app.camera
         stage: Stage = app.stage
 
         if camera is None or stage is None:
             return
-        
+
         # stop camera if already running
         liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
         prevLiveViewButtonState = liveViewButton.state
         liveViewButton.state = 'normal'
-        
+
         # Take a dual color image for calibration
         isSuccess, dualColorImage = camera.singleTake()
 
@@ -851,7 +884,7 @@ class DualColorCalibration(BoxLayout):
             return
 
         mainSide = app.config.get('DualColor', 'mainside')
-        
+
         # Instantiate a dual color calibrator
         dualColorImageCalibrator = macro.DualColorImageCalibrator()
 
@@ -860,7 +893,7 @@ class DualColorCalibration(BoxLayout):
             dualColorImage= dualColorImage,
             mainSide= mainSide
         )
-        
+
         # Update display image
         self.ids.mainsideimage.texture = imageToTexture(mainSideImage)
         self.ids.minorsideimage.texture = imageToTexture(minorSideImage)
@@ -877,7 +910,7 @@ class DualColorCalibration(BoxLayout):
         # Update labels shown
         self.ids.translation.text = f"Translation (x,y): {translation_x:.2f}, {translation_y:.2f}"
         self.ids.rotation.text = f"Rotation (rad): {rotation:.3f}"
-        
+
         # Compute minor to main calibration matrix
         minorToMainMat = dualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[0]/2)
 
@@ -887,7 +920,7 @@ class DualColorCalibration(BoxLayout):
         translatedMinorSideImage = cv2.warpAffine(minorSideImage, minorToMainMat[:2,:], (minorSideImage.shape[1], minorSideImage.shape[0]))
 
         # Combine main and minor side
-        combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= np.uint8)
+        combinedImage = np.zeros(shape= (mainSideImage.shape[0], mainSideImage.shape[1], 3), dtype= mainSideImage.dtype)
         combinedImage[:,:,0] = mainSideImage
         combinedImage[:,:,1] = translatedMinorSideImage
 
@@ -900,17 +933,17 @@ class DualColorCalibration(BoxLayout):
 
 class DepthOfFieldCalibration(BoxLayout):
     """Camera And Stage calibration widget that handles linking button callbacks and the calibration algorithm class.
-    """    
+    """
     closeCallback = ObjectProperty(None)
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """        
+        """
         self.closeCallback = closeCallback
-    
+
 
     def calibrate(self):
         """Estimate Depth of Field of the current optic system and display the results.
@@ -922,12 +955,12 @@ class DepthOfFieldCalibration(BoxLayout):
         # Safe guard
         if camera is None or stage is None:
             return
-        
+
         # stop camera if already running
         liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
         prevLiveViewButtonState = liveViewButton.state
         liveViewButton.state = 'normal'
-        
+
         # get config values
         depthoffieldsearchdistance = app.config.getfloat('Calibration', 'depthoffieldsearchdistance')
         depthoffieldnumsampleimages = app.config.getint('Calibration', 'depthoffieldnumsampleimages')
@@ -939,7 +972,7 @@ class DepthOfFieldCalibration(BoxLayout):
 
         # Take calibration images
         depthOfFieldEstimator = macro.DepthOfFieldEstimator()
-        
+
         # Estimate DOF
         try:
             estimatedDof = depthOfFieldEstimator.estimate(camera, stage, depthoffieldsearchdistance, depthoffieldnumsampleimages, focusEstimationMethod, dualColorMode, mainSide, capturedRadius)
@@ -967,6 +1000,43 @@ class DepthOfFieldCalibration(BoxLayout):
         liveViewButton.state = prevLiveViewButtonState
 
 
+class IntensitySweepCalibration(BoxLayout):
+
+    closeCallback = ObjectProperty(None)
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        self.closeCallback = closeCallback
+
+
+    def sweep(self):
+        app: GlowTrackerApp = App.get_running_app()
+        camera: basler.Camera = app.camera
+        stage: Stage = app.stage
+
+        if camera is None or stage is None:
+            return
+
+        liveViewButton: Button = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
+        prevLiveViewButtonState = liveViewButton.state
+        liveViewButton.state = 'normal'
+
+        zStart = float(self.ids.zstart.text)
+        zEnd = float(self.ids.zend.text)
+        numImages = int(self.ids.numphotos.text)
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        mainSide = app.config.get('DualColor', 'mainside')
+
+        intensitySweeper = macro.IntensitySweeper()
+
+        try:
+            intensitySweeper.sweep(camera, stage, zStart, zEnd, numImages, dualColorMode, mainSide)
+            self.ids.intensitysweepplot.texture = imageToTexture(intensitySweeper.genPlot())
+        except Exception as e:
+            print(f'Failed to run intensity sweep: {e}')
+
+        liveViewButton.state = prevLiveViewButtonState
+
+
 class DAQControlTabPanelHolder(FloatLayout):
 
     mode: Spinner
@@ -975,16 +1045,16 @@ class DAQControlTabPanelHolder(FloatLayout):
         super().__init__(**kwargs)
         self.ids.daqcontroltabpanel.init()
 
-    
+
     def setCloseCallback(self, closeCallback: callable) -> None:
         """API setting close callback event for children' tab.
 
         Args:
             closeCallback (callable): the closing callback event.
-        """        
+        """
         self.closeCallback = closeCallback
         self.ids.daqcontroltabpanel.setCloseCallback( closeCallback )
-    
+
     def updateMode(self):
         print(self.mode.text)
 
@@ -1000,24 +1070,24 @@ class DAQControlTabPanelHolder(FloatLayout):
 
 class DAQControlTabPanel(TabbedPanel):
     """Calibration widget that holds CameraAndStageCalibration, DualColorCalibration, and DepthOfFieldCalibration
-    """    
+    """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-    
-    
+
+
     def init(self):
         self.ids.sequencerwidget.init()
         self.ids.stageprogramwidget.init()
         self.ids.reversalwidget.init()
-    
+
 
     def setCloseCallback(self, closeCallback: callable) -> None:
         """API setting close callback event for children' tab.
 
         Args:
             closeCallback (callable): the closing callback event.
-        """        
+        """
         self.closeCallback = closeCallback
         self.ids.sequencerwidget.setCloseCallback( closeCallback )
         self.ids.stageprogramwidget.setCloseCallback( closeCallback )
@@ -1034,7 +1104,7 @@ class SequencerWidget(BoxLayout):
 
 
     def init(self):
-        
+
         # Initialize MacroScriptExecutor
         self.app: GlowTrackerApp = App.get_running_app()
         self.stage = self.app.stage
@@ -1048,20 +1118,20 @@ class SequencerWidget(BoxLayout):
         if self.daqScriptFile != '':
             self.loadScript(self.daqScriptFile)
 
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """        
+        """
         self.closeCallback = closeCallback
 
 
     def openLoadSequencerWidget(self):
         """Open a popup to load the script.
         """
-        
+
         loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
 
         # Check if current file path is not empty then go to that path at the beginning,
@@ -1075,7 +1145,7 @@ class SequencerWidget(BoxLayout):
         loadWidget.cancel = self._popup.dismiss
         self._popup.open()
 
-    
+
     def _loadScriptWidgetCallback(self, selection: list[str]):
         """Load the macro script from a list of given file path. Will choose only the first file.
         Used for handler of LoadScriptWidget.
@@ -1089,10 +1159,10 @@ class SequencerWidget(BoxLayout):
 
         if len(selection) == 0:
             return
-        
+
         self.loadScript(selection[0])
-    
-    
+
+
     def loadScript(self, filePath: str):
         """Load the script from a given file path.
 
@@ -1101,7 +1171,7 @@ class SequencerWidget(BoxLayout):
         """
         # Get the absolute file path
         self.daqScriptFile = os.path.abspath(filePath)
-        
+
         # Load the script text
 
         try:
@@ -1115,7 +1185,7 @@ class SequencerWidget(BoxLayout):
 
         except IOError:
             print(f'An error occurred while reading the file {self.daqScriptFile}.')
-        
+
         # Set display text
         self.ids.daqscriptfile.text = self.daqScriptFile
         self.ids.scripttext.text = self.daqScript
@@ -1131,7 +1201,7 @@ class SequencerWidget(BoxLayout):
         except Exception as e:
             print(e)
             return None
-        
+
 
     def saveScript(self):
         """Save the current macro script into the same file (overwrite if exists).
@@ -1143,12 +1213,12 @@ class SequencerWidget(BoxLayout):
         try:
             # Convert to absolute path if it's a relative path
             abs_file_path = os.path.abspath(file_path)
-            
+
             # Ensure the directory exists
             directory = os.path.dirname(abs_file_path)
             if directory:
                 os.makedirs(directory, exist_ok=True)
-            
+
             # Open the file in overwrite mode, creating it if it doesn't exist
             with open(abs_file_path, 'w') as file:
                 file.write(self.daqScript)
@@ -1171,7 +1241,7 @@ class SequencerWidget(BoxLayout):
         except Exception as e:
             print(e)
             return None
-    
+
 
 class StageProgramWidget(BoxLayout):
     """Widget that holds the parser and the function handler
@@ -1214,8 +1284,8 @@ class StageProgramWidget(BoxLayout):
 
 
     def init(self):
-        
-        # Initialize 
+
+        # Initialize
         self.app: GlowTrackerApp = App.get_running_app()
         self.stage = self.app.stage
         self.camera = self.app.camera
@@ -1224,27 +1294,27 @@ class StageProgramWidget(BoxLayout):
         self.mode = StageProgramMode[self.app.config.get('DaqControl', 'stageprogrammode')]
         self.modeSpinner.text = self.mode.value
         self._popup: Popup = None
-        
+
         self.fourPointParamWidgets = [self.exterior_layout, self.fourpoint_header_layout, self.p1_layout, self.p2_layout, self.p3_layout, self.p4_layout, self.relative_layout]
-        
+
         self.gaussianPointParamsWidgets = [self.g_amplitude_layout, self.g_x_mean_layout, self.g_x_sigma_layout, self.g_y_mean_layout, self.g_y_sigma_layout, self.g_relative_layout]
 
         # Temporary containing to keep the removed widget alive
         self._tempContainer = BoxLayout()
-        
+
         self.initModeWidget()
         self.updateParam()
 
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """        
+        """
         self.closeCallback = closeCallback
 
-    
+
     def initModeWidget(self) -> None:
         """On startup gui, remove other modes' unrelated widgets
         """
@@ -1255,27 +1325,27 @@ class StageProgramWidget(BoxLayout):
             for widget in self.gaussianPointParamsWidgets:
                 stacklayout.remove_widget(widget= widget)
                 self._tempContainer.add_widget(widget= widget)
-            
+
         elif self.mode == StageProgramMode.Gaussian:
             # Remove FourPoint params widgets
             for widget in self.fourPointParamWidgets:
                 stacklayout.remove_widget(widget= widget)
                 self._tempContainer.add_widget(widget= widget)
-        
+
 
     def updateExteriorChoice(self) -> None:
 
         # Parse choice text to enum
         self.exterior = macro.Exterior[self.exteriorSpinner.text]
-            
+
         # Enable constanttextinput if choice is Constant
         if self.exterior == macro.Exterior.Constant:
             self.constanttextinput.disabled = False
 
         else:
             self.constanttextinput.disabled = True
-        
-    
+
+
     def updateMode(self) -> None:
 
         # Parse choice text to enum
@@ -1299,17 +1369,17 @@ class StageProgramWidget(BoxLayout):
                     stacklayout.add_widget(widget= widget)
 
             elif self.mode == StageProgramMode.Gaussian:
-                
+
                 # Remove FourPoint params widgets
                 for widget in self.fourPointParamWidgets:
                     stacklayout.remove_widget(widget= widget)
                     self._tempContainer.add_widget(widget= widget)
-                
+
                 # Add Gaussian params widgets
                 for widget in self.gaussianPointParamsWidgets:
                     self._tempContainer.remove_widget(widget= widget)
                     stacklayout.add_widget(widget= widget)
-        
+
         # Save to config
         self.app.config.set('DaqControl', 'stageprogrammode', self.modeSpinner.text)
         self.app.config.write()
@@ -1329,7 +1399,7 @@ class StageProgramWidget(BoxLayout):
             # Update DAQStageProgram variables
             self.app.daqControl.daqStageProgram.update(mode= self.mode, quadVertex= quadVertex, exterior= self.exterior, exteriorConstant= self.constanttextinput.value, isFourPointRelative= self.relative.active)
 
-        elif self.mode == StageProgramMode.Gaussian: 
+        elif self.mode == StageProgramMode.Gaussian:
             # Parse values
             gaussianParams = GaussianParams(
                 amplitude= self.g_amplitude.value,
@@ -1344,7 +1414,7 @@ class StageProgramWidget(BoxLayout):
 
         # Generate value map plot
         valMapPlot = self.app.daqControl.daqStageProgram.generateValueMapPlot()
-        
+
         # Show the plot
         self.ids.visualizationplot.texture = imageToTexture(valMapPlot)
 
@@ -1357,9 +1427,9 @@ class DaqRelativePositionSwitch(Switch):
         self.app = App.get_running_app()
         self.active = self.app.config.getboolean('DaqControl', self.configKey)
 
-    
+
     @override
-    def on_touch_up(self, touch): 
+    def on_touch_up(self, touch):
         """On switch touch up callback. Update the config value 'self.configKey',
             and call root.updateParam()
 
@@ -1394,29 +1464,29 @@ class ReversalWidget(BoxLayout):
 
 
     def init(self):
-        
-        # Initialize 
+
+        # Initialize
         self.app: GlowTrackerApp = App.get_running_app()
         self.stage = self.app.stage
         self.camera = self.app.camera
         self.imageAcquisitionManager: ImageAcquisitionManager = self.app.root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager
 
-    
+
     def setCloseCallback( self, closeCallback: callable ) -> None:
         """Set widget closing callback.
 
         Args:
             closeCallback (callable): the closing callback.
-        """        
+        """
         self.closeCallback = closeCallback
-    
+
 
     def updateConfigChanged(self, configKey: str) -> None:
 
         if configKey in ['showtrail', 'showguideline', 'showreversalindicator']:
             # Redraw tracking overlay
             self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
-    
+
 
     def updateParam(self) -> None:
 
@@ -1426,7 +1496,7 @@ class ReversalWidget(BoxLayout):
         self.app.daqControl.reversalDetector.reversalThresholdRadian = self.reversalthresholdradian.value
         self.app.daqControl.reversalDetector.reversalVoltage = self.reversalvoltage.value
         self.app.daqControl.reversalDetector.forwardVoltage = self.forwardvoltage.value
-        
+
         self.app.root.ids.middlecolumn.ids.imageoverlay.clearOverlay()
 
 
@@ -1438,9 +1508,9 @@ class ReversalSwitch(Switch):
         self.app = App.get_running_app()
         self.active = self.app.config.getboolean('DaqControl', self.configKey)
 
-    
+
     @override
-    def on_touch_up(self, touch): 
+    def on_touch_up(self, touch):
         """On switch touch up callback. Update the config value 'self.configKey',
             and call root.updateConfigChanged()
 
@@ -1470,7 +1540,7 @@ class DaqTextInput(TextInput):
 
     def _validate(self) -> bool:
         """Validate if self.text can be interpreted as a numerical value. If successful, self.value is updated.
-        
+
         Returns:
             bool: True if a number. Otherwise, False.
         """
@@ -1483,7 +1553,7 @@ class DaqTextInput(TextInput):
         except ValueError:
             # The value is not a number
             return False
-        
+
         # Check if should display text in integer style or floating point style
         try:
             value_int = int(self.text)
@@ -1504,10 +1574,10 @@ class DaqTextInput(TextInput):
             self.app.config.set('DaqControl', self.configKey, self.value)
             self.app.config.write()
             self.root.updateParam()
-        
+
         else:
             self.text = str(self.value)
-    
+
 
     @override
     def keyboard_on_key_down(self, window, keycode, text, modifiers):
@@ -1530,7 +1600,7 @@ class DaqTextInput(TextInput):
 
 class StageAxisController(BoxLayout):
     """Template class for stage axis controller widget.
-    """    
+    """
 
     def __init__(self,  **kwargs):
         super(StageAxisController, self).__init__(**kwargs)
@@ -1538,7 +1608,7 @@ class StageAxisController(BoxLayout):
     def disable_all(self):
         for id in self.ids:
             self.ids[id].disabled = True
-    
+
     def enable_all(self):
         for id in self.ids:
             self.ids[id].disabled = False
@@ -1561,16 +1631,70 @@ class ZControls(StageAxisController):
         super(ZControls, self).__init__(**kwargs)
 
 
+class GoToControls(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._moveWorker = ManagedStageMove(blocked=True)
+
+    @property
+    def _moveThread(self):
+        return self._moveWorker.thread
+
+    def go_to(self):
+        app = App.get_running_app()
+        try:
+            target = [
+                float(self.ids.gotox.text),
+                float(self.ids.gotoy.text),
+                float(self.ids.gotoz.text),
+            ]
+        except ValueError:
+            print('invalid coordinate input')
+            return
+
+        stage = app.stage
+        started = self._moveWorker.start(
+            stage,
+            target,
+            on_success=lambda: app.update_coordinates(isAsync=False),
+            teardown_requested=lambda: (
+                getattr(app, '_hardware_teardown', False)
+                or app.stage is not stage
+            ),
+        )
+        if not started and self._moveWorker.is_active():
+            print('Go To movement is already active')
+
+    def request_stop(self, block_new=False):
+        self._moveWorker.request_stop(block_new)
+
+    def wait(self, timeout=None):
+        return self._moveWorker.wait(timeout)
+
+    def is_active(self):
+        return self._moveWorker.is_active()
+
+    def allow_moves(self):
+        self._moveWorker.allow()
+
+
+    def prefill(self):
+        coords = App.get_running_app().coords
+        self.ids.gotox.text = '{:.3f}'.format(coords[0])
+        self.ids.gotoy.text = '{:.3f}'.format(coords[1])
+        self.ids.gotoz.text = '{:.3f}'.format(coords[2])
+
+
 class LoadCameraProperties(BoxLayout):
     """Camera settings loading widget
-    """    
+    """
     load = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
 
 class SaveExperiment(GridLayout):
     """File saving location widget.
-    """    
+    """
     save = ObjectProperty(None)
     cancel = ObjectProperty(None)
 
@@ -1608,7 +1732,7 @@ class AutoFocus(BoxLayout):
 
 
 class LabelImage():
-    
+
     def __init__(self,  **kwargs):
         super(LabelImage, self).__init__(**kwargs)
         self.text = ''
@@ -1621,7 +1745,7 @@ class MultipleImages(GridLayout):
 
 class RecordingSettings(BoxLayout):
     """Record settings widget
-    """    
+    """
     ok = ObjectProperty(None)
     # store recording settings from popups
     nframes = ConfigParserProperty(5, 'Experiment', 'nframes', 'app', val_type=int)
@@ -1646,9 +1770,9 @@ class ContinuousSwitch(Switch):
         super(ContinuousSwitch, self).__init__(**kwargs)
         self.app: GlowTrackerApp = App.get_running_app()
         self.active = self.app.config.getboolean('Experiment', 'iscontinuous')
-    
 
-    def on_touch_up(self, touch): 
+
+    def on_touch_up(self, touch):
         """On switch touch up callback. Update the config value 'iscontinuous',
             and disabled or enabled the recording 'duration' and 'frames' input field.
 
@@ -1662,7 +1786,7 @@ class ContinuousSwitch(Switch):
             self.app.config.set('Experiment', 'iscontinuous', int(self.active))
             recordingSettings.ids.duration.disabled = self.active
             recordingSettings.ids.frames.disabled = self.active
-            
+
             self.app.config.write()
 
             return True
@@ -1670,7 +1794,7 @@ class ContinuousSwitch(Switch):
 
 class CameraProperties(GridLayout):
     """Camera properties editor widget
-    """   
+    """
     gain = NumericProperty(0)
     exposure = NumericProperty(0)
     framerate = NumericProperty(0)
@@ -1742,8 +1866,8 @@ class ImageAcquisitionButton(ToggleButton):
         - acquisitionCondition()
 
     in order to be functional.
-    """    
-    
+    """
+
     def __init__(self, **kwargs):
 
         super().__init__(**kwargs)
@@ -1754,30 +1878,32 @@ class ImageAcquisitionButton(ToggleButton):
         self.runtimeControls: RuntimeControls | None = None
         self.updateDisplayImageEvent: ClockEvent | None = None
         self.image: np.ndarray = np.zeros((1,1))
+        self.originalImage: np.ndarray = np.zeros((1,1))
         self.imageTimeStamp: float = 0
         self.imageRetrieveTimeStamp: float = 0
         self.dualColorMainSideImage: np.ndarray = np.zeros((1,1))
         self.dualColorMinorSideImage: np.ndarray = np.zeros((1,1))
         self.dualColorMinorToMainMat: np.ndarray | None = None
+        self.acquisitionError: Exception | None = None
 
-    
+
     def on_state(self, widget: Widget, state: str):
         """On state change callback
 
         Args:
             widget (Widget): the kivy widget, in this case is the same as the class instance itself.
             state (str): the new state
-        """        
+        """
         if state == 'down':
             self.startImageAcquisition()
-            
+
         else:
             self.stopImageAcquisition()
 
-    
+
     def startImageAcquisition(self) -> None:
         """The starting image acquisition process. Needs to be overridden. The important steps is to spawn the imageAcquisitionLoopingThread.
-        """        
+        """
         pass
 
 
@@ -1787,44 +1913,43 @@ class ImageAcquisitionButton(ToggleButton):
             - Stop the update display event.
             - Stop camera grabbing.
             - Stop the acquisition looping thread if not already.
-            - Reset GUI back 
-        """        
-        if self.camera is None:
-            return
-        
-        # Unschedule the display event thread
-        Clock.unschedule(self.updateDisplayImageEvent)
+            - Reset GUI back
+        """
+        try:
+            if self.updateDisplayImageEvent is not None:
+                Clock.unschedule(self.updateDisplayImageEvent)
+                self.updateDisplayImageEvent = None
+        except Exception as e:
+            print(f'Unscheduling image display failed: {e}')
 
-        # Stop grabbing
-        if self.camera.IsGrabbing():
-            self.camera.StopGrabbing()
+        try:
+            if self.camera is not None and self.camera.IsGrabbing():
+                self.camera.StopGrabbing()
+        except Exception as e:
+            print(f'Stopping camera grabbing failed: {e}')
 
-        # Flag recompute dual color transformation matrix
         self.dualColorMinorToMainMat = None
-        
-        # Reset displayed framecounter
-        self.runtimeControls.framecounter.value = 0
 
-        # reset scale of image
-        self.app.root.ids.middlecolumn.ids.scalableimage.reset()
+        try:
+            self.runtimeControls.framecounter.value = 0
+            self.app.root.ids.middlecolumn.ids.scalableimage.reset()
+            liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
+            with liveAnalysisData.lock:
+                liveAnalysisData.minBrightness = 0
+                liveAnalysisData.maxBrightness = 0
+                liveAnalysisData.meanBrightness = 0
+                liveAnalysisData.medianBrightness = 0
+                liveAnalysisData.skewness = 0
+                liveAnalysisData.percentile_5 = 0
+                liveAnalysisData.percentile_95 = 0
+        except Exception as e:
+            print(f'Resetting acquisition UI failed: {e}')
+        finally:
+            self.state = 'normal'
 
-        # Set self button state to normal.
-        self.state = 'normal'
-
-        # Reset liveAnalysisData
-        liveAnalysisData: LiveAnalysisData = self.runtimeControls.imageacquisitionmanager.liveAnalysisData
-        with liveAnalysisData.lock:
-            liveAnalysisData.minBrightness = 0
-            liveAnalysisData.maxBrightness = 0
-            liveAnalysisData.meanBrightness = 0
-            liveAnalysisData.medianBrightness = 0
-            liveAnalysisData.skewness = 0
-            liveAnalysisData.percentile_5 = 0
-            liveAnalysisData.percentile_95 = 0
-    
 
     def imageAcquisitionLoopingThread(self, grabArgs) -> None:
-        """Image acquisition looping thread. This function should not be call directly 
+        """Image acquisition looping thread. This function should not be call directly
         in the main thread but as a new thread instead for better performance.
         The procedure here is as follows:
             1. Start camera grabbing.
@@ -1832,48 +1957,50 @@ class ImageAcquisitionButton(ToggleButton):
             3. Loop acquire image while the condition is True.
             4. Callback for each acquired image.
             5. Finished looping callback.
-        """   
+        """
 
-        if grabArgs.isContinuous:
-            self.camera.StartGrabbing(grabArgs.grabStrategy)
-        
-        else:
-            # Grab for a specific number of frames
-            self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
-            
-        fps = self.camera.ResultingFrameRate()
-        print(f'Grabbing Framerate: {fps:.3f} fps')
+        self.acquisitionError = None
+        try:
+            if grabArgs.isContinuous:
+                self.camera.StartGrabbing(grabArgs.grabStrategy)
+            else:
+                self.camera.StartGrabbingMax(grabArgs.numberOfImagesToGrab, grabArgs.grabStrategy)
 
-        # Schedule a display update
-        fps = self.app.config.getfloat('Camera', 'display_fps')
-        self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
-        print(f'Displaying at {fps:.3f} fps')
+            fps = self.camera.ResultingFrameRate()
+            print(f'Grabbing Framerate: {fps:.3f} fps')
 
-        returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+            fps = self.app.config.getfloat('Camera', 'display_fps')
+            self.updateDisplayImageEvent = Clock.schedule_interval(self.updateDisplayImage, 1.0 /fps)
+            print(f'Displaying at {fps:.3f} fps')
 
-        # Register start acquisition time
-        imageAcquisitionManager: ImageAcquisitionManager = self.parent
-        imageAcquisitionManager.startTime = time.perf_counter()
+            returnCameraOnHoldFlag = True if self.camera.isOnHold() else False
+            imageAcquisitionManager: ImageAcquisitionManager = self.parent
+            imageAcquisitionManager.startTime = time.perf_counter()
 
-        # Start image acquisition loop
-        while self.acquisitionCondition():
+            while self.acquisitionCondition():
+                isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
 
-            # retrieve an image
-            isSuccess, image, imageTimeStamp, imageRetrieveTimeStamp = self.camera.retrieveGrabbingResult()
+                if isSuccess:
+                    if returnCameraOnHoldFlag:
+                        self.camera.setIsOnHold(False)
+                        returnCameraOnHoldFlag = False
 
-            if isSuccess:
-
-                if returnCameraOnHoldFlag:
-                    self.camera.setIsOnHold(False)
-                    returnCameraOnHoldFlag = False
-
-                # Process the received image
-                self.processImageCallback( image, imageTimeStamp, imageRetrieveTimeStamp )
-
-                # Trigger image callback
-                self.receiveImageCallback()
-
-        self.finishAcquisitionCallback()
+                    self.processImageCallback(image, imageTimeStamp, imageRetrieveTimeStamp)
+                    self.receiveImageCallback()
+        except Exception as e:
+            self.acquisitionError = e
+            print(f'Image acquisition failed: {e}')
+        finally:
+            try:
+                self.finishAcquisitionCallback()
+            except Exception as e:
+                print(f'Finishing image acquisition failed: {e}')
+            finally:
+                if self.state == 'down':
+                    try:
+                        self.stopImageAcquisition()
+                    except Exception as e:
+                        print(f'Stopping image acquisition failed: {e}')
 
 
     def acquisitionCondition(self) -> bool:
@@ -1881,25 +2008,26 @@ class ImageAcquisitionButton(ToggleButton):
 
         Returns:
             isStillAcquiring (bool): is the acquisition is still True.
-        """        
+        """
         pass
 
-    
+
     def processImageCallback(self, image: np.ndarray, imageTimeStamp: float, imageRetrieveTimeStamp: float) -> None:
-        """Process the acquired image by cropping per settings, and also dual color image 
+        """Process the acquired image by cropping per settings, and also dual color image
         processing if the dual color mode is on.
 
         Args:
             image (np.ndarray): the acquired image
             imageTimeStamp (float): the acquired image's internal clock timestamp
             imageRetrieveTimeStamp (float): the timestamp when receiving image in the software.
-        """        
+        """
 
-        # Crop image
         h, w = image.shape
         cropX, cropY = self.runtimeControls.cropX, self.runtimeControls.cropY
         image = image[ cropY : h - cropY, cropX : w - cropX ]
-        
+        self.originalImage = image
+        h, w = image.shape
+
         # Process image. For now this is only the case for dual color mode
         dualcolorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         mainSide = self.app.config.get('DualColor', 'mainside')
@@ -1908,21 +2036,23 @@ class ImageAcquisitionButton(ToggleButton):
         if dualcolorMode:
             # If in dual color mode then post process the image
 
-            # Split image into main and minor side
+            splitWidth = w // 2
+            leftImage = image[:, :splitWidth]
+            rightImage = image[:, w - splitWidth:]
             if mainSide == 'Left':
-                self.dualColorMainSideImage = image[:,:w//2]
-                self.dualColorMinorSideImage = image[:,w//2:]
+                self.dualColorMainSideImage = leftImage
+                self.dualColorMinorSideImage = rightImage
 
             elif mainSide == 'Right':
-                self.dualColorMainSideImage = image[:,w//2:]
-                self.dualColorMinorSideImage = image[:,:w//2]
-            
+                self.dualColorMainSideImage = rightImage
+                self.dualColorMinorSideImage = leftImage
+
             # Compute minor to main calibration matrix if first time
             if self.dualColorMinorToMainMat is None:
                 translation_x = self.app.config.getfloat('DualColor', 'translation_x')
                 translation_y = self.app.config.getfloat('DualColor', 'translation_y')
                 rotation = self.app.config.getfloat('DualColor', 'rotation')
-                
+
                 self.dualColorMinorToMainMat = macro.DualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, self.dualColorMainSideImage.shape[1]/2, self.dualColorMainSideImage.shape[0]/2)
 
             # Apply transformation
@@ -1933,29 +2063,44 @@ class ImageAcquisitionButton(ToggleButton):
             if dualcolorViewMode == 'Merged':
 
                 # Combine main and minor side
-                combinedImage = np.zeros(shape= (self.dualColorMainSideImage.shape[0], self.dualColorMainSideImage.shape[1], 3), dtype= np.uint8)
+                combinedImage = np.zeros(
+                    shape=(self.dualColorMainSideImage.shape[0],
+                           self.dualColorMainSideImage.shape[1], 3),
+                    dtype=self.dualColorMainSideImage.dtype,
+                )
                 combinedImage[:,:,0] = self.dualColorMainSideImage
                 combinedImage[:,:,1] = self.dualColorMinorSideImage
 
                 self.image = combinedImage
-            
+
             else:
                 self.image = image
-        
+
         else:
             # If not in dual color mode then simply pass on
             self.image = image
-        
+
         self.imageTimeStamp = imageTimeStamp
         self.imageRetrieveTimeStamp = imageRetrieveTimeStamp
 
         # Compute live analysis data
         showliveanalysis = self.app.config.getboolean('LiveAnalysis', 'showliveanalysis')
         saveanalysistorecording = self.app.config.getboolean('LiveAnalysis', 'saveanalysistorecording')
-        if showliveanalysis or saveanalysistorecording:
+
+        trackingCheckbox = self.runtimeControls.trackingcheckbox
+        recordButton = self.runtimeControls.imageacquisitionmanager.recordbutton
+        isTracking = trackingCheckbox is not None and trackingCheckbox.state == 'down'
+        isRecording = recordButton is not None and recordButton.state == 'down'
+
+        if isTracking or isRecording:
+            computeLiveAnalysis = saveanalysistorecording
+        else:
+            computeLiveAnalysis = showliveanalysis or saveanalysistorecording
+
+        if computeLiveAnalysis:
             self.computeLiveAnalysisValues()
-    
-    
+
+
     def computeLiveAnalysisValues(self):
         """Compute the following values from the current image
             - min
@@ -1975,28 +2120,28 @@ class ImageAcquisitionButton(ToggleButton):
 
             # Get tracking configs
             capture_radius = self.app.config.getint('Tracking', 'capture_radius')
-            
+
             # Crop to tracking region
             image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
 
-        # Do we need to crop on tracking region? 
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         liveAnalysisData = imageAcquisitionManager.liveAnalysisData
+        sample = image[::4, ::4]
         with liveAnalysisData.lock:
             imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
             imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
             imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.skewness = skew(image, axis= None, nan_policy= 'omit')
-            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(image, q= 5, axis= None)
-            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(image, q= 95, axis= None)
-    
+            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(sample, axis= None)
+            imageAcquisitionManager.liveAnalysisData.skewness = skew(sample, axis= None, nan_policy= 'omit')
+            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(sample, q= 5, axis= None)
+            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(sample, q= 95, axis= None)
+
 
     def receiveImageCallback(self) -> None:
         """Callback after processed the image. Use for further updating.
         Update the parent (ImageAcquisitionManager) current image data.
         Can be extended.
-        """    
+        """
 
         # Update parent (ImageAcquisitionManager) images
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
@@ -2005,7 +2150,7 @@ class ImageAcquisitionButton(ToggleButton):
         imageAcquisitionManager.imageRetrieveTimeStamp = self.imageRetrieveTimeStamp
         imageAcquisitionManager.dualColorMainSideImage = self.dualColorMainSideImage
         imageAcquisitionManager.currentTime = time.perf_counter()
-        
+
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
 
@@ -2015,7 +2160,7 @@ class ImageAcquisitionButton(ToggleButton):
 
     def finishAcquisitionCallback(self) -> None:
         """Finished the acquisition looping callback. Needs to be overridden.
-        """        
+        """
         pass
 
 
@@ -2024,33 +2169,33 @@ class ImageAcquisitionButton(ToggleButton):
 
         Args:
             dt (float): addition delta time between each callback.
-        """        
+        """
         self.app.image = self.image
 
 
 class LiveViewButton(ImageAcquisitionButton):
     """A LiveView button that have image acquisition capability.
-    """    
-    
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
     @override
     def startImageAcquisition(self) -> None:
-        """Start the image acquisition process by getting the grabbing parameters, spawn 
+        """Start the image acquisition process by getting the grabbing parameters, spawn
         image acquisition thread, and update the image GUI overlay.
-        """        
-        
+        """
+
         # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
         self.app: GlowTrackerApp = App.get_running_app()
         self.camera = self.app.camera
         self.runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
 
-        if self.camera is None:
+        if self.camera is None or getattr(self.app, '_hardware_teardown', False):
             self.state = 'normal'
             return
-        
+
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
             bufferSize= 16,
@@ -2068,7 +2213,7 @@ class LiveViewButton(ImageAcquisitionButton):
             }
         )
         self.imageAcquisitionThread.start()
-    
+
 
     @override
     def stopImageAcquisition(self) -> None:
@@ -2088,12 +2233,12 @@ class LiveViewButton(ImageAcquisitionButton):
 
 class RecordButton(ImageAcquisitionButton):
     """A Record button that have image acquisition capability.
-    """    
+    """
 
     def __init__(self, **kwargs):
 
         super().__init__(**kwargs)
-        
+
         # Declare class instance attributes
         self.numberRecordframes: int = 0
         self.isContinuous: bool = False
@@ -2108,7 +2253,11 @@ class RecordButton(ImageAcquisitionButton):
         self.imageFilenameExtension: str = ''
         self.prevLiveViewButtonState: str = 'normal'
         self.prevLiveAnalysisButtonState: str = 'normal'
-        
+        self._recordingCleanupLock = Lock()
+        self._saveFailureLock = Lock()
+        self._recordingCleanupStarted = False
+        self._abandonedSavers = []
+
 
     @override
     def on_state(self, widget: Widget, state: str):
@@ -2117,20 +2266,30 @@ class RecordButton(ImageAcquisitionButton):
         Args:
             widget (Widget): the kivy widget, in this case is the same as the class instance itself.
             state (str): the new state
-        """        
+        """
         self.app: GlowTrackerApp = App.get_running_app()
         self.camera = self.app.camera
 
         if self.camera is None:
+            if state == 'down':
+                self.state = 'normal'
             return
 
         if state == 'down':
+            if getattr(self.app, '_hardware_teardown', False):
+                self.state = 'normal'
+                return
+            if self.imageAcquisitionThread is not None \
+                    and self.imageAcquisitionThread.is_alive():
+                print('Previous recording acquisition is still stopping')
+                self.state = 'normal'
+                return
             self.startImageAcquisition()
-            
+
         else:
             if self.camera.IsGrabbing():
                 self.stopImageAcquisition()
-            
+
 
     @override
     def startImageAcquisition(self) -> None:
@@ -2139,7 +2298,7 @@ class RecordButton(ImageAcquisitionButton):
             - spawn image acquisition thread.
             - spawn image saving thread.
             - update the image GUI overlay.
-        """ 
+        """
 
         # Update the self-hold reference to the GlowTrackerApp object and the pylon camera object for each of access.
         self.app: GlowTrackerApp = App.get_running_app()
@@ -2153,10 +2312,10 @@ class RecordButton(ImageAcquisitionButton):
         self.prevLiveViewButtonState = imageAcquisitionManager.liveviewbutton.state
 
         # If there is no camera or recording file path doesn't exists
-        if self.camera is None:
+        if self.camera is None or getattr(self.app, '_hardware_teardown', False):
             self.state = 'normal'
             return
-        
+
         if not os.path.exists(self.saveFilePath):
             print("The recording path doesn't exist. Can't start recording.")
             self.state = 'normal'
@@ -2178,41 +2337,388 @@ class RecordButton(ImageAcquisitionButton):
         self.isDualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         self.dualColorRecordingMode = self.app.config.get('DualColor', 'recordingmode')
 
-        # Image data queue to share between recording and saving
-        self.imageQueue = Queue()
+        # # Image data queue to share between recording and saving
+        # self.imageQueue = Queue()
 
-        # Start a thread for saving images
-        self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
-        self.savingthread.start()
+        # # Start a thread for saving images
+        # self.savingthread = Thread(target= macro.ImageSaver.startSavingImageInQueueThread, args= [self.imageQueue, 3])
+        # self.savingthread.start()
 
-        # Prep DAQ control
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.start( np.array(self.app.coords[:2]) )
-
-        # Setup image acquisition thread parameters
-        self.initRecordingParams()
         self.frameCounter = 0
+        self.saveHandoffError = None
+        self._saverFailureReported = False
+        self._imageSaverStarted = False
+        self._recordingCleanupStarted = False
+        self.shm_manager = None
+        self.saveproc = None
+        self.saveThreads = []
+        self.stop_event = None
+        self.saveFailureEvent = None
+        self.saveStatusQueue = None
+        self.saveStatusThread = None
+        self.saveStatusStopEvent = Event()
+        self._saveStatusAbandoned = False
+        self.saveHandoffThread = None
+        self.saveHandoffQueue = None
+        self.saveHandoffStopEvent = Event()
+        self.coordinateFile = None
+        self.saveAcknowledgements = None
 
-        grabArgs = basler.CameraGrabParameters(
-            bufferSize= self.app.config.getint('Experiment', 'buffersize'),
-            isContinuous= self.isContinuous,
-            numberOfImagesToGrab= self.numberRecordframes,
-            grabStrategy= pylon.GrabStrategy_OneByOne
-        )
+        try:
+            if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
+                self.app.daqControl.start(np.array(self.app.coords[:2]))
 
-        # open coordinate file
-        self.coordinateFile = self.initCoordinateFile()
+            self.initRecordingParams()
+            grabArgs = basler.CameraGrabParameters(
+                bufferSize=self.app.config.getint('Experiment', 'buffersize'),
+                isContinuous=self.isContinuous,
+                numberOfImagesToGrab=self.numberRecordframes,
+                grabStrategy=pylon.GrabStrategy_OneByOne
+            )
 
-        # Spawn image acquisition thread
-        self.imageAcquisitionThread = Thread(
-            target= self.imageAcquisitionLoopingThread,
-            daemon= True,
-            kwargs= {
-                'grabArgs' : grabArgs,
-            }
-        )
+            self.coordinateFile = self.initCoordinateFile()
+            self.saveAcknowledgements = image_saver.SaveAcknowledgements(
+                self.coordinateFile
+            )
+            self.imageAcquisitionThread = Thread(
+                target=self.imageAcquisitionLoopingThread,
+                daemon=True,
+                kwargs={'grabArgs': grabArgs}
+            )
+            self.imageAcquisitionThread.start()
+        except Exception as e:
+            self.acquisitionError = e
+            print(f'Starting image acquisition failed: {e}')
+            self.stopImageAcquisition()
 
-        self.imageAcquisitionThread.start()
+
+    def _startImageSaver(self, example_image: np.ndarray) -> None:
+        if self._imageSaverStarted:
+            return
+
+        try:
+            if USE_SHARED_MEMORY_SAVER:
+                processMethod = 'spawn' if sys.platform == 'win32' \
+                    else 'forkserver'
+                ctx = mp.get_context(processMethod)
+                self.shm_manager = SharedMemoryManager(ctx=ctx)
+                self.shm_manager.start()
+                example = {
+                    'img': np.empty(example_image.shape, dtype=example_image.dtype),
+                    'idx': 0,
+                    'channel': 0,
+                }
+                self.imageQueue = SharedMemoryQueue.create_from_examples(
+                    self.shm_manager, example, buffer_size=60,
+                    context=ctx,
+                )
+                self.stop_event = ctx.Event()
+                self.saveFailureEvent = ctx.Event()
+                self.saveStatusQueue = ctx.Queue()
+                self.saveproc = ctx.Process(
+                    target=image_saver.save_worker,
+                    args=(self.imageQueue, self.saveFilePath,
+                          self.imageFilenameFormat, self.stop_event,
+                          self.saveStatusQueue, self.saveFailureEvent),
+                    daemon=True)
+                self.saveproc.start()
+            else:
+                self.imageQueue = Queue(maxsize=60)
+                self.stop_event = Event()
+                self.saveFailureEvent = Event()
+                self.saveStatusQueue = Queue()
+                self.saveThreads = [
+                    Thread(
+                        target=image_saver.save_worker,
+                        args=(self.imageQueue, self.saveFilePath,
+                              self.imageFilenameFormat, self.stop_event,
+                              self.saveStatusQueue, self.saveFailureEvent),
+                        daemon=True)
+                    for _ in range(3)
+                ]
+                for saveThread in self.saveThreads:
+                    saveThread.start()
+
+            self.saveStatusThread = Thread(
+                target=self._saveStatusLoop,
+                args=(
+                    self.saveStatusQueue,
+                    self.saveStatusStopEvent,
+                    self.saveAcknowledgements,
+                    self.saveproc,
+                    self.saveThreads,
+                    self.saveFailureEvent,
+                ),
+                daemon=True,
+            )
+            self.saveStatusThread.start()
+            self.saveHandoffQueue = Queue(maxsize=16)
+            self.saveHandoffThread = Thread(
+                target=self._saveHandoffLoop,
+                args=(
+                    self.saveHandoffQueue,
+                    self.saveHandoffStopEvent,
+                    self.imageQueue,
+                    self.saveFailureEvent,
+                    self.saveAcknowledgements,
+                ),
+                daemon=True,
+            )
+            self.saveHandoffThread.start()
+            self._imageSaverStarted = True
+        except Exception as e:
+            self._setSaverFailure(f'Starting image saver failed: {e}')
+            self._cleanupImageSaver()
+            raise
+
+
+    def _cleanupImageSaver(self) -> None:
+        if self.saveHandoffStopEvent is not None:
+            self.saveHandoffStopEvent.set()
+        handoffThread = self.saveHandoffThread
+        handoffAlive = False
+        try:
+            if handoffThread is not None and handoffThread is not current_thread():
+                if handoffThread.is_alive():
+                    handoffThread.join(SAVE_HANDOFF_JOIN_TIMEOUT)
+                handoffAlive = handoffThread.is_alive()
+                if handoffAlive:
+                    self._setSaverFailure(
+                        'Image handoff did not stop before the shutdown deadline'
+                    )
+        except Exception as e:
+            print(f'Stopping image handoff failed: {e}')
+
+        try:
+            if self.stop_event is not None:
+                self.stop_event.set()
+        except Exception as e:
+            print(f'Setting image saver stop event failed: {e}')
+
+        processAlive = False
+        try:
+            if self.saveproc is not None and self.saveproc.pid is not None:
+                self.saveproc.join(SAVE_WORKER_JOIN_TIMEOUT)
+                processAlive = self.saveproc.is_alive()
+                if processAlive:
+                    self._setSaverFailure(
+                        'Image saver did not stop before the shutdown deadline'
+                    )
+                    self.saveproc.terminate()
+                    self.saveproc.join(SAVE_WORKER_TERMINATE_TIMEOUT)
+                    processAlive = self.saveproc.is_alive()
+                if processAlive and hasattr(self.saveproc, 'kill'):
+                    self.saveproc.kill()
+                    self.saveproc.join(SAVE_WORKER_TERMINATE_TIMEOUT)
+                    processAlive = self.saveproc.is_alive()
+                if self.saveproc.exitcode not in (None, 0):
+                    self._setSaverFailure(
+                        f'Image saver exited with code {self.saveproc.exitcode}'
+                    )
+        except Exception as e:
+            print(f'Stopping image saver process failed: {e}')
+            self._setSaverFailure(f'Stopping image saver process failed: {e}')
+
+        threadDeadline = time.monotonic() + SAVE_WORKER_JOIN_TIMEOUT
+        liveSaveThreads = []
+        for saveThread in self.saveThreads:
+            try:
+                if saveThread is not current_thread() and saveThread.is_alive():
+                    saveThread.join(max(0.0, threadDeadline - time.monotonic()))
+                if saveThread.is_alive():
+                    liveSaveThreads.append(saveThread)
+            except Exception as e:
+                print(f'Stopping image saver thread failed: {e}')
+        if liveSaveThreads:
+            self._setSaverFailure(
+                'Image saver threads did not stop before the shutdown deadline'
+            )
+
+        if self.saveFailureEvent is not None \
+                and self.saveFailureEvent.is_set() \
+                and self.saveHandoffError is None:
+            self._setSaverFailure('Image saver stopped without an acknowledgement')
+
+        if self.saveStatusStopEvent is not None:
+            self.saveStatusStopEvent.set()
+        statusThread = self.saveStatusThread
+        statusAlive = False
+        try:
+            if statusThread is not None and statusThread is not current_thread():
+                if statusThread.is_alive():
+                    statusThread.join(SAVE_STATUS_JOIN_TIMEOUT)
+                statusAlive = statusThread.is_alive()
+                if statusAlive:
+                    self._setSaverFailure(
+                        'Image saver status monitor did not stop before the shutdown deadline'
+                    )
+        except Exception as e:
+            print(f'Stopping image saver status monitor failed: {e}')
+
+        if self.saveAcknowledgements is not None \
+                and not statusAlive and not handoffAlive:
+            try:
+                unresolved = self.saveAcknowledgements.discard_pending()
+                if unresolved:
+                    self._setSaverFailure(
+                        f'{unresolved} image frames were not acknowledged'
+                    )
+            except Exception as e:
+                self._setSaverFailure(
+                    f'Finalizing image acknowledgements failed: {e}'
+                )
+
+        try:
+            if self.shm_manager is not None \
+                    and not processAlive and not handoffAlive:
+                self.shm_manager.shutdown()
+        except Exception as e:
+            print(f'Shutting down shared memory failed: {e}')
+        finally:
+            self._saveStatusAbandoned = statusAlive or handoffAlive
+            if processAlive or handoffAlive or liveSaveThreads or statusAlive:
+                self._abandonedSavers.append((
+                    self.shm_manager,
+                    self.saveproc,
+                    self.saveThreads,
+                    self.saveHandoffThread,
+                    self.saveStatusThread,
+                    self.imageQueue,
+                    self.saveStatusQueue,
+                ))
+            self._imageSaverStarted = False
+            self.shm_manager = None
+            self.saveproc = None
+            self.saveThreads = []
+            self.stop_event = None
+            self.saveFailureEvent = None
+            self.saveStatusQueue = None
+            self.saveStatusThread = None
+            self.saveStatusStopEvent = None
+            self.saveHandoffThread = None
+            self.saveHandoffQueue = None
+            self.saveHandoffStopEvent = None
+
+
+    def _setSaverFailure(self, message: str) -> None:
+        with self._saveFailureLock:
+            if self._saverFailureReported:
+                return
+            self._saverFailureReported = True
+            self.saveHandoffError = message
+            self.acquisitionError = RuntimeError(message)
+            try:
+                if self.saveFailureEvent is not None:
+                    self.saveFailureEvent.set()
+            except Exception:
+                pass
+
+        print(f'Image saver failed: {message}')
+        try:
+            if self.camera is not None and self.camera.IsGrabbing():
+                self.camera.StopGrabbing()
+        except Exception as e:
+            print(f'Stopping acquisition after image saver failure failed: {e}')
+
+        def showError(*args):
+            if getattr(self.app, '_hardware_teardown', False):
+                return
+            WarningPopup(
+                title='Recording stopped',
+                text=f'Image saving failed:\n{message}',
+                size_hint=(0.6, 0.3),
+                closeTime=10,
+            ).open()
+
+        try:
+            Clock.schedule_once(showError)
+        except Exception:
+            pass
+
+
+    def _setRunSaverFailure(self, message, failureEvent) -> None:
+        if failureEvent is self.saveFailureEvent:
+            self._setSaverFailure(message)
+        else:
+            print(f'Abandoned image saver failed: {message}')
+
+
+    def _failSaveFrame(
+            self, index: int, message: str,
+            acknowledgements=None, failureEvent=None) -> None:
+        if acknowledgements is None:
+            acknowledgements = self.saveAcknowledgements
+        if failureEvent is None:
+            failureEvent = self.saveFailureEvent
+        try:
+            if acknowledgements is not None:
+                acknowledgements.failed(index)
+        except Exception as e:
+            message = f'{message}; updating coordinate acknowledgements failed: {e}'
+        self._setRunSaverFailure(message, failureEvent)
+
+
+    def _saverWorkerExited(self, saveproc, saveThreads) -> bool:
+        try:
+            if saveproc is not None and saveproc.pid is not None:
+                return not saveproc.is_alive()
+            if saveThreads:
+                return any(not thread.is_alive() for thread in saveThreads)
+        except Exception:
+            return True
+        return False
+
+
+    def _saveStatusLoop(
+            self, statusQueue, stopEvent, acknowledgements,
+            saveproc, saveThreads, failureEvent) -> None:
+        while True:
+            try:
+                status, index, channel, error = statusQueue.get(
+                    timeout=0.1
+                )
+            except Empty:
+                if stopEvent.is_set():
+                    break
+                if failureEvent is self.saveFailureEvent \
+                        and not self._recordingCleanupStarted \
+                        and self._saverWorkerExited(saveproc, saveThreads):
+                    self._setRunSaverFailure(
+                        'Image saver worker exited unexpectedly',
+                        failureEvent,
+                    )
+                continue
+            except Exception as e:
+                self._setRunSaverFailure(
+                    f'Receiving image saver acknowledgement failed: {e}',
+                    failureEvent,
+                )
+                break
+
+            if status == 'saved':
+                try:
+                    if acknowledgements is None:
+                        raise RuntimeError('save acknowledgements are unavailable')
+                    acknowledgements.saved(int(index), int(channel))
+                except Exception as e:
+                    self._failSaveFrame(
+                        int(index),
+                        f'Writing acknowledged coordinates failed: {e}',
+                        acknowledgements,
+                        failureEvent,
+                    )
+            elif status == 'failed':
+                self._failSaveFrame(
+                    int(index),
+                    f'Writing frame {index}, channel {channel} failed: {error}',
+                    acknowledgements,
+                    failureEvent,
+                )
+            else:
+                self._setRunSaverFailure(
+                    f'Image saver returned an unknown status: {status}',
+                    failureEvent,
+                )
 
 
     def initCoordinateFile(self) -> TextIOWrapper:
@@ -2232,7 +2738,7 @@ class RecordButton(ImageAcquisitionButton):
         nframes = self.app.config.getint('Experiment', 'nframes')
         coordinateFile.write(f'nframes {nframes}\n')
 
-        # Camera 
+        # Camera
         coordinateFile.write(f'# Camera\n')
         #   framerate
         framerate = self.camera.ResultingFrameRate()
@@ -2303,48 +2809,92 @@ class RecordButton(ImageAcquisitionButton):
         #   area
         area = self.app.config.getint('Tracking', 'area')
         coordinateFile.write(f'area {area}\n')
-        
+
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95, daqVol\n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95 daqVol\n")
 
         return coordinateFile
 
-    
+
     @override
     def stopImageAcquisition(self) -> None:
-        """Extend the stop image acquisition functionality: 
+        """Extend the stop image acquisition functionality:
             - Stop the camera
             - Closing the coordinate file.
             - Closing the image saving thread.
             - Update display texts.
             - Un-disabled (enable if) the LiveView button
-        """        
+        """
 
-        if self.camera is None or self.frameCounter == 0:
-            return
-        
-        # If the live view button was previously running, 
-        #   then set the transitioning "OnHold" flag.
-        if self.prevLiveViewButtonState == 'down':
-            self.camera.setIsOnHold(True)
+        with self._recordingCleanupLock:
+            if self._recordingCleanupStarted:
+                return
+            self._recordingCleanupStarted = True
 
-        print(f'Recorded {self.frameCounter} frames')
-
-        # Reset frame counter
+        recordedFrames = self.frameCounter
         self.frameCounter = 0
+        print(f'Recorded {recordedFrames} frames')
 
-        # Stop the camera and clear values
+        try:
+            if self.camera is not None and self.prevLiveViewButtonState == 'down':
+                self.camera.setIsOnHold(True)
+        except Exception as e:
+            print(f'Setting camera hold state failed: {e}')
+
         super().stopImageAcquisition()
-
         print('Stopped recording')
 
-        # Schedule closing coordinate file a bit later
-        Clock.schedule_once(lambda dt: self.coordinateFile.close(), 0.5)
-        
-        # Close saving threads
-        if self.savingthread:
-            self.imageQueue.put(None)
-            self.savingthread.join()
+        acquisitionThread = self.imageAcquisitionThread
+        if acquisitionThread is not None \
+                and acquisitionThread is not current_thread() \
+                and acquisitionThread.is_alive():
+            acquisitionThread.join(SAVE_ACQUISITION_JOIN_TIMEOUT)
+            if acquisitionThread.is_alive():
+                self._setSaverFailure(
+                    'Image acquisition did not stop before saver shutdown'
+                )
+
+        try:
+            self._cleanupImageSaver()
+        except Exception as e:
+            print(f'Stopping image saver failed: {e}')
+
+        if not self._saveStatusAbandoned:
+            try:
+                if self.coordinateFile is not None \
+                        and not self.coordinateFile.closed:
+                    coordinateFile = self.coordinateFile
+                    closed, closeError, closeThread = \
+                        image_saver.close_file_with_timeout(
+                            coordinateFile, COORDINATE_CLOSE_TIMEOUT
+                        )
+                    self.coordinateFile = None
+                    if not closed:
+                        if closeThread.is_alive():
+                            self._abandonedSavers.append(
+                                (coordinateFile, closeThread)
+                            )
+                            message = 'Coordinate file did not close before the shutdown deadline'
+                        else:
+                            message = f'Closing coordinate file failed: {closeError}'
+                        print(message)
+                        self._setSaverFailure(message)
+            except Exception as e:
+                print(f'Closing coordinate file failed: {e}')
+
+        savedFrames = 0
+        failedFrames = 0
+        if self.saveAcknowledgements is not None:
+            savedFrames = self.saveAcknowledgements.saved_frames
+            failedFrames = self.saveAcknowledgements.failed_frames
+        print(
+            f'Image saving completed: {savedFrames} saved, '
+            f'{failedFrames} failed, {recordedFrames} captured'
+        )
+        if self.saveHandoffError is not None:
+            print(f'WARNING: recording stopped after saver failure: {self.saveHandoffError}')
+
+
 
 
         # Set LiveView button state back to enable.
@@ -2356,17 +2906,30 @@ class RecordButton(ImageAcquisitionButton):
         #   within the same Kivy render timeframe as this thread. By calling it through Clock.schedule_once,
         #   we essentially schedule the on_state to be call in the next Kivy render timeframe, ensuring that
         #   it is not invoked from a thread but from the main thread always.
+        recordingCamera = self.camera
+
         def resumeButtonsState(*args):
             # LiveView
             self.parent.liveviewbutton.disabled = False
-            self.parent.liveviewbutton.state = self.prevLiveViewButtonState
-        
-        Clock.schedule_once( resumeButtonsState )
+            if not getattr(self.app, '_hardware_teardown', False) \
+                    and self.app.camera is recordingCamera:
+                self.parent.liveviewbutton.state = self.prevLiveViewButtonState
+            else:
+                self.parent.liveviewbutton.state = 'normal'
+
+        try:
+            Clock.schedule_once(resumeButtonsState)
+        except Exception as e:
+            print(f'Restoring acquisition buttons failed: {e}')
 
         # Reset the DAQ state
         if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.reset()
-    
+            try:
+                self.app.daqControl.reset()
+            except Exception as e:
+                print(f'Resetting DAQ after acquisition failed: {e}')
+                self.app.daqControl.safe_off()
+
 
     @override
     def acquisitionCondition(self) -> bool:
@@ -2374,9 +2937,10 @@ class RecordButton(ImageAcquisitionButton):
         return (self.camera is not None) \
             and (self.camera.IsGrabbing() or self.camera.isOnHold()) \
             and (self.isContinuous or (self.frameCounter < self.numberRecordframes)) \
+            and (self.saveFailureEvent is None or not self.saveFailureEvent.is_set()) \
             and self.state == 'down'
 
-    
+
     @override
     def processImageCallback(self, image, imageTimeStamp, imageRetrieveTimeStamp) -> None:
 
@@ -2390,7 +2954,7 @@ class RecordButton(ImageAcquisitionButton):
         # if not showliveanalysis:
         #     self.computeLiveAnalysisValues()
 
-    
+
     @override
     def receiveImageCallback(self) -> None:
         """Extended to further:
@@ -2398,58 +2962,48 @@ class RecordButton(ImageAcquisitionButton):
             - Put the image into an image saving queue.
         """
 
-        # Write coordinate into file.
-        if not self.coordinateFile.closed:
+        if self.isDualColorMode and self.dualColorRecordingMode == 'Splitted':
+            saveImages = (
+                (self.dualColorMainSideImage, 1),
+                (self.dualColorMinorSideImage, 2),
+            )
+        else:
+            saveImages = ((self.originalImage, 0),)
+
+        frameIndex = self.frameCounter
+        coords = tuple(self.app.coords[:3])
+        with self.parent.liveAnalysisData.lock:
+            analysis = self.parent.liveAnalysisData
+            coordinateRow = (
+                f'{frameIndex} {self.imageTimeStamp} '
+                f'{coords[0]} {coords[1]} {coords[2]} '
+                f'{analysis.minBrightness} {analysis.maxBrightness} '
+                f'{analysis.meanBrightness} {analysis.medianBrightness} '
+                f'{analysis.skewness} {analysis.percentile_5} '
+                f'{analysis.percentile_95} '
+                f'{self.app.daqControl.currentVoltage}\n'
+            )
+
+        self._startImageSaver(saveImages[0][0])
+        if self.saveAcknowledgements is None:
+            raise RuntimeError('save acknowledgements are unavailable')
+        self.saveAcknowledgements.add(
+            frameIndex,
+            coordinateRow,
+            (channel for _, channel in saveImages),
+        )
+
+        for saveImage, channel in saveImages:
             try:
-                with self.parent.liveAnalysisData.lock:
-                    self.coordinateFile.write(f"{self.frameCounter} \
-{self.imageTimeStamp} \
-{self.app.coords[0]} \
-{self.app.coords[1]} \
-{self.app.coords[2]} \
-{self.parent.liveAnalysisData.minBrightness} \
-{self.parent.liveAnalysisData.maxBrightness} \
-{self.parent.liveAnalysisData.meanBrightness} \
-{self.parent.liveAnalysisData.medianBrightness} \
-{self.parent.liveAnalysisData.skewness} \
-{self.parent.liveAnalysisData.percentile_5} \
-{self.parent.liveAnalysisData.percentile_95} \
-{self.app.daqControl.currentVoltage}\n")
-
-            #   Handle error from writing the file, such as ValueError: I/O operation on closed file.
-            except ValueError as e:
-                print(f'Error writing coordinateFile: {e}')
-
-        # Put image(s) into the saving queue
-        if not self.isDualColorMode or ( self.isDualColorMode and self.dualColorRecordingMode == 'Original' ):
-            # Put the full image
-            self.imageQueue.put([
-                np.copy(self.image),
-                self.saveFilePath,
-                self.imageFilenameFormat.format(self.frameCounter)
-            ])
-
-        elif self.isDualColorMode and self.dualColorRecordingMode == 'Splitted':
-            # Put the dual color main and minor images
-            mainImageFileName = self.imageFilenameFormat.format(self.frameCounter)
-            minorImageFileName = str(mainImageFileName)
-
-            extensionLen = len(self.imageFilenameExtension)
-
-            mainImageFileName = mainImageFileName[:-(extensionLen+1)] + '-main.' + self.imageFilenameExtension
-            minorImageFileName = minorImageFileName[:-(extensionLen+1)] + '-minor.' + self.imageFilenameExtension
-
-            mainImageFileName = mainImageFileName[:]
-            self.imageQueue.put([
-                np.copy(self.dualColorMainSideImage),
-                self.saveFilePath,
-                mainImageFileName
-            ])
-            self.imageQueue.put([
-                np.copy(self.dualColorMinorSideImage),
-                self.saveFilePath,
-                minorImageFileName
-            ])
+                self.saveHandoffQueue.put_nowait(
+                    (saveImage, frameIndex, channel)
+                )
+            except Full:
+                self._failSaveFrame(
+                    frameIndex,
+                    f'Image handoff queue filled at frame {frameIndex}'
+                )
+                break
 
         self.frameCounter += 1
 
@@ -2460,7 +3014,7 @@ class RecordButton(ImageAcquisitionButton):
         if self.frameCounter == self.numberRecordframes \
             and not self.isContinuous \
             and self.prevLiveViewButtonState == 'down':
-                
+
             self.camera.setIsOnHold(True)
 
 
@@ -2471,27 +3025,64 @@ class RecordButton(ImageAcquisitionButton):
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
             self.app.daqControl.update(
-                frameNum= self.runtimeControls.framecounter.value, 
-                frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime, 
-                stagePosition= self.app.coords, 
+                frameNum= self.runtimeControls.framecounter.value,
+                frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime,
+                stagePosition= self.app.coords,
                 posHist= self.runtimeControls.posHist
             )
-        
+
 
         super().receiveImageCallback()
-    
+
+
+    def _saveHandoffLoop(
+            self, handoffQueue, stopEvent, imageQueue,
+            failureEvent, acknowledgements) -> None:
+        while True:
+            try:
+                image, idx, channel = handoffQueue.get(timeout=0.1)
+            except Empty:
+                if stopEvent.is_set():
+                    break
+                continue
+
+            if failureEvent is not None and failureEvent.is_set():
+                try:
+                    if acknowledgements is not None:
+                        acknowledgements.failed(idx)
+                except Exception as e:
+                    print(f'Discarding failed image acknowledgement failed: {e}')
+                continue
+
+            try:
+                if USE_SHARED_MEMORY_SAVER:
+                    imageQueue.put(
+                        {'img': image, 'idx': idx, 'channel': channel}
+                    )
+                else:
+                    imageQueue.put(
+                        {'img': image, 'idx': idx, 'channel': channel}, timeout=0.1
+                    )
+            except Full:
+                self._failSaveFrame(
+                    idx,
+                    f'Image saver queue filled at frame {idx}',
+                    acknowledgements,
+                    failureEvent,
+                )
+            except Exception as e:
+                self._failSaveFrame(
+                    idx,
+                    f'Passing frame {idx} to the image saver failed: {e}',
+                    acknowledgements,
+                    failureEvent,
+                )
+
 
     @override
     def finishAcquisitionCallback(self) -> None:
         """Send stop signal to image saving threads and stop image acquisition.
-        """        
-        # Send signal to terminate recording workers
-        self.imageQueue.put(None)
-
-        # Reset the DAQ state
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
-            self.app.daqControl.reset()
-
+        """
         # There are two ways to reach this point:
         #   a. Manually stop recording by clicking the Record button
         #   b. Automatically after recorded target number of frames.
@@ -2499,11 +3090,11 @@ class RecordButton(ImageAcquisitionButton):
         # In case b.) the button state will still be 'down' and therefore we need to call stopImageAcquisition() procedure.
         if self.state == 'down':
             self.stopImageAcquisition()
-    
+
 
     def initRecordingParams(self):
         """Initialize the recording arguments
-        """        
+        """
         # Setup grabbing with recording settings
         self.numberRecordframes = self.app.config.getint('Experiment', 'nframes')
 
@@ -2523,12 +3114,12 @@ class RecordButton(ImageAcquisitionButton):
         # pre-calculate the filename
         self.imageFilenameExtension = self.app.config.get('Experiment', 'extension')
         self.imageFilenameFormat = timeStamped("basler_{}."+f"{self.imageFilenameExtension}")
-        
+
 
 class ImageAcquisitionManager(BoxLayout):
     """An ImageAcquisition buttons holder widget. This class acts as a centralized contact
     point for accessing the acquired images.
-    """    
+    """
     recordbutton: RecordButton = ObjectProperty(None, rebind = True)
     liveviewbutton: LiveViewButton = ObjectProperty(None, rebind = True)
     snapbutton: Button = ObjectProperty(None, rebind = True)
@@ -2555,10 +3146,10 @@ class ImageAcquisitionManager(BoxLayout):
         path = self.app.root.ids.leftcolumn.savefile
         snap_filename = timeStamped("snap."+f"{ext}")
         camera = self.app.camera
-        
+
         if camera is None:
             return
-        
+
         # Get an image appropriately acoording to current viewing mode
         if self.recordbutton.state == 'down' or self.liveviewbutton.state == 'down':
             #   save the current image
@@ -2567,7 +3158,6 @@ class ImageAcquisitionManager(BoxLayout):
         else:
             # Call capture an image
             isSuccess, img = camera.singleTake()
-
             if isSuccess:
                 basler.saveImage(img, path, snap_filename)
 
@@ -2585,7 +3175,7 @@ class StencilFloatLayout(FloatLayout, StencilView):
             return super().on_touch_down(touch)
         else:
             return False
-    
+
     def on_touch_up(self, touch):
         """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
         """
@@ -2594,11 +3184,11 @@ class StencilFloatLayout(FloatLayout, StencilView):
         else:
             return False
 
-        
+
 class ScalableImage(ScatterLayout):
 
     def on_touch_up(self, touch):
-        
+
         # If the widget is enabled and interaction point is inside its bounding box
         if self.disabled or not self.collide_point(*touch.pos):
             return False
@@ -2634,15 +3224,15 @@ class PreviewImage(Image):
     def mouse_pos(self, window, pos):
         """Calculate relative mouse position to the preview image and update the
         inspect pixel value text at the bottom right corner of the GUI.
-        """        
+        """
         if not hasattr(self, 'app'):
             self.app = App.get_running_app()
-        
+
         image: np.ndarray = self.app.image
-        
+
         if image is None:
             return
-        
+
         mouse_pos = np.array(pos, np.float32)
 
         previewImage = self
@@ -2679,7 +3269,7 @@ class PreviewImage(Image):
             # Update info text
             self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'x: {self.mouse_pos_in_tex_coord[0]}, y: {self.mouse_pos_in_tex_coord[1]}, intensity: {pixelVal}'
 
-        return  
+        return
 
 
     def captureCircle(self, pos):
@@ -2718,14 +3308,14 @@ class PreviewImage(Image):
 
                 # Start tracking procedure
                 Clock.schedule_once(lambda dt: runtimeControls.startTracking(self.mouse_pos_in_tex_coord), 0)
-                
-                # remove the circle 
+
+                # remove the circle
                 # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
                 Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
 
 
 class LiveAnalysisLabel(Label):
-    
+
     def __init__(self, **kwargs):
         super(LiveAnalysisLabel, self).__init__(**kwargs)
         self.updateText(LiveAnalysisData())
@@ -2737,9 +3327,6 @@ class LiveAnalysisLabel(Label):
 
     def updateText(self, liveAnalysisData: LiveAnalysisData):
 
-        # Get LiveAnalysisData from ImageAcquisition
-        app: GlowTrackerApp = App.get_running_app()
-        
         self.text = f"""Min: {liveAnalysisData.minBrightness:.2f}
 Max: {liveAnalysisData.maxBrightness:.2f}
 Mean: {liveAnalysisData.meanBrightness:.2f}
@@ -2751,8 +3338,8 @@ Skewness: {liveAnalysisData.skewness:.2f}
 
 class ImageOverlay(FloatLayout):
     """An image overlay class than handles drawing of GUI overlays ontop of the image.
-    """    
-    
+    """
+
     def __init__(self,  **kwargs):
         super(ImageOverlay, self).__init__(**kwargs)
         # Declare class instance's attributes
@@ -2789,13 +3376,13 @@ class ImageOverlay(FloatLayout):
         imageWidgetSize = previewImage.size
         self.pos[0] = (imageWidgetSize[0] - normImageSize[0]) / 2
         self.pos[1] = (imageWidgetSize[1] - normImageSize[1]) / 2
-        
-    
+
+
     def on_size(self, *args) -> None:
         """Called everytime the widget is resized. Resize the overlay to match the image and redraw.
-        """        
+        """
         self.updateOverlay()
-    
+
 
     @mainthread
     def updateOverlay(self) -> None:
@@ -2804,11 +3391,11 @@ class ImageOverlay(FloatLayout):
             2. Clear all the overlay
             3. Redraw all the overlay
         """
-        
+
         # If the app has just started with a logo then don't draw any overlay
         if self.app.image is None:
             return
-        
+
         # Resize the overlay to match the image
         self.resizeToImage()
 
@@ -2817,18 +3404,18 @@ class ImageOverlay(FloatLayout):
 
         # Update dual color overlay
         dualcolormode = self.app.config.getboolean('DualColor', 'dualcolormode')
-        
+
         if dualcolormode:
             mainside = self.app.config.get('DualColor', 'mainside')
             self.drawDualColorOverlay(mainside)
-                
+
         # Update tracking overlay
         showtrackingoverlay = self.app.config.getboolean('Tracking', 'showtrackingoverlay')
-        
+
         if showtrackingoverlay:
             self.updateTrackingOverlay(doClear= False)
 
-    
+
     def updateTrackingOverlay(self, doClear: bool = True):
         """Gather tracking overlay data and draw.
 
@@ -2838,7 +3425,7 @@ class ImageOverlay(FloatLayout):
 
         cmsOffset_x, cmsOffset_y = 0, 0
         trackingMask = np.zeros(0)
-        trail = np.empty([1, 2])
+        trail = np.empty((0, 2))
         # Trail is a n-by-2 matrix of stage position history, with first entry be the oldest and last be the latest.
 
         rtc: RuntimeControls = self.app.root.ids.middlecolumn.runtimecontrols
@@ -2860,8 +3447,8 @@ class ImageOverlay(FloatLayout):
             self.clearTrackingOverlay()
 
         self.drawTrackingOverlay(cmsOffset_x, cmsOffset_y, trackingMask, trail)
-    
-    
+
+
     def computeTrackingOverlayBorderBBox(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute the tracking overlay bounding box in the local widget space.
 
@@ -2881,18 +3468,18 @@ class ImageOverlay(FloatLayout):
         dualColorMode = self.app.config.getboolean('DualColor', 'dualcolormode')
         dualColorViewMode = self.app.config.get('DualColor', 'viewmode')
 
-        # If we are using the dual color and viewing the 'Splitted' mode, 
-        #   then we have to shift the center of tracking border to the left ro right 
+        # If we are using the dual color and viewing the 'Splitted' mode,
+        #   then we have to shift the center of tracking border to the left ro right
         #   side accordingly.
         if dualColorMode and dualColorViewMode == 'Splitted':
             mainSide = self.app.config.get('DualColor', 'mainside')
-            
+
             if mainSide == 'Left':
                 center[0] -= normImageSize[0]/4
 
             elif mainSide == 'Right':
                 center[0] += normImageSize[0]/4
-        
+
         # Compute the overlay bbox
         imageSize = previewImage.texture_size
         displayedScale = normImageSize[0] / imageSize[0]
@@ -2918,8 +3505,8 @@ class ImageOverlay(FloatLayout):
         top_right = np.fmin(top_right, image_top_right)
 
         return center, btm_left, top_right
-    
-    
+
+
     def drawTrackingOverlay(self, cmsOffset_x: float | None = None, cmsOffset_y: float | None = None, trackingMask: np.ndarray | None = None, trail: np.ndarray | None = None) -> None:
         """Draw the tracking info overlay.
             1. Draw the tracking mask if provided
@@ -2931,7 +3518,7 @@ class ImageOverlay(FloatLayout):
             cmsOffset_y (float | None, optional): center of mass position as an ofset from the center of the image. Defaults to None.
             trackingMask (np.ndarray | None, optional): 2D uint8 numpy array representing the mask that is used for calculating the center of mass. Defaults to None.
         """
-        
+
         # Frequently used variables
         center, btm_left, top_right = self.computeTrackingOverlayBorderBBox()
 
@@ -2941,7 +3528,7 @@ class ImageOverlay(FloatLayout):
         imageSize = previewImage.texture_size
         displayedScale = normImageSize[0] / imageSize[0]
 
-        
+
         # px -> meter
         imageToStageRotOnlyMat_XY = macro.swapMatXYOrder(self.app.imageToStageRotMat)
         # meter -> px
@@ -2958,11 +3545,11 @@ class ImageOverlay(FloatLayout):
 
         stageToImageMat = stageToImageRotOnlyMat / pixelsize_meter
 
-        # 
+        #
         # Check if needs to draw tracking mask
-        # 
+        #
         if trackingMask is not None:
-            
+
             if self.trackingMaskLayout is None:
 
                 # Create a FloatLayout
@@ -2977,7 +3564,7 @@ class ImageOverlay(FloatLayout):
 
                 # Add the Image widget
                 self.trackingMaskLayout.add_widget(self.trackingMask)
-            
+
             if self.trackingMask.texture is None \
                 or self.trackingMask.texture.width != trackingMask.shape[1] \
                 or self.trackingMask.texture.height != trackingMask.shape[0]:
@@ -3010,9 +3597,9 @@ class ImageOverlay(FloatLayout):
             imageByteBuffer: bytes = trackingMaskColor.tobytes()
             self.trackingMask.texture.blit_buffer(imageByteBuffer, colorfmt= 'rgba', bufferfmt= 'ubyte')
 
-        # 
+        #
         # Check if needs to reconstruct the tracking border
-        # 
+        #
         if self.trackingBorder is None:
 
             trackingBorderPoints = [
@@ -3029,38 +3616,38 @@ class ImageOverlay(FloatLayout):
             self.canvas.add(Color(1., 0., 0., 0.5))
             self.canvas.add(self.trackingBorder)
 
-        # 
+        #
         # Draw tracking center of mass if provided
-        # 
+        #
         if cmsOffset_x is not None and cmsOffset_y is not None:
-            
+
             # Compute cms draw position
-            cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale 
+            cms = center + np.array([cmsOffset_x, cmsOffset_y]) * displayedScale
 
             pointRadius = 10 * displayedScale
 
             if self.cmsShape is None:
                 # If the tracking shape is not yet created, create it and draw
                 self.cmsShape = Ellipse(
-                    pos= (cms[0] - pointRadius, cms[1] - pointRadius), 
+                    pos= (cms[0] - pointRadius, cms[1] - pointRadius),
                     size= (pointRadius * 2, pointRadius * 2)
                 )
 
                 # Draw the cms as a teal dot
                 self.canvas.add(Color(0.435, 0.957, 1.0, 0.75))
                 self.canvas.add(self.cmsShape)
-            
+
             else:
                 # Else just update the position
                 self.cmsShape.pos = (cms[0] - pointRadius, cms[1] - pointRadius)
-        
-        
-        # 
+
+
+        #
         #   Draw 1mm guildeline
-        # 
-        showguideline = self.app.config.getboolean('DaqControl', 'showguideline') 
+        #
+        showguideline = self.app.config.getboolean('DaqControl', 'showguideline')
         if showguideline:
-            
+
             # Draw a guide-line. 1mm from center to right. This position in meter.
             guideline = np.array([[0, 0], [1e-3, 0]], np.float32)
 
@@ -3068,8 +3655,8 @@ class ImageOverlay(FloatLayout):
             guideline_imageSpace = guideline / pixelsize_meter
 
             self._updateLineMesh(
-                mesh= self.guidelineMesh, 
-                vertices_in= guideline_imageSpace, 
+                mesh= self.guidelineMesh,
+                vertices_in= guideline_imageSpace,
                 color= Color(1.0, 1,0, 0.0, 0.75),
                 stageToImageMat= np.identity(n= 2),
                 displayedScale= displayedScale,
@@ -3077,48 +3664,48 @@ class ImageOverlay(FloatLayout):
                 isCenterAtFirstVertex= True
             )
 
-        # 
+        #
         #   Draw tracking trail
-        # 
-        showtrail = self.app.config.getboolean('DaqControl', 'showtrail') 
-        if showtrail:
-            
+        #
+        showtrail = self.app.config.getboolean('DaqControl', 'showtrail')
+        if showtrail and len(trail) > 0:
+
             self._updateLineMesh(
-                mesh= self.trailMesh, 
-                vertices_in= trail, 
+                mesh= self.trailMesh,
+                vertices_in= trail,
                 color= Color(0.9, 0.0, 1.0, 0.75),
                 stageToImageMat= stageToImageMat,
                 displayedScale= displayedScale,
                 screenCenter= center,
                 isCenterAtFirstVertex= False
             )
-            
-        # 
+
+        #
         #   Draw reversal detection indicators
-        # 
-        showreversalindicator = self.app.config.getboolean('DaqControl', 'showreversalindicator') 
-        if showreversalindicator:
-            # 
+        #
+        showreversalindicator = self.app.config.getboolean('DaqControl', 'showreversalindicator')
+        if showreversalindicator and len(trail) > 1:
+            #
             # Draw Body line
-            # 
-            
-            # We have trail positions in mm 
+            #
+
+            # We have trail positions in mm
             animallength_um = self.app.config.getfloat('DaqControl', 'animallength')
             animallength = animallength_um * 1e-6
 
-            # Get last M (trial limit) vertices and 
+            # Get last M (trial limit) vertices and
             #   apply transformation to each row vertex
             traillimit = self.app.config.getint('DaqControl', 'traillimit')
-            
+
             croppedTrail = trail[-traillimit::, :]
 
             # Greedy sums up until equal or exceed animal's length
             #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
             revTrail = croppedTrail[::-1]
             sumLength = 0
-            
+
             tailIndex = 0
-            
+
             for i in range(1, len(revTrail)):
                 length = np.linalg.norm(revTrail[i-1] - revTrail[i])
                 sumLength = sumLength + length
@@ -3126,7 +3713,7 @@ class ImageOverlay(FloatLayout):
 
                 if sumLength >= animallength:
                     break
-            
+
             # Copy points from head to tail
             bodyVert = revTrail[0:tailIndex+1:1]
             # print(f'bodylength: {sumLength:.4f} meter, verts: {len(bodyVert)}')
@@ -3135,26 +3722,26 @@ class ImageOverlay(FloatLayout):
             if len(bodyVert) > 1:
 
                 self._updateLineMesh(
-                    mesh= self.bodyMesh, 
-                    vertices_in= bodyVert, 
+                    mesh= self.bodyMesh,
+                    vertices_in= bodyVert,
                     color= Color(1.0, 1.0, 0.0, 0.75),
                     stageToImageMat= stageToImageMat,
                     displayedScale= displayedScale,
                     screenCenter= center,
                     isCenterAtFirstVertex= True
                 )
-            
-                # 
+
+                #
                 # Draw vector from tail to head
-                # 
+                #
                 # We have bodyVert: Bx2 (B:= body length), rows of point from head to tail
                 head = bodyVert[0]
                 tail = bodyVert[-1]
                 tailToHeadVert = np.vstack([tail, head])
 
                 self._updateLineMesh(
-                    mesh= self.tailToHeadMesh, 
-                    vertices_in= tailToHeadVert, 
+                    mesh= self.tailToHeadMesh,
+                    vertices_in= tailToHeadVert,
                     color= Color(0.0, 1.0, 1.0, 0.75),
                     stageToImageMat= stageToImageMat,
                     displayedScale= displayedScale,
@@ -3162,12 +3749,13 @@ class ImageOverlay(FloatLayout):
                     isCenterAtFirstVertex= False
                 )
 
-                # 
+                #
                 # Estimate velocity
-                # 
+                #
                 velocityHistoryPercentage = self.app.config.getfloat('DaqControl', 'velocityhistorypercentage')
 
                 numHistVert = round(len(bodyVert) * velocityHistoryPercentage / 100)
+                numHistVert = max(2, min(len(bodyVert), numHistVert))
                 # Slice from head to numHistVert
                 histVert = bodyVert[0:numHistVert]
 
@@ -3175,30 +3763,34 @@ class ImageOverlay(FloatLayout):
                 velocities = histVert[0:-1] - histVert[1:]
 
                 # Uniform weighted average
-                velocity = np.sum(velocities, axis= 0) / len(velocities)
+                velocity = np.mean(velocities, axis=0)
+
+                velocityNorm = np.linalg.norm(velocity)
+                bodyDirection = head - tail
+                if velocityNorm == 0 or np.linalg.norm(bodyDirection) == 0:
+                    return
 
                 # Draw the directional line as 100 pixel long
-                directionVert = np.array([[0,0], velocity / np.linalg.norm(velocity)]) * 100 * pixelsize_meter
+                directionVert = np.array([[0,0], velocity / velocityNorm]) * 100 * pixelsize_meter
 
                 # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
                 #   If yes, reversal -> red color.
                 #   If not, non-reversal -> green color.
 
-                vecTailToHead = head - tail
-                angle_radian = macro.computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
+                angle_radian = macro.computeAngleBetweenTwo2DVecs(bodyDirection, velocity)
                 angle_degree = angle_radian * 180 / math.pi
 
-                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')                
+                reversalthresholdradian = self.app.config.getfloat('DaqControl', 'reversalthresholdradian')
 
                 self.velocityMeshColor.rgba = [0, 1, 0, 0.75]
-                
+
                 if angle_degree > reversalthresholdradian or angle_degree < -reversalthresholdradian:
                     self.velocityMeshColor.rgba = [1, 0, 0, 0.75]
                     print("Reversing!")
 
                 self._updateLineMesh(
-                    mesh= self.velocityMesh, 
-                    vertices_in= directionVert, 
+                    mesh= self.velocityMesh,
+                    vertices_in= directionVert,
                     color= self.velocityMeshColor,
                     stageToImageMat= stageToImageMat,
                     displayedScale= displayedScale,
@@ -3208,13 +3800,13 @@ class ImageOverlay(FloatLayout):
 
 
     def _updateLineMesh(
-        self, 
-        mesh: Mesh, 
-        vertices_in: np.ndarray, 
-        color: Color, 
-        stageToImageMat: np.ndarray, 
-        displayedScale: float, 
-        screenCenter: np.ndarray, 
+        self,
+        mesh: Mesh,
+        vertices_in: np.ndarray,
+        color: Color,
+        stageToImageMat: np.ndarray,
+        displayedScale: float,
+        screenCenter: np.ndarray,
         isCenterAtFirstVertex: bool
     ) -> None:
         # vertices_in is N x 2 mat in stage space (meter). Each row contains a vertex in XY
@@ -3227,13 +3819,13 @@ class ImageOverlay(FloatLayout):
         #   Transfrom back to column matrix
         verts_imageCoord = verts_imageCoord.transpose()
 
-        # Transform to screen space 
+        # Transform to screen space
         verts_screenCoord = verts_imageCoord * displayedScale
 
         offsetToCenter = screenCenter - ( verts_screenCoord[0] if isCenterAtFirstVertex else verts_screenCoord[-1] )
 
         verts_screenCoord = verts_screenCoord + offsetToCenter
-        
+
         # Construct vertex array
         #   [[x1, y1, u1, v1], [x2, y2, u2, v2], ...]
         verts_with_uv = np.column_stack([verts_screenCoord, np.zeros(verts_screenCoord.shape)])
@@ -3251,21 +3843,21 @@ class ImageOverlay(FloatLayout):
         if mesh not in self.canvas.children:
             self.canvas.add(color)
             self.canvas.add(mesh)
-            
+
 
     def clearTrackingOverlay(self):
         """Clear the tracking info overlay
         """
-        
+
         if self.trackingMaskLayout is not None:
             self.remove_widget(self.trackingMaskLayout)
             self.trackingMaskLayout.clear_widgets()
             self.trackingMaskLayout = None
-            
+
         if self.trackingMask is not None:
             self.trackingMask.texture = None
             self.remove_widget(self.trackingMask)
-        
+
         if self.trackingBorder is not None:
             self.canvas.remove(self.trackingBorder)
             self.trackingBorder = None
@@ -3273,29 +3865,29 @@ class ImageOverlay(FloatLayout):
         if self.cmsShape is not None:
             self.canvas.remove(self.cmsShape)
             self.cmsShape = None
-        
+
         if self.trailMesh in self.canvas.children:
             self.canvas.remove(self.trailMesh)
 
         if self.guidelineMesh in self.canvas.children:
             self.canvas.remove(self.guidelineMesh)
-            
+
         if self.bodyMesh in self.canvas.children:
             self.canvas.remove(self.bodyMesh)
 
         if self.tailToHeadMesh in self.canvas.children:
             self.canvas.remove(self.tailToHeadMesh)
-        
+
         if self.velocityMesh in self.canvas.children:
             self.canvas.remove(self.velocityMesh)
-            
+
 
     def redrawDualColorOverlay(self, mainSide: str= 'Right'):
         """Redraw the dual color overlay by clear and draw.
 
         Args:
             mainSide (str, optional): Main side of the dual color mode. Defaults to 'Right'.
-        """        
+        """
         self.clearDualColorOverlay()
         self.drawDualColorOverlay(mainSide)
 
@@ -3308,7 +3900,7 @@ class ImageOverlay(FloatLayout):
         """
         if self.hasDrawDualColorOverlay:
             return
-        
+
         self.hasDrawDualColorOverlay = True
 
         previewImage: PreviewImage = self.app.root.ids.middlecolumn.previewimage
@@ -3317,21 +3909,21 @@ class ImageOverlay(FloatLayout):
 
         if viewMode == 'Splitted':
 
-            # 
+            #
             # Red line at the middle
-            # 
+            #
             pos_center_local = self.to_local(self.center_x, self.center_y)
             p1 = (pos_center_local[0], pos_center_local[1] + self.height/2)
             p2 = (pos_center_local[0], pos_center_local[1] - self.height/2)
             self.canvas.add(Color(1., 0., 0., 0.5))
             self.canvas.add(Line(points= [p1[0], p1[1], p2[0], p2[1]], width= 1, cap= 'none'))
 
-            # 
+            #
             # Label on the main side
-            # 
+            #
             if self.label is None:
                 # Create a Label and add it as a child
-                self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)  
+                self.label = Label(text= '[color=8e0045]Main[/color]', markup= True)
                 self.label.size_hint = [None, None]
                 self.label.valign = 'top'
                 self.label.halign = 'left'
@@ -3343,20 +3935,20 @@ class ImageOverlay(FloatLayout):
                 #   so we will mimick this by re-adding it again.
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
-            
+
             self.label.size = self.label.texture_size
 
             # Compute label position
             normImageSize = previewImage.get_norm_image_size()
-            labelDisplayedSize = np.array(self.label.texture_size) 
-            
+            labelDisplayedSize = np.array(self.label.texture_size)
+
             labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
             if mainSide == 'Left':
                 labelOffset_x -= normImageSize[0]/4
 
             elif mainSide == 'Right':
                 labelOffset_x += normImageSize[0]/4
-            
+
             #   Compute position at the top
             labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
             #   Further adjust to look prettier
@@ -3364,12 +3956,12 @@ class ImageOverlay(FloatLayout):
 
             self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
 
-        
+
         elif viewMode == 'Merged':
 
-            # 
+            #
             # Label on the header
-            # 
+            #
             if self.label is None:
                 # Create a Label and add it as a child
                 self.label = Label(text= '[color=8e0045]Dual Color: Merged[/color]', markup= True)
@@ -3378,31 +3970,31 @@ class ImageOverlay(FloatLayout):
                 self.label.halign = 'left'
                 self.label.texture_update()
                 self.add_widget(self.label)
-                
+
             else:
                 # In this case, the self.canvas.clear() has been called so we have to redraw the label.
                 #   Ideally, we would like to call self.canvas.add( some label draw instruction ) but I can't find it
                 #   so we will mimick this by re-adding it again.
                 self.remove_widget(self.label)
                 self.add_widget(self.label)
-            
+
             self.label.size = self.label.texture_size
 
             # Compute label position
             normImageSize = previewImage.get_norm_image_size()
-            labelDisplayedSize = np.array(self.label.texture_size) 
-            
+            labelDisplayedSize = np.array(self.label.texture_size)
+
             #   Compute center position
             pos_center_local = self.to_local(self.center_x, self.center_y)
             labelOffset_x = pos_center_local[0] - labelDisplayedSize[0]/2
-            
+
             #   Compute position at the top
             labelOffset_y = pos_center_local[1] + normImageSize[1]/2 - labelDisplayedSize[1]
             #   Further adjust to look prettier
             labelOffset_y -= labelDisplayedSize[1] * 0.75
 
             self.label.pos = [float(labelOffset_x), float(labelOffset_y)]
-        
+
 
     def clearDualColorOverlay(self):
         """Clear the canvas and set internal hasDraw flag to false
@@ -3410,13 +4002,13 @@ class ImageOverlay(FloatLayout):
         self.canvas.clear()
         self.hasDrawDualColorOverlay = False
 
-    
+
     def clearOverlay(self) -> None:
         """Clear both tracking and dual color overlay.
         """
         self.clearTrackingOverlay()
         self.clearDualColorOverlay()
-    
+
 
 class RuntimeControls(BoxLayout):
     framecounter = ObjectProperty(rebind=True)
@@ -3425,13 +4017,15 @@ class RuntimeControls(BoxLayout):
     imageacquisitionmanager: ImageAcquisitionManager = ObjectProperty(rebind=True)
     cropX = NumericProperty(0, rebind=True)
     cropY = NumericProperty(0, rebind=True)
-    
+
 
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
         self.liveFocusThread = None
+        self.trackthread = None
         self.focus_motion = 0
+        self.track_done = Event()
         self.isTracking = False
         self.isShowTrackingDialogueFirstTime = True
         self.coord_updateevent: ClockEvent | None = None
@@ -3451,7 +4045,7 @@ class RuntimeControls(BoxLayout):
         """
         camera: GlowTrackerApp = App.get_running_app().camera
         stage: Stage = App.get_running_app().stage
-        
+
         # Sanity check
         if camera is not None and stage is not None and camera.IsGrabbing():
 
@@ -3473,18 +4067,21 @@ class RuntimeControls(BoxLayout):
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
             smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
             minstepbeforechangedir = app.config.getint('Autofocus', 'minstepbeforechangedir')
-            
+            coarsestep = app.config.getfloat('Autofocus', 'coarsestep')
+            buffer_n = app.config.getint('Autofocus', 'buffer_n')
+
             autoFocusPID = AutoFocusPID(
                 KP= KP,
                 KI= KI,
                 KD= KD,
                 SP= SP,
                 focusEstimationMethod= FocusEstimationMethod(focusEstimationMethod),
-                minStepDist= depthoffield,
                 acceptableErrorPercentage= 0.05,
                 integralLifeTime= 0,
                 smoothingWindow= smoothingwindow,
-                minStepBeforeChangeDir= minstepbeforechangedir
+                minStepBeforeChangeDir= minstepbeforechangedir,
+                coarseStep= coarsestep,
+                buffer_n= buffer_n
             )
 
             # Data handle from LiveFocus thread to plotting in main thread
@@ -3516,13 +4113,13 @@ class RuntimeControls(BoxLayout):
                 plt.legend()
                 plt.show()
 
-                # Event to update the graph 
+                # Event to update the graph
                 def updateLiveFocusGraph( dt: float ):
 
                     # Empty guard
                     if len(graph_x_data) == 0 and len(graph_y_data) == 0:
                         return
-                    
+
                     with graph_data_lock:
                         linePlotHandle.set_xdata(graph_x_data)
                         linePlotHandle.set_ydata(graph_y_data)
@@ -3558,7 +4155,7 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.livefocuscheckbox.state = 'normal'
 
-    
+
     def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
         """Autofocus loop to be executed inside a thread.
 
@@ -3600,18 +4197,24 @@ class RuntimeControls(BoxLayout):
             # Perform one autofocus step
             relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
 
-            # Move relative z-position
-            stage.move_z(relPosZ, unit='mm', wait_until_idle= False)
+            if autoFocusPID.focusLog:
+                print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
-            # Update App's internal stage coordinate
-            app.coords[2] = app.coords[2] + relPosZ
-            
+            if self.livefocuscheckbox.state != 'down' \
+                    or getattr(app, '_hardware_teardown', False):
+                break
+
+            if stage.move_z(relPosZ, unit='mm', wait_until_idle= False):
+                app.coords[2] = app.coords[2] + relPosZ
+
             if isShowGraph:
-                # Update live graph data
-                with graph_data_lock:
-                    graph_x_data.append(len(autoFocusPID.focusLog) - 1)
-                    graph_y_data.append(autoFocusPID.focusLog[-1])
-            
+                append_new_focus_values(
+                    autoFocusPID.focusLog,
+                    graph_x_data,
+                    graph_y_data,
+                    graph_data_lock,
+                )
+
             endTime = time.perf_counter()
 
             elapsedTime = endTime - startTime
@@ -3621,10 +4224,9 @@ class RuntimeControls(BoxLayout):
             # Wait until matching spf
             if waitTime > 0:
                 time.sleep(waitTime)
-        
-        # The live focus has stopped
-        self.livefocuscheckbox.state == 'normal'
-    
+
+        self.livefocuscheckbox.state = 'normal'
+
 
     def stopLiveFocus(self):
         """Callback to stop LiveFocus mode
@@ -3650,35 +4252,47 @@ class RuntimeControls(BoxLayout):
                 self.isShowTrackingDialogueFirstTime = False
 
                 self._popup = WarningPopup(
-                    title="Click on animal", 
+                    title="Click on animal",
                     text = 'Click on an animal to start tracking it.',
                     closeTime= 4,
                     size_hint=(0.5, 0.25)
                 )
                 self._popup.open()
-            
+
         else:
             self._popup = WarningPopup(title="Tracking", text='Tracking requires a stage, a camera and the camera needs to be grabbing.',
                             size_hint=(0.5, 0.25))
             self._popup.open()
             self.trackingcheckbox.state = 'normal'
-    
 
-    def startTracking(self, start_pos_tex_coord: np.array) -> None:
+
+    def startTracking(self, start_pos_tex_coord: np.array, track_interval: float | None = None) -> None:
         """Start the tracking procedure by gathering variables, setting up the camera, and then spawn a tracking loop.
 
         Args:
             start_pos_tex_coord (np.array): Starting position in the image texture space (full image size). Used to move the stage to center at that position.
-        """        
-        app: GlowTrackerApp = App.get_running_app()
-        stage: Stage = app.stage
-        units: str = app.config.get('Calibration', 'step_units')
-        minstep: float = app.config.getfloat('Tracking', 'min_step')
-        dualColorMode: bool = app.config.getboolean('DualColor', 'dualcolormode')
-        
-        # 
+            track_interval (float | None): The interval between tracking updates in seconds. If None, uses the value from the configuration.
+        """
+        app = App.get_running_app()
+        stage = app.stage
+        if getattr(app, '_hardware_teardown', False):
+            self.trackingcheckbox.state = 'normal'
+            return
+        if self.trackthread is not None and self.trackthread.is_alive():
+            return
+        units = app.config.get('Calibration', 'step_units')
+        minstep = app.config.getfloat('Tracking', 'min_step')
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+
+        stage.set_motion(
+            float(app.config.get('Stage', 'track_speed')),
+            float(app.config.get('Stage', 'track_acceleration')),
+            app.config.get('Stage', 'speed_unit'),
+            app.config.get('Stage', 'acceleration_unit'))
+
+        #
         # Move stage by the user pointed starting position
-        # 
+        #
 
         # Compute the offset from the center
         imageHeight, imageWidth = app.image.shape[0], app.image.shape[1]
@@ -3686,43 +4300,51 @@ class RuntimeControls(BoxLayout):
         if dualColorMode:
             # Get the main side
             mainSide = app.config.get('DualColor', 'mainside')
-        
+
             # Compute offset from the center of the main side
             if mainSide == 'Right':
                 offset_from_center = start_pos_tex_coord - np.array([imageWidth*3.0/4, imageHeight/2])
-                
+
             elif mainSide == 'Left':
                 offset_from_center = start_pos_tex_coord - np.array([imageWidth*1.0/4, imageHeight/2])
-            
+
         else:
             # In normal mode, compute from the image center
             offset_from_center = start_pos_tex_coord - np.array([imageWidth/2, imageHeight/2])
-        
+
             # Set tracking ROI
             roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
             self.set_ROI(roiX, roiY)
 
         # Convert from texture coordinates to stage coordinates
         ystep, xstep = macro.getStageDistances(np.array([offset_from_center[1], offset_from_center[0]]), app.imageToStageMat)
-        
+
         print('Stage centering image offset:',ystep, xstep, units)
 
         # Move the stage
         if abs(xstep) > minstep:
-            stage.move_x(xstep, unit= units, wait_until_idle= True)
+            if not stage.move_x(xstep, unit= units, wait_until_idle= True):
+                self.trackingcheckbox.state = 'normal'
+                return
         if abs(ystep) > minstep:
-            stage.move_y(ystep, unit= units, wait_until_idle= True)
+            if not stage.move_y(ystep, unit= units, wait_until_idle= True):
+                self.trackingcheckbox.state = 'normal'
+                return
 
         # Update stage coordinate in the app
-        app.coords =  app.stage.get_position()
+        position = app.stage.get_position()
+        if position is None:
+            self.trackingcheckbox.state = 'normal'
+            return
+        app.coords = position
 
         # Record position history
         self.posHist.clear()
         self.posHist.append((app.coords[0], app.coords[1], app.coords[2]))
 
-        # 
+        #
         # Start the tracking
-        # 
+        #
         capture_radius = app.config.getint('Tracking', 'capture_radius')
         binning = app.config.getint('Tracking', 'binning')
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
@@ -3732,19 +4354,55 @@ class RuntimeControls(BoxLayout):
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
 
-        # make a tracking thread 
+
+        # make a tracking thread
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.posHist
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
 
+        self._track_timeout = None
+        if track_interval is not None:
+            self._track_timeout = Clock.schedule_once(lambda dt: setattr(self.trackingcheckbox, 'state', 'normal'), track_interval)
+
         # schedule occasional position check of the stage
-        self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+        # self.coord_updateevent = Clock.schedule_interval(lambda dt: stage.get_position(), 10)
+
+    def _track(self, duration, record = False):
+        app = App.get_running_app()
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        mgr = rc.ids.imageacquisitionmanager
+
+        self.track_done.clear()
+
+        def _start(dt):
+            if self.track_done.is_set() or getattr(app, '_hardware_teardown', False):
+                return
+            mgr.liveviewbutton.state = 'down'
+            Clock.schedule_interval(_go, 0.1)
+
+        def _go(dt):
+            if self.track_done.is_set() or getattr(app, '_hardware_teardown', False):
+                return False
+            if app.camera is None or not app.camera.IsGrabbing():
+                return
+            h, w = app.image.shape[0], app.image.shape[1]
+            rc.trackingcheckbox.state = 'down'
+            rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=duration)
+            rc.livefocuscheckbox.state = 'down'
+            if record:
+                mgr.recordbutton.state = 'down'
+            return False
+
+        Clock.schedule_once(_start)
+        self.track_done.wait()
+        if record and not getattr(app, '_hardware_teardown', False):
+            Clock.schedule_once(lambda dt: setattr(mgr.recordbutton, 'state', 'normal'))
 
 
     def set_ROI(self, roiX, roiY):
         app: GlowTrackerApp = App.get_running_app()
-       
+
         hc, wc = app.camera.setROI(roiX, roiY, isCenter = True)
 
         print(hc, wc, roiX, roiY)
@@ -3755,89 +4413,87 @@ class RuntimeControls(BoxLayout):
 
         if hc > roiY:
             self.cropY = int((hc-roiY)//2)
-    
+
 
     def tracking(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, posHist: List[Vec3]) -> None:
+        try:
+            self._trackingLoop(
+                minstep, units, capture_radius, binning, dark_bg, area,
+                threshold, mode, min_brightness, max_brightness, posHist
+            )
+        except Exception as e:
+            print(f'Tracking failed: {e}')
+        finally:
+            self.isTracking = False
+            self.track_done.set()
+            self.cmsOffset_x = None
+            self.cmsOffset_y = None
+            self.trackingMask = None
+            if self.trackingcheckbox.state == 'down':
+                Clock.schedule_once(
+                    lambda dt: setattr(self.trackingcheckbox, 'state', 'normal')
+                )
+
+
+    def _trackingLoop(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, posHist: List[Vec3]) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
         stage = app.stage
         camera = app.camera
 
-        # Compute second per frame to determine the lower bound waiting time
-        camera_spf = 1 / camera.ResultingFrameRate()
-        
+        unitToMm = {'mm': 1.0, 'um': 0.001}.get(units)
+        if unitToMm is None:
+            raise ValueError(f'Unsupported tracking unit {units!r}')
 
-        # Dual Color mode settings
+        def cameraActive():
+            try:
+                return camera is not None and (camera.IsGrabbing() or camera.isOnHold())
+            except Exception:
+                return False
+
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-        
+
         self.isTracking = True
-        image: np.ndarray | None = None
-        retrieveTimestamp: float = 0
-        prevImage: np.ndarray | None = None
+        prevImage = None
         scale = 1.0
+        SETTLE_FLOOR = 3e-3
+        ready_time = 0.0
 
-        estimated_next_timestamp: float | None = None
+        bench_window = 30
+        bench_n = 0
+        bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
+        bench_start = time.perf_counter()
 
-        while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.trackingcheckbox.state == 'down':
+        while cameraActive() and self.trackingcheckbox.state == 'down':
 
-            # Handling image cycle synchronization.
-            # Because the recording and tracking thread are asynchronous
-            # and doesn't have the same priority, it could be the case that
-            # one thread get executed more than the other and the estimated time
-            # became inaccurate.
-            wait_time = 0
-            if estimated_next_timestamp is not None:
-                
-                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-                diff_estimated_time = estimated_next_timestamp - retrieveTimestamp
+            wait_begin = time.perf_counter()
+            wait_ready = ready_time
+            while self.trackingcheckbox.state == 'down' \
+                    and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
+                if not cameraActive():
+                    return
+                time.sleep(0.001)
+            if self.trackingcheckbox.state != 'down' or not cameraActive():
+                return
+            wait_end = time.perf_counter()
 
-                # If the estimated time is approximately close to the image timestamp
-                # then it's ok to use the current image. The epsilon in this case is 10% of the camera_spf
-                if abs(diff_estimated_time)/camera_spf < 0.1:
-                    pass
-                else:
-                    # If the estimated time is less than the current time
-                    # then it is also ok to use the current image
-                    if estimated_next_timestamp < retrieveTimestamp:
-                        pass
-                    # If the estimated time is more than the current image timestamp
-                    # then compute the estimated next cycle time and wait
-                    else:
-                        current_time = time.perf_counter()
-
-                        diff_time_factor = (current_time - retrieveTimestamp) / camera_spf
-                        fractional_part, integer_part = math.modf(diff_time_factor)
-
-                        wait_time = camera_spf * ( 1.0 - fractional_part )
-
-                        time.sleep(wait_time)
-            else:
-                # Wait for the stage to finished moving/centering at location in the
-                # first time
-                stage.wait_until_idle()
-
-                retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-                estimated_next_timestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-
-            # Get the latest image
-            tracking_frame_start_time = time.perf_counter()
+            tracking_frame_start_time = wait_end
 
             if dualColorMode:
                 image = self.imageacquisitionmanager.dualColorMainSideImage
             else:
                 image = self.imageacquisitionmanager.image
 
-            retrieveTimestamp = self.imageacquisitionmanager.imageRetrieveTimeStamp
-
-            # If prev frame is empty then use the same as current
             if prevImage is None:
                 prevImage = image
+
+            _t_fetch = time.perf_counter()
 
             # Extract worm position
             if mode=='Diff':
                 ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
-                
+
             elif mode=='Min/Max':
                 ystep, xstep = macro.extractWorms(image, capture_radius = capture_radius,  bin_factor=binning, dark_bg = dark_bg, display = False)
 
@@ -3847,91 +4503,98 @@ class RuntimeControls(BoxLayout):
 
                 except ValueError as e:
                     ystep, xstep = 0, 0
-            
+            _t_detect = time.perf_counter()
+
             # Record cms for tracking overlay
             self.cmsOffset_x = xstep
             self.cmsOffset_y = -ystep
-            
+            _t_store = time.perf_counter()
+
             # Compute relative distancec in each axis
             # Invert Y because the coordinate is in image space which is top left, while the transformation matrix is in btm left
             ystep, xstep = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
             ystep *= scale
             xstep *= scale
+            _t_convert = time.perf_counter()
 
-            # Getting stage coord is slow so we will interpolate from movements
+            # getting stage coord is slow so we will interpolate from movements
+            if self.trackingcheckbox.state != 'down' \
+                    or getattr(app, '_hardware_teardown', False):
+                return
+            movedDistances = []
             if abs(xstep) > minstep:
-                stage.move_x(xstep, unit=units, wait_until_idle =False)
-                app.coords[0] += xstep/1000.
+                if not stage.move_x(xstep, unit=units, wait_until_idle =False):
+                    print('Tracking stopped because the X move was refused or failed')
+                    stage.emergency_stop()
+                    return
+                app.coords[0] += xstep * unitToMm
+                movedDistances.append(abs(xstep) * unitToMm)
                 prevImage = image
-            
+
             if abs(ystep) > minstep:
-                stage.move_y(ystep, unit=units, wait_until_idle = False)
-                app.coords[1] += ystep/1000.
+                if not stage.move_y(ystep, unit=units, wait_until_idle = False):
+                    print('Tracking stopped because the Y move was refused or failed')
+                    stage.emergency_stop()
+                    return
+                app.coords[1] += ystep * unitToMm
+                movedDistances.append(abs(ystep) * unitToMm)
                 prevImage = image
-            
-            # Record position history
+
             posHist.append((app.coords[0], app.coords[1], app.coords[2]))
+            trailLimit = max(2, app.config.getint('DaqControl', 'traillimit'))
+            if len(posHist) > trailLimit:
+                del posHist[:-trailLimit]
+            _t_move = time.perf_counter()
 
-            tracking_frame_end_time = time.perf_counter()
+            max_travel_dist = max(movedDistances, default=0.0)
+            settle = SETTLE_FLOOR + stage.estimateTravelTime(max_travel_dist)
+            ready_time = time.perf_counter() + settle
 
-            #   Wait for stage movement to finish to not get motion blur.
-            #   This could be done by checking with stage.is_busy().
-            #   However, that function call is very costly (~3 secs) 
-            #   and is not good for loop checking.
-            #   So we are going to just estimate it here.
+            settle_wait = max(0.0, min(wait_ready, wait_end) - wait_begin)
+            frame_wait = (wait_end - wait_begin) - settle_wait
 
-            #   Delay from receing the image in recording and tracking it
-            delay_receive_image_and_tracking_time = tracking_frame_start_time - retrieveTimestamp
-
-            #   Time take to compute tracking
-            computation_time = tracking_frame_end_time - tracking_frame_start_time
-
-            #   Communication delay from host to stage is 20 ms
-            communication_delay = 20e-3 
-
-            #   Travel time
-            #       Because x and y axis travel independently, the speed that we have to wait 
-            #       is the maximum between the two.
-            max_travel_dist = max(abs(xstep), abs(ystep))       # in micro meter : 1e-6
-            stage_travel_time = stage.estimateTravelTime(max_travel_dist * 1e-3)
-
-            #   Sums up all the waiting time ingredient
-            tracking_process_time = delay_receive_image_and_tracking_time + computation_time + communication_delay + stage_travel_time 
-
-            #   Compute the waiting time to reach the next receive image
-            fractional_part, integer_part = math.modf(tracking_process_time / camera_spf )
-            time_to_next_receive_image = (1.0 - fractional_part) * camera_spf
-
-            #   Sums up the total time we need to wait, which are:
-            #       communication delay
-            #       + stage travelling time
-            #       + time to receiving the last blurry image
-            total_waiting_time = communication_delay + stage_travel_time + time_to_next_receive_image
-
-            estimated_next_timestamp = tracking_frame_end_time + total_waiting_time
-
-            # Wait
-            time.sleep(total_waiting_time)
-
-        # When the camera is not grabbing or is None and exit the loop, make sure to change the state button back to normal
-        self.trackingcheckbox.state = 'normal'
-        self.cmsOffset_x = None
-        self.cmsOffset_y = None
-        self.trackingMask = None
-
+            bench_n += 1
+            bench_fetch += _t_fetch - tracking_frame_start_time
+            bench_detect += _t_detect - _t_fetch
+            bench_store += _t_store - _t_detect
+            bench_convert += _t_convert - _t_store
+            bench_move += _t_move - _t_convert
+            bench_settle += settle_wait
+            bench_frame += frame_wait
+            if bench_n >= bench_window:
+                elapsed = time.perf_counter() - bench_start
+                per = lambda s: s / bench_n * 1000.0
+                print(
+                    f'track: fetch {per(bench_fetch):.2f} | detect {per(bench_detect):.1f} | '
+                    f'store {per(bench_store):.2f} | convert {per(bench_convert):.2f} | '
+                    f'move {per(bench_move):.1f} | settle {per(bench_settle):.1f} | '
+                    f'frame {per(bench_frame):.1f}ms | {bench_n / elapsed:.1f} fps'
+                )
+                bench_n = 0
+                bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
+                bench_start = time.perf_counter()
 
     def stopTracking(self):
         """Stop the tracking mode. Unschedule events. Reset camera parameters back. And then update the overlay.
         """
+        self.track_done.set()
         app: GlowTrackerApp = App.get_running_app()
         camera = app.camera
 
-        if camera is None:
-            return
-        
+        if getattr(self, '_track_timeout', None) is not None:
+            self._track_timeout.cancel()
+            self._track_timeout = None
+
         self.isTracking = False
         self.cropX = 0
         self.cropY = 0
+
+        if app.stage is not None:
+            app.stage.set_motion(
+                float(app.config.get('Stage', 'precise_speed')),
+                float(app.config.get('Stage', 'precise_acceleration')),
+                app.config.get('Stage', 'speed_unit'),
+                app.config.get('Stage', 'acceleration_unit'))
 
         if self.coord_updateevent is not None:
             Clock.unschedule(self.coord_updateevent)
@@ -3939,7 +4602,8 @@ class RuntimeControls(BoxLayout):
 
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         # If in single color mode
-        if not dualColorMode:
+        if not dualColorMode and camera is not None \
+                and not getattr(app, '_hardware_teardown', False):
 
             # Reset the camera params back: Width, Height, OffsetX, OffsetY, center flag
             cameraConfig: dict = app.root.ids.leftcolumn.cameraConfig
@@ -3974,7 +4638,7 @@ class RuntimeControls(BoxLayout):
 
         # Update overlay
         app.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
-    
+
 
     def computeTrackingCMS(self) -> Tuple[float, float, np.ndarray]:
         """Comput tracking mask and center off mass offsets that would be used for tracking, but just for analytic in this case
@@ -4008,7 +4672,7 @@ class RuntimeControls(BoxLayout):
         except ValueError as e:
             offsetY, offsetX = 0, 0
             trackingMask = np.zeros(image.shape, image.dtype)
-        
+
         finally:
             # Flip Y from the top-right corner to btm-left corner
             return offsetX, -offsetY, trackingMask
@@ -4036,10 +4700,10 @@ class TrackingOverlayQuickButton(ToggleButton):
         else:
             self.state = 'normal'
             self.text = self.normalText
-        
+
 
     def on_state(self, button: ToggleButton, state: 'str'):
-        
+
         # Update config and setting
         app = App.get_running_app()
         configValue = '0'
@@ -4051,7 +4715,7 @@ class TrackingOverlayQuickButton(ToggleButton):
         else:
             self.text = self.downText
             configValue = '1'
-        
+
         app.config.set('Tracking', 'showtrackingoverlay', configValue)
         app.config.write()
 
@@ -4083,15 +4747,15 @@ class LiveAnalysisQuickButton(ToggleButton):
         else:
             self.state = 'normal'
             self.text = self.normalText
-        
+
 
     def on_state(self, button: ToggleButton, state: 'str'):
-        
+
         # Update config and setting
         # Pass on start up
         if self.app.root is None:
             return
-        
+
         liveanalysislabel: LiveAnalysisLabel = self.app.root.ids.middlecolumn.ids.liveanalysislabel
 
         if state == 'normal':
@@ -4111,7 +4775,7 @@ class LiveAnalysisQuickButton(ToggleButton):
                 liveAnalysisData.skewness = 0
                 liveAnalysisData.percentile_5 = 0
                 liveAnalysisData.percentile_95 = 0
-            
+
 
         else:
             # Switch on
@@ -4119,14 +4783,14 @@ class LiveAnalysisQuickButton(ToggleButton):
             self.app.config.set('LiveAnalysis', 'showliveanalysis', 1)
             liveanalysislabel.disabled = False
             liveanalysislabel.opacity = 1
-        
+
         self.app.config.write()
-    
+
 
 class DualColorViewModeQuickButtonLayout(BoxLayout):
-    
+
     dualcolorviewmodequickbutton = ObjectProperty(None)
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -4141,7 +4805,7 @@ class DualColorViewModeQuickButtonLayout(BoxLayout):
         else:
             self.hideButton()
 
-    
+
     def hideButton(self):
         if self.dualcolorviewmodequickbutton in self.children:
             self.remove_widget(self.dualcolorviewmodequickbutton)
@@ -4151,7 +4815,7 @@ class DualColorViewModeQuickButtonLayout(BoxLayout):
         if not self.dualcolorviewmodequickbutton in self.children:
             self.add_widget(self.dualcolorviewmodequickbutton)
 
-    
+
 class DualColorViewModeQuickButton(ToggleButton):
 
     normalText = 'Dual Color: [b]Splitted[/b]'
@@ -4174,10 +4838,10 @@ class DualColorViewModeQuickButton(ToggleButton):
         elif viewmode == 'Merged':
             self.state = 'down'
             self.text = self.downText
-        
+
 
     def on_state(self, button: ToggleButton, state: 'str'):
-        
+
         # Update config and setting
         app = App.get_running_app()
         configValue = str()
@@ -4189,7 +4853,7 @@ class DualColorViewModeQuickButton(ToggleButton):
         else:
             configValue = 'Merged'
             self.text = self.downText
-        
+
         app.config.set('DualColor', 'viewmode', configValue)
         app.config.write()
 
@@ -4207,6 +4871,10 @@ class Connections(BoxLayout):
 
     def __init__(self,  **kwargs):
         super(Connections, self).__init__(**kwargs)
+        self._stageSetupCancel = Event()
+        self._stageSetupThread = None
+        self._suppressCameraState = False
+        self._suppressStageState = False
         Clock.schedule_once(self._do_setup)
 
 
@@ -4219,6 +4887,8 @@ class Connections(BoxLayout):
 
 
     def connectCamera(self):
+        if self._suppressCameraState:
+            return
         print('Connecting Camera')
         # connect camera
         app = App.get_running_app()
@@ -4233,67 +4903,153 @@ class Connections(BoxLayout):
 
 
     def disconnectCamera(self):
-        camera = App.get_running_app().camera
+        if self._suppressCameraState:
+            return
+        app = App.get_running_app()
+        camera = app.camera
         if camera is not None:
             print('Disconnecting camera')
-            camera.Close()
+            app._hardware_teardown = True
+            activeWorkers = app.stop_active_workers(timeout=10.0)
+            if activeWorkers:
+                print(f'Camera disconnect cancelled; workers still active: {activeWorkers}')
+                app._hardware_teardown = False
+                self._suppressCameraState = True
+                try:
+                    self.cam_connection.state = 'down'
+                finally:
+                    self._suppressCameraState = False
+                return
+            try:
+                camera.Close()
+            finally:
+                if app.camera is camera:
+                    app.camera = None
+                app._hardware_teardown = False
 
 
     def connectStage(self):
+        if self._suppressStageState:
+            return
+        if self._stageSetupThread is not None and self._stageSetupThread.is_alive():
+            self._suppressStageState = True
+            try:
+                self.stage_connection.state = 'normal'
+            finally:
+                self._suppressStageState = False
+            return
         print('Connecting Stage')
         app = App.get_running_app()
         port = app.config.get('Stage', 'port')
-        maxspeed = float( app.config.get('Stage', 'maxspeed') )
-        maxspeed_unit = app.config.get('Stage', 'maxspeed_unit')
-        accel = float( app.config.get('Stage', 'acceleration') )
+        maxspeed = float( app.config.get('Stage', 'precise_speed') )
+        maxspeed_unit = app.config.get('Stage', 'speed_unit')
+        accel = float( app.config.get('Stage', 'precise_acceleration') )
         accel_unit = app.config.get('Stage', 'acceleration_unit')
         stage = Stage(port, maxspeed, maxspeed_unit, accel, accel_unit)
-        
+
         if stage.connection is None:
             self.stage_connection.state = 'normal'
             App.get_running_app().stage = None
 
         else:
             app.stage: Stage = stage # type: ignore
-            
+            self._stageSetupCancel = Event()
+            app.root.ids.leftcolumn.ids.xcontrols.disable_all()
+            app.root.ids.leftcolumn.ids.ycontrols.disable_all()
+            app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
             startloc = [float(x) for x in app.config.get('Stage', 'start_loc').split(',')]
             limits = [float(x) for x in app.config.get('Stage', 'stage_limits').split(',')]
-            
+
             def connect_async():
+                success = False
+                position = None
+                try:
+                    success = stage.on_connect(
+                        homing, move_start, startloc, limits,
+                        cancel_event=self._stageSetupCancel
+                    )
+                    if success and not self._stageSetupCancel.is_set():
+                        position = stage.get_position(isAsync=False)
+                        success = position is not None and stage.start_position_poller()
+                except Exception as e:
+                    print(f'Stage setup failed: {e}')
 
-                # home stage - do this in a thread, it is slow, ~2 sec
-                app.stage.on_connect(homing,  move_start, startloc, limits)
-                
-                # Call update_coordinates once.
-                #   We have to specify not to run 'update_coordinates' in async mode because it's going to
-                #   be run inside a thread.
-                app.update_coordinates(isAsync= False)  
+                def finishSetup(dt):
+                    if self._stageSetupCancel.is_set() or app.stage is not stage:
+                        return
+                    if not success:
+                        stage.disconnect()
+                        if app.stage is stage:
+                            app.stage = None
+                        self._suppressStageState = True
+                        try:
+                            self.stage_connection.state = 'normal'
+                        finally:
+                            self._suppressStageState = False
+                        return
+                    app.coords = position
+                    if getattr(app, 'coord_updateevent', None) is not None:
+                        app.coord_updateevent.cancel()
+                    app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
+                    app.root.ids.leftcolumn.ids.xcontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.ycontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.zcontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.gotocontrols.allow_moves()
 
-            
-            thread_connect_async = Thread(target= connect_async)
-            thread_connect_async.daemon = True
-            thread_connect_async.start()
-            
-            app.root.ids.leftcolumn.ids.xcontrols.enable_all()
-            app.root.ids.leftcolumn.ids.ycontrols.enable_all()
-            app.root.ids.leftcolumn.ids.zcontrols.enable_all()
-            
+                Clock.schedule_once(finishSetup)
 
-    def disconnectStage(self):
+            self._stageSetupThread = Thread(target=connect_async, daemon=True)
+            self._stageSetupThread.start()
+
+
+    def disconnectStage(self, wait=True, timeout=10.0):
+        if self._suppressStageState:
+            return True
         print('Disconnecting Stage')
         app = App.get_running_app()
-        if app.stage is None:
-            self.stage_connection.state = 'normal'
-        else:
-            app.stage.disconnect()
-            app.stage = None
-        # disable buttons
+        self._stageSetupCancel.set()
         app.root.ids.leftcolumn.ids.xcontrols.disable_all()
         app.root.ids.leftcolumn.ids.ycontrols.disable_all()
         app.root.ids.leftcolumn.ids.zcontrols.disable_all()
-    
+        if app.stage is None:
+            return True
+        else:
+            goToControls = app.root.ids.leftcolumn.ids.gotocontrols
+            goToControls.request_stop(block_new=True)
+            if wait and not goToControls.wait(timeout):
+                print('Stage disconnect deferred because Go To movement is still active')
+                goToControls.allow_moves()
+                self._suppressStageState = True
+                try:
+                    self.stage_connection.state = 'down'
+                finally:
+                    self._suppressStageState = False
+                return False
+
+            if getattr(app, 'coord_updateevent', None) is not None:
+                app.coord_updateevent.cancel()
+                app.coord_updateevent = None
+
+            app.stage.emergency_stop()
+            setupThread = self._stageSetupThread
+            if wait and setupThread is not None and setupThread.is_alive():
+                setupThread.join(timeout)
+            if setupThread is not None and setupThread.is_alive():
+                print('Stage disconnect deferred because setup is still active')
+                self._suppressStageState = True
+                try:
+                    self.stage_connection.state = 'down'
+                finally:
+                    self._suppressStageState = False
+                return False
+
+            app.stage.disconnect()
+            app.stage = None
+            return True
+
 
 class DAQConnectionButton(ToggleButton):
 
@@ -4301,7 +5057,7 @@ class DAQConnectionButton(ToggleButton):
 
         if state == 'down':
             self.connectDaq()
-        
+
         else:
             self.disconnectDaq()
 
@@ -4315,12 +5071,12 @@ class DAQConnectionButton(ToggleButton):
 
         # Connect to device
         app.daqControl = DAQControl.createAndConnectDaq()
-        
+
         # If no device
         if not app.daqControl.isConnected():
             self.state = 'normal'
             return
-        
+
         app.daqControl.daqMode = DAQMode[app.config.get("DaqControl", "mode")]
 
         # Load recent script
@@ -4370,10 +5126,12 @@ class DAQConnectionButton(ToggleButton):
         app.daqControl.daqStageProgram.update(mode= stageprogrammode, quadVertex= quadVertex, exterior= exterior, exteriorConstant= exteriorConstant, gaussianParams= gaussianParams)
 
         # Update DAQReversalDetection variables
-        app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength')
+        app.daqControl.reversalDetector.animalLength_mm = app.config.getfloat('DaqControl', 'animallength') * 1e-3
         app.daqControl.reversalDetector.trailLimit = app.config.getint('DaqControl', 'traillimit')
         app.daqControl.reversalDetector.velocityHistoryPercentage = app.config.getfloat('DaqControl', 'velocityhistorypercentage')
-        app.daqControl.reversalDetector.reversalthresholdradian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
+        app.daqControl.reversalDetector.reversalThresholdRadian = app.config.getfloat('DaqControl', 'reversalthresholdradian')
+        app.daqControl.reversalDetector.reversalVoltage = app.config.getfloat('DaqControl', 'reversalvoltage')
+        app.daqControl.reversalDetector.forwardVoltage = app.config.getfloat('DaqControl', 'forwardvoltage')
 
         return
 
@@ -4402,7 +5160,7 @@ class SettingsCustomNumeric(SettingNumeric):
     def _validate(self, instance):
         # Close the popup
         self._dismiss()
-        
+
         value_float = float(0)
 
         # Check if input is a number
@@ -4412,7 +5170,7 @@ class SettingsCustomNumeric(SettingNumeric):
         except ValueError:
             # The value is not a number
             return
-        
+
         # Check if should display text in integer style or floating point style
         try:
             value_int = int(self.textinput.text)
@@ -4423,28 +5181,30 @@ class SettingsCustomNumeric(SettingNumeric):
             self.value = str(value_float)
 
         return
-    
+
 
 # load the layout
 class GlowTrackerApp(App):
     # stage configuration properties - these will update when changed in config menu
-    vhigh = ConfigParserProperty(20,
-                    'Stage', 'vhigh', 'app', val_type=float)
-    vlow = ConfigParserProperty(20,
-                    'Stage', 'vlow', 'app', val_type=float)
+    vhigh = ConfigParserProperty(30,
+                    'Stage', 'input_fast_speed', 'app', val_type=float)
+    vlow = ConfigParserProperty(1,
+                    'Stage', 'input_slow_speed', 'app', val_type=float)
     unit = ConfigParserProperty('mm/s',
                     'Stage', 'speed_unit', 'app', val_type=str)
     # stage coordinates and current image
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
+    plateCenter = ObjectProperty(None)
+    plateRadius = ObjectProperty(None)
     frameBuffer = list()
 
 
     def __init__(self,  **kwargs):
         super(GlowTrackerApp, self).__init__(**kwargs)
         # Declare config file path
-        self.configFile = self.getDefaultUserConfigFilePath()
+        self.configFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'glowtracker_local.ini')
         # define settings menu style
         self.settings_cls = SettingsWithSidebar
         # bind key presses to stage motion - right now also happens in settings!
@@ -4454,11 +5214,12 @@ class GlowTrackerApp(App):
         self.stage: Stage = Stage(None)
         self.daqControl: DAQControl = DAQControl()
         self.updateFpsEvent = None
-    
+        self._hardware_teardown = False
+
 
     def getDefaultUserConfigFilePath(self) -> str:
         """Get the default glowtrackeer app config file path from the user local machine.
-        The default location depends on the username and the OS. Create a new one by 
+        The default location depends on the username and the OS. Create a new one by
         copying from the default template if it doesn't exist.
 
         Returns:
@@ -4469,7 +5230,7 @@ class GlowTrackerApp(App):
 
         # Join the directory path and file name for a complete file path.
         configFullPath = os.path.join(configDir, configFileName)
-        
+
         # If the config file doesn't exist, create a new one.
         if not os.path.exists(configFullPath):
 
@@ -4479,7 +5240,7 @@ class GlowTrackerApp(App):
 
                 # Copy the template file to the target directory.
                 shutil.copy(configFileName, configDir)
-                
+
             except Exception as e:
                 print(e)
 
@@ -4497,20 +5258,25 @@ class GlowTrackerApp(App):
 
         Thus, we will skip the loading here and pass the responsibility to self.build() to load instead.
         """
-        # Set the config defaults 
+        # Set the config defaults
         config.setdefaults('Stage', {
-            'speed_unit': 'mm/s',
-            'vhigh': '30.0',
-            'vlow': '1.0',
             'port': '/dev/ttyUSB0',
             'move_start': 'false',
             'homing': 'false',
-            'stage_limits': '160,160,180',
+            'stage_limits': '150,150,152',
             'start_loc': '0,0,0',
-            'maxspeed': '20',
-            'maxspeed_unit': 'mm/s',
-            'acceleration': '60',
+            'speed_unit': 'mm/s',
             'acceleration_unit': 'mm/s^2',
+            'input_fast_speed': '20.0',
+            'input_fast_acceleration': '100',
+            'input_slow_speed': '0.5',
+            'input_slow_acceleration': '100',
+            'precise_speed': '15',
+            'precise_acceleration': '200',
+            'scan_speed': '26',
+            'scan_acceleration': '500',
+            'track_speed': '20',
+            'track_acceleration': '200',
             'move_image_space_mode': 'false'
         })
 
@@ -4533,6 +5299,8 @@ class GlowTrackerApp(App):
             'bestfocusvalue': 2000,
             'focusfps': '15',
             'isshowgraph': 'false',
+            'coarsestep': '0.02',
+            'buffer_n': '5',
         })
 
         config.setdefaults('Calibration', {
@@ -4564,7 +5332,7 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '255'
+            'max_brightness': '65535'
         })
 
         config.setdefaults('LiveAnalysis', {
@@ -4622,13 +5390,25 @@ class GlowTrackerApp(App):
             'forwardvoltage' : '0',
             'showguideline': 'true',
         })
-        
+
         config.setdefaults('Developer', {
             'showfps': 'false'
         })
 
 
     def build(self):
+
+        print('>>> configFile:', self.configFile)
+        print('>>> exists:', os.path.exists(self.configFile))
+        try:
+            with open(self.configFile) as _f:
+                print('>>> sections in file:')
+                for _line in _f:
+                    if _line.strip().startswith('['):
+                        print('   ', _line.strip())
+        except Exception as _e:
+            print('>>> could not read configFile:', _e)
+        print('>>> in-memory sections before update:', self.config.sections())
 
         # Load user's config
         self.config.update_config(self.configFile, overwrite= True)
@@ -4648,7 +5428,7 @@ class GlowTrackerApp(App):
 
         # manage xbox input
         Window.bind(on_joy_axis= self.on_controller_input)
-        self.stopevent = Clock.create_trigger(lambda dt: self.stage.stop(), 0.1)
+        self.stopevent = Clock.create_trigger(lambda dt: self.request_stage_stop(), 0.1)
 
         # Load and gen camera&stage transformation matricies
         rotation = self.config.getfloat('Camera', 'rotation')
@@ -4661,7 +5441,7 @@ class GlowTrackerApp(App):
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
 
         return layout
-    
+
 
     def on_start(self):
         '''Event handler for the `on_start` event which is fired after
@@ -4672,8 +5452,8 @@ class GlowTrackerApp(App):
         showfps = self.config.getboolean('Developer', 'showfps')
         if showfps:
             self.startShowFpsEvent()
-    
-    
+
+
     # use custom settings for our GUI
     def build_settings(self, settings: SettingsWithSidebar):
         """build the settings window"""
@@ -4705,17 +5485,17 @@ class GlowTrackerApp(App):
         '''
 
         self.config.read(self.configFile)
-        
+
         settings = self.settings_cls()
         self.build_settings(settings)
-        
+
         self.unbind_keys()
 
         settings.bind(
             on_close= self.close_settings,
             on_config_change= self.on_config_change
         )
-        
+
         return settings
 
 
@@ -4744,19 +5524,46 @@ class GlowTrackerApp(App):
 
         # Bind back the keys
         self.bind_keys()
-        
+
         # Enabled back the interaction with preview image widget
         self.root.ids.middlecolumn.ids.scalableimage.disabled = False
 
         return True
-        
+
 
     def stage_stop(self):
         """stop all axes and report coordinates."""
-        self.stage.stop()
-        self.coords = self.stage.get_position()
+        self.request_stage_stop()
+        position = self.stage.get_cached_position()
+        if position is not None:
+            self.coords = position
         self.stopevent = None
         print('stopped')
+
+
+    def request_stage_stop(self, stopAxis: AxisEnum = AxisEnum.ALL) -> bool:
+        if self.stage is None:
+            return False
+        return self.stage.request_stop(stopAxis)
+
+
+    def request_jog(self, velocity: tuple, fast: bool) -> bool:
+        if self.stage is None:
+            return False
+        key = 'input_fast_acceleration' if fast else 'input_slow_acceleration'
+        return self.stage.request_start_move(
+            velocity,
+            self.unit,
+            self.config.getfloat('Stage', key),
+            self.config.get('Stage', 'acceleration_unit'),
+        )
+
+
+    def jog(self, direction: tuple, fast: bool = True) -> None:
+        if self.stage is None:
+            return
+        speed = self.vhigh if fast else self.vlow
+        self.request_jog(tuple(d * speed for d in direction), fast)
 
 
     def on_controller_input(self, win, stickid, axisid, value) -> None:
@@ -4764,15 +5571,14 @@ class GlowTrackerApp(App):
 
         print(win, stickid, axisid, value)
 
-        if self.stage is None or self.stage.is_busy():
+        if self.stage is None:
             return
 
         if self.stopevent is not None:
             Clock.unschedule(self.stopevent)
-            
-        #scale velocity
-        v = self.vhigh*value/32767
-        if v < self.vlow*0.01:
+
+        v = controller_velocity(value, self.vhigh, self.vlow)
+        if v is None:
             self.stage_stop()
         else:
             direction = {
@@ -4782,24 +5588,22 @@ class GlowTrackerApp(App):
             }
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
-                self.stage.start_move(direction[axisid], self.unit)
+                self.request_jog(direction[axisid], True)
 
-    
+
     def _keydown(self, instance, key, scancode, codepoint, modifier) -> None:
         """Manage keyboard input for stage and focus"""
-        
+
         print(f"Keydown")
 
         if self.stage is None:
             return
-        
+
         # print(key, scancode, codepoint, modifier)
 
-        if 'shift' in modifier:
-            v = self.vlow
-        else:
-            v = self.vhigh
-        
+        fast = 'shift' not in modifier
+        v = self.vhigh if fast else self.vlow
+
         direction = {
             273: (0,v,0),  # up arrow
             274: (0,-v,0),   # down arrow
@@ -4808,10 +5612,10 @@ class GlowTrackerApp(App):
             280: (0,0,-v),  # page up
             281: (0,0,v)    # page down
         }
-        
+
         if key not in direction.keys():
             return
-        
+
         velocity = direction[key]
 
         # Stage movement mode
@@ -4824,53 +5628,44 @@ class GlowTrackerApp(App):
 
             # Convert back to a 3D tuple
             velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
-        
-        # Move 
-        self.stage.start_move(velocity, self.unit)
 
-        # Update stage position app.coords 
-        #   Extrapolated position by speed
-        #   Convert speed to cm/s
-        velocity_cm_per_sec = np.zeros(shape= (3), dtype= np.float32)
-        velocity_cm_per_sec[0] = UnitTable.convert_units(value= velocity[0], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-        velocity_cm_per_sec[1] = UnitTable.convert_units(value= velocity[1], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-        velocity_cm_per_sec[2] = UnitTable.convert_units(value= velocity[2], from_unit= self.unit, to_unit= Units.VELOCITY_CENTIMETRES_PER_SECOND)
-
-        # Very crude estimation. Need to consult Monika
-        spf = 1 / 30.0
-        extrapolatedPos = np.array(self.coords) + spf * velocity_cm_per_sec * 10
-        self.coords = extrapolatedPos.tolist()
+        # Move
+        if not self.request_jog(velocity, fast):
+            return
 
 
     def _keyup(self, instance, key, scancode) -> None:
         """Handle keyup callbacks. This is usually only for stopping axis movement"""
         if self.stage is None:
             return
-        
+
+        movement_keys = [273, 274, 275, 276, 280, 281]
+        if key not in movement_keys:
+            return
+
         # Stopping axis depending on the movement mode
         if self.moveImageSpaceMode:
-            
+
             # TODO: Improve this feature so that we can move in image space simultaneously
             #   in both X,Y axis. Will require additive velocity movement handling.
-            if key in [273, 274, 275, 276, 280, 281]:
-                self.stage.stop(stopAxis= AxisEnum.ALL)
-                self.coords = self.stage.get_position()
-        
+            self.request_stage_stop(AxisEnum.ALL)
+
         else:
-        
+
             # Movement key up
             #   Call the coresponding axis to stop and update te stage position
             if key == 275 or key == 276:
-                self.stage.stop(stopAxis= AxisEnum.X)
-                self.coords = self.stage.get_position()
+                self.request_stage_stop(AxisEnum.X)
 
             elif key == 273 or key == 274:
-                self.stage.stop(stopAxis= AxisEnum.Y)
-                self.coords = self.stage.get_position()
+                self.request_stage_stop(AxisEnum.Y)
 
             elif key == 280 or key == 281:
-                self.stage.stop(stopAxis= AxisEnum.Z)
-                self.coords = self.stage.get_position()
+                self.request_stage_stop(AxisEnum.Z)
+
+        position = self.stage.get_cached_position()
+        if position is not None:
+            self.coords = position
 
         stagePosString = f'Stage position: {self.coords[0]:.3f}, {self.coords[1]:.3f}'
         if len(self.coords) > 2:
@@ -4900,7 +5695,7 @@ class GlowTrackerApp(App):
 
         if config is not self.config:
             return
-        
+
         updateSettingsWidgetFlag = False
         updateOverlayFlag = False
 
@@ -4930,29 +5725,27 @@ class GlowTrackerApp(App):
                     limits = ','.join([str(round(x,2)) for x in limits])
                     self.config.set('Stage', 'stage_limits', limits)
                     updateSettingsWidgetFlag = True
-                
-                elif key == 'maxspeed':
-                    # Set the stage maxspeed
+
+                elif key == 'precise_speed':
                     maxspeed = float(value)
-                    maxspeed_unit = self.config.get('Stage', 'maxspeed_unit')
+                    maxspeed_unit = self.config.get('Stage', 'speed_unit')
                     maxspeed = self.stage.set_maxspeed(maxspeed, maxspeed_unit)
                     maxspeed = round(maxspeed, 2)
                     # Get back the current value and set back to settings in case the input value is invalid
-                    self.config.set('Stage', 'maxspeed', maxspeed)
+                    self.config.set('Stage', 'precise_speed', maxspeed)
                     self.config.write()
                     updateSettingsWidgetFlag = True
-                    
-                elif key == 'acceleration':
-                    # Set the stage acceleration speed
+
+                elif key == 'precise_acceleration':
                     acceleration = float(value)
                     acceleration_unit = self.config.get('Stage', 'acceleration_unit')
                     acceleration = self.stage.set_accel(acceleration, acceleration_unit)
                     acceleration = round(acceleration, 2)
                     # Get back the current value and set back to settings in case the input value is invalid
-                    self.config.set('Stage', 'acceleration', acceleration)
+                    self.config.set('Stage', 'precise_acceleration', acceleration)
                     self.config.write()
                     updateSettingsWidgetFlag = True
-                
+
                 elif key == 'move_image_space_mode':
                     # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
                     self.moveImageSpaceMode = bool(int(value))
@@ -4970,7 +5763,7 @@ class GlowTrackerApp(App):
                 self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation= rotation, imageNormalDir= imageNormalDir, pixelSize= pixelsize)
 
         elif section == 'DualColor':
-            
+
             if key == 'dualcolormode':
                 updateOverlayFlag = True
 
@@ -4979,20 +5772,20 @@ class GlowTrackerApp(App):
                 dualColorViewModeQuickButtonLayout: DualColorViewModeQuickButtonLayout = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout
                 if dualcolormode:
                     dualColorViewModeQuickButtonLayout.showButton()
-                    
+
                 else:
                     dualColorViewModeQuickButtonLayout.hideButton()
-            
+
             elif key == 'mainside':
                 updateOverlayFlag = True
-            
+
             elif key == 'viewmode':
                 updateOverlayFlag = True
-            
+
                 # Also update the DualColorViewMode Quick Button
                 button = self.root.ids.middlecolumn.ids.runtimecontrols.ids.dualcolorviewmodequickbuttonlayout.dualcolorviewmodequickbutton
                 button.state = 'down' if value == 'Merged' else 'normal'
-        
+
         elif section == 'Tracking':
 
             if key == 'showtrackingoverlay':
@@ -5002,12 +5795,12 @@ class GlowTrackerApp(App):
                 showtrackingoverlay = bool(int(value))
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.trackingoverlayquickbutton.state = \
                     'down' if showtrackingoverlay else 'normal'
-                
+
             elif key == 'capture_radius':
                 updateOverlayFlag = True
 
             elif key == 'min_brightness':
-                
+
                 min_brightness = int(value)
                 max_brightness = self.config.getint('Tracking', 'max_brightness')
 
@@ -5017,24 +5810,23 @@ class GlowTrackerApp(App):
                 self.config.set('Tracking', 'min_brightness', min_brightness)
                 self.config.write()
                 updateSettingsWidgetFlag = True
-            
+
             elif key == 'max_brightness':
-                
+
                 max_brightness = int(value)
                 min_brightness = self.config.getint('Tracking', 'min_brightness')
 
-                # Bound the value between [min_brightness, 255]
-                max_brightness = max(min_brightness, min(max_brightness, 255))
+                max_brightness = max(min_brightness, max_brightness)
 
                 self.config.set('Tracking', 'max_brightness', max_brightness)
                 self.config.write()
                 updateSettingsWidgetFlag = True
-            
+
         elif section == 'Experiment':
 
             if key == 'exppath':
                 self.root.ids.leftcolumn.ids.saveloc.text = value
-        
+
         elif section == 'LiveAnalysis':
 
             if key == 'showliveanalysis':
@@ -5044,7 +5836,7 @@ class GlowTrackerApp(App):
                 showliveanalysis = bool(int(value))
                 self.root.ids.middlecolumn.ids.runtimecontrols.ids.liveanalysisquickbutton.state = \
                     'down' if showliveanalysis else 'normal'
-            
+
 
         elif section == 'DaqControl':
 
@@ -5066,22 +5858,22 @@ class GlowTrackerApp(App):
 
                 updateSettingsWidgetFlag = True
 
-            
+
         # Update setting widget value to reflect the setting file
         if updateSettingsWidgetFlag:
             panels = settingsWidget.interface.content.panels
-    
+
             # For every setting items in the panel
-            for panel in panels.values():        
+            for panel in panels.values():
                 for child in panel.children:
-                    
-                    if isinstance(child, SettingItem):                    
+
+                    if isinstance(child, SettingItem):
                         child.value = panel.get_value(child.section, child.key)
-        
+
         # Update overlay
         if updateOverlayFlag:
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
-        
+
 
     def startShowFpsEvent(self):
         # Bring up the FPS label
@@ -5113,21 +5905,28 @@ class GlowTrackerApp(App):
     def on_image(self, *args) -> None:
         """On image change callback. Update image texture and GUI overlay
         """
-        imageHeight, imageWidth = self.image.shape[0], self.image.shape[1]
-        imageColorFormat = 'rgb' if self.image.ndim == 3 else 'luminance'
-        # Force unsign byte format
-        imageDataFormat = 'ubyte'
+        textureImage, imageDataFormat = prepare_texture_data(self.image)
+        imageHeight, imageWidth = textureImage.shape[0], textureImage.shape[1]
+        if textureImage.ndim == 2:
+            imageColorFormat = 'luminance'
+        elif textureImage.ndim == 3 and textureImage.shape[2] == 3:
+            imageColorFormat = 'rgb'
+        elif textureImage.ndim == 3 and textureImage.shape[2] == 4:
+            imageColorFormat = 'rgba'
+        else:
+            raise ValueError(f'unsupported image shape: {textureImage.shape}')
 
         # Check if need to recreate texture
         if self.texture is None \
             or self.texture.width != imageWidth or self.texture.height != imageHeight \
             or self.texture.colorfmt != imageColorFormat \
             or self.texture.bufferfmt != imageDataFormat:
-            
+
             # Recreate texture
             self.texture = Texture.create(
                 size= (imageWidth, imageHeight),
-                colorfmt= imageColorFormat
+                colorfmt= imageColorFormat,
+                bufferfmt= imageDataFormat,
             )
 
             # Kivy texture is in OpenGL corrindate which is btm-left origin so we need to flip texture coord once to match numpy's top-left
@@ -5137,13 +5936,13 @@ class GlowTrackerApp(App):
             self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
         # Upload image data to texture
-        imageByteBuffer: bytes = self.image.tobytes()
+        imageByteBuffer: bytes = textureImage.tobytes()
         self.texture.blit_buffer(imageByteBuffer, colorfmt= imageColorFormat, bufferfmt= imageDataFormat)
 
         # Update tracking overlay if the option is enabled
         if self.config.getboolean('Tracking', 'showtrackingoverlay'):
             self.root.ids.middlecolumn.ids.imageoverlay.updateTrackingOverlay(doClear= False)
-    
+
 
     # ask for confirmation of closing
     def on_request_close(self, *args, **kwargs):
@@ -5158,42 +5957,220 @@ class GlowTrackerApp(App):
         self._popup.dismiss()
 
 
+    def stop_active_workers(self, timeout=10.0):
+        if self.root is None:
+            return []
+
+        deadline = time.monotonic() + timeout
+        activeWorkers = []
+        runtimeControls = self.root.ids.middlecolumn.ids.runtimecontrols
+        acquisitionManager = runtimeControls.ids.imageacquisitionmanager
+        rightColumn = self.root.ids.rightcolumn
+        goToControls = self.root.ids.leftcolumn.ids.gotocontrols
+        scanPanel = getattr(rightColumn, '_scanPanel', None)
+        macroWidgets = list(getattr(rightColumn, '_macroWidgets', []))
+
+        try:
+            goToControls.request_stop()
+        except Exception as e:
+            print(f'Stopping Go To movement failed: {e}')
+
+        if scanPanel is not None:
+            scanPanel.request_shutdown()
+        for macroWidget in macroWidgets:
+            macroWidget.macroScriptExecutor.stop()
+
+        try:
+            if runtimeControls.trackingcheckbox.state == 'down':
+                runtimeControls.trackingcheckbox.state = 'normal'
+            elif runtimeControls.trackthread is not None \
+                    and runtimeControls.trackthread.is_alive():
+                runtimeControls.stopTracking()
+        except Exception as e:
+            print(f'Stopping tracking failed: {e}')
+
+        try:
+            if runtimeControls.livefocuscheckbox.state == 'down':
+                runtimeControls.livefocuscheckbox.state = 'normal'
+            elif runtimeControls.liveFocusThread is not None \
+                    and runtimeControls.liveFocusThread.is_alive():
+                runtimeControls.stopLiveFocus()
+        except Exception as e:
+            print(f'Stopping live focus failed: {e}')
+
+        for button in (acquisitionManager.recordbutton, acquisitionManager.liveviewbutton):
+            try:
+                thread = button.imageAcquisitionThread
+                if button.state == 'down':
+                    button.state = 'normal'
+                if thread is not None and thread.is_alive():
+                    button.stopImageAcquisition()
+            except Exception as e:
+                print(f'Stopping image acquisition failed: {e}')
+
+        motionThreads = (
+            goToControls._moveThread,
+            runtimeControls.trackthread,
+            runtimeControls.liveFocusThread,
+            *(getattr(widget.macroScriptExecutor, '_executorThread', None)
+              for widget in macroWidgets),
+        )
+        if self.stage is not None and any(
+                thread is not None and thread.is_alive() for thread in motionThreads):
+            self.stage.emergency_stop()
+
+        threads = (
+            ('Go To movement', goToControls._moveThread),
+            ('tracking', runtimeControls.trackthread),
+            ('live focus', runtimeControls.liveFocusThread),
+            ('recording acquisition', acquisitionManager.recordbutton.imageAcquisitionThread),
+            ('live acquisition', acquisitionManager.liveviewbutton.imageAcquisitionThread),
+        )
+        for name, thread in threads:
+            if thread is None or thread is current_thread() or not thread.is_alive():
+                continue
+            thread.join(max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                activeWorkers.append(name)
+
+        if scanPanel is not None:
+            if not scanPanel.wait(max(0.0, deadline - time.monotonic())):
+                activeWorkers.append('scan')
+
+        for macroWidget in macroWidgets:
+            if not macroWidget.macroScriptExecutor.wait(
+                    max(0.0, deadline - time.monotonic())):
+                if 'macro' not in activeWorkers:
+                    activeWorkers.append('macro')
+
+        return activeWorkers
+
+
     def graceful_exit(self):
-        # disconnect hardware
-        # stop remaining stage motion
-        if self.stage is not None:
-            print('Disconnecting Stage')
-            self.stage.stop()
-            self.stage.disconnect()
-        
-        if self.camera is not None:
-            print('Disconnecting Camera')
-            self.camera.Close()
-        
-        if self.daqControl.isConnected():
-            print('Disconnecting DAQ')
-            self.daqControl.close()
+        self._hardware_teardown = True
+        activeWorkers = self.stop_active_workers(timeout=10.0)
+
+        if activeWorkers:
+            print(f'Hardware connections left open because workers did not stop: {activeWorkers}')
+            if self.stage is not None:
+                self.stage.emergency_stop()
+            if self.daqControl.isConnected():
+                self.daqControl.safe_off()
+        else:
+            connections = self.root.ids.rightcolumn.ids.connections
+            if self.stage is not None:
+                print('Disconnecting Stage')
+                try:
+                    connections.disconnectStage(wait=True, timeout=10.0)
+                except Exception as e:
+                    print(f'Disconnecting Stage failed: {e}')
+
+            if self.daqControl.isConnected():
+                print('Disconnecting DAQ')
+                try:
+                    self.daqControl.close()
+                except Exception as e:
+                    print(f'Disconnecting DAQ failed: {e}')
+
+            if self.camera is not None:
+                print('Disconnecting Camera')
+                camera = self.camera
+                try:
+                    camera.Close()
+                except Exception as e:
+                    print(f'Disconnecting Camera failed: {e}')
+                finally:
+                    if self.camera is camera:
+                        self.camera = None
 
         # stop the app
         self.stop()
-        
+
         # close the window
         self.root_window.close()
-    
-    
+
+
     def update_coordinates(self, dt= None, isAsync= True) -> None:
         """get the current stage position."""
         if self.stage is not None:
-            pos = self.stage.get_position(isAsync= isAsync)
+            pos = self.stage.get_cached_position()
             if pos is not None:
                 self.coords = pos
+
+    def get_fov_mm(self):
+        if self.camera is None:
+            return None
+        to_mm = 0.001 if self.config.get('Calibration', 'step_units') == 'um' else 1.0
+        W, H = self.camera.Width(), self.camera.Height()
+
+        imageToStageMat = getattr(self, 'imageToStageMat', None)
+        if imageToStageMat is not None:
+            corners = np.array([[-W/2, -H/2], [W/2, -H/2], [W/2, H/2], [-W/2, H/2]])
+            stage = np.array([
+                macro.getStageDistances(np.array([cy, cx]), imageToStageMat)
+                for cx, cy in corners
+            ])
+            fov_x = (stage[:, 1].max() - stage[:, 1].min()) * to_mm
+            fov_y = (stage[:, 0].max() - stage[:, 0].min()) * to_mm
+            return (fov_x, fov_y)
+
+        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        if pixelsize <= 0:
+            return None
+        return (pixelsize * W * to_mm, pixelsize * H * to_mm)
+
+    def autofocus(self, follow_worm: bool = False, threshold: float = 150, min_pixels: int = 50) -> float | None:
+        """moved from autofocus macro to have a shared autofocus function that can be called from both macro and settings menu.
+        When follow_worm is True the Z sweep tracks the worm in XY (moves the camera to keep it centered)
+        and measures focus on a window around the worm; returns None if no worm is seen during the sweep.
+        """
+        camera = self.camera
+        stage = self.stage
+        if camera is None or stage is None:
+            print('autofocus requires a stage and a camera')
+            return None
+
+        depthoffield = self.config.getfloat('Camera', 'depthoffield')
+        depthoffieldsearchdistance = self.config.getfloat('Calibration', 'depthoffieldsearchdistance')
+        dualColorMode = self.config.getboolean('DualColor', 'dualcolormode')
+        dualColorModeMainSide = self.config.get('DualColor', 'mainside')
+        capturedRadius = self.config.getint('Tracking', 'capture_radius')
+        focusEstimationMethod = FocusEstimationMethod(self.config.get('Autofocus', 'focusestimationmethod'))
+
+        depthOfFieldEstimator = macro.DepthOfFieldEstimator()
+        numSamples = math.floor(depthoffieldsearchdistance / depthoffield) + 1
+        print(f'autofocus: Taking {numSamples} images for depth of field estimation with search distance {depthoffieldsearchdistance} and step size {depthoffield}')
+        stageUnits = self.config.get('Calibration', 'step_units')
+        depthOfFieldEstimator.takeCalibrationImages(
+            camera, stage, depthoffieldsearchdistance, numSamples, focusEstimationMethod,
+            dualColorMode, dualColorModeMainSide, capturedRadius,
+            followWorm= follow_worm, imageToStageMat= self.imageToStageMat,
+            stageUnits= stageUnits, threshold= threshold, minPixels= min_pixels)
+
+        valid = depthOfFieldEstimator.dofDataFrame.dropna(subset= ['estimatedFocus'])
+        if valid.empty:
+            print('autofocus: no worm detected during the sweep')
+            return None
+
+        bestFocusIndex = valid['estimatedFocus'].idxmax()
+        bestFocusPosition = valid.loc[bestFocusIndex, 'pos_z']
+        stagePosition = stage.get_position()
+        stagePosition[2] = bestFocusPosition
+        stage.move_abs(stagePosition, unit= 'mm')
+
+        bestFocusValue = valid.loc[bestFocusIndex, 'estimatedFocus']
+        self.config.set('Autofocus', 'bestfocusvalue', bestFocusValue)
+        self.config.write()
+
+        return bestFocusPosition
 
 
 
 def reset():
+    global Window
     # Cleaner for the events in memory
     if not EventLoop.event_listeners:
-        
+
         Window = Window.core_select_lib('window', Window.window_impl, True)
         Cache.print_usage()
         for cat in Cache._categories:
@@ -5201,11 +6178,14 @@ def reset():
 
 
 def main():
+    if USE_SHARED_MEMORY_SAVER:
+        mp.set_start_method('forkserver', force=True)
+        mp.set_forkserver_preload(['image_saver'])
     reset()
     Window.size = (1280, 800)
     Config.set('graphics', 'position', 'custom')
-    Config.set('graphics', 'top', '0') 
-    Config.set('graphics', 'left', '0') 
+    Config.set('graphics', 'top', '0')
+    Config.set('graphics', 'left', '0')
 
     # Last barrier for catching unhandled exception.
     try:
@@ -5213,6 +6193,8 @@ def main():
         App.run()  # This runs the App in an endless loop until it closes. At this point it will execute the code below
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f'Kivy App error: {e}')
         return None
 

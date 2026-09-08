@@ -9,11 +9,11 @@ or
 ```bash
 uv build
 ```
-The resulting packages will be in `dist/`, `glowtracker-[version].tar.gz` and `glowtracker-[version]-py3-none-any.why`.
+The resulting packages will be in `dist/` as `glowtracker-[version].tar.gz` and `glowtracker-[version]-py3-none-any.whl`.
 **Don't forget** to change the version accordingly. Following the convention of Major.Minor.Patch.
 
 # Testing installing the package
-We can test the package by install directly and locally form
+Test the package by installing the local source distribution:
 ```bash
 python -m pip install dist/glowtracker-[version].tar.gz
 ```
@@ -21,7 +21,7 @@ or
 ```bash
 uv pip install dist/glowtracker-[version].tar.gz
 ```
-Add `--python 3.10` to select a specific python version e.g. 3.10
+Add `--python 3.12` to select the recommended Python version.
 
 
 # Running
