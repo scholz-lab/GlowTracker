@@ -13,7 +13,7 @@ from kivy.app import App
 import Microscope_macros as macro
 import numpy as np
 from plate_run import PlateRunController, RunCancelled
-from plate_plan import FIELDS, validate_plate
+from plate_plan import FIELDS, SearchReport, validate_plate
 from platformdirs import user_config_dir
 from continuous_scan import ContinuousScanMixin
 
@@ -43,7 +43,6 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     track_interval = NumericProperty(120)
     focus_settle_seconds = NumericProperty(3)
     exposure_ramp_seconds = NumericProperty(20)
-    search_seconds = NumericProperty(60)
     search_passes = NumericProperty(1)
     plates = ListProperty([])
     selected_plate = NumericProperty(-1)
@@ -220,6 +219,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         def worker():
             asyncio.set_event_loop(asyncio.new_event_loop())
             found = False
+            self._search_report = None
             cameraPrepared = False
             final_status = 'Scan complete'
             try:
@@ -232,6 +232,8 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                     self._end_scan_camera(found)
                 if found:
                     self._track_visit(self._ui(self._draft), None)
+                elif getattr(self, '_search_report', None) is not None:
+                    final_status = self._search_report.summary
             except RunCancelled:
                 final_status = 'Run stopped'
             except Exception as e:
@@ -259,18 +261,14 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
             return self._scan_continuous(z)
         app = App.get_running_app()
         if app.stage is None:
-            print('connect the stage first')
-            return False
+            raise RuntimeError('Connect the stage before scanning')
         if app.plateCenter is None or app.plateRadius is None:
-            print('calculate plate region first')
-            return False
+            raise RuntimeError('Define the plate before scanning')
         if app.camera is None:
-            print('connect the camera first')
-            return False
+            raise RuntimeError('Connect the camera before scanning')
         fov = app.get_fov_mm()
         if fov is None:
-            print('no fov returned')
-            return False
+            raise RuntimeError('Calibrate the field of view before scanning')
 
         threshold = self.scan_threshold
         min_pixels = self.scan_min_pixels
@@ -284,8 +282,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         tiles = [(x, y) for (x, y) in tiles if 0 <= x <= limits[0]
                  and 0 <= y <= limits[1] and 0 <= z <= limits[2] and app.stage.is_safe(x, y, z)]
         if not tiles:
-            print('no safe tiles to scan at this Z')
-            return False
+            raise RuntimeError('No safe tiles to scan at this Z')
 
         speed_unit = app.config.get('Stage', 'speed_unit')
         accel_unit = app.config.get('Stage', 'acceleration_unit')
@@ -295,11 +292,12 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         scan_accel = float(app.config.get('Stage', 'scan_acceleration'))
 
         found = False
-        deadline = time.monotonic() + self.search_seconds
+        checked_tiles = 0
+        planned_tiles = len(tiles) * int(self.search_passes)
         try:
             scan_pass = 0
             while (not self._stop_scan and not self._stop_all
-                   and scan_pass < self.search_passes and time.monotonic() < deadline):
+                   and scan_pass < self.search_passes):
                 scan_pass += 1
                 Clock.schedule_once(lambda dt: setattr(self, 'scan_progress', 0))
                 t_move = t_settle = t_grab = t_detect = t_disp = 0.0
@@ -308,7 +306,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                 print(f'scan pass {scan_pass}')
                 app.stage.set_motion(precise_speed, precise_accel, speed_unit, accel_unit)
                 for i, (x, y) in enumerate(tiles):
-                    if self._stop_scan or self._stop_all or time.monotonic() >= deadline:
+                    if self._stop_scan or self._stop_all:
                         break
                     frac = (i + 1) / len(tiles)
                     Clock.schedule_once(lambda dt, v=frac: setattr(self, 'scan_progress', v))
@@ -345,11 +343,12 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                     t_disp += t4 - t3
                     t_detect += t5 - t4
                     n_tiles += 1
+                    checked_tiles += 1
                     if present:
                         print('Found a worm !!')
                         units = app.config.get('Calibration', 'step_units')
                         for _ in range(int(self.scan_recenter_iters)):
-                            if self._stop_scan or self._stop_all or time.monotonic() >= deadline:
+                            if self._stop_scan or self._stop_all:
                                 break
                             dy, dx = macro.getStageDistances(
                                 np.array([-offset[1], offset[0]]), app.imageToStageMat)
@@ -390,6 +389,9 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         finally:
             if app.stage is not None:
                 app.stage.set_motion(precise_speed, precise_accel, speed_unit, accel_unit)
+        self._search_report = SearchReport(checked_tiles, planned_tiles, 'tiles')
+        if not found:
+            print(self._search_report.summary)
         return found
 
     def _wait_or_stop(self, duration):

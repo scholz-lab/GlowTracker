@@ -1,6 +1,7 @@
 """Plate visit settings and scheduling, independent of microscope hardware."""
 
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 import math
 from pathlib import Path
@@ -18,8 +19,7 @@ FIELDS = {
     'track_framerate': ('Tracking FPS', 30, 0.1, None, False),
     'track_interval': ('Track per visit (s)', 120, 1, None, False),
     'focus_settle_seconds': ('Focus before/after ramp (s)', 3, 1, None, False),
-    'exposure_ramp_seconds': ('Minimum exposure ramp (s)', 20, 1, None, False),
-    'search_seconds': ('Search limit (s)', 60, 1, None, False),
+    'exposure_ramp_seconds': ('Four-step ramp duration (s)', 20, 1, None, False),
     'search_passes': ('Search passes', 1, 1, 100, True),
     'scan_settle': ('Settling time (s)', 0.01, 0, None, False),
     'scan_threshold': ('Brightness threshold', 150, 0, None, False),
@@ -29,6 +29,22 @@ FIELDS = {
     'scan_z_range': ('Focus search range (mm)', 14, 0, None, False),
     'scan_z_frames': ('Focus search images', 100, 2, 1000, True),
 }
+
+
+@dataclass(frozen=True)
+class SearchReport:
+    checked: int
+    planned: int
+    unit: str
+
+    @property
+    def incomplete(self):
+        return self.checked < self.planned
+
+    @property
+    def summary(self):
+        reason = 'Search incomplete' if self.incomplete else 'No worm found'
+        return f'{reason} — {self.checked}/{self.planned} {self.unit} checked'
 
 
 def parse_setting(key, text):
@@ -84,15 +100,15 @@ def visits(plates, repeat=False):
 
 
 def brightness_steps(exposure, gain, target_exposure, target_gain):
-    """Limit each exposure decrease to 10% and each gain change to 0.5."""
-    count = max(math.ceil(abs(math.log(target_exposure / exposure)) / math.log(1 / 0.9)),
-                math.ceil(abs(target_gain - gain) / 0.5))
-    for index in range(1, count + 1):
-        if index == count:
+    """Move one quarter of the total brightness adjustment at each of four steps."""
+    if exposure == target_exposure and gain == target_gain:
+        return
+    for index in range(1, 5):
+        if index == 4:
             yield target_exposure, target_gain
         else:
-            fraction = index / count
-            yield exposure * (target_exposure / exposure) ** fraction, gain + (target_gain - gain) * fraction
+            fraction = index / 4
+            yield exposure + (target_exposure - exposure) * fraction, gain + (target_gain - gain) * fraction
 
 
 def safe_name(name):

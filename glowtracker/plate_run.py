@@ -116,9 +116,8 @@ class PlateRunController:
     def _update_cycle_summary(self):
         enabled = [p for p in self.plates if p.get('enabled', True)]
         track = sum(p['settings']['track_interval'] for p in enabled)
-        search = sum(p['settings']['search_seconds'] for p in enabled)
         self.cycle_summary = (f'{len(enabled)} enabled • {track / 60:g} min tracking per cycle\n'
-                              f'Up to {search / 60:g} min searching; focus/travel extra')
+                              'Search ends on a find or after all passes')
 
     def _ui(self, callback, cleanup=False):
         """Wait for UI-owned state changes; abandoned callbacks cannot start work."""
@@ -237,6 +236,8 @@ class PlateRunController:
         app = App.get_running_app()
         original_profile = self._profile()
         learned_z = {}
+        tracked = empty = incomplete = 0
+        last_incomplete = ''
         final_status = 'Run complete'
         try:
             for cycle, plate in visits(plan, repeat):
@@ -248,6 +249,7 @@ class PlateRunController:
                 self._status(f'{plate["name"]} • visit {cycle} • Finding focus…', plate['id'], 'Focusing')
                 camera_prepared = False
                 found = False
+                self._search_report = None
                 try:
                     camera_prepared = self._begin_scan_camera()
                     if not camera_prepared:
@@ -273,8 +275,15 @@ class PlateRunController:
                                  plate['id'], 'Starting tracking')
                     folder = create_visit_directory(run_dir, plate, cycle) if run_dir else None
                     outcome = self._track_visit(plate, folder)
+                    tracked += 1
                 else:
-                    outcome = 'Nothing found'
+                    report = self._search_report
+                    outcome = report.summary if report is not None else 'No worm found'
+                    if report is not None and report.incomplete:
+                        incomplete += 1
+                        last_incomplete = f'{plate["name"]}: {outcome}'
+                    else:
+                        empty += 1
                 self._status(f'{plate["name"]} • {outcome}', plate['id'], outcome)
                 if self.pause_requested and (repeat or plate['id'] != plan[-1]['id']):
                     self._resume_run.clear()
@@ -283,6 +292,11 @@ class PlateRunController:
                     while not self._resume_run.wait(0.1):
                         if self._stop_all:
                             raise RunCancelled()
+            if incomplete:
+                final_status = (f'Run incomplete — {tracked} tracked, {empty} no worm found, '
+                                f'{incomplete} incomplete searches. {last_incomplete}')
+            elif empty:
+                final_status = f'Run finished — {tracked} tracked, {empty} no worm found'
         except RunCancelled:
             final_status = 'Run stopped'
         except Exception as error:
@@ -389,8 +403,8 @@ class PlateRunController:
                                       settings['track_exposure'], settings['track_gain']))
         for index, (exposure, gain) in enumerate(steps, 1):
             self._check_cancelled()
-            self._status(f'{plate["name"]} • Tracking and focusing • exposure {exposure:g} us '
-                         f'({index}/{len(steps)})', plate['id'], 'Adjusting exposure')
+            self._status(f'{plate["name"]} • Exposure step {index}/{len(steps)} • '
+                         f'Focusing at {exposure:g} us', plate['id'], 'Adjusting exposure')
             self._ui(lambda e=exposure, g=gain: rc.set_tracking_brightness(e, g))
             self._wait_tracking_focus(settings['exposure_ramp_seconds'] / len(steps))
         def configure_fps():

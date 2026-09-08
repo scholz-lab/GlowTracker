@@ -19,7 +19,7 @@ def test_visits_skip_disabled_plates_and_repeat_in_order():
 
 
 @pytest.mark.parametrize('key,text', [
-    ('scan_gain', 'nan'), ('track_interval', '0'), ('search_seconds', ''),
+    ('scan_gain', 'nan'), ('track_interval', '0'), ('search_passes', ''),
     ('scan_z_frames', '2.5'), ('scan_overlap_w', '100'), ('scan_exposure', '-1'),
 ])
 def test_invalid_edits_are_rejected(key, text):
@@ -34,6 +34,14 @@ def test_old_plate_presets_receive_defaults_and_no_enabled_plate_is_rejected():
     assert settings['search_passes'] == 1
     with pytest.raises(ValueError, match='Enable'):
         list(visits([plate(enabled=False)]))
+
+
+def test_old_presets_cannot_reintroduce_the_search_time_limit():
+    old = plate()
+    old['settings'] = {'search_seconds': 1, 'search_passes': 2}
+    settings = validate_plate(old)['settings']
+    assert 'search_seconds' not in settings
+    assert settings['search_passes'] == 2
 
 
 def test_recordings_have_unique_run_plate_visit_directories(tmp_path):
@@ -53,13 +61,14 @@ def test_recordings_have_unique_run_plate_visit_directories(tmp_path):
 
 @pytest.mark.parametrize('start,end', [((100000, 30), (5000, 22)), ((5000, 22), (100000, 30)),
                                      ((5000, 30), (5000, 22))])
-def test_brightness_ramp_uses_small_steps_and_hits_the_exact_target(start, end):
+def test_brightness_ramp_uses_four_equal_steps_and_hits_the_exact_target(start, end):
     steps = list(brightness_steps(*start, *end))
+    assert len(steps) == 4
     assert steps[-1] == end
     previous = start
     for exposure, gain in steps:
-        assert 0.9 - 1e-9 <= exposure / previous[0] <= 1 / 0.9 + 1e-9
-        assert abs(gain - previous[1]) <= 0.5 + 1e-9
+        assert exposure - previous[0] == pytest.approx((end[0] - start[0]) / 4)
+        assert gain - previous[1] == pytest.approx((end[1] - start[1]) / 4)
         assert min(start[0], end[0]) <= exposure <= max(start[0], end[0])
         previous = exposure, gain
     assert list(brightness_steps(*end, *end)) == []

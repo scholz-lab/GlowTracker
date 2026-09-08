@@ -211,7 +211,7 @@ def build_plate_editor(panel):
     update_mode_help()
     setup.add_widget(mode_help)
     for title, keys in (
-        ('Find an animal', ('scan_z', 'scan_exposure', 'scan_gain', 'search_seconds', 'search_passes')),
+        ('Find an animal', ('scan_z', 'scan_exposure', 'scan_gain', 'search_passes')),
         ('Track each visit', ('track_interval', 'track_exposure', 'track_gain', 'track_framerate',
                              'focus_settle_seconds', 'exposure_ramp_seconds')),
     ):
@@ -220,8 +220,8 @@ def build_plate_editor(panel):
             field = ScanNumberField(panel, key)
             panel._fields.append(field)
             setup.add_widget(field)
-    setup.add_widget(label('Tracking and autofocus stay on throughout the ramp.\n'
-                           'Recording starts after the target exposure settles.', 48))
+    setup.add_widget(label('Four equal steps, with a focus pause after each.\n'
+                           'Tracking stays on; recording starts after settling.', 48))
     advanced = BoxLayout(orientation='vertical', size_hint_y=None)
     advanced.bind(minimum_height=advanced.setter('height'))
     for key in ('scan_settle', 'scan_threshold', 'scan_min_pixels', 'scan_overlap_w',

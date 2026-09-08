@@ -7,7 +7,7 @@ import numpy as np
 from kivy.config import ConfigParser
 
 import plate_run
-from plate_plan import FIELDS, validate_plate
+from plate_plan import FIELDS, SearchReport, validate_plate
 from plate_run import PlateRunController, RunCancelled
 
 
@@ -76,10 +76,33 @@ def test_empty_plate_advances_and_final_cleanup_runs(app):
     run._execute_plan(run.plates, None, False)
     assert run.visited == ['A', 'B']
     assert [('track', 'B', None)] == [event for event in run.events if isinstance(event, tuple) and event[0] == 'track']
-    assert any('Nothing found' in event for event in run.events if isinstance(event, str))
+    assert any('No worm found' in event for event in run.events if isinstance(event, str))
     assert run.events[-1] == 'quiesced'
-    assert run.run_status == 'Run complete'
+    assert run.run_status == 'Run finished — 1 tracked, 1 no worm found'
     assert not run.running
+
+
+def test_incomplete_search_is_preserved_in_final_status_and_other_plates_still_run(app):
+    run = SimulatedRun()
+    def scan(z):
+        if run.current == 'A':
+            run._search_report = SearchReport(2, 20, 'rows')
+            return False
+        return True
+    run._scan = scan
+    run._execute_plan(run.plates, None, False)
+    assert run.visited == ['A', 'B']
+    assert run.run_status.startswith('Run incomplete — 1 tracked')
+    assert 'A: Search incomplete — 2/20 rows checked' in run.run_status
+    assert any('Search incomplete' in event for event in run.events if isinstance(event, str))
+    assert not run.running
+
+
+def test_all_successful_tracking_visits_report_complete(app):
+    run = SimulatedRun()
+    run._scan = lambda z: True
+    run._execute_plan(run.plates, None, False)
+    assert run.run_status == 'Run complete'
 
 
 def test_stop_during_search_does_not_start_tracking_or_next_plate(app):
@@ -153,7 +176,7 @@ def test_pause_occurs_between_plates_and_resume_continues(app):
     run._resume_run = ResumeAtBoundary()
     run._execute_plan(run.plates, None, False)
     assert run.visited == ['A', 'B']
-    assert run.run_status == 'Run complete'
+    assert run.run_status == 'Run finished — 1 tracked, 1 no worm found'
 
 
 def test_recording_failure_cleans_up_and_restores_settings(app, tmp_path):
@@ -268,7 +291,7 @@ def handoff(app, monkeypatch):
     return run, p, controls, events, now, clock
 
 
-def test_handoff_tracks_first_and_keeps_focus_running_through_gradual_ramp(handoff):
+def test_handoff_keeps_tracking_and_focus_active_through_four_steps_and_pauses(handoff):
     run, p, controls, events, now, clock = handoff
     assert PlateRunController._track_visit(run, p, None) == 'Visit complete'
     exposures = [e for e in events if e[0] == 'exposure']
@@ -277,11 +300,13 @@ def test_handoff_tracks_first_and_keeps_focus_running_through_gradual_ramp(hando
     assert len(focus_starts) == 1
     assert started[2] < focus_starts[0][2] < exposures[0][2]
     assert exposures[0][2] - focus_starts[0][2] >= 3
-    assert 90000 <= exposures[0][1] < 100000
-    assert exposures[-1][1] == 5000
-    assert len(exposures) > 20
-    assert exposures[-1][2] - exposures[0][2] >= p['settings']['exposure_ramp_seconds']
-    assert now[0] - exposures[-1][2] >= 4  # final settling plus full visit duration
+    assert [e[1] for e in exposures] == [76250, 52500, 28750, 5000]
+    assert [e[1] for e in events if e[0] == 'gain'] == [28, 26, 24, 22]
+    pause = p['settings']['exposure_ramp_seconds'] / 4
+    for previous, following in zip(exposures, exposures[1:]):
+        assert following[2] - previous[2] >= pause
+    # The fourth step also gets its pause, before final settling and the timed visit.
+    assert now[0] - exposures[-1][2] >= pause + p['settings']['focus_settle_seconds'] + 1
     assert [e for e in events if e[:2] == ('focus', 'normal')][0][2] > exposures[-1][2]
 
 

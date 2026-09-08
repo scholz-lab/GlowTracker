@@ -101,7 +101,7 @@ def rig(monkeypatch):
     values = dict(_stop_scan=False, _stop_all=False, _teardown_requested=False,
                   scan_z=140, scan_exposure=100000, scan_overlap_w=10, scan_overlap_h=10,
                   scan_settle=0, scan_threshold=150, scan_min_pixels=50,
-                  scan_center_tol=15, scan_recenter_iters=3, search_seconds=60,
+                  scan_center_tol=15, scan_recenter_iters=3,
                   search_passes=1, track_exposure=5000, track_gain=22, track_framerate=30,
                   _active_plate_name='Test plate')
     for key, value in values.items():
@@ -136,6 +136,8 @@ def test_scan_moves_once_per_row_and_captures_while_moving(rig):
     assert not app.camera.IsGrabbing()
     assert not app.stage.is_busy()
     assert app.stage.motions[-1] == (5, 100, 'mm/s', 'mm/s^2')
+    assert panel._search_report.summary == 'No worm found — 1/1 rows checked'
+    assert not panel._search_report.incomplete
 
 
 def test_row_finishing_between_position_and_busy_reads_is_not_an_error(rig):
@@ -216,26 +218,20 @@ def test_camera_exception_stops_motion_and_restores_speed(rig):
     assert app.stage.motions[-1][:2] == (5, 100)
 
 
-def test_search_deadline_stops_scan(rig):
-    panel, app = rig
-    panel.search_seconds = 0
-    assert panel._scan_continuous() is False
-    assert app.stage.moves == []
-    assert not app.camera.IsGrabbing()
-
-
-def test_search_deadline_during_motion_stops_stage(rig, monkeypatch):
+def test_long_continuous_scan_finishes_all_rows_and_passes(rig, monkeypatch):
     panel, app = rig
     now = [0.0]
     monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
-    def expire_during_motion():
-        if not app.camera.single:
-            now[0] = 61.0
-    app.camera.on_frame = expire_during_motion
+    panel.search_passes = 2
+    def advance_time():
+        now[0] += 90
+    app.camera.on_frame = advance_time
     assert panel._scan_continuous() is False
     assert not app.camera.IsGrabbing()
     assert not app.stage.is_busy()
-    assert app.camera.ExposureTime.Value is None
+    assert now[0] > 600
+    assert panel._search_report.summary == 'No worm found — 2/2 rows checked'
+    assert not panel._search_report.incomplete
 
 
 @pytest.mark.parametrize('flag', ['_stop_scan', '_stop_all', '_teardown_requested'])
@@ -252,14 +248,14 @@ def test_stop_during_final_cleanup_prevents_tracking_handoff(rig, flag, capsys):
     assert 'found=False' in capsys.readouterr().out
 
 
-def test_confirmed_worm_survives_search_deadline_during_cleanup(rig, monkeypatch, capsys):
+def test_confirmed_worm_survives_slow_cleanup(rig, monkeypatch, capsys):
     panel, app = rig
     now = [0.0]
     monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
     app.camera.frames.extend([255])
     original = app.stage.emergency_stop
     def stop():
-        now[0] = 61.0  # confirmation succeeded, but final cleanup crosses the search limit
+        now[0] = 61.0  # confirmation succeeded before slow final cleanup
         return original()
     app.stage.emergency_stop = stop
     assert panel._scan_continuous() is True
@@ -274,7 +270,7 @@ def test_stop_during_coordinate_update_prevents_tracking_handoff(rig):
     assert panel._scan_continuous() is False
 
 
-def test_plate_run_enters_tracking_handoff_when_cleanup_crosses_search_limit(rig, monkeypatch):
+def test_plate_run_enters_tracking_handoff_after_slow_cleanup(rig, monkeypatch):
     panel, app = rig
     now, events = [0.0], []
     monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])

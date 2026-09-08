@@ -93,10 +93,11 @@ def test_empty_search_stops_at_pass_limit(monkeypatch):
     panel._wait_or_stop = lambda duration: False
     assert panel._scan() is False
     assert len(targets) == 4
+    assert panel._search_report.summary == 'No worm found — 4/4 tiles checked'
 
 
-def test_search_deadline_prevents_another_tile(monkeypatch):
-    # A slow move uses up the search budget; no additional tile is started.
+def test_long_scan_checks_every_tile_and_pass(monkeypatch):
+    # A long scan must finish every configured pass, even well beyond 60 seconds.
     config = ConfigParser()
     config.setdefaults('Stage', {
         'stage_limits': '152,152,152', 'speed_unit': 'mm/s',
@@ -107,7 +108,7 @@ def test_search_deadline_prevents_another_tile(monkeypatch):
     targets = []
     def move(target, *args, **kwargs):
         targets.append(target)
-        now[0] += 2
+        now[0] += 90
         return True
     stage = SimpleNamespace(is_safe=lambda *args: True, set_motion=lambda *args: None,
                             move_abs=move, get_position=lambda **kwargs: targets[-1])
@@ -121,11 +122,12 @@ def test_search_deadline_prevents_another_tile(monkeypatch):
     panel = CenterRadiusFromThreePoints.__new__(CenterRadiusFromThreePoints)
     panel._stop_all = panel._stop_scan = False
     panel._active_plate_name = 'Test'
-    panel.search_seconds = 1
     panel.search_passes = 10
     panel._wait_or_stop = lambda duration: False
     assert panel._scan() is False
-    assert len(targets) == 1
+    assert len(targets) == 20
+    assert now[0] == 1800
+    assert panel._search_report.summary == 'No worm found — 20/20 tiles checked'
 
 
 def test_stop_scan_also_cancels_active_tracking(monkeypatch):
