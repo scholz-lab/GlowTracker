@@ -269,6 +269,8 @@ class PlateRunController:
                 if self._stop_scan:
                     raise RuntimeError('Stage movement failed; run stopped')
                 if found:
+                    self._status(f'{plate["name"]} • Worm found — starting tracking and autofocus…',
+                                 plate['id'], 'Starting tracking')
                     folder = create_visit_directory(run_dir, plate, cycle) if run_dir else None
                     outcome = self._track_visit(plate, folder)
                 else:
@@ -294,15 +296,20 @@ class PlateRunController:
             except Exception as error:
                 final_status = f'Run stopped; cleanup needs attention: {error}'
             def finish(dt):
-                for key, value in original_profile.items():
-                    setattr(self, key, value)
-                if 0 <= self.selected_plate < len(self.plates):
-                    self._load_plate(self.plates[self.selected_plate])
-                self.running = self.paused = self.pause_requested = False
-                app._plate_run_active = False
-                self.run_status = final_status
-                if not self._teardown_requested:
-                    app.bind_keys()
+                status = final_status
+                try:
+                    for key, value in original_profile.items():
+                        setattr(self, key, value)
+                    if 0 <= self.selected_plate < len(self.plates):
+                        self._load_plate(self.plates[self.selected_plate])
+                except Exception as error:
+                    status = f'{status}; could not restore plate display: {error}'
+                finally:
+                    self.running = self.paused = self.pause_requested = False
+                    app._plate_run_active = False
+                    self.run_status = status
+                    if not self._teardown_requested:
+                        app.bind_keys()
             Clock.schedule_once(finish)
             asyncio.get_event_loop().close()
 
@@ -428,7 +435,7 @@ class PlateRunController:
                     if error or mgr.recordbutton.state != 'down':
                         raise RuntimeError(f'Recording stopped unexpectedly: {error or "camera stopped"}')
                 if rc.track_done.is_set():
-                    return 'Tracking ended early'
+                    raise RuntimeError('Tracking ended before the visit finished')
                 remaining = max(0, int(deadline - time.monotonic()))
                 if remaining != last_second:
                     self._status(f'{plate["name"]} • {"Recording" if folder else "Tracking"} • {remaining}s remaining')

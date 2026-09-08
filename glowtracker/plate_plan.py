@@ -10,7 +10,7 @@ import re
 # key: (label, default, minimum, maximum, integer)
 FIELDS = {
     'scan_mode': ('Scan mode', 'Sequential', None, None, False),
-    'scan_z': ('Starting Z (mm)', 140, 0, None, False),
+    'scan_z': ('Starting Z (mm)', 133, 0, None, False),
     'scan_exposure': ('Scan exposure (us)', 100000, 1, None, False),
     'scan_gain': ('Scan gain', 30, 0, None, False),
     'track_exposure': ('Tracking exposure (us)', 5000, 1, None, False),
@@ -26,8 +26,8 @@ FIELDS = {
     'scan_min_pixels': ('Minimum bright pixels', 50, 1, None, True),
     'scan_overlap_w': ('Tile overlap width (%)', 10, 0, 95, False),
     'scan_overlap_h': ('Tile overlap height (%)', 10, 0, 95, False),
-    'scan_z_range': ('Focus search range (mm)', 1, 0, None, False),
-    'scan_z_frames': ('Focus search images', 30, 2, 1000, True),
+    'scan_z_range': ('Focus search range (mm)', 14, 0, None, False),
+    'scan_z_frames': ('Focus search images', 100, 2, 1000, True),
 }
 
 

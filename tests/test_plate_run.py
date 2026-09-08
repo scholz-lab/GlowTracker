@@ -103,6 +103,25 @@ def test_focus_failure_restores_camera_and_stops_run(app):
     assert 'focus search failed' in run.run_status
 
 
+def test_display_restore_failure_still_releases_run_controls(app):
+    run = SimulatedRun()
+    run.selected_plate = 0
+    restored = []
+    load = run._load_plate
+    def load_plate(p):
+        if run.events and run.events[-1] == 'quiesced':
+            raise ValueError('invalid plate display')
+        load(p)
+    run._load_plate = load_plate
+    run._scan = lambda z: (_ for _ in ()).throw(RuntimeError('row failed'))
+    app.bind_keys = lambda: restored.append(True)
+    run._execute_plan(run.plates, None, False)
+    assert not run.running and not app._plate_run_active
+    assert 'row failed' in run.run_status
+    assert 'could not restore plate display' in run.run_status
+    assert restored == [True]
+
+
 def test_repeat_uses_new_visit_folders(app, tmp_path):
     run = SimulatedRun()
     folders = []
@@ -337,3 +356,17 @@ def test_missing_fresh_frames_prevents_focus_and_tracking(handoff, monkeypatch):
         PlateRunController._track_visit(run, p, None)
     assert not any(e[0] in ('tracking', 'exposure') or e[:2] == ('focus', 'down') for e in events)
     assert run.events[-1] == 'quiesced'
+
+
+def test_tracking_ending_early_is_reported_as_run_failure(handoff, app):
+    run, p, controls, events, now, clock = handoff
+    prepare = run._prepare_tracking
+    def tracking_ends(p):
+        prepare(p)
+        controls.track_done.set()
+    run._prepare_tracking = tracking_ends
+    run._scan = lambda z: True
+    run._track_visit = lambda p, folder: PlateRunController._track_visit(run, p, folder)
+    run._execute_plan([p], None, False)
+    assert run.run_status == 'Run stopped: Tracking ended before the visit finished'
+    assert not run.running

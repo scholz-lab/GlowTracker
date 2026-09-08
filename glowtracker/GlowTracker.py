@@ -5253,7 +5253,7 @@ class GlowTrackerApp(App):
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
-    plateCenter = ObjectProperty(None, allownone=True)
+    plateCenter = ObjectProperty(None, allownone=True, force_dispatch=True)
     plateRadius = ObjectProperty(None, allownone=True)
     _plate_run_active = BooleanProperty(False)
     frameBuffer = list()

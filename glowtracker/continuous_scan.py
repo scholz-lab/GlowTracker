@@ -23,9 +23,9 @@ def scan_rows(tiles):
 
 
 class ContinuousScanMixin:
-    def _continuous_check(self, deadline):
+    def _continuous_check(self, deadline=None):
         if (self._stop_scan or self._stop_all or self._teardown_requested
-                or time.monotonic() >= deadline):
+                or (deadline is not None and time.monotonic() >= deadline)):
             raise ScanInterrupted()
 
     def _continuous_position(self, stage):
@@ -133,8 +133,13 @@ class ContinuousScanMixin:
                     if present:
                         break
                     if not stage.is_busy():
+                        # The move can finish after the earlier position sample.
+                        # Validate a fresh position taken after observing idle.
+                        position = self._continuous_position(stage)
+                        self._continuous_check(deadline)
                         if abs(position[0] - end[0]) > 0.05:
-                            raise RuntimeError('Continuous row stopped before its endpoint')
+                            raise RuntimeError('Continuous row stopped before its endpoint: '
+                                               f'actual X={position[0]:.3f} mm, target X={end[0]:.3f} mm')
                         break
             finally:
                 # Stop motion even when acquisition, detection, or position reads fail.
@@ -214,15 +219,16 @@ class ContinuousScanMixin:
                     app.camera.StopGrabbing()
                 finally:
                     app.stage.set_motion(*precise_motion)
-            elapsed = time.monotonic() - started
-            print(f'continuous scan: {elapsed:.2f}s | {self._continuous_frames} frames | '
-                  f'{completed_rows} rows visited | found={found}')
-
         if found:
             try:
-                self._continuous_check(deadline)
+                # Confirmation ended the search. Cleanup may exceed its deadline,
+                # but explicit cancellation must still prevent the handoff.
+                self._continuous_check()
+                app.update_coordinates(isAsync=False)
+                self._continuous_check()
             except ScanInterrupted:
-                return False
-            # Keep scan brightness until the worm has focused in the handoff.
-            app.update_coordinates(isAsync=False)
+                found = False
+        elapsed = time.monotonic() - started
+        print(f'continuous scan: {elapsed:.2f}s | {self._continuous_frames} frames | '
+              f'{completed_rows} rows visited | found={found}')
         return found

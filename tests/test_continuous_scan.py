@@ -7,6 +7,7 @@ import pytest
 import continuous_scan as module
 from continuous_scan import ContinuousScanMixin, scan_rows
 from plate_plan import validate_plate
+from plate_run import PlateRunController
 
 
 class Stage:
@@ -137,6 +138,32 @@ def test_scan_moves_once_per_row_and_captures_while_moving(rig):
     assert app.stage.motions[-1] == (5, 100, 'mm/s', 'mm/s^2')
 
 
+def test_row_finishing_between_position_and_busy_reads_is_not_an_error(rig):
+    panel, app = rig
+    original = app.stage.is_busy
+    def busy():
+        if app.stage.target_x is not None:
+            # The earlier position read was mid-row; by this read the move has ended.
+            app.stage.position[0] = app.stage.target_x
+            app.stage.target_x = None
+        return original()
+    app.stage.is_busy = busy
+    assert panel._scan_continuous() is False
+    assert app.stage.position[0] == 3
+
+
+def test_real_early_stop_reports_actual_and_target_position(rig):
+    panel, app = rig
+    def early_stop():
+        if app.stage.target_x is not None:
+            app.stage.target_x = None
+        return False
+    app.stage.is_busy = early_stop
+    with pytest.raises(RuntimeError, match=r'actual X=1\.000 mm, target X=3\.000 mm'):
+        panel._scan_continuous()
+    assert not app.camera.IsGrabbing()
+
+
 def test_candidate_requires_stationary_confirmation_before_tracking(rig):
     panel, app = rig
     app.camera.frames.extend([0, 255, 255])
@@ -211,16 +238,72 @@ def test_search_deadline_during_motion_stops_stage(rig, monkeypatch):
     assert app.camera.ExposureTime.Value is None
 
 
-def test_stop_during_final_cleanup_prevents_tracking_handoff(rig):
+@pytest.mark.parametrize('flag', ['_stop_scan', '_stop_all', '_teardown_requested'])
+def test_stop_during_final_cleanup_prevents_tracking_handoff(rig, flag, capsys):
     panel, app = rig
     app.camera.frames.extend([255])
     original = app.stage.emergency_stop
     def stop():
-        panel._stop_scan = True
+        setattr(panel, flag, True)
         return original()
     app.stage.emergency_stop = stop
     assert panel._scan_continuous() is False
     assert app.camera.ExposureTime.Value is None
+    assert 'found=False' in capsys.readouterr().out
+
+
+def test_confirmed_worm_survives_search_deadline_during_cleanup(rig, monkeypatch, capsys):
+    panel, app = rig
+    now = [0.0]
+    monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
+    app.camera.frames.extend([255])
+    original = app.stage.emergency_stop
+    def stop():
+        now[0] = 61.0  # confirmation succeeded, but final cleanup crosses the search limit
+        return original()
+    app.stage.emergency_stop = stop
+    assert panel._scan_continuous() is True
+    assert 'found=True' in capsys.readouterr().out
+    assert not app.camera.IsGrabbing() and not app.stage.is_busy()
+
+
+def test_stop_during_coordinate_update_prevents_tracking_handoff(rig):
+    panel, app = rig
+    app.camera.frames.extend([255])
+    app.update_coordinates = lambda **kwargs: setattr(panel, '_stop_all', True)
+    assert panel._scan_continuous() is False
+
+
+def test_plate_run_enters_tracking_handoff_when_cleanup_crosses_search_limit(rig, monkeypatch):
+    panel, app = rig
+    now, events = [0.0], []
+    monkeypatch.setattr(module.time, 'monotonic', lambda: now[0])
+    app.camera.frames.extend([255])
+    original = app.stage.emergency_stop
+    def stop():
+        now[0] = 61.0
+        return original()
+    app.stage.emergency_stop = stop
+    app.bind_keys = lambda: None
+    panel._profile = lambda: {}
+    panel._ui = lambda callback, **kwargs: callback()
+    panel._load_plate = lambda plate: None
+    panel._status = lambda text, *args: events.append(text)
+    panel._begin_scan_camera = lambda: True
+    panel._end_scan_camera = lambda found: None
+    panel._find_scan_z = lambda: 140
+    panel._scan = panel._scan_continuous
+    panel._track_visit = lambda plate, folder: events.append('handoff entered') or 'Visit complete'
+    panel._quiesce_visit = lambda: None
+    panel.selected_plate = -1
+    panel.pause_requested = False
+    plan = [validate_plate(dict(id='A', name='A', center=[1.5, 50], radius=10, enabled=True,
+                                settings={'scan_mode': 'Continuous'}))]
+    PlateRunController._execute_plan(panel, plan, None, False)
+    assert events.count('handoff entered') == 1
+    assert any('Worm found' in text for text in events)
+    assert not any('Nothing found' in text for text in events)
+    assert panel.run_status == 'Run complete'
 
 
 def test_pass_limit_repeats_rows(rig):

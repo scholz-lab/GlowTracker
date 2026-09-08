@@ -1,10 +1,37 @@
 from types import SimpleNamespace
+import ast
+from pathlib import Path
 from threading import Event
 from kivy.config import ConfigParser
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty
 import numpy as np
 
 from scan import CenterRadiusFromThreePoints
 import scan
+
+
+def test_plate_center_accepts_repeated_updates_and_clearing(monkeypatch, caplog):
+    source = ast.parse((Path(__file__).parents[1] / 'glowtracker/GlowTracker.py').read_text())
+    cls = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'GlowTrackerApp')
+    declaration = next(n for n in cls.body if isinstance(n, ast.Assign)
+                       and any(isinstance(t, ast.Name) and t.id == 'plateCenter' for t in n.targets))
+    prop = eval(compile(ast.Expression(declaration.value), '<plateCenter>', 'eval'),
+                {'ObjectProperty': ObjectProperty})
+    AppState = type('AppState', (EventDispatcher,), {'plateCenter': prop})
+    app = AppState()
+    monkeypatch.setattr(scan.App, 'get_running_app', staticmethod(lambda: app))
+    updates = []
+    app.bind(plateCenter=lambda _, value: updates.append(value))
+    app.plateCenter = np.array([40, 100], dtype=np.float32)
+    panel = CenterRadiusFromThreePoints.__new__(CenterRadiusFromThreePoints)
+    panel._set_plate([40, 100], 10)
+    panel._set_plate([41, 101], 10)
+    assert app.plateCenter == (41.0, 101.0)
+    assert isinstance(app.plateCenter, tuple)
+    app.plateCenter = None
+    assert len(updates) == 4
+    assert 'Value comparison failed' not in caplog.text
 
 
 def test_failed_z_sweep_does_not_start_tile_scan(monkeypatch):

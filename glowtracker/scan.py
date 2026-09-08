@@ -25,7 +25,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     scan_progress = NumericProperty(0)
     scan_mode = StringProperty('Sequential')
     saved_scenarios = ListProperty([])
-    scan_z = NumericProperty(140)
+    scan_z = NumericProperty(133)
     scan_exposure = NumericProperty(100000)
     scan_gain = NumericProperty(30)
     scan_settle = NumericProperty(0.01)
@@ -35,8 +35,8 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     scan_overlap_h = NumericProperty(10)
     scan_recenter_iters = NumericProperty(3)
     scan_center_tol = NumericProperty(15)
-    scan_z_range = NumericProperty(1.0)
-    scan_z_frames = NumericProperty(30)
+    scan_z_range = NumericProperty(14.0)
+    scan_z_frames = NumericProperty(100)
     track_exposure = NumericProperty(5000)
     track_gain = NumericProperty(22)
     track_framerate = NumericProperty(30)
@@ -519,8 +519,8 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
 
     def _set_plate(self, center, radius):
         app = App.get_running_app()
-        app.plateCenter = np.array(center, np.float32)
-        app.plateRadius = radius
+        app.plateCenter = tuple(float(value) for value in center)
+        app.plateRadius = float(radius)
 
     def stop_plates(self):
         if not self.running and not any(t is not None and t.is_alive()
