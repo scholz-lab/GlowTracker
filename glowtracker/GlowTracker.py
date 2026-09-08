@@ -68,6 +68,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
+from Advanced_settings import AdvancedSettingsWithSidebar
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.behaviors import DragBehavior
@@ -5217,7 +5218,7 @@ class GlowTrackerApp(App):
         # Declare config file path
         self.configFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'glowtracker_local.ini')
         # define settings menu style
-        self.settings_cls = SettingsWithSidebar
+        self.settings_cls = AdvancedSettingsWithSidebar
         # bind key presses to stage motion - right now also happens in settings!
         self.bind_keys()
         # hardware

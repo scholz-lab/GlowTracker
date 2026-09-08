@@ -7,7 +7,8 @@
         "title": "Stage serial port",
         "desc": "Find the port (path) for the stage.",
         "section": "Stage",
-        "key": "port"
+        "key": "port",
+        "advanced": true
     },
     {
         "type": "options",
@@ -15,7 +16,9 @@
         "desc": "Unit for all speed settings below",
         "section": "Stage",
         "key": "speed_unit",
-        "options": ["mm/s", "um/s"]
+        "options": ["mm/s", "um/s"],
+        "advanced": true
+
     },
     {
         "type": "options",
@@ -23,7 +26,8 @@
         "desc": "Unit for all acceleration settings below",
         "section": "Stage",
         "key": "acceleration_unit",
-        "options": ["mm/s^2", "um/s^2"]
+        "options": ["mm/s^2", "um/s^2"],
+        "advanced": true
     },
     {
         "type": "numeric",
@@ -58,14 +62,16 @@
         "title": "Precise move speed",
         "desc": "Speed for automatic positioning moves (go-to, autofocus sweeps, scan recentering)",
         "section": "Stage",
-        "key": "precise_speed"
+        "key": "precise_speed",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Precise move acceleration",
         "desc": "Acceleration for automatic positioning moves",
         "section": "Stage",
-        "key": "precise_acceleration"
+        "key": "precise_acceleration",
+        "advanced": true
     },
     {
         "type": "bool",
@@ -79,7 +85,8 @@
         "title": "Stage limit",
         "desc": "limit to the stage to avoid obstacles (mm)",
         "section": "Stage",
-        "key": "stage_limits"
+        "key": "stage_limits",
+        "advanced": true
     },
     {
         "type": "bool",
@@ -100,35 +107,40 @@
         "title": "Scan speed",
         "desc": "Stage speed during plate scanning",
         "section": "Stage",
-        "key": "scan_speed"
+        "key": "scan_speed",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Scan acceleration",
         "desc": "Stage acceleration during plate scanning",
         "section": "Stage",
-        "key": "scan_acceleration"
+        "key": "scan_acceleration",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Tracking speed",
         "desc": "Stage speed during tracking",
         "section": "Stage",
-        "key": "track_speed"
+        "key": "track_speed",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Tracking acceleration",
         "desc": "Stage acceleration during tracking",
         "section": "Stage",
-        "key": "track_acceleration"
+        "key": "track_acceleration",
+        "advanced": true
     },
     {
         "type": "bool",
         "title": "Move in image space mode",
         "desc": "Control the stage movement relative to the image space. Requires calibration.",
         "section": "Stage",
-        "key": "move_image_space_mode"
+        "key": "move_image_space_mode",
+        "advanced": true
     },
     {
         "type": "title",
@@ -139,7 +151,8 @@
         "title": "Default camera settings",
         "desc": "Select a valid pfs file",
         "section": "Camera",
-        "key": "default_settings"
+        "key": "default_settings",
+        "advanced": true
     },
     {
         "type": "numeric",
@@ -153,7 +166,8 @@
         "title": "Rotation",
         "desc": "Rotation of camera relative to stage",
         "section": "Camera",
-        "key": "rotation"
+        "key": "rotation",
+        "advanced": true
     },
     {
         "type": "options",
@@ -161,46 +175,28 @@
         "desc": "Image plane normal vector's direction (+X cross +Y in image space). Use to imply the direction of Y axis in camera-stage change of basis matrix.",
         "section": "Camera",
         "key": "imagenormaldir",
-        "options": ["+Z", "-Z"]
+        "options": ["+Z", "-Z"],
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Depth of Field (mm)",
         "desc": "Camera depth of field. Can be estimated in Depth of Field calibration tab.",
         "section": "Camera",
-        "key": "depthoffield"
+        "key": "depthoffield",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Pixelsize",
         "desc": "How large of a distance dose a pixel cover (isotropic). The unit is either um/px or mm/px depends on Calibration:Calibration-step-unit.",
         "section": "Camera",
-        "key": "pixelsize"
+        "key": "pixelsize",
+        "advanced": true
     },
     {
         "type": "title",
         "title": "Autofocus"
-    },
-    {
-        "type": "custom_numeric",
-        "title": "Proportional gain (P)",
-        "desc": "How strongly the controller reacts to the current error.",
-        "section": "Autofocus",
-        "key": "kp"
-    },
-    {
-        "type": "custom_numeric",
-        "title": "Integral gain (I)",
-        "desc": "How much the controller compensates for accumulated past errors.",
-        "section": "Autofocus",
-        "key": "ki"
-    },
-    {
-        "type": "custom_numeric",
-        "title": "Differential gain (D)",
-        "desc": "How rapidly changing errors are dampened.",
-        "section": "Autofocus",
-        "key": "kd"
     },
     {
         "type": "options",
@@ -208,63 +204,63 @@
         "desc": "The method which uses to estimate the focus value from an image.",
         "section": "Autofocus",
         "key": "focusestimationmethod",
-        "options": ["VarianceOfLaplace", "Tenengrad", "Brenners", "EnergyOfLaplacian", "ModifiedLaplace", "SumOfHighDCT"]
+        "options": ["Tenengrad", "SumOfHighDCT"]
     },
     {
         "type": "numeric",
         "title": "Smoothing window size",
         "desc": "How far back (iterations) do we perform a linear, weighted average smoothing to the estimated focus value (PV). Defaults to 1, which means only consider the current value -- no smoothing.",
         "section": "Autofocus",
-        "key": "smoothingwindow"
+        "key": "smoothingwindow", 
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Min steps before change dir",
         "desc": "Minimum step before allowin chaning direction. Defaults to 0, which means can change direction at any time.",
         "section": "Autofocus",
-        "key": "minstepbeforechangedir"
+        "key": "minstepbeforechangedir",
+        "advanced": true
     },
     {
         "type": "numeric",
         "title": "Focus frames per Z",
         "desc": "Number of frames averaged at each Z position before the autofocus moves. Higher reduces noise but is slower. Defaults to 5.",
         "section": "Autofocus",
-        "key": "buffer_n"
+        "key": "buffer_n",
+        "advanced": true
     },
     {
         "type": "custom_numeric",
         "title": "Coarse step (mm)",
         "desc": "Initial Z step (mm) the peak-seeking autofocus climbs with; it halves on overshoot down to the depth of field. Defaults to 0.02. Must be smaller than about 0.85x the half-width of the focus-vs-Z curve, otherwise a single step costs more than the re-acquire fraction and the climb cannot converge.",
         "section": "Autofocus",
-        "key": "coarsestep"
+        "key": "coarsestep",
+        "advanced": true
     },
     {
         "type": "bool",
         "title": "Reverse direction on re-acquire",
         "desc": "When focus collapses below the re-acquire fraction, also flip the climb direction instead of only resetting the step to coarse. ON is the fix; OFF reproduces the previous behaviour, which walks away in Z without ever reversing. Defaults to ON.",
         "section": "Autofocus",
-        "key": "reverseonreacquire"
+        "key": "reverseonreacquire",
+        "advanced": true
     },
     {
         "type": "custom_numeric",
         "title": "Step growth factor",
         "desc": "Factor the Z step grows by on each batch where focus improved, capped at the coarse step. Lets the climb follow a sample drifting in Z. Set to 1.0 to disable growth (previous behaviour, step only ever shrinks). Defaults to 1.3.",
         "section": "Autofocus",
-        "key": "stepgrowth"
+        "key": "stepgrowth", 
+        "advanced": true
     },
     {
         "type": "bool",
         "title": "Park at minimum step",
         "desc": "When ON, the climb stops moving entirely once the step decays to the minimum and only wakes on a re-acquire. This is the previous behaviour and suits a stationary sample. OFF keeps dithering at the minimum step so slow drift is still corrected. Defaults to OFF.",
         "section": "Autofocus",
-        "key": "holdatminstep"
-    },
-    {
-        "type": "numeric",
-        "title": "Best focus value",
-        "desc": "Current best focus value. Use as a target value for autofocusing. Automatically filled in from DoF calibration.",
-        "section": "Autofocus",
-        "key": "bestfocusvalue"
+        "key": "holdatminstep",
+        "advanced": true
     },
     {
         "type": "numeric",
