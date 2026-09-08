@@ -419,6 +419,13 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
             time.sleep(0.02)
         if app.camera.IsGrabbing():
             raise RuntimeError('camera did not stop before scan configuration')
+        thread = getattr(mrg.liveviewbutton, 'imageAcquisitionThread', None)
+        if thread is not None and thread is not current_thread() and thread.is_alive():
+            thread.join(2)
+            if thread.is_alive():
+                raise RuntimeError('preview acquisition did not finish before scanning')
+        if self._stop_scan or self._stop_all or self._teardown_requested:
+            return False
         app.camera.AcquisitionFrameRateEnable.Value = False
         app.camera.ExposureTime.Value = float(self.scan_exposure)
         app.camera.Gain.Value = float(self.scan_gain)

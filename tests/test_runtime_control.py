@@ -1,10 +1,41 @@
 from threading import Event, Lock
+import ast
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from runtime_control import (
     ManagedStageMove,
     append_new_focus_values,
     controller_velocity,
 )
+
+
+@pytest.mark.parametrize('grabbing', [False, True])
+def test_tracking_cleanup_restores_roi_without_restarting_stopped_camera(grabbing):
+    source = ast.parse((Path(__file__).parents[1] / 'glowtracker/GlowTracker.py').read_text())
+    cls = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'RuntimeControls')
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == 'stopTracking')
+    calls = []
+    camera = SimpleNamespace(IsGrabbing=lambda: grabbing, setIsOnHold=lambda value: calls.append(('hold', value)),
+        AcquisitionStop=SimpleNamespace(Execute=lambda: calls.append('stop')),
+        AcquisitionStart=SimpleNamespace(Execute=lambda: calls.append('start')),
+        AcquisitionFrameRate=lambda: 30)
+    values = {'Width': 1024, 'Height': 768, 'OffsetX': 0, 'OffsetY': 0, 'CenterX': 0, 'CenterY': 0}
+    for name in (*values, 'TLParamsLocked'):
+        setattr(camera, name, SimpleNamespace(Value=None))
+    app = SimpleNamespace(camera=camera, stage=None, config=SimpleNamespace(getboolean=lambda *args: False),
+        root=SimpleNamespace(ids=SimpleNamespace(leftcolumn=SimpleNamespace(cameraConfig=values),
+            middlecolumn=SimpleNamespace(ids=SimpleNamespace(imageoverlay=SimpleNamespace(updateOverlay=lambda: None))))))
+    namespace = {'App': SimpleNamespace(get_running_app=lambda: app), 'time': SimpleNamespace(sleep=lambda _: None)}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), '<stopTracking>', 'exec'), namespace)
+    controls = SimpleNamespace(track_done=Event(), coord_updateevent=None)
+    namespace['stopTracking'](controls)
+    assert camera.Width.Value == 1024 and camera.Height.Value == 768
+    assert ('start' in calls) is grabbing
+    assert ('stop' in calls) is grabbing
+    assert calls[-1] == ('hold', False)
 
 
 class BlockingStage:

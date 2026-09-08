@@ -3,6 +3,8 @@ from threading import Event
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
+from kivy.config import ConfigParser
 
 import plate_run
 from plate_plan import FIELDS, validate_plate
@@ -133,3 +135,33 @@ def test_pause_occurs_between_plates_and_resume_continues(app):
     run._execute_plan(run.plates, None, False)
     assert run.visited == ['A', 'B']
     assert run.run_status == 'Run complete'
+
+
+def test_recording_failure_cleans_up_and_restores_settings(app, tmp_path):
+    config = ConfigParser()
+    config.filename = str(tmp_path / 'settings.ini')
+    config.setdefaults('Experiment', {'iscontinuous': '0', 'extension': 'png',
+                                      'duration': '5', 'nframes': '150'})
+    config.setdefaults('DualColor', {'dualcolormode': 'false'})
+    record = SimpleNamespace(state='normal', saveHandoffError='Disk full', acquisitionError=None)
+    manager = SimpleNamespace(liveviewbutton=SimpleNamespace(state='normal'), recordbutton=record)
+    controls = SimpleNamespace(track_done=Event(), isTracking=False,
+        trackingcheckbox=SimpleNamespace(state='normal'), livefocuscheckbox=SimpleNamespace(state='normal'),
+        ids=SimpleNamespace(imageacquisitionmanager=manager))
+    controls.startTracking = lambda *args: setattr(controls, 'isTracking', True)
+    left = SimpleNamespace(savefile=str(tmp_path), ids=SimpleNamespace(camprops=SimpleNamespace(framerate=30)))
+    app.root = SimpleNamespace(ids=SimpleNamespace(leftcolumn=left,
+                       middlecolumn=SimpleNamespace(ids=SimpleNamespace(runtimecontrols=controls))))
+    app.config = config
+    app.camera = SimpleNamespace(IsGrabbing=lambda: True)
+    app.image = np.zeros((10, 10))
+    run = SimulatedRun()
+    run.record_format = 'tiff'
+    # Exercise the real visit method, while representing hardware shutdown by an event.
+    with pytest.raises(RuntimeError, match='Disk full'):
+        PlateRunController._track_visit(run, plate('A'), tmp_path / 'visit')
+    assert 'quiesced' in run.events
+    assert left.savefile == str(tmp_path)
+    assert config.get('Experiment', 'iscontinuous') == '0'
+    assert config.get('Experiment', 'extension') == 'png'
+    assert config.get('Experiment', 'duration') == '5'

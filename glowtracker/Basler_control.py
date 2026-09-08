@@ -98,6 +98,9 @@ class Camera(pylon.InstantCamera):
     def retrieveGrabbingResult(self, timeout_ms=1000) -> Tuple[ bool, np.ndarray, int, int]:
         """Retrieve a grabbed image from a camera
 
+        Args:
+            timeout_ms (int): Maximum wait for a frame; shorter waits allow cancellation.
+
         Returns:
             isSuccess (bool): boolean indicate if the retrieving is successful
             img (np.array): the retrieved image
@@ -119,7 +122,7 @@ class Camera(pylon.InstantCamera):
                     timeout_ms, pylon.TimeoutHandling_Return
                 )
 
-                if not isinstance(grabResult, bool):
+                if grabResult is not None and not isinstance(grabResult, bool):
                     try:
                         if grabResult.GrabSucceeded():
                             img = np.array(grabResult.Array, copy=True)

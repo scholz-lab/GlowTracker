@@ -90,6 +90,7 @@ class ContinuousScanMixin:
                 return False
             if (max(abs(offset[0]), abs(offset[1])) <= self.scan_center_tol
                     or attempt == int(self.scan_recenter_iters)):
+                self._continuous_check(deadline)
                 return True
             self._continuous_check(deadline)
             dy, dx = macro.getStageDistances(
@@ -111,6 +112,8 @@ class ContinuousScanMixin:
             return False
 
         resume = (*start, z)
+        if self._continuous_position(stage) != resume:
+            self._continuous_move(stage, resume, deadline)
         while True:
             self._continuous_check(deadline)
             stage.set_motion(*scan_motion)
@@ -216,6 +219,10 @@ class ContinuousScanMixin:
                   f'{completed_rows} rows visited | found={found}')
 
         if found:
+            try:
+                self._continuous_check(deadline)
+            except ScanInterrupted:
+                return False
             # Match the existing sequential scan's handoff to tracking.
             app.camera.ExposureTime.Value = float(self.track_exposure)
             app.camera.Gain.Value = float(self.track_gain)

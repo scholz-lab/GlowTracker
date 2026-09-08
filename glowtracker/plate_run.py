@@ -62,15 +62,17 @@ class PlateRunController:
         return self.store_plate() if self.selected_plate >= 0 else self.commit_fields()
 
     def new_plate(self):
-        if self.running or not self._save_selected():
+        if self.running:
             return
         self.selected_plate = -1
         self.reset()
+        for key, spec in FIELDS.items():
+            setattr(self, key, spec[1])
         self.ids.scenarioname.text = f'Plate {len(self.plates) + 1}'
         self.run_status = 'Capture three points around the new plate’s rim'
 
     def select_plate(self, index):
-        if self.running or not self._save_selected():
+        if self.running:
             return
         self.selected_plate = index
         self._load_plate(self.plates[index])
@@ -165,9 +167,8 @@ class PlateRunController:
         if self.running or any(t is not None and t.is_alive()
                                for t in (self._scan_thread, self._plates_thread)):
             return
-        if not self.commit_fields():
-            return
-        if (not self.plates or self.selected_plate >= 0) and not self.store_plate():
+        if not self.plates:
+            self.run_status = 'Add a plate before starting the run'
             return
         app = App.get_running_app()
         try:
@@ -408,7 +409,7 @@ class PlateRunController:
     def _join_workers(threads):
         deadline = time.monotonic() + 10
         for thread in threads:
-            if thread is not None and thread is not current_thread():
+            if thread is not None and thread is not current_thread() and thread.is_alive():
                 thread.join(max(0, deadline - time.monotonic()))
                 if thread.is_alive():
                     raise RuntimeError('A camera or motion worker did not stop; the next plate was not started')

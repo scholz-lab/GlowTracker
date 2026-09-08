@@ -13,7 +13,7 @@ class AdvancedSettingsToggle(ToggleButton):
             size_hint_y=None, height=dp(36), font_size=sp(14),
             halign='left', valign='middle', padding=(dp(16), 0),
             background_normal='', background_down='',
-            background_color=(64 / 255, 55 / 255, 58 / 255, 1),
+            background_color=(0.25, 0.25, 0.28, 1),
             **kwargs,
         )
         self.count = count

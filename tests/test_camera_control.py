@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pypylon import pylon
 
 from Basler_control import Camera, CameraGrabParameters, readPFSFile
@@ -84,6 +85,14 @@ def test_retrieve_is_idle_when_camera_is_not_grabbing():
     )
     assert transport.requests == []
     assert not result.released
+
+
+@pytest.mark.parametrize('empty_result', [False, None])
+def test_short_retrieve_timeout_for_cancellable_continuous_scan(empty_result, capsys):
+    transport = CameraTransport(empty_result)
+    assert Camera.retrieveGrabbingResult(transport, timeout_ms=50)[0] is False
+    assert transport.requests == [(50, pylon.TimeoutHandling_Return)]
+    assert capsys.readouterr().out == ''
 
 
 def test_pfs_reader_extracts_feature_values(tmp_path):

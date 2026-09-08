@@ -64,6 +64,26 @@ GlowTracker supports Python 3.11 through 3.13. Python 3.12 is the recommended ve
         uv run glowtracker
         ```
 
+### Comparing scan modes
+
+In the plate setup dialog, choose **Scan mode → Sequential** (the default) or
+**Continuous**, then add/update the plate or save its preset. The mode is saved
+per plate; older presets use Sequential.
+
+Sequential stops at each tile. Continuous captures while moving along each row
+of the same search path, then stops to confirm and center a candidate before
+tracking. Both modes use the same initial Z search, exposure, gain, detection
+threshold, search limit, and pass count. Continuous capture runs at the rate the
+exposure and camera allow; it does not force 60 fps. Set movement speed under
+**Settings → Stage → Scan speed** and row spacing with the scan overlap settings.
+
+To compare, run the same plate and settings in each mode. The console reports
+sequential timing per tile and continuous search time, frames processed, and rows
+visited. Continuous mode rechecks recent stage positions after a moving detection;
+these positions are approximate, so blur or passing an animal between usable
+frames can still cause missed detections. Test detection reliability on the
+microscope at your chosen speed and exposure.
+
 ### Device Setup
 #### Stage
 In **Settings > Stage > Stage serial port**, specify the connection port name to your Stage. In Windows, this is usually `port = COM3`. And `/dev/ttyUSB0` for Linux.
