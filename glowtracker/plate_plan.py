@@ -17,6 +17,7 @@ FIELDS = {
     'track_gain': ('Tracking gain', 22, 0, None, False),
     'track_framerate': ('Tracking FPS', 30, 0.1, None, False),
     'track_interval': ('Track per visit (s)', 120, 1, None, False),
+    'focus_settle_seconds': ('Focus at each exposure (s)', 3, 1, None, False),
     'search_seconds': ('Search limit (s)', 60, 1, None, False),
     'search_passes': ('Search passes', 1, 1, 100, True),
     'scan_settle': ('Settling time (s)', 0.01, 0, None, False),

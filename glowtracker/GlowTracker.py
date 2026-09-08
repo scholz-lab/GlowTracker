@@ -53,7 +53,7 @@ from kivy.graphics import Color, Line, Ellipse, Mesh
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
-from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty
+from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty, BooleanProperty
 from kivy.clock import Clock, ClockEvent, mainthread
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -426,8 +426,12 @@ class RightColumn(BoxLayout):
         self._popup = Popup(title= 'Plate Scan', content= self._scanPanel,
                             size_hint= (0.95, 0.95), auto_dismiss=False)
         self._scanPanel._popup = self._popup
-        self._popup.bind(on_dismiss=lambda *_: self._scanPanel.running)
         self._popup.open()
+
+    def stop_plate_run(self):
+        panel = getattr(self, '_scanPanel', None)
+        if panel is not None:
+            panel.stop_plates()
 
 
     def open_daq_widget(self):
@@ -4372,6 +4376,7 @@ class RuntimeControls(BoxLayout):
 
         # make a tracking thread
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.posHist
+        self.isTracking = True
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
         print('started tracking thread')
@@ -4470,7 +4475,6 @@ class RuntimeControls(BoxLayout):
 
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
 
-        self.isTracking = True
         prevImage = None
         scale = 1.0
         SETTLE_FLOOR = 3e-3
@@ -4481,16 +4485,16 @@ class RuntimeControls(BoxLayout):
         bench_fetch = bench_detect = bench_store = bench_convert = bench_move = bench_settle = bench_frame = 0.0
         bench_start = time.perf_counter()
 
-        while cameraActive() and self.trackingcheckbox.state == 'down':
+        while self.isTracking and cameraActive() and self.trackingcheckbox.state == 'down':
 
             wait_begin = time.perf_counter()
             wait_ready = ready_time
-            while self.trackingcheckbox.state == 'down' \
+            while self.isTracking and self.trackingcheckbox.state == 'down' \
                     and self.imageacquisitionmanager.imageRetrieveTimeStamp <= ready_time:
                 if not cameraActive():
                     return
                 time.sleep(0.001)
-            if self.trackingcheckbox.state != 'down' or not cameraActive():
+            if not self.isTracking or self.trackingcheckbox.state != 'down' or not cameraActive():
                 return
             wait_end = time.perf_counter()
 
@@ -4534,7 +4538,7 @@ class RuntimeControls(BoxLayout):
             _t_convert = time.perf_counter()
 
             # getting stage coord is slow so we will interpolate from movements
-            if self.trackingcheckbox.state != 'down' \
+            if not self.isTracking or self.trackingcheckbox.state != 'down' \
                     or getattr(app, '_hardware_teardown', False):
                 return
             movedDistances = []
@@ -4548,6 +4552,8 @@ class RuntimeControls(BoxLayout):
                 prevImage = image
 
             if abs(ystep) > minstep:
+                if not self.isTracking:
+                    return
                 if not stage.move_y(ystep, unit=units, wait_until_idle = False):
                     print('Tracking stopped because the Y move was refused or failed')
                     stage.emergency_stop()
@@ -5213,8 +5219,9 @@ class GlowTrackerApp(App):
     texture = ObjectProperty(None, force_dispatch=True, rebind=True)
     image = ObjectProperty(None, force_dispatch=True, rebind=True)
     coords = ListProperty([0, 0, 0])
-    plateCenter = ObjectProperty(None)
-    plateRadius = ObjectProperty(None)
+    plateCenter = ObjectProperty(None, allownone=True)
+    plateRadius = ObjectProperty(None, allownone=True)
+    _plate_run_active = BooleanProperty(False)
     frameBuffer = list()
 
 

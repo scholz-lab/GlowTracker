@@ -270,7 +270,6 @@ class PlateRunController:
                     raise RuntimeError('Stage movement failed; run stopped')
                 if found:
                     folder = create_visit_directory(run_dir, plate, cycle) if run_dir else None
-                    self._status(f'{plate["name"]} • Tracking', plate['id'], 'Recording' if folder else 'Tracking')
                     outcome = self._track_visit(plate, folder)
                 else:
                     outcome = 'Nothing found'
@@ -307,6 +306,72 @@ class PlateRunController:
             Clock.schedule_once(finish)
             asyncio.get_event_loop().close()
 
+    def _check_cancelled(self):
+        if self._stop_all or self._stop_scan or self._teardown_requested:
+            raise RunCancelled()
+
+    def _wait_for_preview(self, after):
+        app = App.get_running_app()
+        mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        ready_by = time.monotonic() + 10
+        while True:
+            self._check_cancelled()
+            if app.camera is None:
+                raise RuntimeError('Camera disconnected during tracking preparation')
+            error = getattr(mgr.liveviewbutton, 'acquisitionError', None)
+            if error:
+                raise RuntimeError(f'Camera preview failed: {error}')
+            if app.camera.IsGrabbing() and app.image is not None \
+                    and mgr.imageRetrieveTimeStamp > after:
+                return
+            if time.monotonic() >= ready_by:
+                raise RuntimeError('Camera preview did not deliver a fresh frame')
+            time.sleep(0.05)
+
+    def _focus_at_current_exposure(self, plate, phase):
+        app = App.get_running_app()
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        self._status(f'{plate["name"]} • Focusing at {phase} exposure…', plate['id'], 'Focusing')
+        self._ui(lambda: setattr(rc.livefocuscheckbox, 'state', 'down'))
+        deadline = time.monotonic() + plate['settings']['focus_settle_seconds']
+        try:
+            while time.monotonic() < deadline:
+                self._check_cancelled()
+                thread = getattr(rc, 'liveFocusThread', None)
+                if rc.livefocuscheckbox.state != 'down' or thread is None or not thread.is_alive():
+                    raise RuntimeError('Autofocus stopped during tracking preparation')
+                if app.camera is None or not app.camera.IsGrabbing():
+                    raise RuntimeError('Camera stopped during tracking preparation')
+                time.sleep(0.05)
+            self._check_cancelled()
+        finally:
+            if not self._teardown_requested:
+                self._ui(lambda: setattr(rc.livefocuscheckbox, 'state', 'normal'), cleanup=True)
+                self._join_workers([getattr(rc, 'liveFocusThread', None)])
+
+    def _prepare_tracking(self, plate):
+        """Focus before changing brightness, then settle at the target exposure."""
+        app = App.get_running_app()
+        mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        after = time.perf_counter()
+        self._ui(lambda: setattr(mgr.liveviewbutton, 'state', 'down'))
+        self._wait_for_preview(after)
+        self._focus_at_current_exposure(plate, 'scan')
+        settings = plate['settings']
+        previous_exposure = app.camera.ExposureTime.Value
+        def configure():
+            app.camera.ExposureTime.Value = float(settings['track_exposure'])
+            app.camera.Gain.Value = float(settings['track_gain'])
+            app.camera.AcquisitionFrameRateEnable.Value = True
+            app.camera.AcquisitionFrameRate.Value = float(settings['track_framerate'])
+        self._ui(configure)
+        # An in-flight image can still have the old brightness. Wait it out before
+        # starting a fresh autofocus controller with the new brightness baseline.
+        after = time.perf_counter() + max(previous_exposure, settings['track_exposure']) / 1e6
+        self._wait_for_preview(after)
+        self._focus_at_current_exposure(plate, 'tracking')
+        self._check_cancelled()
+
     def _track_visit(self, plate, folder):
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
@@ -314,14 +379,7 @@ class PlateRunController:
         left = app.root.ids.leftcolumn
         saved = None
         try:
-            self._ui(lambda: setattr(mgr.liveviewbutton, 'state', 'down'))
-            ready_by = time.monotonic() + 10
-            while not app.camera.IsGrabbing() or app.image is None:
-                if self._stop_all:
-                    raise RunCancelled()
-                if time.monotonic() > ready_by:
-                    raise RuntimeError('Camera preview did not start')
-                time.sleep(0.05)
+            self._prepare_tracking(plate)
             def begin():
                 rc.track_done.clear()
                 rc.isShowTrackingDialogueFirstTime = False
@@ -335,6 +393,7 @@ class PlateRunController:
                     raise RuntimeError('Tracking did not start')
                 rc.livefocuscheckbox.state = 'down'
             self._ui(begin)
+            self._status(f'{plate["name"]} • Tracking', plate['id'], 'Recording' if folder else 'Tracking')
             if folder:
                 self._recording_owned = True
                 saved = self._ui(lambda: (left.savefile, {k: app.config.get('Experiment', k)
@@ -391,6 +450,8 @@ class PlateRunController:
             rc.track_done.set()
         self._ui(stop, cleanup=True)
         self._join_workers([getattr(rc, key, None) for key in ('trackthread', 'liveFocusThread')])
+        if app.stage is not None:
+            app.stage.emergency_stop()
         def stop_camera():
             if mgr.recordbutton.state == 'down':
                 # The run owns the next camera transition; suppress auto-preview.

@@ -142,8 +142,9 @@ def test_candidate_requires_stationary_confirmation_before_tracking(rig):
     app.camera.frames.extend([0, 255, 255])
     assert panel._scan_continuous() is True
     assert app.camera.events.count('snapshot') == 2
-    assert app.camera.ExposureTime.Value == 5000
-    assert app.camera.AcquisitionFrameRate.Value == 30
+    # Brightness changes only after focusing on the detected worm.
+    assert app.camera.ExposureTime.Value is None
+    assert app.camera.AcquisitionFrameRate.Value is None
     assert not app.stage.is_busy()
     assert not app.camera.IsGrabbing()
 

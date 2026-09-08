@@ -223,10 +223,6 @@ class ContinuousScanMixin:
                 self._continuous_check(deadline)
             except ScanInterrupted:
                 return False
-            # Match the existing sequential scan's handoff to tracking.
-            app.camera.ExposureTime.Value = float(self.track_exposure)
-            app.camera.Gain.Value = float(self.track_gain)
-            app.camera.AcquisitionFrameRateEnable.Value = True
-            app.camera.AcquisitionFrameRate.Value = float(self.track_framerate)
+            # Keep scan brightness until the worm has focused in the handoff.
             app.update_coordinates(isAsync=False)
         return found

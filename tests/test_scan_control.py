@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from threading import Event
 from kivy.config import ConfigParser
 import numpy as np
 
@@ -11,6 +12,8 @@ def test_failed_z_sweep_does_not_start_tile_scan(monkeypatch):
         camera=object(),
         stage=object(),
         _hardware_teardown=False,
+        unbind_keys=lambda: None,
+        bind_keys=lambda: None,
     )
     monkeypatch.setattr(
         scan.App,
@@ -96,3 +99,29 @@ def test_search_deadline_prevents_another_tile(monkeypatch):
     panel._wait_or_stop = lambda duration: False
     assert panel._scan() is False
     assert len(targets) == 1
+
+
+def test_stop_scan_also_cancels_active_tracking(monkeypatch):
+    controls = SimpleNamespace(isTracking=True, livefocuscheckbox=SimpleNamespace(state='down'),
+                               track_done=Event())
+    stopped = []
+    def stop_stage():
+        assert not controls.isTracking
+        assert controls.livefocuscheckbox.state == 'normal'
+        stopped.append(True)
+    app = SimpleNamespace(stage=SimpleNamespace(emergency_stop=stop_stage),
+        root=SimpleNamespace(ids=SimpleNamespace(middlecolumn=SimpleNamespace(
+            ids=SimpleNamespace(runtimecontrols=controls)))))
+    monkeypatch.setattr(scan.App, 'get_running_app', staticmethod(lambda: app))
+    panel = CenterRadiusFromThreePoints.__new__(CenterRadiusFromThreePoints)
+    panel._run_generation = 0
+    panel._scan_thread = None
+    panel._plates_thread = SimpleNamespace(is_alive=lambda: True)
+    panel._resume_run = Event()
+    panel.running = True
+    panel.stop_scan()
+    assert panel._stop_scan and panel._stop_all
+    assert panel._run_generation == 1
+    assert controls.track_done.is_set()
+    assert panel._resume_run.is_set()
+    assert stopped == [True]

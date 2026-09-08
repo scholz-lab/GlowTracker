@@ -693,6 +693,11 @@ MainWindow:
         on_release: root.show_scan()
     MyButton:
         size_hint: (1, 0.1)
+        text: 'Stop plate run'
+        disabled: not app._plate_run_active
+        on_release: root.stop_plate_run()
+    MyButton:
+        size_hint: (1, 0.1)
         text: 'DAQ'
         on_release: root.open_daq_widget()
     MyLabel:

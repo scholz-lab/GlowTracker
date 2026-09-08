@@ -1,9 +1,12 @@
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 import ast
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import time
+from plate_run import PlateRunController
+import plate_run
 
 from runtime_control import (
     ManagedStageMove,
@@ -36,6 +39,55 @@ def test_tracking_cleanup_restores_roi_without_restarting_stopped_camera(grabbin
     assert ('start' in calls) is grabbing
     assert ('stop' in calls) is grabbing
     assert calls[-1] == ('hold', False)
+
+
+def test_plate_stop_joins_tracker_even_when_no_new_camera_frames_arrive(monkeypatch):
+    source = ast.parse((Path(__file__).parents[1] / 'glowtracker/GlowTracker.py').read_text())
+    cls = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'RuntimeControls')
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '_trackingLoop')
+    waiting = Event()
+    stops = []
+    def grabbing():
+        waiting.set()
+        return True
+    manager = SimpleNamespace(imageRetrieveTimeStamp=0, liveviewbutton=SimpleNamespace(state='down'),
+                              recordbutton=SimpleNamespace(state='normal'))
+    controls = SimpleNamespace(isTracking=True, trackingcheckbox=SimpleNamespace(state='down'),
+        livefocuscheckbox=SimpleNamespace(state='normal'), track_done=Event(),
+        imageacquisitionmanager=manager, ids=SimpleNamespace(imageacquisitionmanager=manager))
+    app = SimpleNamespace(camera=SimpleNamespace(IsGrabbing=grabbing),
+        config=SimpleNamespace(getboolean=lambda *args: False),
+        stage=SimpleNamespace(emergency_stop=lambda: stops.append('stop')),
+        root=SimpleNamespace(ids=SimpleNamespace(middlecolumn=SimpleNamespace(
+            ids=SimpleNamespace(runtimecontrols=controls)))))
+    namespace = {'App': SimpleNamespace(get_running_app=lambda: app), 'time': time,
+                 'List': list, 'Vec3': tuple}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), '<trackingLoop>', 'exec'), namespace)
+    errors = []
+    def track():
+        try:
+            namespace['_trackingLoop'](controls, 1, 'um', 10, 1, False, 20, 100, 'CMS', 0, 255, [])
+        except Exception as error:
+            errors.append(error)
+    controls.trackthread = Thread(target=track, daemon=True)
+    controls.trackthread.start()
+    assert waiting.wait(1)
+    monkeypatch.setattr(plate_run.App, 'get_running_app', staticmethod(lambda: app))
+    run = PlateRunController()
+    run._teardown_requested = False
+    run._ui = lambda callback, **kwargs: callback()
+    try:
+        run._quiesce_visit()
+        assert not controls.trackthread.is_alive()
+        assert not errors
+        assert controls.track_done.is_set()
+        assert controls.trackingcheckbox.state == 'normal'
+        assert manager.liveviewbutton.state == 'normal'
+        assert stops == ['stop']
+    finally:
+        controls.isTracking = False
+        controls.trackingcheckbox.state = 'normal'
+        controls.trackthread.join(1)
 
 
 class BlockingStage:

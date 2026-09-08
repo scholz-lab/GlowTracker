@@ -12,7 +12,7 @@ from kivy.app import App
 
 import Microscope_macros as macro
 import numpy as np
-from plate_run import PlateRunController
+from plate_run import PlateRunController, RunCancelled
 from plate_plan import FIELDS, validate_plate
 from platformdirs import user_config_dir
 from continuous_scan import ContinuousScanMixin
@@ -41,6 +41,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     track_gain = NumericProperty(22)
     track_framerate = NumericProperty(30)
     track_interval = NumericProperty(120)
+    focus_settle_seconds = NumericProperty(3)
     search_seconds = NumericProperty(60)
     search_passes = NumericProperty(1)
     plates = ListProperty([])
@@ -211,12 +212,15 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         self._stop_all = False
         self._teardown_requested = False
         self._run_generation += 1
-        runGeneration = self._run_generation
+        self.running = True
+        app._plate_run_active = True
+        app.unbind_keys()
 
         def worker():
             asyncio.set_event_loop(asyncio.new_event_loop())
             found = False
             cameraPrepared = False
+            final_status = 'Scan complete'
             try:
                 cameraPrepared = self._begin_scan_camera()
                 if cameraPrepared and not self._stop_scan:
@@ -225,11 +229,12 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                         found = self._scan(z= peakZ)
                 if cameraPrepared:
                     self._end_scan_camera(found)
-                if found and not self._teardown_requested:
-                    Clock.schedule_once(
-                        lambda dt: self._after_scan_found(runGeneration)
-                    )
+                if found:
+                    self._track_visit(self._ui(self._draft), None)
+            except RunCancelled:
+                final_status = 'Run stopped'
             except Exception as e:
+                final_status = f'Scan stopped: {e}'
                 print(f'scan failed: {e}')
                 if cameraPrepared:
                     try:
@@ -237,6 +242,13 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                     except Exception as restoreError:
                         print(f'restoring camera after scan failed: {restoreError}')
             finally:
+                def finish(dt):
+                    self.running = False
+                    app._plate_run_active = False
+                    self.run_status = 'Run stopped' if self._stop_all else final_status
+                    if not self._teardown_requested:
+                        app.bind_keys()
+                Clock.schedule_once(finish)
                 asyncio.get_event_loop().close()
         self._scan_thread = Thread(target= worker, daemon= True)
         self._scan_thread.start()
@@ -358,10 +370,6 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                                 break
                         if self._stop_scan or self._stop_all:
                             break
-                        app.camera.ExposureTime.Value = float(self.track_exposure)
-                        app.camera.Gain.Value = float(self.track_gain)
-                        app.camera.AcquisitionFrameRateEnable.Value = True
-                        app.camera.AcquisitionFrameRate.Value = float(self.track_framerate)
                         app.update_coordinates(isAsync= False)
                         found = True
                         break
@@ -444,40 +452,9 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
             app.camera.Gain.Value = self._cam_saved['gain']
             Clock.schedule_once(lambda dt: setattr(mrg.liveviewbutton, 'state', self._cam_saved['live']))
 
-    def _after_scan_found(self, runGeneration=None):
-        app = App.get_running_app()
-        if self._stop_scan or self._stop_all or self._teardown_requested \
-                or getattr(app, '_hardware_teardown', False) \
-                or (runGeneration is not None
-                    and runGeneration != self._run_generation):
-            return
-        rc = app.root.ids.middlecolumn.ids.runtimecontrols
-        mgr = rc.ids.imageacquisitionmanager
-        mgr.liveviewbutton.state = 'down'
-
-        def _go(dt):
-            if self._stop_scan or self._stop_all or self._teardown_requested \
-                    or getattr(app, '_hardware_teardown', False) \
-                    or (runGeneration is not None
-                        and runGeneration != self._run_generation):
-                return False
-            if app.camera is None or not app.camera.IsGrabbing():
-                return
-            h, w = app.image.shape[0], app.image.shape[1]
-            rc.trackingcheckbox.state = 'down'
-            rc.startTracking(np.array([w / 2.0, h / 2.0]), track_interval=self.track_interval)
-            rc.livefocuscheckbox.state = 'down'
-            return False
-
-        Clock.schedule_interval(_go, 0.1)
-
-
     def stop_scan(self):
-        self._run_generation += 1
-        self._stop_scan = True
-        app = App.get_running_app()
-        if app.stage is not None:
-            app.stage.emergency_stop()
+        # The scan and its tracking handoff are one cancellable operation.
+        self.stop_plates()
 
     def _find_scan_z(self, searchDistance= None, numImages= None) -> float | None:
         app = App.get_running_app()
@@ -549,8 +526,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
                                         for t in (self._scan_thread, self._plates_thread)):
             return
         self._run_generation += 1
-        self._stop_all = True
-        self.stop_scan()
+        self._stop_all = self._stop_scan = True
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
         rc.isTracking = False
@@ -559,6 +535,8 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         self.run_status = 'Stopping run…'
         if hasattr(self, '_resume_run'):
             self._resume_run.set()
+        if app.stage is not None:
+            app.stage.emergency_stop()
 
     def request_shutdown(self):
         self._run_generation += 1
@@ -571,6 +549,8 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         self._stop_scan = True
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        rc.isTracking = False
+        rc.livefocuscheckbox.state = 'normal'
         rc.track_done.set()
         if active and app.stage is not None:
             app.stage.emergency_stop()

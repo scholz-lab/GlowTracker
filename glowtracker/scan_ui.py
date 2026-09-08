@@ -140,8 +140,7 @@ def build_scan_ui(panel):
     stop = button('Stop run', panel.stop_plates)
     close = button('Close', lambda: panel._popup.dismiss())
     stop.disabled = True
-    panel.bind(running=lambda _, active: (setattr(stop, 'disabled', not active),
-                                         setattr(close, 'disabled', active)))
+    panel.bind(running=lambda _, active: setattr(stop, 'disabled', not active))
     left.add_widget(row(pause, stop, close))
 
     right = BoxLayout(orientation='vertical', size_hint_x=0.54, spacing=dp(6))
@@ -213,7 +212,8 @@ def build_plate_editor(panel):
     setup.add_widget(mode_help)
     for title, keys in (
         ('Find an animal', ('scan_z', 'scan_exposure', 'scan_gain', 'search_seconds', 'search_passes')),
-        ('Track each visit', ('track_interval', 'track_exposure', 'track_gain', 'track_framerate')),
+        ('Track each visit', ('track_interval', 'track_exposure', 'track_gain', 'track_framerate',
+                             'focus_settle_seconds')),
     ):
         setup.add_widget(label(title))
         for key in keys:
