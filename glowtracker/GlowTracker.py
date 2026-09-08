@@ -4030,6 +4030,11 @@ class RuntimeControls(BoxLayout):
     def __init__(self,  **kwargs):
         super(RuntimeControls, self).__init__(**kwargs)
         self.focus_history = []
+        self._focus_camera_lock = Lock()
+        self._focus_brightness_epoch = 0
+        self._focus_applied_epoch = 0
+        self._focus_fresh_after = 0.0
+        self.focus_batches = 0
         self.liveFocusThread = None
         self.trackthread = None
         self.focus_motion = 0
@@ -4163,6 +4168,8 @@ class RuntimeControls(BoxLayout):
             autoFocusArgs = autoFocusPID, camera, stage, dualColorMode, capturedRadius, isshowgraph, focusfps, graph_x_data, graph_y_data, graph_data_lock
 
             # Start the autofocus thread
+            self.focus_batches = 0
+            self._focus_applied_epoch = self._focus_brightness_epoch
             self.liveFocusThread = Thread(target= self._liveFocus, args= autoFocusArgs, daemon = True, name= 'LiveFocus')
 
             self.liveFocusThread.start()
@@ -4174,6 +4181,18 @@ class RuntimeControls(BoxLayout):
             self._popup.open()
             self.livefocuscheckbox.state = 'normal'
 
+
+    def set_tracking_brightness(self, exposure, gain):
+        """Change brightness without treating the resulting PV drop as defocus."""
+        camera = App.get_running_app().camera
+        with self._focus_camera_lock:
+            previous_exposure = camera.ExposureTime.Value
+            try:
+                camera.ExposureTime.Value = float(exposure)
+                camera.Gain.Value = float(gain)
+            finally:
+                self._focus_brightness_epoch += 1
+                self._focus_fresh_after = time.perf_counter() + max(previous_exposure, exposure) / 1e6
 
     def _liveFocus(self, autoFocusPID: AutoFocusPID, camera: basler.Camera, stage: Stage, dualColorMode: bool = False, capturedRadius: float = 0, isShowGraph: bool = False, fps: float = 10.0, graph_x_data: List[float] = list(), graph_y_data: List[float] = list(), graph_data_lock: Lock = None) -> None:
         """Autofocus loop to be executed inside a thread.
@@ -4193,6 +4212,7 @@ class RuntimeControls(BoxLayout):
         app: GlowTrackerApp = App.get_running_app()
         spf = 1.0 / fps
         image = None
+        last_frame = 0.0
 
         print("Focus, Err, 1st, 2nd, 3rd, dist, new pos")
 
@@ -4200,6 +4220,11 @@ class RuntimeControls(BoxLayout):
         while camera is not None and (camera.IsGrabbing() or camera.isOnHold()) and self.livefocuscheckbox.state == 'down':
 
             startTime = time.perf_counter()
+
+            frame_time = self.imageacquisitionmanager.imageRetrieveTimeStamp
+            if frame_time <= max(last_frame, self._focus_fresh_after):
+                time.sleep(min(0.01, spf))
+                continue
 
             # Get current image
             if dualColorMode:
@@ -4213,18 +4238,26 @@ class RuntimeControls(BoxLayout):
             # Get current position
             pos = app.coords[2]
 
-            # Perform one autofocus step
-            relPosZ = autoFocusPID.executePIDStep(croppedImage, pos= pos)
+            with self._focus_camera_lock:
+                if frame_time <= self._focus_fresh_after:
+                    continue
+                if self._focus_applied_epoch != self._focus_brightness_epoch:
+                    autoFocusPID.resetBrightnessReference()
+                    self._focus_applied_epoch = self._focus_brightness_epoch
+                last_frame = frame_time
+                previous_batches = len(autoFocusPID.focusLog)
+                relPosZ = autoFocusPID.executePIDStep(croppedImage, pos=pos)
+                self.focus_batches += len(autoFocusPID.focusLog) - previous_batches
 
-            if autoFocusPID.focusLog:
-                print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
+                if autoFocusPID.focusLog:
+                    print(f'PV={autoFocusPID.focusLog[-1]:.2f} best={autoFocusPID.bestFocus:.2f} step={autoFocusPID.step:.5f} dir={autoFocusPID.direction} relZ={relPosZ:.5f}')
 
-            if self.livefocuscheckbox.state != 'down' \
-                    or getattr(app, '_hardware_teardown', False):
-                break
+                if self.livefocuscheckbox.state != 'down' \
+                        or getattr(app, '_hardware_teardown', False):
+                    break
 
-            if stage.move_z(relPosZ, unit='mm', wait_until_idle= False):
-                app.coords[2] = app.coords[2] + relPosZ
+                if relPosZ and stage.move_z(relPosZ, unit='mm', wait_until_idle=False):
+                    app.coords[2] = app.coords[2] + relPosZ
 
             if isShowGraph:
                 append_new_focus_values(
@@ -4376,6 +4409,7 @@ class RuntimeControls(BoxLayout):
 
         # make a tracking thread
         track_args = minstep, units, capture_radius, binning, dark_bg, area, threshold, trackingMode, min_brightness, max_brightness, self.posHist
+        self._tracking_fresh_after = time.perf_counter() + app.camera.ExposureTime.Value / 1e6
         self.isTracking = True
         self.trackthread = Thread(target=self.tracking, args = track_args, daemon = True)
         self.trackthread.start()
@@ -4478,7 +4512,7 @@ class RuntimeControls(BoxLayout):
         prevImage = None
         scale = 1.0
         SETTLE_FLOOR = 3e-3
-        ready_time = 0.0
+        ready_time = getattr(self, '_tracking_fresh_after', 0.0)
 
         bench_window = 30
         bench_n = 0

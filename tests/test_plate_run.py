@@ -198,7 +198,8 @@ def handoff(app, monkeypatch):
     manager = Manager()
     controls = SimpleNamespace(track_done=Event(), isTracking=False,
         trackingcheckbox=SimpleNamespace(state='normal'), livefocuscheckbox=Node('focus', 'normal'),
-        ids=SimpleNamespace(imageacquisitionmanager=manager))
+        ids=SimpleNamespace(imageacquisitionmanager=manager), focus_batches=0,
+        _focus_brightness_epoch=0, _focus_applied_epoch=0, _focus_fresh_after=0)
     # Record focus transitions using the same property shape as a Kivy button.
     class Focus:
         state = property(lambda self: controls.livefocuscheckbox_node.Value,
@@ -214,43 +215,118 @@ def handoff(app, monkeypatch):
     app.root = SimpleNamespace(ids=SimpleNamespace(leftcolumn=SimpleNamespace(),
         middlecolumn=SimpleNamespace(ids=SimpleNamespace(runtimecontrols=controls))))
     app.image = np.zeros((10, 10))
-    app.config = SimpleNamespace(getboolean=lambda *args: False)
+    app.config = SimpleNamespace(getboolean=lambda *args: False, getfloat=lambda *args: 15,
+                                 getint=lambda *args: 5)
     app.camera = SimpleNamespace(IsGrabbing=lambda: manager.liveviewbutton.state == 'down',
+        ResultingFrameRate=lambda: 15,
         ExposureTime=Node('exposure', 100000), Gain=Node('gain', 30),
         AcquisitionFrameRateEnable=Node('fps_enabled', False), AcquisitionFrameRate=Node('fps', 30))
+    batch_elapsed = [0.0]
+    def brightness(exposure, gain):
+        assert controls.isTracking and controls.livefocuscheckbox.state == 'down'
+        app.camera.ExposureTime.Value = exposure
+        app.camera.Gain.Value = gain
+        controls._focus_brightness_epoch += 1
+        controls._focus_fresh_after = now[0] + 0.1
+        batch_elapsed[0] = 0
+    controls.set_tracking_brightness = brightness
+    def sleep(seconds):
+        now[0] += seconds
+        if controls.livefocuscheckbox.state == 'down' and now[0] > controls._focus_fresh_after:
+            controls._focus_applied_epoch = controls._focus_brightness_epoch
+            batch_elapsed[0] += seconds
+            if batch_elapsed[0] >= 1 / 3:
+                controls.focus_batches += 1
+                batch_elapsed[0] -= 1 / 3
+    clock.sleep = sleep
+    def quiesce():
+        run.events.append('quiesced')
+        controls.isTracking = False
+        controls.livefocuscheckbox.state = 'normal'
+    run._quiesce_visit = quiesce
     p = plate('A')
     p['settings']['track_interval'] = 1
     return run, p, controls, events, now, clock
 
 
-def test_handoff_focuses_before_and_after_exposure_then_starts_tracking(handoff):
+def test_handoff_tracks_first_and_keeps_focus_running_through_gradual_ramp(handoff):
     run, p, controls, events, now, clock = handoff
     assert PlateRunController._track_visit(run, p, None) == 'Visit complete'
-    exposure = next(e for e in events if e[0] == 'exposure')
+    exposures = [e for e in events if e[0] == 'exposure']
     started = next(e for e in events if e[0] == 'tracking')
     focus_starts = [e for e in events if e[:2] == ('focus', 'down')]
-    assert exposure[1] == 5000
-    assert exposure[2] - focus_starts[0][2] >= 3
-    assert focus_starts[1][2] > exposure[2] + 0.1  # flush the old exposure
-    assert started[2] - focus_starts[1][2] >= 3
-    assert [e[0] for e in events].index('gain') < events.index(started)
-    assert now[0] - started[2] >= 1  # preparation does not consume tracking time
+    assert len(focus_starts) == 1
+    assert started[2] < focus_starts[0][2] < exposures[0][2]
+    assert exposures[0][2] - focus_starts[0][2] >= 3
+    assert 90000 <= exposures[0][1] < 100000
+    assert exposures[-1][1] == 5000
+    assert len(exposures) > 20
+    assert exposures[-1][2] - exposures[0][2] >= p['settings']['exposure_ramp_seconds']
+    assert now[0] - exposures[-1][2] >= 4  # final settling plus full visit duration
+    assert [e for e in events if e[:2] == ('focus', 'normal')][0][2] > exposures[-1][2]
 
 
-@pytest.mark.parametrize('cancel_at', [0.1, 3.1, 4.0, 6.5])
-def test_stop_during_handoff_or_tracking_cleans_up(handoff, cancel_at):
+@pytest.mark.parametrize('cancel_at', [0.01, 1.0, 4.0, 20.0])
+def test_stop_during_initial_focus_or_ramp_cleans_up(handoff, cancel_at):
     run, p, controls, events, now, clock = handoff
+    advance = clock.sleep
     def sleep(seconds):
-        now[0] += seconds
+        advance(seconds)
         if now[0] >= cancel_at:
             run._stop_all = run._stop_scan = True
     clock.sleep = sleep
     with pytest.raises(RunCancelled):
         PlateRunController._track_visit(run, p, None)
     assert run.events[-1] == 'quiesced'
-    if cancel_at < 6:
+    assert not controls.isTracking
+    assert controls.livefocuscheckbox.state == 'normal'
+    assert all(e[2] < now[0] for e in events if e[0] == 'exposure')
+    if cancel_at < 0.05:
         assert not any(e[0] == 'tracking' for e in events)
-        assert controls.livefocuscheckbox.state == 'normal'
+
+
+def test_ramp_stops_if_autofocus_stops_producing_batches(handoff):
+    run, p, controls, events, now, clock = handoff
+    clock.sleep = lambda seconds: now.__setitem__(0, now[0] + seconds)
+    with pytest.raises(RuntimeError, match='enough fresh frames'):
+        PlateRunController._track_visit(run, p, None)
+    assert not any(e[0] == 'exposure' for e in events)
+    assert not controls.isTracking
+
+
+def test_recording_waits_for_target_exposure_and_final_focus_settling(handoff, app, tmp_path):
+    run, p, controls, events, now, clock = handoff
+    config = ConfigParser()
+    config.filename = str(tmp_path / 'settings.ini')
+    config.setdefaults('Autofocus', {'focusfps': '15', 'buffer_n': '5'})
+    config.setdefaults('DualColor', {'dualcolormode': 'false'})
+    config.setdefaults('Experiment', {'iscontinuous': '0', 'extension': 'png',
+                                     'duration': '5', 'nframes': '150'})
+    app.config = config
+    left = app.root.ids.leftcolumn
+    left.savefile = str(tmp_path)
+    left.ids = SimpleNamespace(camprops=SimpleNamespace(framerate=30))
+    recorded = []
+    class Record:
+        _state = 'normal'
+        @property
+        def state(self):
+            return self._state
+        @state.setter
+        def state(self, value):
+            self._state = value
+            if value == 'down':
+                assert controls.isTracking and controls.livefocuscheckbox.state == 'down'
+                assert app.camera.ExposureTime.Value == 5000 and app.camera.Gain.Value == 22
+                last_change = max(e[2] for e in events if e[0] == 'exposure')
+                assert now[0] - last_change >= 3
+                recorded.append(now[0])
+    controls.ids.imageacquisitionmanager.recordbutton = Record()
+    run.record_format = 'tiff'
+    assert PlateRunController._track_visit(run, p, tmp_path / 'visit') == 'Visit complete'
+    assert len(recorded) == 1
+    assert now[0] - recorded[0] >= p['settings']['track_interval']
+    assert left.savefile == str(tmp_path)
 
 
 def test_missing_fresh_frames_prevents_focus_and_tracking(handoff, monkeypatch):
@@ -259,5 +335,5 @@ def test_missing_fresh_frames_prevents_focus_and_tracking(handoff, monkeypatch):
     monkeypatch.setattr(type(manager), 'imageRetrieveTimeStamp', property(lambda self: 0))
     with pytest.raises(RuntimeError, match='fresh frame'):
         PlateRunController._track_visit(run, p, None)
-    assert not any(e[0] in ('focus', 'tracking', 'exposure') for e in events)
+    assert not any(e[0] in ('tracking', 'exposure') or e[:2] == ('focus', 'down') for e in events)
     assert run.events[-1] == 'quiesced'

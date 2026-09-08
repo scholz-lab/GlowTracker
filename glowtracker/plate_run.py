@@ -13,7 +13,7 @@ import numpy as np
 from kivy.app import App
 from kivy.clock import Clock
 
-from plate_plan import FIELDS, create_run_directory, create_visit_directory, validate_plate, visits
+from plate_plan import FIELDS, brightness_steps, create_run_directory, create_visit_directory, validate_plate, visits
 
 
 class RunCancelled(Exception):
@@ -328,48 +328,70 @@ class PlateRunController:
                 raise RuntimeError('Camera preview did not deliver a fresh frame')
             time.sleep(0.05)
 
-    def _focus_at_current_exposure(self, plate, phase):
+    def _wait_tracking_focus(self, duration):
+        """Keep tracking/focus active and allow multiple fresh focus batches."""
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
-        self._status(f'{plate["name"]} • Focusing at {phase} exposure…', plate['id'], 'Focusing')
-        self._ui(lambda: setattr(rc.livefocuscheckbox, 'state', 'down'))
-        deadline = time.monotonic() + plate['settings']['focus_settle_seconds']
-        try:
-            while time.monotonic() < deadline:
-                self._check_cancelled()
-                thread = getattr(rc, 'liveFocusThread', None)
-                if rc.livefocuscheckbox.state != 'down' or thread is None or not thread.is_alive():
-                    raise RuntimeError('Autofocus stopped during tracking preparation')
-                if app.camera is None or not app.camera.IsGrabbing():
-                    raise RuntimeError('Camera stopped during tracking preparation')
-                time.sleep(0.05)
+        target_batches = rc.focus_batches + 3  # new reference, Z step, response to that step
+        deadline = time.monotonic() + duration
+        focus_rate = min(app.config.getfloat('Autofocus', 'focusfps'), app.camera.ResultingFrameRate())
+        timeout = deadline + max(10, 6 * app.config.getint('Autofocus', 'buffer_n') / max(0.1, focus_rate))
+        while True:
             self._check_cancelled()
-        finally:
-            if not self._teardown_requested:
-                self._ui(lambda: setattr(rc.livefocuscheckbox, 'state', 'normal'), cleanup=True)
-                self._join_workers([getattr(rc, 'liveFocusThread', None)])
+            if not rc.isTracking or rc.track_done.is_set():
+                raise RuntimeError('Tracking stopped during the exposure ramp')
+            thread = getattr(rc, 'liveFocusThread', None)
+            if rc.livefocuscheckbox.state != 'down' or thread is None or not thread.is_alive():
+                raise RuntimeError('Autofocus stopped during the exposure ramp')
+            if app.camera is None or not app.camera.IsGrabbing():
+                raise RuntimeError('Camera stopped during the exposure ramp')
+            if time.monotonic() >= deadline and rc.focus_batches >= target_batches \
+                    and rc._focus_applied_epoch == rc._focus_brightness_epoch:
+                return
+            if time.monotonic() >= timeout:
+                raise RuntimeError('Autofocus did not receive enough fresh frames; exposure ramp stopped')
+            time.sleep(0.05)
 
     def _prepare_tracking(self, plate):
-        """Focus before changing brightness, then settle at the target exposure."""
+        """Follow the worm at scan brightness, then ramp while continuously focusing."""
         app = App.get_running_app()
-        mgr = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager
+        rc = app.root.ids.middlecolumn.ids.runtimecontrols
+        mgr = rc.ids.imageacquisitionmanager
         after = time.perf_counter()
         self._ui(lambda: setattr(mgr.liveviewbutton, 'state', 'down'))
         self._wait_for_preview(after)
-        self._focus_at_current_exposure(plate, 'scan')
+        def begin():
+            rc.track_done.clear()
+            rc.isShowTrackingDialogueFirstTime = False
+            rc.trackingcheckbox.state = 'down'
+            h, w = app.image.shape[:2]
+            cx = w / 2
+            if app.config.getboolean('DualColor', 'dualcolormode'):
+                cx = w * (0.75 if app.config.get('DualColor', 'mainside') == 'Right' else 0.25)
+            rc.startTracking(np.array([cx, h / 2]))
+            if not rc.isTracking:
+                raise RuntimeError('Tracking did not start')
+        self._ui(begin)
+        # Let the first cropped frame arrive before autofocus uses the tracking ROI.
+        self._wait_for_preview(time.perf_counter() + app.camera.ExposureTime.Value / 1e6)
+        self._ui(lambda: setattr(rc.livefocuscheckbox, 'state', 'down'))
         settings = plate['settings']
-        previous_exposure = app.camera.ExposureTime.Value
-        def configure():
-            app.camera.ExposureTime.Value = float(settings['track_exposure'])
-            app.camera.Gain.Value = float(settings['track_gain'])
+        self._status(f'{plate["name"]} • Tracking and focusing at scan exposure…', plate['id'], 'Focusing')
+        self._wait_tracking_focus(settings['focus_settle_seconds'])
+        steps = list(brightness_steps(app.camera.ExposureTime.Value, app.camera.Gain.Value,
+                                      settings['track_exposure'], settings['track_gain']))
+        for index, (exposure, gain) in enumerate(steps, 1):
+            self._check_cancelled()
+            self._status(f'{plate["name"]} • Tracking and focusing • exposure {exposure:g} us '
+                         f'({index}/{len(steps)})', plate['id'], 'Adjusting exposure')
+            self._ui(lambda e=exposure, g=gain: rc.set_tracking_brightness(e, g))
+            self._wait_tracking_focus(settings['exposure_ramp_seconds'] / len(steps))
+        def configure_fps():
             app.camera.AcquisitionFrameRateEnable.Value = True
             app.camera.AcquisitionFrameRate.Value = float(settings['track_framerate'])
-        self._ui(configure)
-        # An in-flight image can still have the old brightness. Wait it out before
-        # starting a fresh autofocus controller with the new brightness baseline.
-        after = time.perf_counter() + max(previous_exposure, settings['track_exposure']) / 1e6
-        self._wait_for_preview(after)
-        self._focus_at_current_exposure(plate, 'tracking')
+        self._ui(configure_fps)
+        self._status(f'{plate["name"]} • Tracking and focusing at target exposure…', plate['id'], 'Focusing')
+        self._wait_tracking_focus(settings['focus_settle_seconds'])
         self._check_cancelled()
 
     def _track_visit(self, plate, folder):
@@ -380,19 +402,6 @@ class PlateRunController:
         saved = None
         try:
             self._prepare_tracking(plate)
-            def begin():
-                rc.track_done.clear()
-                rc.isShowTrackingDialogueFirstTime = False
-                rc.trackingcheckbox.state = 'down'
-                h, w = app.image.shape[:2]
-                cx = w / 2
-                if app.config.getboolean('DualColor', 'dualcolormode'):
-                    cx = w * (0.75 if app.config.get('DualColor', 'mainside') == 'Right' else 0.25)
-                rc.startTracking(np.array([cx, h / 2]))
-                if not rc.isTracking:
-                    raise RuntimeError('Tracking did not start')
-                rc.livefocuscheckbox.state = 'down'
-            self._ui(begin)
             self._status(f'{plate["name"]} • Tracking', plate['id'], 'Recording' if folder else 'Tracking')
             if folder:
                 self._recording_owned = True

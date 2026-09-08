@@ -167,3 +167,25 @@ def test_defaults_are_the_corrected_control_law():
     assert controller.reverseOnReacquire is True
     assert controller.stepGrowth > 1.0
     assert controller.holdAtMinStep is False
+
+
+def test_dimming_rebases_focus_without_reversing_or_taking_a_coarse_z_step(monkeypatch):
+    controller = AutoFocusPID(buffer_n=2, smoothingWindow=4)
+    image = np.zeros((2, 2), dtype=np.uint8)
+    monkeypatch.setattr(autofocus, 'estimateFocus', lambda *args: 2000.0)
+    for _ in range(5):
+        controller.executePIDStep(image, 140)
+    controller.step = controller.minStepDist
+    controller.direction = -1
+    history = list(controller.focusLog)
+    controller.resetBrightnessReference()
+    monkeypatch.setattr(autofocus, 'estimateFocus', lambda *args: 14.0)
+    assert controller.executePIDStep(image, 140) == 0
+    assert controller.executePIDStep(image, 140) == 0  # learn new baseline at the same Z
+    assert controller.focusLog == history + [14.0]
+    assert controller.bestFocus == 14.0
+    assert controller.direction == -1
+    assert controller.step == controller.minStepDist
+    controller.executePIDStep(image, 140)
+    assert controller.executePIDStep(image, 140) < 0  # same controller continues focusing
+    assert controller.step < controller.coarseStep

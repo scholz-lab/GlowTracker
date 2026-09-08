@@ -17,7 +17,8 @@ FIELDS = {
     'track_gain': ('Tracking gain', 22, 0, None, False),
     'track_framerate': ('Tracking FPS', 30, 0.1, None, False),
     'track_interval': ('Track per visit (s)', 120, 1, None, False),
-    'focus_settle_seconds': ('Focus at each exposure (s)', 3, 1, None, False),
+    'focus_settle_seconds': ('Focus before/after ramp (s)', 3, 1, None, False),
+    'exposure_ramp_seconds': ('Minimum exposure ramp (s)', 20, 1, None, False),
     'search_seconds': ('Search limit (s)', 60, 1, None, False),
     'search_passes': ('Search passes', 1, 1, 100, True),
     'scan_settle': ('Settling time (s)', 0.01, 0, None, False),
@@ -80,6 +81,18 @@ def visits(plates, repeat=False):
         if not repeat:
             return
         cycle += 1
+
+
+def brightness_steps(exposure, gain, target_exposure, target_gain):
+    """Limit each exposure decrease to 10% and each gain change to 0.5."""
+    count = max(math.ceil(abs(math.log(target_exposure / exposure)) / math.log(1 / 0.9)),
+                math.ceil(abs(target_gain - gain) / 0.5))
+    for index in range(1, count + 1):
+        if index == count:
+            yield target_exposure, target_gain
+        else:
+            fraction = index / count
+            yield exposure * (target_exposure / exposure) ** fraction, gain + (target_gain - gain) * fraction
 
 
 def safe_name(name):

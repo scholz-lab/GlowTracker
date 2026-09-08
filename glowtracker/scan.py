@@ -42,6 +42,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     track_framerate = NumericProperty(30)
     track_interval = NumericProperty(120)
     focus_settle_seconds = NumericProperty(3)
+    exposure_ramp_seconds = NumericProperty(20)
     search_seconds = NumericProperty(60)
     search_passes = NumericProperty(1)
     plates = ListProperty([])

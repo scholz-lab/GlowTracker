@@ -149,6 +149,16 @@ class AutoFocusPID:
 
         self.buffer = []
         self.buffer_n = buffer_n
+        self._reference_start = 0
+        self._brightness_reset = False
+
+    def resetBrightnessReference(self):
+        """Start comparing focus at the new brightness, preserving the Z climb."""
+        self.buffer.clear()
+        self._reference_start = len(self.focusLog)
+        self._brightness_reset = True
+        self.bestFocus = 0.0
+        self.directionResetCounter = 0
 
 
     # def executePIDStep(self, image: np.ndarray, pos: float) -> float:
@@ -242,7 +252,8 @@ class AutoFocusPID:
             # Apply a linear, weighted average to PV with emphasis on recent data
             focuses = [PV]
             if self.smoothingWindow > 1:
-                focuses = self.focusLog[-(self.smoothingWindow - 1):] + focuses
+                start = max(self._reference_start, len(self.focusLog) - self.smoothingWindow + 1)
+                focuses = self.focusLog[start:] + focuses
             focuses = np.array(focuses)
 
             # Compute linear weight
@@ -255,7 +266,7 @@ class AutoFocusPID:
 
             PV = sum(focuses * weights) / sum(weights)
 
-            if len(self.focusLog) == 0:
+            if len(self.focusLog) == self._reference_start:
                 self.bestFocus = PV
                 self.directionResetCounter = 0
             else:
@@ -285,6 +296,9 @@ class AutoFocusPID:
                     self.bestFocus = max(self.bestFocus, PV)
             self.focusLog.append(PV)
             self.posLog.append(pos)
+            if self._brightness_reset:
+                self._brightness_reset = False
+                return 0.0
 
         if batch_ready and (not self.holdAtMinStep or self.step > self.minStepDist):
             U = self.step * self.direction

@@ -2,7 +2,7 @@ from itertools import islice
 
 import pytest
 
-from plate_plan import create_run_directory, create_visit_directory, parse_setting, validate_plate, visits
+from plate_plan import brightness_steps, create_run_directory, create_visit_directory, parse_setting, validate_plate, visits
 
 
 def plate(name='A', enabled=True):
@@ -49,3 +49,17 @@ def test_recordings_have_unique_run_plate_visit_directories(tmp_path):
     assert one.parent.parent == first
     with pytest.raises(FileExistsError):
         create_visit_directory(first, p, 1)
+
+
+@pytest.mark.parametrize('start,end', [((100000, 30), (5000, 22)), ((5000, 22), (100000, 30)),
+                                     ((5000, 30), (5000, 22))])
+def test_brightness_ramp_uses_small_steps_and_hits_the_exact_target(start, end):
+    steps = list(brightness_steps(*start, *end))
+    assert steps[-1] == end
+    previous = start
+    for exposure, gain in steps:
+        assert 0.9 - 1e-9 <= exposure / previous[0] <= 1 / 0.9 + 1e-9
+        assert abs(gain - previous[1]) <= 0.5 + 1e-9
+        assert min(start[0], end[0]) <= exposure <= max(start[0], end[0])
+        previous = exposure, gain
+    assert list(brightness_steps(*end, *end)) == []
