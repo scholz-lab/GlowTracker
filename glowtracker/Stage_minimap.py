@@ -8,7 +8,21 @@ from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Color, Ellipse, Line, Rectangle
 from kivy.metrics import dp
 from kivy.properties import ListProperty, StringProperty
+from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
+
+
+class StageMinimapOverlay(BoxLayout):
+    """Keep clicks and scrolling on the minimap out of the live image."""
+
+    def on_touch_down(self, touch):
+        return self.collide_point(*touch.pos) or super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        return self.collide_point(*touch.pos) or super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        return self.collide_point(*touch.pos) or super().on_touch_up(touch)
 
 
 class StageMinimap(Widget):
@@ -62,15 +76,15 @@ class StageMinimap(Widget):
     def _fit(self):
         width = max(0, self.width - dp(70))
         height = max(0, self.height - dp(34))
-        scale = min(width / self.travel_mm[0], height / self.travel_mm[1])
-        ox = self.center_x - self.travel_mm[0] * scale / 2
-        oy = self.y + dp(24) + (height - self.travel_mm[1] * scale) / 2
+        scale = min(width / self.travel_mm[1], height / self.travel_mm[0])
+        ox = self.center_x - self.travel_mm[1] * scale / 2
+        oy = self.y + dp(10) + (height - self.travel_mm[0] * scale) / 2
         return scale, ox, oy
 
     def mm_to_px(self, x, y):
-        """Display +X to the right and +Y upward, with equal scale on both axes."""
+        """Rotate clockwise: +Y points right and +X points down."""
         scale, ox, oy = self._fit()
-        return ox + x * scale, oy + y * scale
+        return ox + y * scale, oy + (self.travel_mm[0] - x) * scale
 
     @staticmethod
     def _label(text, cx, cy):
@@ -84,7 +98,8 @@ class StageMinimap(Widget):
         scale, ox, oy = self._fit()
         if scale <= 0:
             return
-        width, height = (value * scale for value in self.travel_mm)
+        width = self.travel_mm[1] * scale
+        height = self.travel_mm[0] * scale
         with self.canvas:
             Color(0.10, 0.12, 0.15, 1)
             Rectangle(pos=(ox, oy), size=(width, height))
@@ -97,11 +112,11 @@ class StageMinimap(Widget):
             Color(0.4, 0.7, 1, 1)
             Line(rectangle=(ox, oy, width, height), width=1.2)
             Color(0.85, 0.88, 0.92, 1)
-            self._label('0', ox, oy - dp(12))
-            self._label(f'{self.travel_mm[0]:g}', ox + width, oy - dp(12))
-            self._label('X', ox + width / 2, oy - dp(12))
-            self._label(f'{self.travel_mm[1]:g}', ox - dp(20), oy + height)
-            self._label('Y', ox - dp(12), oy + height / 2)
+            self._label('0', ox, oy + height + dp(12))
+            self._label(f'{self.travel_mm[1]:g}', ox + width, oy + height + dp(12))
+            self._label('Y', ox + width / 2, oy + height + dp(12))
+            self._label(f'{self.travel_mm[0]:g}', ox - dp(20), oy)
+            self._label('X', ox - dp(12), oy + height / 2)
             if self.position_mm:
                 px, py = self.mm_to_px(*self.position_mm)
                 radius = dp(4)
