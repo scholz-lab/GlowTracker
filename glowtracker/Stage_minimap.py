@@ -101,18 +101,17 @@ class StageMinimap(Widget):
         width = self.travel_mm[1] * scale
         height = self.travel_mm[0] * scale
         with self.canvas:
-            Color(0.10, 0.12, 0.15, 1)
+            Color(41 / 255, 35 / 255, 38 / 255, 1)
             Rectangle(pos=(ox, oy), size=(width, height))
-            Color(0.25, 0.29, 0.34, 1)
+            Color(64 / 255, 55 / 255, 58 / 255, 1)
             for fraction in (0.25, 0.5, 0.75):
                 Line(points=[ox + width * fraction, oy,
                              ox + width * fraction, oy + height])
                 Line(points=[ox, oy + height * fraction,
                              ox + width, oy + height * fraction])
-            Color(0.4, 0.7, 1, 1)
+            Color(142 / 255, 0, 69 / 255, 1)
             Line(rectangle=(ox, oy, width, height), width=1.2)
-            Color(0.85, 0.88, 0.92, 1)
-            self._label('0', ox, oy + height + dp(12))
+            Color(0.90, 0.86, 0.88, 1)
             self._label(f'{self.travel_mm[1]:g}', ox + width, oy + height + dp(12))
             self._label('Y', ox + width / 2, oy + height + dp(12))
             self._label(f'{self.travel_mm[0]:g}', ox - dp(20), oy)
@@ -120,6 +119,8 @@ class StageMinimap(Widget):
             if self.position_mm:
                 px, py = self.mm_to_px(*self.position_mm)
                 radius = dp(4)
-                Color(1, 0.65, 0.15, 1)
+                Color(185 / 255, 76 / 255, 137 / 255, 1)
                 Ellipse(pos=(px - radius, py - radius),
                         size=(radius * 2, radius * 2))
+                Color(0.96, 0.90, 0.93, 1)
+                Line(circle=(px, py, radius), width=1)

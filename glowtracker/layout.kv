@@ -755,27 +755,10 @@ MainWindow:
             orientation: 'vertical'
             size_hint: None, None
             width: min(dp(230), max(0, stencil.width - dp(16)))
-            height: min(dp(205), max(0, stencil.height - dp(16)))
+            height: min(dp(163), max(0, stencil.height - dp(16)))
             pos: stencil.right - self.width - dp(8), stencil.y + dp(8)
-            canvas.before:
-                Color:
-                    rgba: 0.08, 0.09, 0.11, 0.92
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [dp(6)]
-            Label:
-                text: 'XY Minimap (mm)'
-                font_size: sp(13)
-                size_hint_y: None
-                height: dp(22)
             StageMinimap:
                 id: stage_minimap
-            Label:
-                text: stage_minimap.status_text
-                font_size: sp(11)
-                size_hint_y: None
-                height: dp(20)
 
     GridLayout:
         cols: 2
