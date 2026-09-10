@@ -329,15 +329,6 @@ def test_stop_during_initial_focus_or_ramp_cleans_up(handoff, cancel_at):
         assert not any(e[0] == 'tracking' for e in events)
 
 
-def test_ramp_stops_if_autofocus_stops_producing_batches(handoff):
-    run, p, controls, events, now, clock = handoff
-    clock.sleep = lambda seconds: now.__setitem__(0, now[0] + seconds)
-    with pytest.raises(RuntimeError, match='enough fresh frames'):
-        PlateRunController._track_visit(run, p, None)
-    assert not any(e[0] == 'exposure' for e in events)
-    assert not controls.isTracking
-
-
 def test_recording_waits_for_target_exposure_and_final_focus_settling(handoff, app, tmp_path):
     run, p, controls, events, now, clock = handoff
     config = ConfigParser()

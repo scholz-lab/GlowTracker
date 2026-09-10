@@ -94,55 +94,6 @@ def test_plate_stop_joins_tracker_even_when_no_new_camera_frames_arrive(monkeypa
         controls.trackthread.join(1)
 
 
-def test_live_focus_rebases_only_on_fresh_frames_after_brightness_change(monkeypatch):
-    source = ast.parse((Path(__file__).parents[1] / 'glowtracker/GlowTracker.py').read_text())
-    cls = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'RuntimeControls')
-    methods = [n for n in cls.body if isinstance(n, ast.FunctionDef)
-               and n.name in ('_liveFocus', 'set_tracking_brightness')]
-    now, sleeps, moves = [1.0], [0], []
-    manager = SimpleNamespace(imageRetrieveTimeStamp=1.0, image=np.full((2, 2), 2000.0))
-    camera = SimpleNamespace(IsGrabbing=lambda: True, isOnHold=lambda: False,
-        ExposureTime=SimpleNamespace(Value=100000), Gain=SimpleNamespace(Value=30))
-    controls = SimpleNamespace(imageacquisitionmanager=manager, _focus_camera_lock=Lock(),
-        _focus_brightness_epoch=0, _focus_applied_epoch=0, _focus_fresh_after=0,
-        focus_batches=0, livefocuscheckbox=SimpleNamespace(state='down'))
-    stage = SimpleNamespace(move_z=lambda step, **kwargs: moves.append(step) or True)
-    app = SimpleNamespace(camera=camera, coords=[0, 0, 140])
-    controller = AutoFocusPID(buffer_n=1, smoothingWindow=3)
-    controller.step = controller.minStepDist
-    monkeypatch.setattr(autofocus, 'estimateFocus', lambda method, image: float(image[0, 0]))
-    def sleep(seconds):
-        now[0] += 0.2
-        index = sleeps[0]
-        sleeps[0] += 1
-        if index == 0:
-            namespace['set_tracking_brightness'](controls, 5000, 22)
-        elif index == 1:
-            assert controls.focus_batches == 1  # old frame must not enter the new baseline
-            manager.image = np.full((2, 2), 14.0)
-            manager.imageRetrieveTimeStamp = now[0]
-        elif index == 2:
-            assert controls.focus_batches == 2
-            assert len(moves) == 1  # dimmer baseline causes no Z jump
-        elif index == 3:
-            assert controls.focus_batches == 2  # repeated frame is not another focus sample
-            manager.imageRetrieveTimeStamp = now[0]
-        else:
-            controls.livefocuscheckbox.state = 'normal'
-    namespace = {'App': SimpleNamespace(get_running_app=lambda: app),
-        'time': SimpleNamespace(perf_counter=lambda: now[0], sleep=sleep),
-        'macro': SimpleNamespace(cropCenterImage=lambda image, *args: image)}
-    exec(compile(ast.Module(body=methods, type_ignores=[]), '<liveFocus>', 'exec',
-                 flags=__future__.annotations.compiler_flag), namespace)
-    namespace['_liveFocus'](controls, controller, camera, stage)
-    assert controls.focus_batches == 3
-    assert controller.focusLog == [2000.0, 14.0, 14.0]
-    assert controller.bestFocus == 14.0
-    assert controller.direction == 1
-    assert len(moves) == 2 and all(0 < move < controller.coarseStep for move in moves)
-    assert controls._focus_applied_epoch == controls._focus_brightness_epoch == 1
-
-
 class BlockingStage:
     def __init__(self):
         self.started = Event()

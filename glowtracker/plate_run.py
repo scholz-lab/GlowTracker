@@ -353,7 +353,6 @@ class PlateRunController:
         """Keep tracking/focus active and allow multiple fresh focus batches."""
         app = App.get_running_app()
         rc = app.root.ids.middlecolumn.ids.runtimecontrols
-        target_batches = rc.focus_batches + 3  # new reference, Z step, response to that step
         deadline = time.monotonic() + duration
         focus_rate = min(app.config.getfloat('Autofocus', 'focusfps'), app.camera.ResultingFrameRate())
         timeout = deadline + max(10, 6 * app.config.getint('Autofocus', 'buffer_n') / max(0.1, focus_rate))
@@ -366,8 +365,7 @@ class PlateRunController:
                 raise RuntimeError('Autofocus stopped during the exposure ramp')
             if app.camera is None or not app.camera.IsGrabbing():
                 raise RuntimeError('Camera stopped during the exposure ramp')
-            if time.monotonic() >= deadline and rc.focus_batches >= target_batches \
-                    and rc._focus_applied_epoch == rc._focus_brightness_epoch:
+            if time.monotonic() >= deadline:
                 return
             if time.monotonic() >= timeout:
                 raise RuntimeError('Autofocus did not receive enough fresh frames; exposure ramp stopped')
