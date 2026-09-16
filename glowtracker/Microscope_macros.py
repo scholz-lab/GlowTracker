@@ -1351,7 +1351,12 @@ class IntensitySweeper:
         self.midZ = None
 
 
-    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', stopRequested=None) -> None:
+    def sweep(self, camera: basler.Camera, stage: zaber.Stage, zStart: float, zEnd: float, numImages: int, dualColorMode: bool = False, dualColorModeMainSide: str = 'Right', stopRequested=None, onImage=None) -> None:
+        """Take numImages photos between zStart and zEnd and record the mean brightness of each.
+
+        onImage (callable, optional): called as onImage(index, pos_z, image) after every photo,
+            e.g. to save the frames for later analysis. Exceptions in it abort the sweep.
+        """
         if numImages < 1:
             raise ValueError('numImages must be at least 1')
 
@@ -1389,6 +1394,9 @@ class IntensitySweeper:
                         image = image[:, w//2:]
 
                 df.iloc[i] = [currentPos[2], np.mean(image)]
+
+                if onImage is not None:
+                    onImage(i, currentPos[2], image)
 
                 if i + 1 < numImages:
                     currentPos[2] = currentPos[2] + stepSize_z

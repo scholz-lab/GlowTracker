@@ -1036,9 +1036,36 @@ class IntensitySweepCalibration(BoxLayout):
 
         intensitySweeper = macro.IntensitySweeper()
 
+        # Save the raw sweep next to the recordings so it can be re-plotted later:
+        #   <exppath>/z_sweeps/<timestamp>/sweep.csv, plot.png and one downscaled frame per Z.
+        stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        sweepDir = os.path.join(app.root.ids.leftcolumn.savefile or os.getcwd(), 'z_sweeps', stamp)
+        framesDir = os.path.join(sweepDir, 'frames')
         try:
-            intensitySweeper.sweep(camera, stage, zStart, zEnd, numImages, dualColorMode, mainSide)
-            self.ids.intensitysweepplot.texture = imageToTexture(intensitySweeper.genPlot())
+            os.makedirs(framesDir, exist_ok=True)
+        except OSError as e:
+            print(f'Could not create {sweepDir}: {e}')
+            framesDir = None
+
+        def saveFrame(index: int, posZ: float, image: np.ndarray) -> None:
+            if framesDir is None:
+                return
+            small = image[::4, ::4] if image.ndim == 2 else image[::4, ::4, ...]
+            cv2.imwrite(os.path.join(framesDir, f'{index:03d}_z{posZ:.4f}.png'), small)
+
+        try:
+            intensitySweeper.sweep(camera, stage, zStart, zEnd, numImages, dualColorMode, mainSide, onImage=saveFrame)
+            plotImage = intensitySweeper.genPlot()
+            self.ids.intensitysweepplot.texture = imageToTexture(plotImage)
+            if framesDir is not None:
+                with open(os.path.join(sweepDir, 'sweep.csv'), 'w') as f:
+                    f.write(f'# exposure_us {camera.ExposureTime()}\n# gain {camera.Gain()}\n')
+                    f.write(f'# dualcolor {dualColorMode} {mainSide}\n')
+                    f.write(f'# peak_z {intensitySweeper.peakZ}\n# zero_deriv_z {intensitySweeper.zeroDerivZ}\n')
+                    f.write(f'# mid_z {intensitySweeper.midZ}\n')
+                    intensitySweeper.dataFrame.to_csv(f, index=False, lineterminator='\n')
+                cv2.imwrite(os.path.join(sweepDir, 'plot.png'), cv2.cvtColor(plotImage, cv2.COLOR_RGB2BGR))
+                print(f'Z sweep saved to {sweepDir}')
         except Exception as e:
             print(f'Failed to run intensity sweep: {e}')
 
