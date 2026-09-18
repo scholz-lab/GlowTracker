@@ -1174,7 +1174,7 @@ MainWindow:
             size: '100dp', '40dp'
             id: mode
             text: 'Off'
-            values: 'Off', 'Sequencer', 'StageProgram', 'Reversal'
+            values: 'Off', 'Sequencer', 'StageProgram', 'Reversal', 'Plugin'
             on_text: root.updateMode()
             on_kv_post: self.text = app.config.get('DaqControl', 'mode')
 
@@ -1203,6 +1203,89 @@ MainWindow:
 
         ReversalWidget:
             id: reversalwidget
+
+    TabbedPanelItem:
+        text: 'Plugin'
+
+        PluginWidget:
+            id: pluginwidget
+
+
+<PluginWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    padding: dp(6)
+    spacing: dp(6)
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(36)
+        spacing: dp(4)
+
+        TextInput:
+            id: pluginfile
+            hint_text: 'Path to plugin .py file'
+            multiline: False
+            size_hint_x: 0.8
+
+        Button:
+            text: 'Browse'
+            size_hint_x: 0.2
+            on_release: root.openLoadPluginWidget()
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(36)
+        spacing: dp(4)
+
+        Button:
+            text: 'Start'
+            on_release: root.startPlugin()
+
+        Button:
+            text: 'Stop'
+            on_release: root.stopPlugin()
+
+        Button:
+            text: 'Reload'
+            on_release: root.reloadPlugin()
+
+    Label:
+        id: pluginstatus
+        text: ''
+        size_hint_y: None
+        height: dp(64)
+        halign: 'left'
+        valign: 'top'
+        text_size: self.width, None
+        font_size: '13sp'
+
+    ScrollView:
+        do_scroll_x: False
+
+        Label:
+            id: pluginerror
+            text: ''
+            size_hint_y: None
+            height: max(self.texture_size[1], dp(20))
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            color: 1, 0.45, 0.45, 1
+            font_size: '12sp'
+
+    Label:
+        text: 'The plugin file defines Controller.update(state, scope). See examples/plugins/README.md. Starting switches the DAQ mode to Plugin.'
+        size_hint_y: None
+        height: dp(40)
+        halign: 'left'
+        valign: 'middle'
+        text_size: self.width, None
+        font_size: '12sp'
+        color: 0.7, 0.7, 0.7, 1
 
 
 <SequencerWidget>:

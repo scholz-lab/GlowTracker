@@ -34,3 +34,6 @@ pip-wheel-metadata/
 *.part.tiff
 *-basler_*.tiff
 *-coords.txt
+
+# Claude Code local settings
+.claude/

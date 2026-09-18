@@ -9,15 +9,20 @@ from typing import List
 from Microscope_macros import Vertex2D, Exterior, computeAngleBetweenTwo2DVecs
 import numpy as np
 import math
+import threading
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
+
+MAX_VOLTAGE = 4.95
+
 
 class DAQMode(Enum):
     Off = 'Off'
     Sequencer = 'Sequencer'
     StageProgram = 'StageProgram'
     Reversal = 'Reversal'
+    Plugin = 'Plugin'       # a user plugin (script_api.PluginHost) owns the outputs
 
 
 class SequencerMode(Enum):
@@ -73,6 +78,9 @@ class DAQControl():
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
         self.reversalDetector: ReversalDetector = ReversalDetector()
         self.currentVoltage: float = 0
+        # Serializes USB traffic: the acquisition thread (built-in modes) and a plugin thread
+        # may both drive the outputs.
+        self._io_lock = threading.RLock()
 
 
     def isConnected(self) -> bool:
@@ -84,37 +92,38 @@ class DAQControl():
             self.currentVoltage = 0
             return True
 
-        try:
-            dac0Val = self.daq.voltageToDACBits(
-                volts=0.0, dacNumber=0, is16Bits=False
-            )
-            dac1Val = self.daq.voltageToDACBits(
-                volts=0.0, dacNumber=1, is16Bits=False
-            )
-            self.daq.getFeedback(
-                u3.DAC0_8(dac0Val),
-                u3.DAC1_8(dac1Val),
-            )
-            return True
-        except Exception as e:
-            print(f'Setting DAQ outputs to zero failed: {e}')
-            safe = True
-            for dacNumber, commandType in ((0, u3.DAC0_8), (1, u3.DAC1_8)):
-                try:
-                    value = self.daq.voltageToDACBits(
-                        volts=0.0, dacNumber=dacNumber, is16Bits=False
-                    )
-                    self.daq.getFeedback(commandType(value))
-                except Exception as channel_error:
-                    safe = False
-                    print(
-                        f'Setting DAQ{dacNumber} to zero failed: '
-                        f'{channel_error}'
-                    )
-            return safe
-        finally:
-            self.sequnceDictRunning.clear()
-            self.currentVoltage = 0
+        with self._io_lock:
+            try:
+                dac0Val = self.daq.voltageToDACBits(
+                    volts=0.0, dacNumber=0, is16Bits=False
+                )
+                dac1Val = self.daq.voltageToDACBits(
+                    volts=0.0, dacNumber=1, is16Bits=False
+                )
+                self.daq.getFeedback(
+                    u3.DAC0_8(dac0Val),
+                    u3.DAC1_8(dac1Val),
+                )
+                return True
+            except Exception as e:
+                print(f'Setting DAQ outputs to zero failed: {e}')
+                safe = True
+                for dacNumber, commandType in ((0, u3.DAC0_8), (1, u3.DAC1_8)):
+                    try:
+                        value = self.daq.voltageToDACBits(
+                            volts=0.0, dacNumber=dacNumber, is16Bits=False
+                        )
+                        self.daq.getFeedback(commandType(value))
+                    except Exception as channel_error:
+                        safe = False
+                        print(
+                            f'Setting DAQ{dacNumber} to zero failed: '
+                            f'{channel_error}'
+                        )
+                return safe
+            finally:
+                self.sequnceDictRunning.clear()
+                self.currentVoltage = 0
 
 
     def close(self) -> bool:
@@ -160,9 +169,35 @@ class DAQControl():
     def setDAC1(self, volts: float) -> None:
         if not self.isConnected():
             return
-        volts = max(min(volts, 4.95), 0)
-        dac1Val = self.daq.voltageToDACBits(volts= volts, dacNumber= 1, is16Bits= False)
-        self.daq.getFeedback(u3.DAC1_8(dac1Val))
+        volts = max(min(volts, MAX_VOLTAGE), 0)
+        with self._io_lock:
+            dac1Val = self.daq.voltageToDACBits(volts= volts, dacNumber= 1, is16Bits= False)
+            self.daq.getFeedback(u3.DAC1_8(dac1Val))
+
+
+    def set_voltage(self, volts: float) -> float:
+        """Drive both outputs to ``volts`` (clamped to [0, MAX_VOLTAGE]) and return the value applied.
+
+        Used by user plugins. Without a connected DAQ the request is only recorded in
+        ``currentVoltage`` so plugins can be dry-run. Unchanged values are not re-sent.
+        """
+        volts = float(volts)
+        if not math.isfinite(volts):
+            raise ValueError('voltage must be finite')
+        volts = max(min(volts, MAX_VOLTAGE), 0.0)
+
+        if not self.isConnected():
+            self.currentVoltage = volts
+            return volts
+
+        if math.isclose(volts, self.currentVoltage):
+            return self.currentVoltage
+
+        if math.isclose(volts, 0.0):
+            self._executeCommand(['off'], verbose= False)
+        else:
+            self._executeCommand(['on', volts], verbose= False)
+        return self.currentVoltage
 
 
     def parseTextScript(self, text: str) -> None:
@@ -255,6 +290,10 @@ class DAQControl():
         elif self.daqMode == DAQMode.Reversal:
             self.updateReversalDetection(posHist)
 
+        elif self.daqMode == DAQMode.Plugin:
+            # The plugin host drives the outputs from its own thread.
+            return
+
 
     def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
 
@@ -337,7 +376,7 @@ class DAQControl():
             self._executeCommand(frameCommand= ['on', vol])
 
 
-    def _executeCommand(self, frameCommand: list) -> None:
+    def _executeCommand(self, frameCommand: list, verbose: bool = True) -> None:
 
         command: list = frameCommand[0]
 
@@ -349,24 +388,28 @@ class DAQControl():
             vol = frameCommand[1]
 
             # TODO: This should be in the setting to support High-voltage DAQ
-            # Clip to 0, 4.95
-            vol = max( min( vol, 4.95 ), 0 )
+            # Clip to 0, MAX_VOLTAGE
+            vol = max( min( vol, MAX_VOLTAGE ), 0 )
 
-            print(f"Light on {vol} vol")
+            if verbose:
+                print(f"Light on {vol} vol")
 
-            dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
-            dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
-            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
-            self.currentVoltage = vol
+            with self._io_lock:
+                dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
+                dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
+                self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+                self.currentVoltage = vol
 
         elif command == 'off':
 
-            print(f"Light off")
+            if verbose:
+                print(f"Light off")
 
-            dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
-            dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
-            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
-            self.currentVoltage = 0
+            with self._io_lock:
+                dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
+                dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
+                self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+                self.currentVoltage = 0
 
 
 @dataclass

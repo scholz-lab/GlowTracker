@@ -83,6 +83,7 @@ import asyncio
 import datetime
 import json
 import time
+import traceback
 from threading import Thread, Lock
 # from multiprocessing.pool import ThreadPool
 # from functools import partial
@@ -111,6 +112,7 @@ import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
 from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
+from script_api import PluginHost, WormState, worm_position_mm, trail_velocity
 
 #
 # Math
@@ -1115,6 +1117,7 @@ class DAQControlTabPanel(TabbedPanel):
         self.ids.sequencerwidget.init()
         self.ids.stageprogramwidget.init()
         self.ids.reversalwidget.init()
+        self.ids.pluginwidget.init()
 
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1127,6 +1130,138 @@ class DAQControlTabPanel(TabbedPanel):
         self.ids.sequencerwidget.setCloseCallback( closeCallback )
         self.ids.stageprogramwidget.setCloseCallback( closeCallback )
         self.ids.reversalwidget.setCloseCallback( closeCallback )
+        self.ids.pluginwidget.setCloseCallback( closeCallback )
+
+
+class PluginWidget(BoxLayout):
+    """DAQ > Plugin tab: load a user plugin file and start/stop/reload the app-wide PluginHost.
+
+    The host itself lives on the app (``app.pluginHost``) so the plugin keeps running after this
+    popup is closed.
+    """
+    closeCallback = ObjectProperty(None)
+
+    def init(self):
+        self.app: GlowTrackerApp = App.get_running_app()
+        self._popup: Popup | None = None
+        self.ids.pluginfile.text = self.app.config.get('DaqControl', 'pluginscript')
+        self._statusEvent = Clock.schedule_interval(self._refreshStatus, 0.25)
+        self.bind(parent= self._onParentChanged)
+        self._refreshStatus(0)
+
+
+    def _onParentChanged(self, instance, parent) -> None:
+        if parent is None and self._statusEvent is not None:
+            self._statusEvent.cancel()
+            self._statusEvent = None
+
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        self.closeCallback = closeCallback
+
+
+    def openLoadPluginWidget(self):
+        loadWidget = LoadScriptWidget(load= self._loadPluginWidgetCallback)
+        current = self.ids.pluginfile.text.strip()
+        if current:
+            loadWidget.ids.filechooser.path = os.path.dirname(os.path.abspath(current))
+
+        self._popup = Popup(title= "Load plugin file", content= loadWidget,
+            size_hint= (0.9, 0.9), auto_dismiss= False)
+        loadWidget.cancel = self._popup.dismiss
+        self._popup.open()
+
+
+    def _loadPluginWidgetCallback(self, selection: list[str]):
+        if self._popup is not None:
+            self._popup.dismiss()
+        if len(selection) == 0:
+            return
+        self.setPluginPath(selection[0])
+
+
+    def setPluginPath(self, filePath: str) -> None:
+        filePath = os.path.abspath(filePath)
+        self.ids.pluginfile.text = filePath
+        self.app.config.set('DaqControl', 'pluginscript', filePath)
+        self.app.config.write()
+
+
+    def _selectPluginMode(self) -> None:
+        """Switch the DAQ mode to Plugin, through the spinner if this tab lives inside the DAQ popup."""
+        holder = self.parent
+        while holder is not None and not isinstance(holder, DAQControlTabPanelHolder):
+            holder = holder.parent
+        if holder is not None:
+            holder.ids.mode.text = DAQMode.Plugin.value
+        else:
+            self.app.config.set('DaqControl', 'mode', DAQMode.Plugin.value)
+            self.app.config.write()
+            self.app.daqControl.daqMode = DAQMode.Plugin
+
+
+    def startPlugin(self) -> None:
+        host = self.app.pluginHost
+        path = self.ids.pluginfile.text.strip()
+        if not path:
+            self.ids.pluginstatus.text = 'Choose a plugin file first'
+            return
+        if host.is_running():
+            self.ids.pluginstatus.text = 'Plugin already running'
+            return
+        try:
+            self.setPluginPath(path)
+            host.load(path)
+        except Exception:
+            host.status = 'error'
+            host.last_error = traceback.format_exc()
+            self._refreshStatus(0)
+            return
+
+        self._selectPluginMode()
+        host.start()
+        self._refreshStatus(0)
+
+
+    def stopPlugin(self) -> None:
+        self.app.pluginHost.stop()
+        self._refreshStatus(0)
+
+
+    def reloadPlugin(self) -> None:
+        host = self.app.pluginHost
+        path = self.ids.pluginfile.text.strip()
+        try:
+            if path and path != host.path:
+                self.setPluginPath(path)
+                wasRunning = host.is_running()
+                host.stop()
+                host.load(path)
+                if wasRunning:
+                    host.start()
+            else:
+                host.reload()
+        except Exception:
+            host.status = 'error'
+            host.last_error = traceback.format_exc()
+        self._refreshStatus(0)
+
+
+    def _refreshStatus(self, dt) -> None:
+        host = getattr(self.app, 'pluginHost', None)
+        if host is None or 'pluginstatus' not in self.ids:
+            return
+        daq = self.app.daqControl
+        daqText = 'DAQ connected' if daq.isConnected() else 'DAQ not connected (dry run)'
+        modeText = f'mode {daq.daqMode.value}'
+        line = f'{host.status}  |  frames {host.frames_processed}  |  update {host.last_update_ms:.1f} ms'
+        line += f'  |  {daq.currentVoltage:.2f} V  |  {daqText}, {modeText}'
+        if host.log_path:
+            line += f'\nlog: {host.log_path}'
+        if host.message:
+            line += f'\n{host.message}'
+        self.ids.pluginstatus.text = line
+        self.ids.pluginerror.text = host.last_error or ''
 
 
 class SequencerWidget(BoxLayout):
@@ -2189,6 +2324,11 @@ class ImageAcquisitionButton(ToggleButton):
         # Update display frame value
         self.runtimeControls.framecounter.value += 1
 
+        # Wake the user plugin (if any) for this frame
+        pluginHost = self.app.pluginHost
+        if pluginHost is not None:
+            pluginHost.notify_frame()
+
         # Update live analysis data
         self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(imageAcquisitionManager.liveAnalysisData)
 
@@ -2400,7 +2540,8 @@ class RecordButton(ImageAcquisitionButton):
         self.saveAcknowledgements = None
 
         try:
-            if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
+            if self.app.daqControl.isConnected() \
+                    and self.app.daqControl.daqMode not in (DAQMode.Off, DAQMode.Plugin):
                 self.app.daqControl.start(np.array(self.app.coords[:2]))
 
             self.initRecordingParams()
@@ -2957,8 +3098,9 @@ class RecordButton(ImageAcquisitionButton):
         except Exception as e:
             print(f'Restoring acquisition buttons failed: {e}')
 
-        # Reset the DAQ state
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
+        # Reset the DAQ state (a running plugin keeps owning the outputs)
+        if self.app.daqControl.isConnected() \
+                and self.app.daqControl.daqMode not in (DAQMode.Off, DAQMode.Plugin):
             try:
                 self.app.daqControl.reset()
             except Exception as e:
@@ -3053,9 +3195,10 @@ class RecordButton(ImageAcquisitionButton):
             self.camera.setIsOnHold(True)
 
 
-        # Trigger DAQ Control command
+        # Trigger DAQ Control command (Plugin mode is driven by app.pluginHost instead)
         # Actually, is framecounter.value effected when frame skip?
-        if self.app.daqControl.isConnected() and self.app.daqControl.daqMode != DAQMode.Off:
+        if self.app.daqControl.isConnected() \
+                and self.app.daqControl.daqMode not in (DAQMode.Off, DAQMode.Plugin):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
@@ -5272,8 +5415,148 @@ class GlowTrackerApp(App):
         self.camera: basler.Camera | None = None
         self.stage: Stage = Stage(None)
         self.daqControl: DAQControl = DAQControl()
+        self.pluginHost: PluginHost | None = None
         self.updateFpsEvent = None
         self._hardware_teardown = False
+
+
+    #
+    # User plugin (DAQ > Plugin tab). Providers below run on the plugin thread and only read
+    # app state or schedule UI work on the main thread; see script_api.PluginHost.
+    #
+    def _createPluginHost(self) -> PluginHost:
+        try:
+            framerate = self.config.getfloat('Experiment', 'framerate')
+            budget = max(0.05, 2.0 / framerate) if framerate > 0 else 0.1
+        except Exception:
+            budget = 0.1
+        return PluginHost(
+            state_provider= self._pluginState,
+            frame_provider= self._pluginFrame,
+            daq_getter= lambda: self.daqControl,
+            stage_getter= self._pluginStage,
+            moves_blocked_reason= self._pluginMovesBlockedReason,
+            recording_control= self._pluginRecordingControl,
+            log_dir_getter= self._pluginLogDir,
+            update_budget_s= budget,
+        )
+
+
+    def _pluginRuntimeControls(self):
+        root = self.root
+        if root is None:
+            return None
+        return root.ids.middlecolumn.ids.runtimecontrols
+
+
+    def _pluginState(self) -> WormState | None:
+        rtc = self._pluginRuntimeControls()
+        if rtc is None:
+            return None
+        manager = rtc.ids.imageacquisitionmanager
+        image = manager.image
+
+        stage_xy = (float(self.coords[0]), float(self.coords[1]))
+        is_tracking = bool(rtc.isTracking)
+
+        trail = np.empty((0, 2), dtype=float)
+        cms_offset = (0.0, 0.0)
+        if is_tracking:
+            if rtc.cmsOffset_x is not None and rtc.cmsOffset_y is not None:
+                cms_offset = (float(rtc.cmsOffset_x), float(rtc.cmsOffset_y))
+            try:
+                history = np.array(list(rtc.posHist), dtype=float)
+                if history.ndim == 2 and history.shape[1] >= 2:
+                    trail = history[:, :2]
+            except Exception:
+                pass
+
+        unit = self.config.get('Calibration', 'step_units')
+        unit_to_mm = {'mm': 1.0, 'um': 0.001}.get(unit, 0.001)
+        worm_xy = worm_position_mm(stage_xy, cms_offset, self.imageToStageMat, unit_to_mm) \
+            if is_tracking else stage_xy
+
+        detector = self.daqControl.reversalDetector
+        if detector.trailLimit < 2:
+            self._configureReversalDetector(detector)
+        is_reversing = bool(detector.detectReversal(trail)) if len(trail) > 1 else False
+
+        return WormState(
+            frame= int(rtc.framecounter.value),
+            time_s= float(manager.currentTime - manager.startTime),
+            wall_time= time.time(),
+            stage_xy= stage_xy,
+            worm_xy= worm_xy,
+            cms_offset_px= cms_offset,
+            trail= trail,
+            velocity= trail_velocity(trail),
+            is_reversing= is_reversing,
+            is_tracking= is_tracking,
+            is_recording= manager.recordbutton.state == 'down',
+            voltage= float(self.daqControl.currentVoltage),
+            image_shape= tuple(image.shape) if image is not None else (),
+        )
+
+
+    def _configureReversalDetector(self, detector) -> None:
+        """Populate the reversal detector from config (normally done when the DAQ connects)."""
+        try:
+            detector.animalLength_mm = self.config.getfloat('DaqControl', 'animallength') * 1e-3
+            detector.trailLimit = self.config.getint('DaqControl', 'traillimit')
+            detector.velocityHistoryPercentage = self.config.getfloat('DaqControl', 'velocityhistorypercentage')
+            detector.reversalThresholdRadian = self.config.getfloat('DaqControl', 'reversalthresholdradian')
+            detector.reversalVoltage = self.config.getfloat('DaqControl', 'reversalvoltage')
+            detector.forwardVoltage = self.config.getfloat('DaqControl', 'forwardvoltage')
+        except Exception as e:
+            print(f'Loading reversal detector settings failed: {e}')
+
+
+    def _pluginFrame(self) -> np.ndarray | None:
+        rtc = self._pluginRuntimeControls()
+        if rtc is None:
+            return None
+        manager = rtc.ids.imageacquisitionmanager
+        if self.config.getboolean('DualColor', 'dualcolormode'):
+            return manager.dualColorMainSideImage
+        return manager.image
+
+
+    def _pluginStage(self) -> Stage | None:
+        stage = self.stage
+        if stage is None or getattr(stage, 'connection', None) is None:
+            return None
+        return stage
+
+
+    def _pluginMovesBlockedReason(self) -> str | None:
+        if self._hardware_teardown:
+            return 'application is shutting down'
+        rtc = self._pluginRuntimeControls()
+        if rtc is not None and rtc.isTracking:
+            return 'tracking is active (stop tracking to move the stage from a plugin)'
+        if self._plate_run_active:
+            return 'a plate run is active'
+        root = self.root
+        if root is not None:
+            goTo = root.ids.leftcolumn.ids.gotocontrols
+            if goTo.is_active():
+                return 'a Go To move is active'
+        return None
+
+
+    def _pluginRecordingControl(self, start: bool) -> None:
+        rtc = self._pluginRuntimeControls()
+        if rtc is None or self._hardware_teardown:
+            return
+        recordButton = rtc.ids.imageacquisitionmanager.recordbutton
+        Clock.schedule_once(lambda dt: setattr(recordButton, 'state', 'down' if start else 'normal'))
+
+
+    def _pluginLogDir(self) -> str | None:
+        root = self.root
+        if root is None:
+            return None
+        return root.ids.leftcolumn.savefile or None
 
 
     def getDefaultUserConfigFilePath(self) -> str:
@@ -5451,6 +5734,7 @@ class GlowTrackerApp(App):
             'reversalvoltage' : '5',
             'forwardvoltage' : '0',
             'showguideline': 'true',
+            'pluginscript': '',
         })
 
         config.setdefaults('Developer', {
@@ -5501,6 +5785,9 @@ class GlowTrackerApp(App):
 
         # Load moveImageSpaceMode
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
+
+        # User plugin host (providers look up widgets lazily, after the root exists)
+        self.pluginHost = self._createPluginHost()
 
         return layout
 
@@ -6043,6 +6330,13 @@ class GlowTrackerApp(App):
             scanPanel.request_shutdown()
         for macroWidget in macroWidgets:
             macroWidget.macroScriptExecutor.stop()
+
+        if self.pluginHost is not None:
+            try:
+                if not self.pluginHost.stop(timeout=max(0.0, deadline - time.monotonic())):
+                    activeWorkers.append('plugin')
+            except Exception as e:
+                print(f'Stopping plugin failed: {e}')
 
         try:
             if runtimeControls.trackingcheckbox.state == 'down':
