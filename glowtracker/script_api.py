@@ -25,10 +25,28 @@ import threading
 import time
 import traceback
 import uuid
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, replace
 from typing import Callable, Sequence
 
 import numpy as np
+
+
+@dataclass(frozen=True)
+class BrightnessStats:
+    """Live-analysis image statistics, as shown in the app's live analysis label.
+
+    Computed on the same image the tracker sees (main side in dual-colour mode), cropped to the
+    tracking region when the Live analysis "region mode" is set to Tracking. Median, skewness and
+    the percentiles are computed on a 4x subsampled image.
+    """
+    min: float
+    max: float
+    mean: float
+    median: float
+    skewness: float
+    percentile_5: float
+    percentile_95: float
 
 
 @dataclass(frozen=True)
@@ -50,10 +68,21 @@ class WormState:
     is_recording: bool
     voltage: float                      # DAQ voltage currently applied (or requested, in a dry run)
     image_shape: tuple                  # shape of the latest frame
+    fps: float = 0.0                    # measured camera frame rate (frames/s) over the last ~30 frames; 0 until known
+    analysis: BrightnessStats | None = None  # live-analysis stats for this frame, or None when the app is not computing them
 
     @property
     def speed(self) -> float:
         return float(np.hypot(*self.velocity))
+
+    @property
+    def frame_period_s(self) -> float:
+        """Seconds per frame (0 until the frame rate is known)."""
+        return 1.0 / self.fps if self.fps > 0 else 0.0
+
+    def frames_for(self, seconds: float) -> int:
+        """Number of frames that span ``seconds`` at the current frame rate (at least 1)."""
+        return max(1, int(round(seconds * self.fps))) if self.fps > 0 else 1
 
 
 def worm_position_mm(
@@ -162,6 +191,27 @@ class Scope:
     def stop_recording(self) -> None:
         self._host._recording_control(False)
 
+    @property
+    def is_recording(self) -> bool:
+        return bool(self._host._recording_state())
+
+    def wait_for_recording(self, recording: bool = True, timeout: float | None = None) -> bool:
+        """Block until recording is on (``recording=True``) or off (``False``).
+
+        Returns True when the condition was met, False on timeout or when the plugin is being
+        stopped. Blocks the plugin thread only; frames that arrive meanwhile are skipped.
+        Typical use: ``scope.wait_for_recording()`` in ``setup`` so the light logic starts with
+        the recording.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self._host._stop_event.is_set():
+            if self.is_recording == recording:
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
+        return False
+
     # --- Diagnostics -----------------------------------------------------------------------
     def log(self, **fields) -> None:
         """Append one JSON line to the plugin log in the recording directory."""
@@ -176,6 +226,11 @@ class Scope:
     def is_stopping(self) -> bool:
         return self._host._stop_event.is_set()
 
+    @property
+    def fps(self) -> float:
+        """Measured camera frame rate (frames/s), 0 until at least two frames arrived."""
+        return float(self._host.fps)
+
 
 class PluginHost:
     """Loads a plugin file and runs its ``update`` on a dedicated thread, once per new frame."""
@@ -188,6 +243,7 @@ class PluginHost:
             stage_getter: Callable[[], object | None] = lambda: None,
             moves_blocked_reason: Callable[[], str | None] = lambda: None,
             recording_control: Callable[[bool], None] = lambda start: None,
+            recording_state: Callable[[], bool] = lambda: False,
             log_dir_getter: Callable[[], str | None] = lambda: None,
             update_budget_s: float = 0.1,
     ):
@@ -197,6 +253,7 @@ class PluginHost:
         self._stage_getter = stage_getter
         self._moves_blocked_reason = moves_blocked_reason
         self._recording_control = recording_control
+        self._recording_state = recording_state
         self._log_dir_getter = log_dir_getter
         self.update_budget_s = update_budget_s
 
@@ -209,6 +266,8 @@ class PluginHost:
         self.frames_processed: int = 0
         self.last_update_ms: float = 0.0
         self._budget_warned = False
+        self.fps: float = 0.0
+        self._frame_times: deque[float] = deque(maxlen=30)
 
         self._thread: threading.Thread | None = None
         self._frame_event = threading.Event()
@@ -300,7 +359,14 @@ class PluginHost:
         return thread is not None and thread.is_alive()
 
     def notify_frame(self) -> None:
-        """Called from the camera thread after each frame. Cheap: just sets an event."""
+        """Called from the camera thread after each frame. Cheap: a timestamp and an event."""
+        now = time.perf_counter()
+        times = self._frame_times
+        if times and now - times[-1] > 2.0:
+            times.clear()               # acquisition was paused; restart the measurement
+        times.append(now)
+        if len(times) >= 2:
+            self.fps = (len(times) - 1) / (times[-1] - times[0])
         if self.is_running():
             self._frame_event.set()
 
@@ -323,6 +389,7 @@ class PluginHost:
                 state = self._state_provider()
                 if state is None:
                     continue
+                state = replace(state, fps=self.fps)
                 t0 = time.perf_counter()
                 controller.update(state, scope)
                 elapsed = time.perf_counter() - t0

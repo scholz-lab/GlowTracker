@@ -112,7 +112,7 @@ import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
 from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
-from script_api import PluginHost, WormState, worm_position_mm, trail_velocity
+from script_api import PluginHost, WormState, BrightnessStats, worm_position_mm, trail_velocity
 
 #
 # Math
@@ -1254,7 +1254,7 @@ class PluginWidget(BoxLayout):
         daq = self.app.daqControl
         daqText = 'DAQ connected' if daq.isConnected() else 'DAQ not connected (dry run)'
         modeText = f'mode {daq.daqMode.value}'
-        line = f'{host.status}  |  frames {host.frames_processed}  |  update {host.last_update_ms:.1f} ms'
+        line = f'{host.status}  |  frames {host.frames_processed}  |  {host.fps:.1f} fps  |  update {host.last_update_ms:.1f} ms'
         line += f'  |  {daq.currentVoltage:.2f} V  |  {daqText}, {modeText}'
         if host.log_path:
             line += f'\nlog: {host.log_path}'
@@ -2016,6 +2016,9 @@ class LiveAnalysisData():
     skewness: float = 0
     percentile_5: float = 0
     percentile_95: float = 0
+    # Retrieve timestamp of the image these values were computed from (-1 = never). Lets readers
+    # (e.g. the user plugin) tell whether the values belong to the current frame.
+    retrieveTimeStamp: float = -1.0
     # We need a locking mechanism here to manage race-condition of modifying LiveAnalysisData from both MainThread and SubThread e.g. when Main want to reset values while subthread is still computing them.
     lock: Lock = Lock()
 
@@ -2305,6 +2308,7 @@ class ImageAcquisitionButton(ToggleButton):
             imageAcquisitionManager.liveAnalysisData.skewness = skew(sample, axis= None, nan_policy= 'omit')
             imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(sample, q= 5, axis= None)
             imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(sample, q= 95, axis= None)
+            imageAcquisitionManager.liveAnalysisData.retrieveTimeStamp = self.imageRetrieveTimeStamp
 
 
     def receiveImageCallback(self) -> None:
@@ -5437,6 +5441,7 @@ class GlowTrackerApp(App):
             stage_getter= self._pluginStage,
             moves_blocked_reason= self._pluginMovesBlockedReason,
             recording_control= self._pluginRecordingControl,
+            recording_state= self._pluginIsRecording,
             log_dir_getter= self._pluginLogDir,
             update_budget_s= budget,
         )
@@ -5481,6 +5486,18 @@ class GlowTrackerApp(App):
             self._configureReversalDetector(detector)
         is_reversing = bool(detector.detectReversal(trail)) if len(trail) > 1 else False
 
+        # Live-analysis stats, only when the app computed them for this (or a newer) frame
+        analysis = None
+        data = manager.liveAnalysisData
+        with data.lock:
+            if data.retrieveTimeStamp >= manager.imageRetrieveTimeStamp:
+                analysis = BrightnessStats(
+                    min= float(data.minBrightness), max= float(data.maxBrightness),
+                    mean= float(data.meanBrightness), median= float(data.medianBrightness),
+                    skewness= float(data.skewness),
+                    percentile_5= float(data.percentile_5), percentile_95= float(data.percentile_95),
+                )
+
         return WormState(
             frame= int(rtc.framecounter.value),
             time_s= float(manager.currentTime - manager.startTime),
@@ -5492,9 +5509,10 @@ class GlowTrackerApp(App):
             velocity= trail_velocity(trail),
             is_reversing= is_reversing,
             is_tracking= is_tracking,
-            is_recording= manager.recordbutton.state == 'down',
+            is_recording= self._pluginIsRecording(),
             voltage= float(self.daqControl.currentVoltage),
             image_shape= tuple(image.shape) if image is not None else (),
+            analysis= analysis,
         )
 
 
@@ -5542,6 +5560,13 @@ class GlowTrackerApp(App):
             if goTo.is_active():
                 return 'a Go To move is active'
         return None
+
+
+    def _pluginIsRecording(self) -> bool:
+        rtc = self._pluginRuntimeControls()
+        if rtc is None:
+            return False
+        return rtc.ids.imageacquisitionmanager.recordbutton.state == 'down'
 
 
     def _pluginRecordingControl(self, start: bool) -> None:

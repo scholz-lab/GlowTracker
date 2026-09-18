@@ -19,6 +19,11 @@ the traceback in the Plugin tab and stops the plugin; fix the file and press Rel
     state.is_recording   bool
     state.voltage        float  DAQ voltage currently applied
     state.image_shape    tuple  shape of the latest frame
+    state.fps            float  measured camera frame rate (0 until known); also state.frame_period_s
+    state.frames_for(s)  int    frames that span s seconds at the current rate, e.g. frames_for(0.5)
+    state.analysis       live-analysis stats (min, max, mean, median, skewness, percentile_5,
+                         percentile_95) or None when the app is not computing them; enable
+                         "Show live analysis" / "Save analysis to recording" in the settings
 
 `scope` (control handle):
     scope.set_voltage(v)          drive the LED, 0 .. 4.95 V, returns the value applied
@@ -29,6 +34,9 @@ the traceback in the Plugin tab and stops the plugin; fix the file and press Rel
     scope.move_rel(dx, dy, dz=0)  mm; refused (returns False) while tracking / plate run / Go To
     scope.move_abs(x, y, z=None)  mm; same rules
     scope.start_recording() / scope.stop_recording()
+    scope.is_recording             current Record button state
+    scope.wait_for_recording(recording=True, timeout=None)
+                                  block until recording starts (or stops); False on timeout / Stop
     scope.log(**fields)           one JSON line into plugin_log_<time>.jsonl in the recording folder
     scope.print(*args)            message in the Plugin tab status line
     scope.is_stopping             True once Stop was pressed
@@ -40,7 +48,9 @@ class Controller:
     def setup(self, scope):
         """Called once on Start. Put your parameters here."""
         self.pulse_voltage = 3.0
-        scope.print('template plugin started')
+        scope.print('template plugin started, waiting for Record')
+        # Optional: hold here until the Record button is pressed (Stop still works).
+        scope.wait_for_recording()
 
     def update(self, state, scope):
         """Called once per frame."""

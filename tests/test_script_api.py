@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import DAQ_control as DAQ
-from script_api import PluginHost, WormState, trail_velocity, worm_position_mm
+from script_api import BrightnessStats, PluginHost, WormState, trail_velocity, worm_position_mm
 
 
 class FakeDaq:
@@ -268,6 +268,98 @@ def test_recording_control_and_log(tmp_path):
     assert host.log_path is not None and host.log_path.startswith(str(tmp_path / 'rec'))
     lines = open(host.log_path, encoding='utf-8').read().splitlines()
     assert len(lines) == 1 and '"worm": [1.0, 2.0]' in lines[0]
+
+
+def test_wait_for_recording_blocks_until_state_changes(tmp_path):
+    path = write_plugin(tmp_path, '''
+        results = []
+        def setup(scope):
+            results.append(('before', scope.is_recording))
+            results.append(scope.wait_for_recording(timeout=2.0))
+            results.append(('after', scope.is_recording))
+        class Controller:
+            def setup(self, scope):
+                setup(scope)
+            def update(self, state, scope):
+                pass
+    ''')
+    recording = {'on': False}
+    host = make_host(DAQ.DAQControl(), recording_state=lambda: recording['on'])
+    host.load(path)
+    host.start()
+    time.sleep(0.1)
+    assert host.module.results == [('before', False)]
+    recording['on'] = True
+    deadline = time.monotonic() + 1.0
+    while len(host.module.results) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    host.stop()
+    assert host.module.results == [('before', False), True, ('after', True)]
+
+
+def test_wait_for_recording_returns_false_on_stop_and_timeout(tmp_path):
+    path = write_plugin(tmp_path, '''
+        results = []
+        class Controller:
+            def setup(self, scope):
+                results.append(scope.wait_for_recording(timeout=0.05))
+                results.append(scope.wait_for_recording())
+            def update(self, state, scope):
+                pass
+    ''')
+    host = make_host(DAQ.DAQControl())
+    host.load(path)
+    host.start()
+    time.sleep(0.15)
+    assert host.module.results == [False]
+    assert host.stop()
+    assert host.module.results == [False, False]
+
+
+def test_fps_is_measured_and_exposed(tmp_path):
+    path = write_plugin(tmp_path, '''
+        seen = []
+        def update(state, scope):
+            seen.append((state.fps, scope.fps, state.frames_for(0.1)))
+    ''')
+    host = make_host(DAQ.DAQControl())
+    host.load(path)
+    host.start()
+    for _ in range(6):
+        host.notify_frame()
+        time.sleep(0.02)
+    time.sleep(0.05)
+    host.stop()
+    state_fps, scope_fps, frames = host.module.seen[-1]
+    assert 25 < state_fps < 75
+    assert scope_fps == pytest.approx(host.fps)
+    assert frames == max(1, round(0.1 * state_fps))
+
+
+def test_fps_measurement_restarts_after_pause():
+    host = make_host(DAQ.DAQControl())
+    host.notify_frame()
+    host._frame_times[-1] -= 5.0          # pretend the last frame was 5 s ago
+    host.notify_frame()
+    assert len(host._frame_times) == 1     # stale sample dropped, measurement restarts
+    assert host.fps == 0.0
+
+
+def test_analysis_stats_are_optional_and_passed_through(tmp_path):
+    path = write_plugin(tmp_path, '''
+        seen = []
+        def update(state, scope):
+            seen.append(None if state.analysis is None else state.analysis.mean)
+    ''')
+    stats = BrightnessStats(min=1, max=200, mean=42.5, median=40, skewness=0.1,
+                            percentile_5=5, percentile_95=150)
+    states = iter([make_state(), make_state(analysis=stats)])
+    host = make_host(DAQ.DAQControl(), state_provider=lambda: next(states))
+    host.load(path)
+    host.start()
+    pump(host, 2)
+    host.stop()
+    assert host.module.seen == [None, 42.5]
 
 
 def test_frames_are_coalesced_when_update_is_slow(tmp_path):

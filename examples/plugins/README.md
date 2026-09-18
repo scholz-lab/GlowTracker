@@ -1,22 +1,15 @@
 # GlowTracker plugins
 
-A plugin is one Python file that GlowTracker loads and calls once per camera frame. It sees where
-the tracked animal is and can drive the optogenetic LED through the DAQ. You never edit GlowTracker
-itself.
+A plugin is one Python file that GlowTracker loads and calls once per camera frame. 
 
 ## Quick start
 
 1. Copy `template_controller.py` somewhere and edit `update`.
-2. In GlowTracker: connect the camera, stage and DAQ. Start **Live view**, then **Tracking** on the
-   animal.
-3. Open **DAQ** (right column) and pick the **Plugin** tab. **Browse** to your file, press **Start**.
-   The DAQ mode switches to `Plugin`; the built-in Sequencer / Stage program / Reversal modes are
-   off while a plugin runs.
-4. Edit your file, press **Reload**. Press **Stop** to end. Stopping, errors and closing the app all
-   switch the light off.
+2. In GlowTracker: connect the camera, stage and DAQ. Start **Live view**, then **Tracking** on the animal.
+3. Open **DAQ**  and pick the **Plugin** tab. **Browse** to your file, press **Start**.
+4. Edit your file, press **Reload**. Press **Stop** to end. Stopping, errors and closing the app all switch the light off.
 
-The plugin keeps running after the DAQ popup is closed. Without a DAQ connected everything still
-runs as a dry run and `state.voltage` shows what you requested.
+The plugin keeps running after the DAQ popup is closed. 
 
 ## Plugin file
 
@@ -55,8 +48,22 @@ All positions are stage coordinates in millimetres. X and Y follow the stage axe
 | `is_recording` | bool | |
 | `voltage` | float | DAQ voltage currently applied |
 | `image_shape` | tuple | shape of the latest frame |
+| `fps` | float | measured camera frame rate over the last ~30 frames, 0 until known |
+| `frame_period_s` | float | `1 / fps` |
+| `frames_for(seconds)` | int | how many frames span a duration at the current rate, e.g. `state.frames_for(0.5)` for a half-second pulse |
+| `analysis` | `BrightnessStats` or `None` | the app's live-analysis image statistics for this frame: `min`, `max`, `mean`, `median`, `skewness`, `percentile_5`, `percentile_95`. `None` unless the app is computing them (see below) |
 
-Notes: while tracking, the stage position is estimated from the commanded moves, so `trail` is
+`analysis` is filled only when GlowTracker computes the live analysis. Turn on **Show live analysis**
+in the settings for live view, and **Save analysis to recording** if you also want it while
+tracking or recording. The region (whole image or the tracking window) follows the Live analysis
+"region mode" setting. Check for `None`:
+
+```python
+if state.analysis is not None and state.analysis.mean > 40:
+    ...
+```
+
+While tracking, the stage position is estimated from the commanded moves, so `trail` is
 sampled once per tracking step, not once per frame. The reversal detector needs an animal length
 and trail limit set in the DAQ > Reversal tab (defaults are loaded from the config).
 
@@ -72,20 +79,13 @@ and trail limit set in the DAQ > Reversal tab (defaults are loaded from the conf
 | `move_rel(dx, dy, dz=0)` | relative move in mm, waits until idle. Returns `False` and is refused while tracking, a plate run or a Go To move is active |
 | `move_abs(x, y, z=None)` | absolute move in mm, same rules; `z` defaults to the current Z |
 | `start_recording()`, `stop_recording()` | toggle the Record button (asynchronous) |
+| `is_recording` | property, current Record button state |
+| `wait_for_recording(recording=True, timeout=None)` | block until recording is on (or off with `recording=False`). Returns `False` on timeout or Stop. Use it in `setup` to hold the light logic until you press Record |
 | `log(**fields)` | append a JSON line to `plugin_log_<time>.jsonl` in the recording folder. numpy values are converted |
 | `print(*args)` | show a message in the Plugin tab status line and the console |
 | `is_stopping` | `True` once Stop was pressed; long loops should check it |
+| `fps` | property, same measured frame rate as `state.fps` |
 
-The recording's coordinate file also logs the DAQ voltage for every frame, so the light state is
-always in the data.
+The recording's coordinate file also logs the DAQ voltage for every frame.
 
-## Rules of thumb
 
-- Keep `update` short. Anything heavier than a few array operations on the frame should be done
-  every N-th frame.
-- Let GlowTracker track. Your job is to decide the light; the app keeps the animal centred.
-- Use `scope.log` generously, it is what you will analyse afterwards.
-- Test with the DAQ disconnected first (dry run), then connect it.
-
-`blink_and_log_controller.py` is the smallest complete example: it blinks the light on a fixed
-schedule and logs the animal position every frame.
