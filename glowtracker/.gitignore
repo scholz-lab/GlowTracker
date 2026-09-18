@@ -9,3 +9,4 @@ record/
 
 # Runtime config file
 glowtracker.ini
+glowtracker_local.ini
