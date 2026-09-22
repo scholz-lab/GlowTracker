@@ -78,6 +78,9 @@ class DAQControl():
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
         self.reversalDetector: ReversalDetector = ReversalDetector()
         self.currentVoltage: float = 0
+        # Per-output voltages (DAC0, DAC1). currentVoltage is the larger of the two, which is
+        # what the built-in modes (always both outputs together) and the recording log expect.
+        self.channelVoltages: list = [0.0, 0.0]
         # Serializes USB traffic: the acquisition thread (built-in modes) and a plugin thread
         # may both drive the outputs.
         self._io_lock = threading.RLock()
@@ -90,6 +93,7 @@ class DAQControl():
     def safe_off(self) -> bool:
         if not self.isConnected():
             self.currentVoltage = 0
+            self.channelVoltages = [0.0, 0.0]
             return True
 
         with self._io_lock:
@@ -124,6 +128,7 @@ class DAQControl():
             finally:
                 self.sequnceDictRunning.clear()
                 self.currentVoltage = 0
+                self.channelVoltages = [0.0, 0.0]
 
 
     def close(self) -> bool:
@@ -175,29 +180,44 @@ class DAQControl():
             self.daq.getFeedback(u3.DAC1_8(dac1Val))
 
 
-    def set_voltage(self, volts: float) -> float:
-        """Drive both outputs to ``volts`` (clamped to [0, MAX_VOLTAGE]) and return the value applied.
+    def set_voltage(self, volts: float, channel: int | None = None) -> float:
+        """Drive the outputs to ``volts`` (clamped to [0, MAX_VOLTAGE]) and return the value applied.
 
-        Used by user plugins. Without a connected DAQ the request is only recorded in
-        ``currentVoltage`` so plugins can be dry-run. Unchanged values are not re-sent.
+        ``channel`` None drives DAC0 and DAC1 together (the default, and what the built-in
+        modes do); 0 or 1 drives that output alone. Used by user plugins. Without a connected
+        DAQ the request is only recorded so plugins can be dry-run. Unchanged values are not
+        re-sent.
         """
         volts = float(volts)
         if not math.isfinite(volts):
             raise ValueError('voltage must be finite')
         volts = max(min(volts, MAX_VOLTAGE), 0.0)
 
-        if not self.isConnected():
-            self.currentVoltage = volts
-            return volts
-
-        if math.isclose(volts, self.currentVoltage):
+        if channel is None:
+            if not self.isConnected():
+                self.channelVoltages = [volts, volts]
+                self.currentVoltage = volts
+                return volts
+            if math.isclose(volts, self.channelVoltages[0]) \
+                    and math.isclose(volts, self.channelVoltages[1]):
+                return self.currentVoltage
+            if math.isclose(volts, 0.0):
+                self._executeCommand(['off'], verbose= False)
+            else:
+                self._executeCommand(['on', volts], verbose= False)
             return self.currentVoltage
 
-        if math.isclose(volts, 0.0):
-            self._executeCommand(['off'], verbose= False)
-        else:
-            self._executeCommand(['on', volts], verbose= False)
-        return self.currentVoltage
+        if channel not in (0, 1):
+            raise ValueError('channel must be 0 (DAC0), 1 (DAC1) or None (both)')
+
+        if self.isConnected() and not math.isclose(volts, self.channelVoltages[channel]):
+            commandType = u3.DAC0_8 if channel == 0 else u3.DAC1_8
+            with self._io_lock:
+                bits = self.daq.voltageToDACBits(volts= volts, dacNumber= channel, is16Bits= False)
+                self.daq.getFeedback(commandType(bits))
+        self.channelVoltages[channel] = volts
+        self.currentVoltage = max(self.channelVoltages)
+        return volts
 
 
     def parseTextScript(self, text: str) -> None:
@@ -399,6 +419,7 @@ class DAQControl():
                 dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
                 self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
                 self.currentVoltage = vol
+                self.channelVoltages = [vol, vol]
 
         elif command == 'off':
 
@@ -410,6 +431,7 @@ class DAQControl():
                 dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
                 self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
                 self.currentVoltage = 0
+                self.channelVoltages = [0.0, 0.0]
 
 
 @dataclass

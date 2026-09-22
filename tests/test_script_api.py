@@ -89,6 +89,53 @@ def test_set_voltage_skips_resend_and_dry_runs_without_hardware():
     assert dry.currentVoltage == 3.0
 
 
+def test_set_voltage_can_drive_one_channel_alone():
+    control = DAQ.DAQControl()
+    control.daq = FakeDaq()
+    control.set_voltage(2.0, channel=1)
+    assert control.channelVoltages == [0.0, 2.0]
+    assert control.currentVoltage == 2.0
+    assert control.daq.feedback[-1] == (('DAC1', (1, 2.0)),)
+
+    control.set_voltage(1.0, channel=0)
+    assert control.channelVoltages == [1.0, 2.0]
+    assert control.currentVoltage == 2.0
+    assert control.daq.feedback[-1] == (('DAC0', (0, 1.0)),)
+
+    # unchanged single-channel value is not re-sent
+    n = len(control.daq.feedback)
+    control.set_voltage(2.0, channel=1)
+    assert len(control.daq.feedback) == n
+
+    # driving both again overrides both channels, safe_off zeroes both
+    control.set_voltage(3.0)
+    assert control.channelVoltages == [3.0, 3.0]
+    control.safe_off()
+    assert control.channelVoltages == [0.0, 0.0] and control.currentVoltage == 0
+
+    with pytest.raises(ValueError):
+        control.set_voltage(1.0, channel=2)
+
+
+def test_scope_exposes_per_channel_voltages(tmp_path):
+    path = write_plugin(tmp_path, '''
+        seen = []
+        def update(state, scope):
+            scope.set_voltage(1.5, channel=0)
+            scope.set_voltage(0.5, channel=1)
+            seen.append((scope.voltages, scope.voltage))
+            scope.light_off(channel=0)
+            seen.append(scope.voltages)
+    ''')
+    daq = DAQ.DAQControl()
+    host = make_host(daq)
+    host.load(path)
+    host.start()
+    pump(host, 1)
+    host.stop()
+    assert host.module.seen == [((1.5, 0.5), 1.5), (0.0, 0.5)]
+
+
 def test_update_is_noop_in_plugin_mode():
     control = DAQ.DAQControl()
     control.daq = FakeDaq()

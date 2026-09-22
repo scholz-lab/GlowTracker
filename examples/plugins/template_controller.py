@@ -26,9 +26,12 @@ the traceback in the Plugin tab and stops the plugin; fix the file and press Rel
                          "Show live analysis" / "Save analysis to recording" in the settings
 
 `scope` (control handle):
-    scope.set_voltage(v)          drive the LED, 0 .. 4.95 V, returns the value applied
-    scope.light_off()
-    scope.voltage / scope.daq_connected
+    scope.set_voltage(v)          drive both DAQ outputs (DAC0 + DAC1), 0 .. 4.95 V, returns the value applied
+    scope.set_voltage(v, channel=0)   drive DAC0 only; channel=1 drives DAC1 only (second light, trigger line)
+    scope.light_off()             both outputs to 0; light_off(channel=1) for one output
+    scope.voltage                 the larger of the two outputs (what the recording logs as daqVol)
+    scope.voltages                (DAC0, DAC1) currently applied
+    scope.daq_connected
     scope.get_frame()             latest frame as a numpy array (copy)
     scope.get_position()          (x, y, z) stage position in mm, or None
     scope.move_rel(dx, dy, dz=0)  mm; refused (returns False) while tracking / plate run / Go To
@@ -48,6 +51,7 @@ class Controller:
     def setup(self, scope):
         """Called once on Start. Put your parameters here."""
         self.pulse_voltage = 3.0
+        self.marker_voltage = 1.0  
         scope.print('template plugin started, waiting for Record')
         # Optional: hold here until the Record button is pressed (Stop still works).
         scope.wait_for_recording()
@@ -55,14 +59,21 @@ class Controller:
     def update(self, state, scope):
         """Called once per frame."""
         if not state.is_tracking:
-            scope.light_off()
+            scope.light_off()           # both outputs off
             return
 
-        # Example rule: light on while the animal moves faster than 0.02 mm per step.
+        # Example rule on DAC0: light on while the animal moves faster than 0.02 mm per step.
         if state.speed > 0.02:
-            scope.set_voltage(self.pulse_voltage)
+            scope.set_voltage(self.pulse_voltage, channel=0)
         else:
-            scope.light_off()
+            scope.light_off(channel=0)
+
+        # Example rule on DAC1: raise the second output while the app sees a reversal.
+        # Delete this block (or the channel= arguments above) if you only use one output.
+        if state.is_reversing:
+            scope.set_voltage(self.marker_voltage, channel=1)
+        else:
+            scope.light_off(channel=1)
 
     def teardown(self, scope):
         """Called once on Stop (the app also switches the light off for you)."""

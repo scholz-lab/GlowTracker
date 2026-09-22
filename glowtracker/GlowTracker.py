@@ -363,6 +363,16 @@ class RightColumn(BoxLayout):
         self._popup.dismiss()
 
 
+    def _restoreAfterPopup(self, *args) -> None:
+        """Re-enable the image and keyboard however the popup was closed.
+
+        Popups with auto_dismiss also close on a click outside or Escape, which bypasses
+        dismiss_popup and used to leave the preview image disabled and the keys unbound.
+        """
+        self.app.bind_keys()
+        self.app.root.ids.middlecolumn.ids.scalableimage.disabled = False
+
+
     def open_macro(self):
         """Open the macro script widget popup.
         """
@@ -398,6 +408,7 @@ class RightColumn(BoxLayout):
 
         recordingSettings = RecordingSettings(ok= self.dismiss_popup)
         self._popup = Popup(title= "Recording Settings", content= recordingSettings, size_hint = (0.3, 0.45))
+        self._popup.bind(on_dismiss= self._restoreAfterPopup)
         self._popup.open()
 
 
@@ -452,6 +463,7 @@ class RightColumn(BoxLayout):
 
         # Launch the widget inside a popup window
         self._popup = Popup(title= '', separator_height= 0, content= daqControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup.bind(on_dismiss= self._restoreAfterPopup)
         self._popup.open()
 
 
@@ -6051,13 +6063,21 @@ class GlowTrackerApp(App):
 
     def unbind_keys(self):
         #unbind keyboard events
+        if not getattr(self, '_keysBound', False):
+            return
         Window.unbind(on_key_up=self._keyup)
         Window.unbind(on_key_down=self._keydown)
+        self._keysBound = False
 
 
     def bind_keys(self):
+        # Idempotent: a popup closed by its own button and by on_dismiss both restore the
+        # keys, and binding twice would fire every key handler twice.
+        if getattr(self, '_keysBound', False):
+            return
         Window.bind(on_key_up=self._keyup)
         Window.bind(on_key_down=self._keydown)
+        self._keysBound = True
 
 
     def toggle_key_binding(self, focus):

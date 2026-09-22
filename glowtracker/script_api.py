@@ -117,20 +117,32 @@ class Scope:
         self._host = host
 
     # --- DAQ -------------------------------------------------------------------------------
-    def set_voltage(self, volts: float) -> float:
-        """Drive both DAC outputs to ``volts`` (clamped to the DAQ range). Returns the applied value."""
+    def set_voltage(self, volts: float, channel: int | None = None) -> float:
+        """Drive the DAC outputs to ``volts`` (clamped to the DAQ range). Returns the applied value.
+
+        ``channel`` None (default) drives DAC0 and DAC1 together; 0 or 1 drives one output alone,
+        for a second light source or a trigger line.
+        """
         daq = self._host._daq_getter()
         if daq is None:
             return 0.0
-        return float(daq.set_voltage(float(volts)))
+        return float(daq.set_voltage(float(volts), channel))
 
-    def light_off(self) -> float:
-        return self.set_voltage(0.0)
+    def light_off(self, channel: int | None = None) -> float:
+        return self.set_voltage(0.0, channel)
 
     @property
     def voltage(self) -> float:
+        """The larger of the two output voltages (what the recording logs as daqVol)."""
         daq = self._host._daq_getter()
         return float(getattr(daq, 'currentVoltage', 0.0)) if daq is not None else 0.0
+
+    @property
+    def voltages(self) -> tuple[float, float]:
+        """(DAC0, DAC1) voltages currently applied."""
+        daq = self._host._daq_getter()
+        values = getattr(daq, 'channelVoltages', None) if daq is not None else None
+        return (float(values[0]), float(values[1])) if values else (0.0, 0.0)
 
     @property
     def daq_connected(self) -> bool:

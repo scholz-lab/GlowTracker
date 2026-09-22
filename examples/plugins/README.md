@@ -34,7 +34,7 @@ All positions are stage coordinates in millimetres. X and Y follow the stage axe
 
 | field | type | meaning |
 |---|---|---|
-| `frame` | int | frame counter of the current live view / recording |
+| `frame` | int | frame counter of the current live view / recording. Restarts from 0 when a new acquisition starts|
 | `time_s` | float | seconds since the acquisition started |
 | `wall_time` | float | `time.time()` when the snapshot was made |
 | `stage_xy` | (x, y) | stage position |
@@ -71,9 +71,11 @@ and trail limit set in the DAQ > Reversal tab (defaults are loaded from the conf
 
 | call | effect |
 |---|---|
-| `set_voltage(v)` | drive both DAC outputs, clamped to 0 .. 4.95 V; returns the applied value. Unchanged values are not re-sent |
-| `light_off()` | same as `set_voltage(0)` |
-| `voltage`, `daq_connected` | properties |
+| `set_voltage(v, channel=None)` | drive the DAC outputs, clamped to 0 .. 4.95 V; returns the applied value. `channel=None` drives DAC0 and DAC1 together; `channel=0` or `1` drives one output alone. Unchanged values are not re-sent |
+| `light_off(channel=None)` | same as `set_voltage(0, channel)` |
+| `voltage` | property, the larger of the two outputs (what the recording logs as `daqVol`) |
+| `voltages` | property, `(DAC0, DAC1)` currently applied |
+| `daq_connected` | property |
 | `get_frame(copy=True)` | latest camera frame as a numpy array (`uint8`, 2-D; main side in dual-colour mode) |
 | `get_position()` | `(x, y, z)` stage position in mm from the position poller, or `None` |
 | `move_rel(dx, dy, dz=0)` | relative move in mm, waits until idle. Returns `False` and is refused while tracking, a plate run or a Go To move is active |
