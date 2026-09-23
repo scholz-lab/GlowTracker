@@ -36,9 +36,14 @@ class Controller:
     min_travel_mm = 0.02             # below this much travel in the window the heading is unknown
 
     # --- stimulus --------------------------------------------------------------------------
-    voltage = 2.0
-    pulse_frames = 10                # light on for this many frames
-    refractory_frames = 60           # no new decision for this long after a pulse starts
+    voltage = 4.5                    # DAQ maximum is 4.95 V
+    pulse_frames = 30                # light on for this many frames (~1 s at 30 fps)
+    refractory_frames = 120          # no new decision for this long after a pulse starts (~4 s)
+
+    # --- re-zap gate: after the refractory period, zap again only once the worm has ---------
+    # --- moved rezap_radius_mm from where the last zap fired, OR rezap_frames have passed ---
+    rezap_radius_mm = 0.5            # distance from the last zap point that re-arms the zapper
+    rezap_frames = 600               # or this many frames since the last zap (~20 s), whichever first
 
     def setup(self, scope):
         self.target = None
@@ -48,6 +53,8 @@ class Controller:
         self.cooldown = 0
         self.pulses = 0
         self.frames = 0
+        self.last_zap_xy = None      # where the last zap fired
+        self.last_zap_frame = None   # and on which of our frames
         self.cos_margin = math.cos(math.radians(self.away_angle_deg))
         scope.print('guidance plugin: waiting for tracking')
 
@@ -95,6 +102,18 @@ class Controller:
             self._log(state, scope, dist, None, 'cooldown')
             return
 
+        # --- re-zap gate: stay quiet until the worm has moved away from the last zap point
+        #     or enough frames have passed, so one stubborn animal is not zapped repeatedly
+        #     on the same spot ---
+        if self.last_zap_xy is not None:
+            moved = math.hypot(state.worm_xy[0] - self.last_zap_xy[0],
+                               state.worm_xy[1] - self.last_zap_xy[1])
+            waited = self.frames - self.last_zap_frame
+            if moved < self.rezap_radius_mm and waited < self.rezap_frames:
+                self.away_count = 0
+                self._log(state, scope, dist, None, 'holding')
+                return
+
         heading = self._heading(state.trail)
         if heading is None or dist <= 0:
             self.away_count = 0
@@ -111,6 +130,8 @@ class Controller:
             self.pulse_left = self.pulse_frames
             self.cooldown = self.refractory_frames
             self.away_count = 0
+            self.last_zap_xy = state.worm_xy
+            self.last_zap_frame = self.frames
             scope.set_voltage(self.voltage)
             scope.log(event='pulse', pulse=self.pulses, frame=self.frames, t=state.time_s,
                       worm=state.worm_xy, angle_deg=angle, dist=dist)
