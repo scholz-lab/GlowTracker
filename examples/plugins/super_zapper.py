@@ -25,14 +25,14 @@ class Controller:
 
     # --- target ---------------------------------------------------------------------------
     target_xy = None                 # (x, y) in stage mm; None -> start position + target_offset
-    target_offset = (2.0, 0.0)       # mm, used when target_xy is None
+    target_offset = (15.0, 0.0)       # mm, used when target_xy is None
     arrive_mm = 0.5                  # inside this radius the worm counts as arrived
     leave_mm = 0.8                   # guidance resumes only after it wanders back out past this
 
     # --- decision --------------------------------------------------------------------------
     away_angle_deg = 100.0           # heading must be more than this off the target direction
     away_frames = 5                  # consecutive wrong-heading frames before a pulse
-    heading_window = 10              # trail points for the heading estimate
+    heading_window = 30              # trail points for the heading estimate
     min_travel_mm = 0.02             # below this much travel in the window the heading is unknown
 
     # --- stimulus --------------------------------------------------------------------------
