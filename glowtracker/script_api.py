@@ -287,6 +287,14 @@ class PluginHost:
         self._lock = threading.Lock()
         self._log_file = None
         self._log_path: str | None = None
+        # Log lines are serialized on the plugin thread but written by a separate thread, so a
+        # slow disk or network share never stalls the per-frame decision loop.
+        self._log_queue: deque[str] = deque()
+        self._log_thread: threading.Thread | None = None
+        self._log_stop = threading.Event()
+        self._log_wake = threading.Event()
+        self.log_flush_interval_s = 0.5
+        self.last_state_ms: float = 0.0
 
     # --- lifecycle -------------------------------------------------------------------------
     def load(self, path: str) -> None:
@@ -398,7 +406,9 @@ class PluginHost:
                 self._frame_event.clear()
                 if self._stop_event.is_set():
                     break
+                ts = time.perf_counter()
                 state = self._state_provider()
+                self.last_state_ms = (time.perf_counter() - ts) * 1000.0
                 if state is None:
                     continue
                 state = replace(state, fps=self.fps)
@@ -409,7 +419,8 @@ class PluginHost:
                 self.frames_processed += 1
                 if elapsed > self.update_budget_s and not self._budget_warned:
                     self._budget_warned = True
-                    self._warn(f'update() took {elapsed * 1000:.0f} ms; frames are being skipped')
+                    self._warn(f'update() took {elapsed * 1000:.0f} ms (state build {self.last_state_ms:.0f} ms); '
+                               f'frames are being skipped')
         except Exception:
             failed = True
             self.last_error = traceback.format_exc()
@@ -445,24 +456,56 @@ class PluginHost:
 
     # --- logging ---------------------------------------------------------------------------
     def _log(self, fields: dict) -> None:
+        """Queue one JSON line; the writer thread puts it on disk (see _log_writer)."""
+        record = {'wall_time': time.time(), **fields}
+        line = json.dumps(record, default=_json_default) + '\n'
         with self._lock:
-            if self._log_file is None:
+            if self._log_path is None:
                 directory = self._log_dir_getter() or os.getcwd()
-                os.makedirs(directory, exist_ok=True)
                 stamp = time.strftime('%Y%m%d_%H%M%S')
                 self._log_path = os.path.join(directory, f'plugin_log_{stamp}.jsonl')
-                self._log_file = open(self._log_path, 'a', encoding='utf-8')
-            record = {'wall_time': time.time(), **fields}
-            self._log_file.write(json.dumps(record, default=_json_default) + '\n')
-            self._log_file.flush()
+            self._log_queue.append(line)
+            if self._log_thread is None or not self._log_thread.is_alive():
+                self._log_stop.clear()
+                self._log_thread = threading.Thread(target=self._log_writer, name='ScriptPluginLog', daemon=True)
+                self._log_thread.start()
+        self._log_wake.set()
+
+    def _log_writer(self) -> None:
+        """Drain the queue to the log file, flushing at most every log_flush_interval_s."""
+        while True:
+            self._log_wake.wait(self.log_flush_interval_s)
+            self._log_wake.clear()
+            stopping = self._log_stop.is_set()
+            with self._lock:
+                lines = list(self._log_queue)
+                self._log_queue.clear()
+            if lines:
+                try:
+                    if self._log_file is None:
+                        os.makedirs(os.path.dirname(self._log_path), exist_ok=True)
+                        self._log_file = open(self._log_path, 'a', encoding='utf-8')
+                    self._log_file.writelines(lines)
+                    self._log_file.flush()
+                except Exception as e:
+                    print(f'[plugin] writing the log failed: {e}')
+            if stopping and not self._log_queue:
+                break
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
 
     def _close_log(self) -> None:
-        with self._lock:
-            if self._log_file is not None:
-                try:
-                    self._log_file.close()
-                finally:
-                    self._log_file = None
+        """Ask the writer to drain and close; waits briefly so the file is complete on stop."""
+        thread = self._log_thread
+        self._log_stop.set()
+        self._log_wake.set()
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(5.0)
+        self._log_thread = None
 
     @property
     def log_path(self) -> str | None:

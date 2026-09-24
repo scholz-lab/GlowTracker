@@ -1266,7 +1266,7 @@ class PluginWidget(BoxLayout):
         daq = self.app.daqControl
         daqText = 'DAQ connected' if daq.isConnected() else 'DAQ not connected (dry run)'
         modeText = f'mode {daq.daqMode.value}'
-        line = f'{host.status}  |  frames {host.frames_processed}  |  {host.fps:.1f} fps  |  update {host.last_update_ms:.1f} ms'
+        line = f'{host.status}  |  frames {host.frames_processed}  |  {host.fps:.1f} fps  |  state {host.last_state_ms:.1f} ms  |  update {host.last_update_ms:.1f} ms'
         line += f'  |  {daq.currentVoltage:.2f} V  |  {daqText}, {modeText}'
         if host.log_path:
             line += f'\nlog: {host.log_path}'

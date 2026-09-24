@@ -409,6 +409,40 @@ def test_analysis_stats_are_optional_and_passed_through(tmp_path):
     assert host.module.seen == [None, 42.5]
 
 
+def test_logging_is_asynchronous_and_complete_on_stop(tmp_path, monkeypatch):
+    """A slow disk must not stall update(); every queued line still lands in the file by stop()."""
+    import io, builtins
+    real_open = builtins.open
+    class SlowFile(io.TextIOWrapper):
+        pass
+    def slow_open(path, *a, **k):
+        f = real_open(path, *a, **k)
+        if str(path).endswith('.jsonl'):
+            orig_flush = f.flush
+            def flush():
+                time.sleep(0.05); orig_flush()
+            f.flush = flush
+        return f
+    monkeypatch.setattr(builtins, 'open', slow_open)
+    path = write_plugin(tmp_path, '''
+        import time
+        durations = []
+        def update(state, scope):
+            t0 = time.perf_counter()
+            for i in range(20):
+                scope.log(frame=state.frame, i=i)
+            durations.append(time.perf_counter() - t0)
+    ''')
+    host = make_host(DAQ.DAQControl(), log_dir_getter=lambda: str(tmp_path / 'rec'))
+    host.load(path)
+    host.start()
+    pump(host, 5)
+    host.stop()
+    assert max(host.module.durations) < 0.02          # 20 log calls per frame, none blocked on the disk
+    lines = real_open(host.log_path, encoding='utf-8').read().splitlines()
+    assert len(lines) == 100                           # all lines drained before stop() returned
+
+
 def test_frames_are_coalesced_when_update_is_slow(tmp_path):
     path = write_plugin(tmp_path, '''
         import time
