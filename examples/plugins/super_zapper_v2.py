@@ -74,6 +74,7 @@ class Controller:
         self.tally = {'stim': [0, 0], 'sham': [0, 0]}   # [successes, n]
         self.hist = deque(maxlen=4 * 30 + 5)
         self.cos_margin = math.cos(math.radians(self.away_angle_deg))
+        self.cos_release = math.cos(math.radians(self.away_angle_deg - 15.0))   # hysteresis for a run under way
         scope.print('guidance v2: waiting for tracking')
 
     def update(self, state, scope):
@@ -154,7 +155,8 @@ class Controller:
 
         cos_theta = (heading[0] * tx + heading[1] * ty) / dist
         angle = math.degrees(math.acos(max(-1.0, min(1.0, cos_theta))))
-        wrong_way = cos_theta < self.cos_margin and not state.is_reversing
+        threshold = self.cos_release if self.away_count > 0 else self.cos_margin
+        wrong_way = cos_theta < threshold and not state.is_reversing
         self.away_count = self.away_count + 1 if wrong_way else 0
 
         if self.away_count >= self.away_frames:
@@ -226,17 +228,40 @@ class Controller:
         return (vx / norm, vy / norm)
 
     def _state_metrics(self, fps):
-        pts3 = [(f, x, y) for f, x, y in self.hist if self.frames - f <= 3 * fps]
-        if len(pts3) < 3:
+        """(mean speed um/s over the last 2 s, straightness over the last 3 s), from positions sampled
+        every 0.5 s so the tracker's frame-to-frame jitter does not inflate the path length."""
+        step = max(1, int(0.5 * fps))
+        pts = [(f, x, y) for f, x, y in self.hist if self.frames - f <= 3 * fps]
+        if len(pts) < 2 * step + 1:
             return 0.0, 0.0
-        path = sum(math.hypot(pts3[i][1] - pts3[i - 1][1], pts3[i][2] - pts3[i - 1][2]) for i in range(1, len(pts3)))
-        net = math.hypot(pts3[-1][1] - pts3[0][1], pts3[-1][2] - pts3[0][2])
+        coarse = pts[::-1][::step][::-1]                      # newest point kept, then every 0.5 s back
+        if len(coarse) < 3:
+            return 0.0, 0.0
+        seg = [math.hypot(coarse[i][1] - coarse[i - 1][1], coarse[i][2] - coarse[i - 1][2]) for i in range(1, len(coarse))]
+        path = sum(seg)
+        net = math.hypot(coarse[-1][1] - coarse[0][1], coarse[-1][2] - coarse[0][2])
         straight = net / path if path > 0 else 0.0
-        pts2 = [p for p in pts3 if self.frames - p[0] <= 2 * fps]
-        path2 = sum(math.hypot(pts2[i][1] - pts2[i - 1][1], pts2[i][2] - pts2[i - 1][2]) for i in range(1, len(pts2)))
-        seconds = max((pts2[-1][0] - pts2[0][0]) / fps, 1e-6)
+        recent = [(f, x, y) for f, x, y in coarse if self.frames - f <= 2 * fps]
+        if len(recent) < 2:
+            return 0.0, straight
+        path2 = sum(math.hypot(recent[i][1] - recent[i - 1][1], recent[i][2] - recent[i - 1][2]) for i in range(1, len(recent)))
+        seconds = max((recent[-1][0] - recent[0][0]) / fps, 1e-6)
         return path2 / seconds * 1000, straight
 
+    def _status(self, scope, fps, action, angle=None, age_s=None, speed=None, straight=None, dist=None):
+        """Live line in the Plugin tab, once per second."""
+        if self.frames % max(1, int(fps)) != 0:
+            return
+        parts = [action]
+        if angle is not None: parts.append(f'{angle:.0f} deg off')
+        if age_s is not None: parts.append(f'run {age_s:.1f} s')
+        if speed is not None: parts.append(f'{speed:.0f} um/s')
+        if straight is not None: parts.append(f'straight {straight:.2f}')
+        if dist is not None: parts.append(f'{dist:.2f} mm to go')
+        scope.print(' | '.join(parts))
+
     def _log(self, state, scope, dist, angle, action, **extra):
+        fps = state.fps if state.fps > 0 else 30.0
+        self._status(scope, fps, action, angle=angle, age_s=extra.get('age_s'), speed=extra.get('speed'), straight=extra.get('straightness'), dist=dist)
         scope.log(event='track', frame=self.frames, t=state.time_s, worm=state.worm_xy, dist=dist, angle_deg=angle,
                   reversing=state.is_reversing, voltage=state.voltage, action=action, pulses=self.pulses, **extra)
