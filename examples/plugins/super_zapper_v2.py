@@ -35,22 +35,22 @@ class Controller:
 
     # --- decision --------------------------------------------------------------------------
     away_angle_deg = 100.0           # heading must be more than this off the target direction
-    away_frames = 90                 # wrong way continuously for this long before a pulse (~3 s)
+    away_frames = 45                 # wrong way continuously for this long before a pulse (~1.5 s)
     heading_window = 30              # trail points for the heading estimate
     min_travel_mm = 0.02             # below this much travel in the window the heading is unknown
 
     # --- roaming gate ----------------------------------------------------------------------
-    roaming_gate = True
-    min_speed_um_s = 150.0           # mean speed over the last 2 s
-    min_straightness = 0.6           # net displacement / path length over the last 3 s
+    roaming_gate = False             # OFF: judge in every state; turn on once min_speed / min_straightness are known for the animal
+    min_speed_um_s = 100.0           # mean speed over the last 2 s
+    min_straightness = 0.5           # net displacement / path length over the last 3 s (0.5 s steps)
 
     # --- stimulus --------------------------------------------------------------------------
     voltage = 4.5                    # DAQ maximum is 4.95 V
     pulse_frames = 60                # light on for this many frames (~2 s at 30 fps)
     refractory_frames = 360          # no new decision for this long after a pulse starts (~12 s)
     rezap_radius_mm = 0.5            # re-arm once the worm moved this far from the last zap point
-    rezap_frames = 600               # or after this many frames (~20 s), whichever first
-    max_pulses_per_min = 4
+    rezap_frames = 300               # or after this many frames (~10 s), whichever first
+    max_pulses_per_min = 6
 
     # --- evaluation and controls -----------------------------------------------------------
     eval_frames = 360                # score the outcome this long after light-on (~12 s)
@@ -162,7 +162,7 @@ class Controller:
         if self.away_count >= self.away_frames:
             self._fire(scope, state, dist, angle, fps, speed, straight)
         else:
-            self._log(state, scope, dist, angle, 'off', age_s=self.away_count / fps)
+            self._log(state, scope, dist, angle, 'off', age_s=self.away_count / fps, speed=speed, straightness=straight)
 
     def teardown(self, scope):
         scope.light_off()

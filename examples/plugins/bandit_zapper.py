@@ -51,13 +51,13 @@ class Controller:
     min_travel_mm = 0.02
     refractory_frames = 360          # ~12 s after a stimulus/sham: reversal + omega
     rezap_radius_mm = 0.5
-    rezap_frames = 600
-    max_pulses_per_min = 4
+    rezap_frames = 300               # or after this many frames (~10 s), whichever first
+    max_pulses_per_min = 6
 
     # --- state gate (roaming only) ---------------------------------------------------------
-    roaming_gate = True
-    min_speed_um_s = 150.0
-    min_straightness = 0.6
+    roaming_gate = False             # OFF: judge in every state; turn on once min_speed / min_straightness are known for the animal
+    min_speed_um_s = 100.0           # mean speed over the last 2 s
+    min_straightness = 0.5           # net displacement / path length over the last 3 s (0.5 s steps)
 
     # --- arms, reward ----------------------------------------------------------------------
     arms = [(4.5, 60, 1, 0), (4.5, 30, 3, 30), (2.0, 60, 1, 0), (0.0, 60, 1, 0)]
@@ -189,14 +189,14 @@ class Controller:
         wrong_way = cos_theta < threshold and not state.is_reversing
         if not wrong_way:
             self._reset_run()
-            self._log(state, scope, dist, angle, 'off')
+            self._log(state, scope, dist, angle, 'off', speed=speed, straightness=straight)
             return
 
         self.away_age += 1
         age_s = self.away_age / fps
         due_age = next((a for a in self.decision_ages_s if age_s >= a and a not in self.decided), None)
         if due_age is None:
-            self._log(state, scope, dist, angle, 'wrong_way', age_s=age_s)
+            self._log(state, scope, dist, angle, 'wrong_way', age_s=age_s, speed=speed, straightness=straight)
             return
         self.decided.add(due_age)
         self._decide(scope, state, dist, angle, speed, straight, due_age, age_s)
