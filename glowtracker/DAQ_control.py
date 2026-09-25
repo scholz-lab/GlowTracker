@@ -722,17 +722,13 @@ class ReversalDetector():
         # Greedy sums up until equal or exceed animal's length
         #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
         revTrail = croppedTrail[::-1]
-        sumLength = 0
-
-        tailIndex = 0
-
-        for i in range(1, len(revTrail)):
-            length = np.linalg.norm(revTrail[i-1] - revTrail[i])
-            sumLength = sumLength + length
-            tailIndex = i
-
-            if sumLength >= self.animalLength_mm:
-                break
+        # Vectorised form of the greedy walk: cumulative segment lengths from the head,
+        #   tail index = first segment where the sum reaches the animal length
+        #   (or the last segment if the whole trail is shorter).
+        segLengths = np.linalg.norm(np.diff(revTrail, axis=0), axis=1)
+        cumLength = np.cumsum(segLengths)
+        tailIndex = int(np.searchsorted(cumLength, self.animalLength_mm)) + 1
+        tailIndex = min(tailIndex, len(revTrail) - 1)
 
         # Copy points from head to tail
         # We now have bodyVert: Bx2 (B:= body length), rows of point from head to tail

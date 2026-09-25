@@ -287,9 +287,10 @@ class PluginHost:
         self._lock = threading.Lock()
         self._log_file = None
         self._log_path: str | None = None
+        self._log_dir: str | None = None
         # Log lines are serialized on the plugin thread but written by a separate thread, so a
         # slow disk or network share never stalls the per-frame decision loop.
-        self._log_queue: deque[str] = deque()
+        self._log_queue: deque[dict] = deque()
         self._log_thread: threading.Thread | None = None
         self._log_stop = threading.Event()
         self._log_wake = threading.Event()
@@ -458,13 +459,8 @@ class PluginHost:
     def _log(self, fields: dict) -> None:
         """Queue one JSON line; the writer thread puts it on disk (see _log_writer)."""
         record = {'wall_time': time.time(), **fields}
-        line = json.dumps(record, default=_json_default) + '\n'
         with self._lock:
-            if self._log_path is None:
-                directory = self._log_dir_getter() or os.getcwd()
-                stamp = time.strftime('%Y%m%d_%H%M%S')
-                self._log_path = os.path.join(directory, f'plugin_log_{stamp}.jsonl')
-            self._log_queue.append(line)
+            self._log_queue.append(record)
             if self._log_thread is None or not self._log_thread.is_alive():
                 self._log_stop.clear()
                 self._log_thread = threading.Thread(target=self._log_writer, name='ScriptPluginLog', daemon=True)
@@ -478,13 +474,12 @@ class PluginHost:
             self._log_wake.clear()
             stopping = self._log_stop.is_set()
             with self._lock:
-                lines = list(self._log_queue)
+                records = list(self._log_queue)
                 self._log_queue.clear()
-            if lines:
+            if records:
+                lines = [json.dumps(r, default=_json_default) + '\n' for r in records]
                 try:
-                    if self._log_file is None:
-                        os.makedirs(os.path.dirname(self._log_path), exist_ok=True)
-                        self._log_file = open(self._log_path, 'a', encoding='utf-8')
+                    self._open_log_in(self._current_log_dir())
                     self._log_file.writelines(lines)
                     self._log_file.flush()
                 except Exception as e:
@@ -497,6 +492,33 @@ class PluginHost:
             except Exception:
                 pass
             self._log_file = None
+
+    def _current_log_dir(self) -> str:
+        """The folder the log belongs in right now: the app's save folder, else the working directory."""
+        try:
+            directory = self._log_dir_getter()
+        except Exception:
+            directory = None
+        return os.path.abspath(directory) if directory else os.getcwd()
+
+    def _open_log_in(self, directory: str) -> None:
+        """Open the log file in `directory`, rotating to a new file if the folder changed since the
+        last write (so lines written after Record created a new run folder land in that folder)."""
+        if self._log_file is not None and self._log_dir == directory:
+            return
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
+        os.makedirs(directory, exist_ok=True)
+        stamp = time.strftime('%Y%m%d_%H%M%S')
+        path = os.path.join(directory, f'plugin_log_{stamp}.jsonl')
+        self._log_file = open(path, 'a', encoding='utf-8')
+        self._log_dir = directory
+        self._log_path = path
+        print(f'[plugin] logging to {path}')
 
     def _close_log(self) -> None:
         """Ask the writer to drain and close; waits briefly so the file is complete on stop."""
@@ -515,6 +537,6 @@ class PluginHost:
 def _json_default(value):
     if isinstance(value, np.ndarray):
         return value.tolist()
-    if isinstance(value, (np.floating, np.integer)):
+    if isinstance(value, (np.floating, np.integer, np.bool_)):
         return value.item()
     return str(value)

@@ -5446,6 +5446,7 @@ class GlowTrackerApp(App):
             budget = max(0.05, 2.0 / framerate) if framerate > 0 else 0.1
         except Exception:
             budget = 0.1
+        self._pluginTrailCache = None
         return PluginHost(
             state_provider= self._pluginState,
             frame_provider= self._pluginFrame,
@@ -5482,9 +5483,7 @@ class GlowTrackerApp(App):
             if rtc.cmsOffset_x is not None and rtc.cmsOffset_y is not None:
                 cms_offset = (float(rtc.cmsOffset_x), float(rtc.cmsOffset_y))
             try:
-                history = np.array(list(rtc.posHist), dtype=float)
-                if history.ndim == 2 and history.shape[1] >= 2:
-                    trail = history[:, :2]
+                trail = self._pluginTrail(rtc.posHist)
             except Exception:
                 pass
 
@@ -5526,6 +5525,19 @@ class GlowTrackerApp(App):
             image_shape= tuple(image.shape) if image is not None else (),
             analysis= analysis,
         )
+
+
+    def _pluginTrail(self, posHist) -> np.ndarray:
+        """posHist as an N×2 float array (mm); rebuilt only when the tracker appended a point."""
+        n = len(posHist)
+        key = (n, posHist[0], posHist[-1]) if n else (0, None, None)
+        cache = self._pluginTrailCache
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        history = np.array(posHist, dtype=float)
+        trail = history[:, :2] if history.ndim == 2 and history.shape[1] >= 2 else np.empty((0, 2), dtype=float)
+        self._pluginTrailCache = (key, trail)
+        return trail
 
 
     def _configureReversalDetector(self, detector) -> None:

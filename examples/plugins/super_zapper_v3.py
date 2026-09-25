@@ -1,4 +1,11 @@
-"""Guide the animal to a target point by triggering AWA-driven reversals. Version 2.
+"""Guide the animal to a target point by triggering AWA-driven reversals. Version 3.
+
+New in v3: an early reversal check 3 s after each pulse (backed up >= reversal_mm along the pre-pulse
+heading, or the app's reversal flag). If the pulse did nothing, the plugin retries once after
+`retry_after_frames` from light-on instead of waiting out the full refractory. Logged as
+`reversal_check` and `retry`; the Plugin tab tally shows how many first pulses and retries reversed.
+
+Version 2 notes follow.
 
 Same idea as super_zapper.py (zap when the worm heads the wrong way), tuned with the EIM00015
 results: a 2 s pulse reverses the worm 84 % of the time with 1.3 s latency, the reversal plus omega
@@ -57,6 +64,12 @@ class Controller:
     success_angle_deg = 90.0         # success = heading within this of the target at evaluation
     sham_every = 5                   # every 5th pulse is a sham (light off); 0 = never
 
+    # --- early reversal check and retry ----------------------------------------------------
+    detect_frames = 90               # check 3 s after light-on
+    reversal_mm = 0.10               # backed up at least this far along the pre-pulse heading
+    retry_after_frames = 120         # if no reversal: next pulse allowed this long after light-on (~4 s)
+    max_retries = 1                  # retries per wrong-way episode
+
     def setup(self, scope):
         self.target = None
         self.arrived = False
@@ -71,7 +84,12 @@ class Controller:
         self.last_zap_frame = None
         self.pulse_frames_log = []
         self.pending = []            # outcomes waiting to be scored
-        self.tally = {'stim': [0, 0], 'sham': [0, 0]}   # [successes, n]
+        self.tally = {'stim': [0, 0], 'sham': [0, 0], 'retry': [0, 0]}   # [successes, n]
+        self.check = None            # pending early reversal check
+        self.reversing_seen = False
+        self.retries = 0             # retries used in the current episode
+        self.retry_armed = False
+        self.responded = {'stim': [0, 0], 'retry': [0, 0]}                # [reversed, n] from the 3 s check
         self.hist = deque(maxlen=4 * 30 + 5)
         self.cos_margin = math.cos(math.radians(self.away_angle_deg))
         self.cos_release = math.cos(math.radians(self.away_angle_deg - 15.0))   # hysteresis for a run under way
@@ -95,6 +113,11 @@ class Controller:
         tx = self.target[0] - state.worm_xy[0]
         ty = self.target[1] - state.worm_xy[1]
         dist = math.hypot(tx, ty)
+
+        if self.check is not None:
+            self.reversing_seen = self.reversing_seen or bool(state.is_reversing)
+            if self.frames - self.check['frame'] >= self.detect_frames:
+                self._reversal_check(scope, state)
 
         for p in [p for p in self.pending if self.frames - p['frame'] >= self.eval_frames]:
             self.pending.remove(p)
@@ -141,7 +164,9 @@ class Controller:
             self._log(state, scope, dist, None, 'rate_limited')
             return
 
-        speed, straight = self._state_metrics(fps)
+        if self.roaming_gate or self.frames % max(1, int(fps)) == 0:
+            self._metrics_cache = self._state_metrics(fps)
+        speed, straight = getattr(self, '_metrics_cache', (0.0, 0.0))
         if self.roaming_gate and (speed < self.min_speed_um_s or straight < self.min_straightness):
             self.away_count = 0
             self._log(state, scope, dist, None, 'dwelling', speed=speed, straightness=straight)
@@ -158,21 +183,26 @@ class Controller:
         threshold = self.cos_release if self.away_count > 0 else self.cos_margin
         wrong_way = cos_theta < threshold and not state.is_reversing
         self.away_count = self.away_count + 1 if wrong_way else 0
+        if not wrong_way:
+            self.retries = 0
+            self.retry_armed = False
 
-        if self.away_count >= self.away_frames:
-            self._fire(scope, state, dist, angle, fps, speed, straight)
+        if self.away_count >= self.away_frames or (self.retry_armed and wrong_way):
+            self._fire(scope, state, dist, angle, fps, speed, straight, retry=self.retry_armed)
         else:
             self._log(state, scope, dist, angle, 'off', age_s=self.away_count / fps, speed=speed, straightness=straight)
 
     def teardown(self, scope):
         scope.light_off()
-        s, n = self.tally['stim']; hs, hn = self.tally['sham']
-        scope.print(f'done: {self.pulses} pulses, stim success {s}/{n}, sham success {hs}/{hn}')
+        s, n = self.tally['stim']; hs, hn = self.tally['sham']; rs, rn = self.tally['retry']
+        scope.print(f'done: {self.pulses} pulses, guidance success stim {s}/{n}, retry {rs}/{rn}, sham {hs}/{hn}; '
+                    f'reversed on 3 s check: first pulses {self.responded["stim"][0]}/{self.responded["stim"][1]}, retries {self.responded["retry"][0]}/{self.responded["retry"][1]}')
 
     # --- helpers ----------------------------------------------------------------------------
-    def _fire(self, scope, state, dist, angle, fps, speed, straight):
+    def _fire(self, scope, state, dist, angle, fps, speed, straight, retry=False):
         self.pulses += 1
-        sham = self.sham_every > 0 and self.pulses % self.sham_every == 0
+        sham = (not retry) and self.sham_every > 0 and self.pulses % self.sham_every == 0
+        self.retry_armed = False
         self.shams += int(sham)
         self.pulse_voltage = 0.0 if sham else self.voltage
         self.pulse_left = self.pulse_frames
@@ -182,13 +212,38 @@ class Controller:
         self.pulse_frames_log.append(self.frames)
         age_s = self.away_count / fps
         self.away_count = 0
-        self.pending.append({'pulse': self.pulses, 'frame': self.frames, 'dist': dist, 'angle': angle, 'sham': sham, 'age_s': age_s})
+        self.pending.append({'pulse': self.pulses, 'frame': self.frames, 'dist': dist, 'angle': angle, 'sham': sham, 'age_s': age_s, 'retry': retry})
+        if not sham:
+            self.check = {'pulse': self.pulses, 'frame': self.frames, 'origin': state.worm_xy, 'heading': self._heading(state.trail), 'retry': retry}
+            self.reversing_seen = False
         scope.set_voltage(self.pulse_voltage)
-        scope.log(event='pulse', pulse=self.pulses, sham=sham, frame=self.frames, t=state.time_s, worm=state.worm_xy,
+        scope.log(event='pulse', pulse=self.pulses, sham=sham, retry=retry, frame=self.frames, t=state.time_s, worm=state.worm_xy,
                   angle_deg=angle, dist=dist, run_age_s=age_s, voltage=self.pulse_voltage, pulse_frames=self.pulse_frames,
                   speed_um_s=speed, straightness=straight)
-        scope.print(f'{"SHAM" if sham else "pulse"} {self.pulses}: heading {angle:.0f} deg off for {age_s:.1f} s, {dist:.2f} mm away')
-        self._log(state, scope, dist, angle, 'sham' if sham else 'pulse')
+        scope.print(f'{"SHAM" if sham else ("RETRY" if retry else "pulse")} {self.pulses}: heading {angle:.0f} deg off for {age_s:.1f} s, {dist:.2f} mm away')
+        self._log(state, scope, dist, angle, 'sham' if sham else ('retry' if retry else 'pulse'))
+
+    def _reversal_check(self, scope, state):
+        c = self.check
+        self.check = None
+        h = c['heading']
+        along = 0.0 if h is None else (state.worm_xy[0] - c['origin'][0]) * h[0] + (state.worm_xy[1] - c['origin'][1]) * h[1]
+        reversed_ = bool(along < -self.reversal_mm) or self.reversing_seen
+        key = 'retry' if c['retry'] else 'stim'
+        self.responded[key][0] += int(reversed_)
+        self.responded[key][1] += 1
+        scope.log(event='reversal_check', pulse=c['pulse'], retry=c['retry'], frame=self.frames, t=state.time_s, along_mm=along,
+                  app_flag=self.reversing_seen, reversed=reversed_, responded=self.responded)
+        if reversed_:
+            scope.print(f'pulse {c["pulse"]}: reversed ({along * 1000:+.0f} um)')
+        elif self.retries < self.max_retries:
+            self.retries += 1
+            self.retry_armed = True
+            self.cooldown = min(self.cooldown, max(0, self.retry_after_frames - self.detect_frames))
+            self.last_zap_xy = None
+            scope.print(f'pulse {c["pulse"]}: NO reversal ({along * 1000:+.0f} um), retry armed in {self.cooldown / (state.fps or 30):.1f} s')
+        else:
+            scope.print(f'pulse {c["pulse"]}: NO reversal ({along * 1000:+.0f} um), retries used')
 
     def _score(self, scope, state, p, dist, tx, ty, fps):
         progress = p['dist'] - dist
@@ -198,9 +253,9 @@ class Controller:
             cos_t = (heading[0] * tx + heading[1] * ty) / dist
             angle = math.degrees(math.acos(max(-1.0, min(1.0, cos_t))))
         success = angle is not None and angle < self.success_angle_deg
-        key = 'sham' if p['sham'] else 'stim'
+        key = 'sham' if p['sham'] else ('retry' if p.get('retry') else 'stim')
         self.tally[key][0] += int(success); self.tally[key][1] += 1
-        scope.log(event='outcome', pulse=p['pulse'], sham=p['sham'], run_age_s=p['age_s'], angle_at_pulse=p['angle'],
+        scope.log(event='outcome', pulse=p['pulse'], sham=p['sham'], retry=p.get('retry', False), run_age_s=p['age_s'], angle_at_pulse=p['angle'],
                   heading_angle_deg=angle, progress_mm=progress, success=success, frame=self.frames, t=state.time_s,
                   tally=self.tally)
         s, n = self.tally['stim']; hs, hn = self.tally['sham']
@@ -260,8 +315,12 @@ class Controller:
         if dist is not None: parts.append(f'{dist:.2f} mm to go')
         scope.print(' | '.join(parts))
 
+    log_every = 3                    # routine per-frame log lines: keep 1 in 3 (events are always logged)
+
     def _log(self, state, scope, dist, angle, action, **extra):
         fps = state.fps if state.fps > 0 else 30.0
         self._status(scope, fps, action, angle=angle, age_s=extra.get('age_s'), speed=extra.get('speed'), straight=extra.get('straightness'), dist=dist)
+        if self.frames % self.log_every:
+            return
         scope.log(event='track', frame=self.frames, t=state.time_s, worm=state.worm_xy, dist=dist, angle_deg=angle,
                   reversing=state.is_reversing, voltage=state.voltage, action=action, pulses=self.pulses, **extra)

@@ -458,3 +458,28 @@ def test_frames_are_coalesced_when_update_is_slow(tmp_path):
     host.stop()
     assert host.frames_processed < 10
     assert 'skipped' in host.message
+
+
+def test_log_follows_the_save_folder(tmp_path):
+    """Lines written after the app's save folder changes (Record made a new run folder) land in the new folder."""
+    path = write_plugin(tmp_path, '''
+        def update(state, scope):
+            scope.log(frame=state.frame)
+    ''')
+    folder = {'dir': str(tmp_path / 'run_a')}
+    host = make_host(DAQ.DAQControl(), log_dir_getter=lambda: folder['dir'])
+    host.log_flush_interval_s = 0.05
+    host.load(path)
+    host.start()
+    pump(host, 3)
+    time.sleep(0.3)
+    first = host.log_path
+    assert first.startswith(str(tmp_path / 'run_a'))
+    folder['dir'] = str(tmp_path / 'run_b')
+    pump(host, 3)
+    host.stop()
+    second = host.log_path
+    assert second.startswith(str(tmp_path / 'run_b'))
+    lines_a = open(first, encoding='utf-8').read().splitlines()
+    lines_b = open(second, encoding='utf-8').read().splitlines()
+    assert len(lines_a) == 3 and len(lines_b) == 3

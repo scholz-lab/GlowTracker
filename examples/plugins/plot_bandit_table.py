@@ -25,8 +25,8 @@ def age_key(label):
 
 def main(path, out=None):
     table = load_table(path)
-    rows = sorted({k.split('|')[0] for k in table}, key=age_key)
-    cols = sorted({k.split('|', 1)[1] for k in table}, key=lambda c: (c == 'WAIT', c.startswith('SHAM'), c))
+    rows = sorted({k.rsplit('|', 1)[0] for k in table}, key=age_key)
+    cols = sorted({k.rsplit('|', 1)[1] for k in table}, key=lambda c: (c == 'WAIT', c.startswith('SHAM'), c))
     n = np.zeros((len(rows), len(cols))); succ = np.full_like(n, np.nan); prog = np.full_like(n, np.nan)
     for i, r in enumerate(rows):
         for j, c in enumerate(cols):
