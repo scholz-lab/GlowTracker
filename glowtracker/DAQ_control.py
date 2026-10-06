@@ -84,6 +84,7 @@ class DAQControl():
         # Serializes USB traffic: the acquisition thread (built-in modes) and a plugin thread
         # may both drive the outputs.
         self._io_lock = threading.RLock()
+        self._updateErrors = 0          # per-recording count of failed per-frame updates
 
 
     def isConnected(self) -> bool:
@@ -132,20 +133,23 @@ class DAQControl():
 
 
     def close(self) -> bool:
-        if not self.isConnected():
-            return True
+        # Held for the whole disconnect: the recording thread checks isConnected() and then
+        # writes to the device, so the device must not vanish between those two steps.
+        with self._io_lock:
+            if not self.isConnected():
+                return True
 
-        daq = self.daq
-        safe = False
-        try:
-            safe = self.safe_off()
-        finally:
+            daq = self.daq
+            safe = False
             try:
-                daq.close()
-            except Exception as e:
-                print(f'Closing DAQ connection failed: {e}')
+                safe = self.safe_off()
             finally:
-                self.daq = None
+                try:
+                    daq.close()
+                except Exception as e:
+                    print(f'Closing DAQ connection failed: {e}')
+                finally:
+                    self.daq = None
 
         return safe
 
@@ -153,8 +157,10 @@ class DAQControl():
     def start(self, startRecordPosition: np.ndarray):
         """Reset internal command dict to original to prepare for running.
         """
-        self.sequnceDictRunning = deepcopy(self.sequncerDict)
+        with self._io_lock:
+            self.sequnceDictRunning = deepcopy(self.sequncerDict)
         self.daqStageProgram.startRecordPosition = startRecordPosition
+        self._updateErrors = 0
 
 
     def reset(self):
@@ -163,10 +169,12 @@ class DAQControl():
         if not self.isConnected():
             return
 
-        try:
-            self.daq.setDefaults(SetToFactoryDefaults=True)
-        finally:
-            self.safe_off()
+        with self._io_lock:
+            try:
+                if self.isConnected():
+                    self.daq.setDefaults(SetToFactoryDefaults=True)
+            finally:
+                self.safe_off()
 
         self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
 
@@ -296,6 +304,27 @@ class DAQControl():
         raise ValueError("commands must be [off] or [on, voltage]")
 
 
+    def update_safely(self, **kwargs) -> bool:
+        """update() for the recording frame callback: a DAQ error must never end the recording.
+
+        Any exception (USB timeout, LabJack error, device unplugged) is reported, the light is
+        switched off, and False is returned; the caller carries on with the next frame.
+        """
+        try:
+            self.update(**kwargs)
+            return True
+        except Exception as e:
+            self._updateErrors += 1
+            if self._updateErrors == 1 or self._updateErrors % 100 == 0:
+                print(f'DAQ update failed (error {self._updateErrors} this recording), light switched off, '
+                      f'recording continues: {type(e).__name__}: {e}')
+            try:
+                self.safe_off()
+            except Exception as off_error:
+                print(f'Switching the DAQ off after an update error failed: {off_error}')
+            return False
+
+
     def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] | None = None, posHist: np.ndarray | None = None) -> None:
         if self.daqMode == DAQMode.Off:
             return
@@ -316,6 +345,13 @@ class DAQControl():
 
 
     def updateSequencer(self, frameNum: int = 0, frameTime: float = 0) -> None:
+        # One sequencer step is atomic with respect to safe_off()/close() on other threads, which
+        # clear the running sequence; otherwise the queue can empty between the check and the read.
+        with self._io_lock:
+            self._updateSequencerLocked(frameNum, frameTime)
+
+
+    def _updateSequencerLocked(self, frameNum: int = 0, frameTime: float = 0) -> None:
 
         # Seperate this into two cases, one for each DAQMode
         #   Also need stage position input
@@ -415,9 +451,10 @@ class DAQControl():
                 print(f"Light on {vol} vol")
 
             with self._io_lock:
-                dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
-                dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
-                self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+                if self.daq is not None:
+                    dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
+                    dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
+                    self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
                 self.currentVoltage = vol
                 self.channelVoltages = [vol, vol]
 
@@ -427,9 +464,10 @@ class DAQControl():
                 print(f"Light off")
 
             with self._io_lock:
-                dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
-                dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
-                self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
+                if self.daq is not None:
+                    dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
+                    dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
+                    self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
                 self.currentVoltage = 0
                 self.channelVoltages = [0.0, 0.0]
 

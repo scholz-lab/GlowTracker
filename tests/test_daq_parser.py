@@ -105,3 +105,66 @@ def test_reversal_detector_distinguishes_forward_and_reverse_motion():
     assert detector.detectReversal([
         [0, 0], [1, 0], [2, 0], [3, 0], [2.5, 0],
     ])
+
+
+class FlakyDaq(FakeDaq):
+    """getFeedback fails while `failing` is set, like a USB timeout or an unplugged LabJack."""
+
+    def __init__(self):
+        super().__init__()
+        self.failing = False
+
+    def getFeedback(self, *commands):
+        if self.failing:
+            raise RuntimeError('LabJack USB timeout')
+        super().getFeedback(*commands)
+
+
+def _sequencer(script, monkeypatch):
+    monkeypatch.setattr(DAQ.u3, 'DAC0_8', lambda value: ('dac0', value))
+    monkeypatch.setattr(DAQ.u3, 'DAC1_8', lambda value: ('dac1', value))
+    control = DAQ.DAQControl()
+    control.daq = FlakyDaq()
+    control.daqMode = DAQ.DAQMode.Sequencer
+    control.parseTextScript(script)
+    control.start([0.0, 0.0])
+    return control
+
+
+def test_daq_error_during_recording_is_reported_not_raised(monkeypatch):
+    control = _sequencer('mode: [frame]\n2: [on, 3.0]\n4: [off]', monkeypatch)
+    assert control.update_safely(frameNum=0, frameTime=0.0)
+    control.daq.failing = True
+    assert control.update_safely(frameNum=2, frameTime=0.1) is False   # the recording keeps going
+    assert control.currentVoltage == 0                                   # and the light is treated as off
+    control.daq.failing = False
+    assert control.update_safely(frameNum=3, frameTime=0.2)
+
+
+def test_disconnect_during_recording_does_not_break_the_next_command(monkeypatch):
+    control = _sequencer('mode: [frame]\n1: [on, 2.0]', monkeypatch)
+    control.close()
+    assert not control.isConnected()
+    control._executeCommand(['on', 2.0])        # the recording thread may still be mid-command
+    assert control.currentVoltage == 2.0
+
+
+def test_sequencer_survives_safe_off_from_another_thread(monkeypatch):
+    import threading
+    control = _sequencer('mode: [time]\n0.5: [on, 1.0]\n1.0: [off]\n1.5: [on, 1.0]', monkeypatch)
+    stop = threading.Event()
+
+    def clear_repeatedly():
+        while not stop.is_set():
+            control.safe_off()
+
+    other = threading.Thread(target=clear_repeatedly)
+    other.start()
+    try:
+        for i in range(3000):
+            if not control.sequnceDictRunning:
+                control.start([0.0, 0.0])
+            control.updateSequencer(frameNum=i, frameTime=2.0)   # raised StopIteration before the fix
+    finally:
+        stop.set()
+        other.join()

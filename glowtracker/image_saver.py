@@ -96,6 +96,33 @@ class SaveAcknowledgements:
             self.next_index += 1
 
 
+class DropBudget:
+    """Tolerate short saver back-pressure instead of ending the recording.
+
+    A frame that cannot be queued is dropped (it gets no coordinate row, like any failed frame).
+    Only when more than `max_consecutive` frames in a row are dropped does the saver count as
+    failed, which is when the recording stops.
+    """
+
+    def __init__(self, max_consecutive):
+        self.max_consecutive = max(0, int(max_consecutive))
+        self.consecutive = 0
+        self.total = 0
+        self.lock = Lock()
+
+    def dropped(self):
+        """Record one dropped frame. Returns True once the run of drops exceeds the budget."""
+        with self.lock:
+            self.consecutive += 1
+            self.total += 1
+            return self.consecutive > self.max_consecutive
+
+    def passed(self):
+        """A frame went through: the run of consecutive drops is over."""
+        with self.lock:
+            self.consecutive = 0
+
+
 def _report(status_queue, status):
     if status_queue is None:
         return True

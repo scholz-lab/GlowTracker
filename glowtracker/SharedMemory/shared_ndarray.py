@@ -158,7 +158,8 @@ class SharedNDArray(Generic[SharedT]):
             `np.dtype` may be used as it will be converted to an actual `dtype` object.
         """
         dtype = np.dtype(dtype)  # Convert to dtype if possible
-        shm = mem_mgr.SharedMemory(np.prod(shape) * dtype.itemsize)
+        # A plain int: Windows' CreateFileMapping rejects numpy integers (np.prod returns np.int64)
+        shm = mem_mgr.SharedMemory(int(np.prod(shape)) * dtype.itemsize)
         return cls(shm=shm, shape=shape, dtype=dtype)
 
     @property

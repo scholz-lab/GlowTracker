@@ -223,3 +223,29 @@ def test_recording_coordinates_include_voltage_only_through_acknowledgements():
     assert 'add' in called_attributes
     assert 'write' not in called_attributes
     assert 'percentile_95 daqVol' in source
+
+
+def test_drop_budget_tolerates_short_backpressure_only():
+    budget = image_saver.DropBudget(3)
+    assert [budget.dropped() for _ in range(3)] == [False, False, False]
+    budget.passed()                                  # a frame got through: the run is reset
+    assert [budget.dropped() for _ in range(4)] == [False, False, False, True]
+    assert budget.total == 7
+
+
+def test_dropped_frame_gets_no_coordinates_and_later_frames_still_do():
+    class File:
+        def __init__(self):
+            self.rows = []
+
+        def write(self, row):
+            self.rows.append(row)
+
+    f = File()
+    acks = image_saver.SaveAcknowledgements(f)
+    for i in range(3):
+        acks.add(i, f'row {i}\n', [0])
+    acks.saved(0, 0)
+    acks.failed(1)                                   # dropped by the budget
+    acks.saved(2, 0)
+    assert f.rows == ['row 0\n', 'row 2\n']

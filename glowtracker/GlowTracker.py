@@ -19,6 +19,9 @@ SAVE_ACQUISITION_JOIN_TIMEOUT = 5.0
 SAVE_WORKER_JOIN_TIMEOUT = 15.0
 SAVE_WORKER_TERMINATE_TIMEOUT = 2.0
 SAVE_STATUS_JOIN_TIMEOUT = 2.0
+# Frames that may be dropped in a row when the saver falls behind before the recording is
+# stopped as failed (~3 s at 30 fps). Isolated drops only lose those frames.
+SAVE_MAX_CONSECUTIVE_DROPS = 90
 COORDINATE_CLOSE_TIMEOUT = 2.0
 
 import os
@@ -2448,6 +2451,7 @@ class RecordButton(ImageAcquisitionButton):
         self._saveFailureLock = Lock()
         self._recordingCleanupStarted = False
         self._abandonedSavers = []
+        self.saveDropBudget = None
 
 
     @override
@@ -2554,6 +2558,7 @@ class RecordButton(ImageAcquisitionButton):
         self.saveHandoffStopEvent = Event()
         self.coordinateFile = None
         self.saveAcknowledgements = None
+        self.saveDropBudget = None
 
         try:
             if self.app.daqControl.isConnected() \
@@ -2569,6 +2574,7 @@ class RecordButton(ImageAcquisitionButton):
             )
 
             self.coordinateFile = self.initCoordinateFile()
+            self.saveDropBudget = image_saver.DropBudget(SAVE_MAX_CONSECUTIVE_DROPS)
             self.saveAcknowledgements = image_saver.SaveAcknowledgements(
                 self.coordinateFile
             )
@@ -2653,6 +2659,7 @@ class RecordButton(ImageAcquisitionButton):
                     self.imageQueue,
                     self.saveFailureEvent,
                     self.saveAcknowledgements,
+                    self.saveDropBudget,
                 ),
                 daemon=True,
             )
@@ -2833,6 +2840,33 @@ class RecordButton(ImageAcquisitionButton):
             self._setSaverFailure(message)
         else:
             print(f'Abandoned image saver failed: {message}')
+
+
+    def _dropSaveFrame(
+            self, index: int, message: str,
+            acknowledgements=None, failureEvent=None, dropBudget=None) -> None:
+        """Drop one frame the saver cannot take right now; fail the recording only when the
+        saver has been unable to keep up for more than SAVE_MAX_CONSECUTIVE_DROPS frames in a row."""
+        if acknowledgements is None:
+            acknowledgements = self.saveAcknowledgements
+        if dropBudget is None:
+            dropBudget = self.saveDropBudget
+        if dropBudget is None or dropBudget.dropped():
+            self._failSaveFrame(
+                index,
+                f'{message}; the saver fell behind for more than '
+                f'{SAVE_MAX_CONSECUTIVE_DROPS} frames in a row',
+                acknowledgements, failureEvent,
+            )
+            return
+        try:
+            if acknowledgements is not None:
+                acknowledgements.failed(index)
+        except Exception as e:
+            print(f'Marking dropped frame {index} failed: {e}')
+        if dropBudget.total == 1 or dropBudget.total % 100 == 0:
+            print(f'WARNING: {message}; frame dropped, recording continues '
+                  f'({dropBudget.total} dropped so far)')
 
 
     def _failSaveFrame(
@@ -3083,6 +3117,9 @@ class RecordButton(ImageAcquisitionButton):
             f'Image saving completed: {savedFrames} saved, '
             f'{failedFrames} failed, {recordedFrames} captured'
         )
+        if self.saveDropBudget is not None and self.saveDropBudget.total:
+            print(f'WARNING: {self.saveDropBudget.total} frames were dropped because the saver fell behind '
+                  f'(they have no image and no coordinate row)')
         if self.saveHandoffError is not None:
             print(f'WARNING: recording stopped after saver failure: {self.saveHandoffError}')
 
@@ -3186,17 +3223,21 @@ class RecordButton(ImageAcquisitionButton):
             (channel for _, channel in saveImages),
         )
 
+        queued = True
         for saveImage, channel in saveImages:
             try:
                 self.saveHandoffQueue.put_nowait(
                     (saveImage, frameIndex, channel)
                 )
             except Full:
-                self._failSaveFrame(
+                queued = False
+                self._dropSaveFrame(
                     frameIndex,
                     f'Image handoff queue filled at frame {frameIndex}'
                 )
                 break
+        if queued and self.saveDropBudget is not None:
+            self.saveDropBudget.passed()
 
         self.frameCounter += 1
 
@@ -3218,7 +3259,7 @@ class RecordButton(ImageAcquisitionButton):
 
             imageAcquisitionManager: ImageAcquisitionManager = self.parent
 
-            self.app.daqControl.update(
+            self.app.daqControl.update_safely(
                 frameNum= self.runtimeControls.framecounter.value,
                 frameTime= imageAcquisitionManager.currentTime - imageAcquisitionManager.startTime,
                 stagePosition= self.app.coords,
@@ -3231,7 +3272,7 @@ class RecordButton(ImageAcquisitionButton):
 
     def _saveHandoffLoop(
             self, handoffQueue, stopEvent, imageQueue,
-            failureEvent, acknowledgements) -> None:
+            failureEvent, acknowledgements, dropBudget=None) -> None:
         while True:
             try:
                 image, idx, channel = handoffQueue.get(timeout=0.1)
@@ -3258,12 +3299,14 @@ class RecordButton(ImageAcquisitionButton):
                         {'img': image, 'idx': idx, 'channel': channel}, timeout=0.1
                     )
             except Full:
-                self._failSaveFrame(
+                self._dropSaveFrame(
                     idx,
                     f'Image saver queue filled at frame {idx}',
                     acknowledgements,
                     failureEvent,
+                    dropBudget,
                 )
+                continue
             except Exception as e:
                 self._failSaveFrame(
                     idx,
