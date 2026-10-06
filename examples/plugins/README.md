@@ -29,8 +29,9 @@ or a plain function `def update(state, scope): ...`.
 Plugin tab.
 
 When the plugin stops or fails, the outputs go to 0 V. For hardware that is active at 0 V, set
-`idle_voltage = 4.5` (on the class or at module level) and the app holds that voltage instead.
-See `buzzer.py`.
+`idle_voltage` (on the class or at module level) and the app holds that instead: one number for
+both outputs (`idle_voltage = 4.5`), or a pair for DAC0 and DAC1 separately
+(`idle_voltage = (4.5, 0.0)`, e.g. a buzzer on DAC0 and an LED on DAC1). See `buzzer.py`.
 
 ## `state` fields
 

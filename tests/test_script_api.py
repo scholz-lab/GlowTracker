@@ -518,3 +518,35 @@ def test_buzzer_example_buzzes_only_inside_its_windows(tmp_path):
     host.stop()
     assert seen == [4.5, 4.5, 0.0, 0.0, 4.5, 0.0, 4.5]
     assert daq.currentVoltage == 4.5                 # quiet after Stop
+
+
+def test_idle_voltage_can_differ_per_output(tmp_path):
+    """e.g. a buzzer on DAC0 (quiet at 4.5 V) and an LED on DAC1 (off at 0 V)."""
+    path = write_plugin(tmp_path, '''
+        idle_voltage = (4.5, 0.0)
+        def update(state, scope):
+            scope.set_voltage(0.0, channel=0)
+            scope.set_voltage(3.0, channel=1)
+    ''')
+    daq = DAQ.DAQControl()
+    host = make_host(daq)
+    host.load(path)
+    host.start()
+    pump(host, 1)
+    host.stop()
+    assert daq.channelVoltages == [4.5, 0.0]
+
+
+def test_bad_idle_voltage_falls_back_to_zero(tmp_path):
+    path = write_plugin(tmp_path, '''
+        idle_voltage = (4.5, 0.0, 1.0)
+        def update(state, scope):
+            scope.set_voltage(2.0)
+    ''')
+    daq = DAQ.DAQControl()
+    host = make_host(daq)
+    host.load(path)
+    host.start()
+    pump(host, 1)
+    host.stop()
+    assert daq.channelVoltages == [0.0, 0.0]
