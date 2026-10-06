@@ -444,10 +444,23 @@ class PluginHost:
                 self.status = 'stopped'
 
     def _light_off(self) -> None:
+        """Put the outputs in their resting state when the plugin stops or fails.
+
+        That is 0 V, unless the plugin declares ``idle_voltage`` (for hardware that is
+        active-low, e.g. a buzzer that sounds at 0 V and is quiet at 4.5 V).
+        """
         try:
             daq = self._daq_getter()
-            if daq is not None:
-                daq.safe_off()
+            if daq is None:
+                return
+            idle = getattr(self.controller, 'idle_voltage', None)
+            if idle:
+                try:
+                    daq.set_voltage(float(idle))
+                    return
+                except Exception as e:
+                    print(f'[plugin] setting the idle voltage {idle} V failed, switching to 0 V: {e}')
+            daq.safe_off()
         except Exception as e:
             print(f'[plugin] switching the light off failed: {e}')
 

@@ -28,6 +28,10 @@ or a plain function `def update(state, scope): ...`.
 (you always get the latest state). An exception stops the plugin and shows the traceback in the
 Plugin tab.
 
+When the plugin stops or fails, the outputs go to 0 V. For hardware that is active at 0 V, set
+`idle_voltage = 4.5` (on the class or at module level) and the app holds that voltage instead.
+See `buzzer.py`.
+
 ## `state` fields
 
 All positions are stage coordinates in millimetres. X and Y follow the stage axes.

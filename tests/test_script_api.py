@@ -483,3 +483,38 @@ def test_log_follows_the_save_folder(tmp_path):
     lines_a = open(first, encoding='utf-8').read().splitlines()
     lines_b = open(second, encoding='utf-8').read().splitlines()
     assert len(lines_a) == 3 and len(lines_b) == 3
+
+
+def test_idle_voltage_is_held_when_the_plugin_fails(tmp_path):
+    """Active-low hardware (buzzer quiet at 4.5 V): a failing plugin must not drop to 0 V."""
+    path = write_plugin(tmp_path, '''
+        idle_voltage = 4.5
+        def update(state, scope):
+            scope.set_voltage(0.0)
+            raise RuntimeError('boom')
+    ''')
+    daq = DAQ.DAQControl()
+    host = make_host(daq)
+    host.load(path)
+    host.start()
+    pump(host, 1)
+    host.stop()
+    assert host.status == 'error'
+    assert daq.currentVoltage == 4.5
+
+
+def test_buzzer_example_buzzes_only_inside_its_windows(tmp_path):
+    import os
+    daq = DAQ.DAQControl()
+    clock = {'t': 1000.0, 'rec': True}
+    host = make_host(daq, state_provider=lambda: make_state(frame=0, wall_time=clock['t'], is_recording=clock['rec']))
+    host.load(os.path.join(os.path.dirname(__file__), '..', 'examples', 'plugins', 'buzzer.py'))
+    host.start()
+    seen = []
+    for t in (0.0, 9.9, 10.0, 10.5, 11.0, 30.2, 40.0):
+        clock['t'] = 1000.0 + t
+        pump(host, 1)
+        seen.append(daq.currentVoltage)
+    host.stop()
+    assert seen == [4.5, 4.5, 0.0, 0.0, 4.5, 0.0, 4.5]
+    assert daq.currentVoltage == 4.5                 # quiet after Stop
