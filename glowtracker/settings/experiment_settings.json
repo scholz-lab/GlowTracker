@@ -51,5 +51,12 @@
         "desc": "Operating buffer size to handle the data input and output (frames)",
         "section": "Experiment",
         "key": "buffersize"
+    },
+    {
+        "type": "numeric",
+        "title": "Save queue",
+        "desc": "Frames held in memory while waiting to be written to disk (default 60). Raise it if recordings of large frames stop because saving falls behind. Each frame of queue costs one full image of RAM.",
+        "section": "Experiment",
+        "key": "savequeue"
     }
 ]

@@ -22,6 +22,9 @@ SAVE_STATUS_JOIN_TIMEOUT = 2.0
 # Frames that may be dropped in a row when the saver falls behind before the recording is
 # stopped as failed (~3 s at 30 fps). Isolated drops only lose those frames.
 SAVE_MAX_CONSECUTIVE_DROPS = 90
+# Settings > Experiment > Save queue: frames waiting to be written to disk.
+SAVE_QUEUE_DEFAULT = 60
+SAVE_QUEUE_MIN, SAVE_QUEUE_MAX = 4, 5000
 COORDINATE_CLOSE_TIMEOUT = 2.0
 
 import os
@@ -2590,10 +2593,25 @@ class RecordButton(ImageAcquisitionButton):
             self.stopImageAcquisition()
 
 
+    def _saveQueueLength(self, example_image: np.ndarray) -> int:
+        """Save queue length from Settings > Experiment > Save queue, clamped, with its RAM cost printed."""
+        try:
+            length = int(float(self.app.config.get('Experiment', 'savequeue')))
+        except Exception:
+            length = SAVE_QUEUE_DEFAULT
+        clamped = max(SAVE_QUEUE_MIN, min(SAVE_QUEUE_MAX, length))
+        if clamped != length:
+            print(f'Save queue {length} is outside {SAVE_QUEUE_MIN}-{SAVE_QUEUE_MAX} frames, using {clamped}')
+        megabytes = clamped * example_image.nbytes / 1e6
+        print(f'Save queue: {clamped} frames, up to {megabytes:.0f} MB of RAM')
+        return clamped
+
+
     def _startImageSaver(self, example_image: np.ndarray) -> None:
         if self._imageSaverStarted:
             return
 
+        queueLength = self._saveQueueLength(example_image)
         try:
             if USE_SHARED_MEMORY_SAVER:
                 processMethod = 'spawn' if sys.platform == 'win32' \
@@ -2607,7 +2625,7 @@ class RecordButton(ImageAcquisitionButton):
                     'channel': 0,
                 }
                 self.imageQueue = SharedMemoryQueue.create_from_examples(
-                    self.shm_manager, example, buffer_size=60,
+                    self.shm_manager, example, buffer_size=queueLength,
                     context=ctx,
                 )
                 self.stop_event = ctx.Event()
@@ -2621,7 +2639,7 @@ class RecordButton(ImageAcquisitionButton):
                     daemon=True)
                 self.saveproc.start()
             else:
-                self.imageQueue = Queue(maxsize=60)
+                self.imageQueue = Queue(maxsize=queueLength)
                 self.stop_event = Event()
                 self.saveFailureEvent = Event()
                 self.saveStatusQueue = Queue()
@@ -5785,7 +5803,8 @@ class GlowTrackerApp(App):
             'iscontinuous': 'true',
             'framerate': '50.0',
             'duration': '150.0',
-            'buffersize': '3000'
+            'buffersize': '3000',
+            'savequeue': '60'
         })
 
         config.setdefaults('MacroScript', {
