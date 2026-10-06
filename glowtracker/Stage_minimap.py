@@ -1,11 +1,15 @@
 """Live stage position for the main window, independent of plate scanning."""
 
-from math import ceil, floor, isfinite, log10
+from collections import deque
+from math import ceil, floor, hypot, isfinite, log10
+
+import numpy as np
 
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
-from kivy.graphics import Color, Ellipse, Line, Rectangle
+from kivy.graphics import (Color, Ellipse, Line, Rectangle, StencilPop, StencilPush,
+                           StencilUnUse, StencilUse)
 from kivy.metrics import dp
 from kivy.properties import BoundedNumericProperty, ListProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
@@ -34,9 +38,20 @@ class StageMinimap(Widget):
     status_text = StringProperty('Stage disconnected')
     zoom_level = BoundedNumericProperty(0, min=0, max=4)
 
+    # Trail: positions sampled at the 5 Hz update, kept when the stage moved at least
+    # TRAIL_MIN_STEP_MM; about an hour of continuous tracking fits in TRAIL_MAX_POINTS.
+    TRAIL_MAX_POINTS = 20000
+    TRAIL_MIN_STEP_MM = 0.002
+    TRAIL_RECENT_POINTS = 300        # the most recent stretch (~1 min) is drawn brighter
+    # Zoomed view: the dot moves freely inside this central fraction of the view before the
+    # view pans, so the path behind it stays visible instead of the dot being pinned at the centre.
+    FOLLOW_DEADZONE = 0.6
+
     def __init__(self, **kwargs):
         self._update_event = None
         self._last_position_mm = None
+        self._trail = deque(maxlen=self.TRAIL_MAX_POINTS)
+        self._view_center = None
         super().__init__(**kwargs)
         self._redraw_trigger = Clock.create_trigger(self.redraw)
         self.bind(pos=self._redraw_trigger, size=self._redraw_trigger,
@@ -48,6 +63,36 @@ class StageMinimap(Widget):
     def on_position_mm(self, instance, position):
         if position:
             self._last_position_mm = list(position)
+            if not self._trail or hypot(position[0] - self._trail[-1][0],
+                                        position[1] - self._trail[-1][1]) >= self.TRAIL_MIN_STEP_MM:
+                self._trail.append((position[0], position[1]))
+            self._follow(position)
+
+    def on_zoom_level(self, instance, level):
+        # Re-centre on the stage whenever the zoom changes.
+        self._view_center = None
+        if self._last_position_mm is not None:
+            self._follow(self._last_position_mm)
+
+    def clear_trail(self):
+        self._trail.clear()
+        self._redraw_trigger()
+
+    def _follow(self, position):
+        """Pan the zoomed view only when the dot leaves the central dead zone."""
+        if self._view_center is None:
+            self._view_center = [position[0], position[1]]
+            return
+        if self.zoom_level == 0:
+            return
+        for axis in (0, 1):
+            half = self.travel_mm[axis] / (2 * 2 ** self.zoom_level)
+            slack = half * self.FOLLOW_DEADZONE
+            offset = position[axis] - self._view_center[axis]
+            if offset > slack:
+                self._view_center[axis] = position[axis] - slack
+            elif offset < -slack:
+                self._view_center[axis] = position[axis] + slack
 
     def on_touch_down(self, touch):
         if not self.collide_point(*touch.pos):
@@ -57,6 +102,8 @@ class StageMinimap(Widget):
                 self.zoom_level = min(4, self.zoom_level + 1)
             elif touch.button == 'scrolldown':
                 self.zoom_level = max(0, self.zoom_level - 1)
+        elif getattr(touch, 'button', None) == 'right':
+            self.clear_trail()
         elif touch.is_double_tap:
             self.zoom_level = 0
         return True
@@ -95,10 +142,10 @@ class StageMinimap(Widget):
         self.position_mm = [x, y]
 
     def view_bounds_mm(self):
-        """Return xmin, ymin, xmax, ymax; zoomed views follow the stage."""
+        """Return xmin, ymin, xmax, ymax; zoomed views follow the stage with a dead zone."""
         if self.zoom_level == 0:
             return 0, 0, self.travel_mm[0], self.travel_mm[1]
-        center = self.position_mm or self._last_position_mm
+        center = self._view_center or self.position_mm or self._last_position_mm
         if center is None:
             center = [value / 2 for value in self.travel_mm]
         half_x, half_y = (value / (2 * 2 ** self.zoom_level)
@@ -187,6 +234,8 @@ class StageMinimap(Widget):
             for px in (bar_x, bar_x + bar_width):
                 Line(points=[px, bar_y - dp(3), px, bar_y + dp(3)], width=1)
             self._label(f'{step:g} mm', ox + width / 2 + dp(22), bar_y)
+            self._draw_trail(scale, ox, oy, width, height, xmin, xmax, ymin)
+
             if self.position_mm:
                 px, py = self.mm_to_px(*self.position_mm)
                 radius = dp(4)
@@ -195,3 +244,36 @@ class StageMinimap(Widget):
                         size=(radius * 2, radius * 2))
                 Color(0.96, 0.90, 0.93, 1)
                 Line(circle=(px, py, radius), width=1)
+
+    def _trail_pixels(self, scale, ox, oy, xmax, ymin, points):
+        """Stage mm -> widget px (same rotation as mm_to_px), dropping points that land on
+        the same pixel as their predecessor so long trails stay cheap to draw."""
+        arr = np.asarray(points, dtype=float)
+        px = ox + (arr[:, 1] - ymin) * scale
+        py = oy + (xmax - arr[:, 0]) * scale
+        keep = np.ones(len(arr), dtype=bool)
+        if len(arr) > 2:
+            ix, iy = np.round(px), np.round(py)
+            keep[1:] = (np.diff(ix) != 0) | (np.diff(iy) != 0)
+            keep[-1] = True
+        return np.column_stack([px[keep], py[keep]]).ravel().tolist()
+
+    def _draw_trail(self, scale, ox, oy, width, height, xmin, xmax, ymin):
+        trail = list(self._trail)
+        if len(trail) < 2:
+            return
+        split = max(0, len(trail) - self.TRAIL_RECENT_POINTS)
+        older, recent = trail[:split + 1], trail[split:]
+        # Clip to the map rectangle; zoomed views would otherwise draw over the live image.
+        StencilPush()
+        Rectangle(pos=(ox, oy), size=(width, height))
+        StencilUse()
+        if len(older) >= 2:
+            Color(185 / 255, 76 / 255, 137 / 255, 0.35)
+            Line(points=self._trail_pixels(scale, ox, oy, xmax, ymin, older), width=1)
+        if len(recent) >= 2:
+            Color(230 / 255, 120 / 255, 180 / 255, 0.9)
+            Line(points=self._trail_pixels(scale, ox, oy, xmax, ymin, recent), width=1.3)
+        StencilUnUse()
+        Rectangle(pos=(ox, oy), size=(width, height))
+        StencilPop()
