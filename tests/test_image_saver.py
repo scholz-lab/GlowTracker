@@ -249,3 +249,54 @@ def test_dropped_frame_gets_no_coordinates_and_later_frames_still_do():
     acks.failed(1)                                   # dropped by the budget
     acks.saved(2, 0)
     assert f.rows == ['row 0\n', 'row 2\n']
+
+
+def _run_stack_worker(tmp_path, frames, max_bytes=image_saver.STACK_MAX_BYTES):
+    queue, status = Queue(), Queue()
+    for item in frames:
+        queue.put(item)
+    stop = Event()
+    stop.set()                                   # drain what is queued, then finish
+    image_saver.stack_save_worker(queue, str(tmp_path), 'rec-basler_{}.tiff', stop, status, Event(),
+                                  max_bytes=max_bytes)
+    reports = []
+    while not status.empty():
+        reports.append(status.get())
+    return reports
+
+
+def test_stack_saver_writes_pages_in_order_with_frame_index(tmp_path):
+    import tifffile
+    frames = [{'img': np.full((8, 8), i, np.uint8), 'idx': i, 'channel': 0} for i in (0, 1, 2, 5, 6)]  # 3,4 dropped
+    reports = _run_stack_worker(tmp_path, frames)
+    assert reports == [('saved', i, 0, '') for i in (0, 1, 2, 5, 6)]
+    stack = tmp_path / 'rec-basler_stack_000.tiff'
+    pages = tifffile.imread(stack)
+    assert pages.shape == (5, 8, 8)
+    assert [int(p[0, 0]) for p in pages] == [0, 1, 2, 5, 6]
+    assert (tmp_path / 'rec-basler_stack_000_frames.txt').read_text().split() == ['0', '1', '2', '5', '6']
+
+
+def test_stack_saver_splits_channels_and_rolls_over_files(tmp_path):
+    import tifffile
+    frames = []
+    for i in range(5):
+        frames += [{'img': np.full((8, 8), i, np.uint8), 'idx': i, 'channel': 1},
+                   {'img': np.full((8, 8), 100 + i, np.uint8), 'idx': i, 'channel': 2}]
+    _run_stack_worker(tmp_path, frames, max_bytes=2 * 64)          # two 8x8 pages per file
+    main = sorted(tmp_path.glob('rec-basler_stack_*-main.tiff'))
+    minor = sorted(tmp_path.glob('rec-basler_stack_*-minor.tiff'))
+    assert [p.name for p in main] == ['rec-basler_stack_000-main.tiff', 'rec-basler_stack_001-main.tiff',
+                                      'rec-basler_stack_002-main.tiff']
+    assert len(minor) == 3
+    values = [int(page[0, 0]) for f in main for page in np.atleast_3d(tifffile.imread(f)).reshape(-1, 8, 8)]
+    assert values == [0, 1, 2, 3, 4]
+    assert (tmp_path / 'rec-basler_stack_002-minor_frames.txt').read_text().split() == ['4']
+
+
+def test_stack_write_failure_is_reported(tmp_path, monkeypatch):
+    def broken(self, *args, **kwargs):
+        raise OSError('disk full')
+    monkeypatch.setattr(image_saver.tifffile.TiffWriter, 'write', broken)
+    reports = _run_stack_worker(tmp_path, [{'img': np.zeros((8, 8), np.uint8), 'idx': 0, 'channel': 0}])
+    assert reports[0][0] == 'failed' and 'disk full' in reports[0][3]

@@ -141,9 +141,9 @@ def _set_failure(failure_event):
             pass
 
 
-def save_worker(
-        image_queue, save_dir, filename_format, stop_event,
-        status_queue=None, failure_event=None):
+def _save_loop(image_queue, stop_event, status_queue, failure_event, write_frame):
+    """Take frames off the queue until stopped, write each with write_frame(index, channel, image),
+    and report ('saved' | 'failed', index, channel, error) on status_queue."""
     get = getattr(image_queue, 'get_nowait', image_queue.get)
     while True:
         if failure_event is not None:
@@ -173,29 +173,11 @@ def save_worker(
 
         index = -1
         channel = -1
-        temporary = None
         try:
             index = int(data['idx'])
             channel = int(data.get('channel', 0))
-            fname = filename_format.format(index)
-            if channel:
-                root, extension = os.path.splitext(fname)
-                suffix = '-main' if channel == 1 else '-minor'
-                fname = root + suffix + extension
-
-            destination = os.path.join(save_dir, fname)
-            root, extension = os.path.splitext(destination)
-            temporary = root + '.part' + extension
-            tifffile.imwrite(temporary, data['img'])
-            os.replace(temporary, destination)
+            write_frame(index, channel, data['img'])
         except Exception as e:
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
-                except Exception:
-                    pass
             error = f'{type(e).__name__}: {e}'
             _set_failure(failure_event)
             _report(status_queue, ('failed', index, channel, error))
@@ -204,3 +186,117 @@ def save_worker(
         if not _report(status_queue, ('saved', index, channel, '')):
             _set_failure(failure_event)
             break
+
+
+def _channel_name(fname, channel):
+    """Split dual-colour recordings get -main / -minor before the extension."""
+    if not channel:
+        return fname
+    root, extension = os.path.splitext(fname)
+    return root + ('-main' if channel == 1 else '-minor') + extension
+
+
+def save_worker(
+        image_queue, save_dir, filename_format, stop_event,
+        status_queue=None, failure_event=None):
+    """One TIFF file per frame (written to a temporary name, then renamed into place)."""
+
+    def write_frame(index, channel, image):
+        destination = os.path.join(save_dir, _channel_name(filename_format.format(index), channel))
+        root, extension = os.path.splitext(destination)
+        temporary = root + '.part' + extension
+        try:
+            tifffile.imwrite(temporary, image)
+            os.replace(temporary, destination)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except Exception:
+                pass
+            raise
+
+    _save_loop(image_queue, stop_event, status_queue, failure_event, write_frame)
+
+
+# A new stack file is started once the current one reaches this size, so a single file stays
+# manageable to copy and open, and one damaged file never holds a whole long recording.
+STACK_MAX_BYTES = 2 * 1024 ** 3
+
+
+class StackWriter:
+    """Append frames as pages of BigTIFF stacks, one stack series per channel.
+
+    Files are <prefix>stack_000.tiff, _001, ... (with -main / -minor for split dual colour).
+    Each page is a complete TIFF page (not 'contiguous' mode), so every page written before a
+    crash stays readable. Next to each stack, <stack>_frames.txt lists the recording frame index
+    of each page, one per line, so pages map to coordinate rows even when frames were dropped.
+    """
+
+    def __init__(self, save_dir, filename_format, max_bytes=STACK_MAX_BYTES):
+        self.save_dir = save_dir
+        base = filename_format.format('stack')
+        root, _ = os.path.splitext(base)
+        self.base = root
+        self.max_bytes = max_bytes
+        self.files = {}          # channel -> dict(writer, index_file, bytes, part, path)
+        self.paths = []
+
+    def _open(self, channel, part):
+        name = _channel_name(f'{self.base}_{part:03d}.tiff', channel)
+        path = os.path.join(self.save_dir, name)
+        writer = tifffile.TiffWriter(path, bigtiff=True)
+        index_file = open(os.path.splitext(path)[0] + '_frames.txt', 'w', encoding='utf-8')
+        self.files[channel] = {'writer': writer, 'index_file': index_file, 'bytes': 0, 'part': part, 'pages': 0}
+        self.paths.append(path)
+        return self.files[channel]
+
+    def _close_one(self, entry):
+        error = None
+        for closer in (entry['writer'].close, entry['index_file'].close):
+            try:
+                closer()
+            except Exception as e:
+                error = error or e
+        if error is not None:
+            raise error
+
+    def write(self, index, channel, image):
+        entry = self.files.get(channel)
+        if entry is not None and entry['bytes'] + image.nbytes > self.max_bytes and entry['pages']:
+            self._close_one(entry)
+            entry = self._open(channel, entry['part'] + 1)
+        elif entry is None:
+            entry = self._open(channel, 0)
+        entry['writer'].write(image, contiguous=False, metadata=None)
+        entry['index_file'].write(f'{index}\n')
+        entry['bytes'] += image.nbytes
+        entry['pages'] += 1
+        if entry['pages'] % 30 == 0:
+            entry['index_file'].flush()
+
+    def close(self):
+        error = None
+        for entry in self.files.values():
+            try:
+                self._close_one(entry)
+            except Exception as e:
+                error = error or e
+        self.files = {}
+        if error is not None:
+            raise error
+
+
+def stack_save_worker(
+        image_queue, save_dir, filename_format, stop_event,
+        status_queue=None, failure_event=None, max_bytes=STACK_MAX_BYTES):
+    """Write frames into multi-page BigTIFF stacks (see StackWriter). Needs a single worker,
+    so frames are written in the order they were queued."""
+    stack = StackWriter(save_dir, filename_format, max_bytes)
+    try:
+        _save_loop(image_queue, stop_event, status_queue, failure_event, stack.write)
+    finally:
+        try:
+            stack.close()
+        except Exception as e:
+            # Pages already written stay readable; only the file trailer is affected.
+            _report(status_queue, ('failed', -1, -1, f'Closing the image stack failed: {type(e).__name__}: {e}'))

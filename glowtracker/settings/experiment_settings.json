@@ -58,5 +58,13 @@
         "desc": "Frames held in memory while waiting to be written to disk (default 60). Raise it if recordings of large frames stop because saving falls behind. Each frame of queue costs one full image of RAM.",
         "section": "Experiment",
         "key": "savequeue"
+    },
+    {
+        "type": "options",
+        "title": "Save format",
+        "desc": "frames: one TIFF file per frame (as before). stack: frames appended to multi-page TIFF stacks of up to 2 GB each, much faster to write; <stack>_frames.txt lists the frame number of each page.",
+        "section": "Experiment",
+        "key": "saveformat",
+        "options": ["frames", "stack"]
     }
 ]

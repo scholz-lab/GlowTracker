@@ -2593,6 +2593,15 @@ class RecordButton(ImageAcquisitionButton):
             self.stopImageAcquisition()
 
 
+    def _saveFormat(self) -> str:
+        """Settings > Experiment > Save format: 'frames' (one TIFF per frame) or 'stack'."""
+        try:
+            value = self.app.config.get('Experiment', 'saveformat').strip().lower()
+        except Exception:
+            value = 'frames'
+        return 'stack' if value == 'stack' else 'frames'
+
+
     def _saveQueueLength(self, example_image: np.ndarray) -> int:
         """Save queue length from Settings > Experiment > Save queue, clamped, with its RAM cost printed."""
         try:
@@ -2612,6 +2621,9 @@ class RecordButton(ImageAcquisitionButton):
             return
 
         queueLength = self._saveQueueLength(example_image)
+        saveAsStack = self._saveFormat() == 'stack'
+        saveWorker = image_saver.stack_save_worker if saveAsStack else image_saver.save_worker
+        print(f'Saving images as {"multi-page TIFF stacks" if saveAsStack else "one TIFF per frame"}')
         try:
             if USE_SHARED_MEMORY_SAVER:
                 processMethod = 'spawn' if sys.platform == 'win32' \
@@ -2632,7 +2644,7 @@ class RecordButton(ImageAcquisitionButton):
                 self.saveFailureEvent = ctx.Event()
                 self.saveStatusQueue = ctx.Queue()
                 self.saveproc = ctx.Process(
-                    target=image_saver.save_worker,
+                    target=saveWorker,
                     args=(self.imageQueue, self.saveFilePath,
                           self.imageFilenameFormat, self.stop_event,
                           self.saveStatusQueue, self.saveFailureEvent),
@@ -2643,14 +2655,15 @@ class RecordButton(ImageAcquisitionButton):
                 self.stop_event = Event()
                 self.saveFailureEvent = Event()
                 self.saveStatusQueue = Queue()
+                # A stack has one writer so pages stay in frame order; per-frame files use three.
                 self.saveThreads = [
                     Thread(
-                        target=image_saver.save_worker,
+                        target=saveWorker,
                         args=(self.imageQueue, self.saveFilePath,
                               self.imageFilenameFormat, self.stop_event,
                               self.saveStatusQueue, self.saveFailureEvent),
                         daemon=True)
-                    for _ in range(3)
+                    for _ in range(1 if saveAsStack else 3)
                 ]
                 for saveThread in self.saveThreads:
                     saveThread.start()
@@ -2981,6 +2994,8 @@ class RecordButton(ImageAcquisitionButton):
         #   frames
         nframes = self.app.config.getint('Experiment', 'nframes')
         coordinateFile.write(f'nframes {nframes}\n')
+        #   image format: 'frames' (one file per frame) or 'stack' (multi-page TIFF + _frames.txt)
+        coordinateFile.write(f'saveformat {self._saveFormat()}\n')
 
         # Camera
         coordinateFile.write(f'# Camera\n')
@@ -5804,7 +5819,8 @@ class GlowTrackerApp(App):
             'framerate': '50.0',
             'duration': '150.0',
             'buffersize': '3000',
-            'savequeue': '60'
+            'savequeue': '60',
+            'saveformat': 'frames'
         })
 
         config.setdefaults('MacroScript', {
