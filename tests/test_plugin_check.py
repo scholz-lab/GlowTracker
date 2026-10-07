@@ -59,7 +59,7 @@ def test_dry_run_reaches_branches_that_only_run_sometimes():
 def test_dry_run_reports_crashes_in_setup_and_slow_updates():
     assert 'NameError' in pc.dry_run('def setup(scope):\n    nope\ndef update(state, scope):\n    pass\n').error
     slow = ('def update(state, scope):\n    total = 0\n'
-            '    for i in range(3_000_000):\n        total += i\n')
+            '    for i in range(15_000_000):\n        total += i\n')
     run = pc.dry_run(slow, frames=3)
     assert not run.ok and 'update() took up to' in run.error
 

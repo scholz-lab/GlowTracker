@@ -398,3 +398,29 @@ def test_plugin_proposals_are_checked_and_test_run_before_they_are_shown():
     assert 'ran without errors' in accepted
     [proposal] = chat.app.proposals
     assert proposal.code == plugin.strip() and 'ran without errors' in proposal.checks
+
+
+def test_the_users_setup_and_glowtracker_description_open_the_conversation():
+    setup = {'subject': 'the pharynx of a C. elegans worm',
+             'dac0': 'a buzzer: buzzes at 0 V, quiet at 4.5 V', 'dac1': 'a 590 nm optogenetic light'}
+    api = FakeAPI([text('ok')])
+    with api as config:
+        config.setup = setup
+        with Chat(config) as chat:
+            chat.say('hi')
+    system = api.bodies()[0]['messages'][0]['content']
+    assert 'Zaber stages' in system and 'Basler camera' in system
+    assert '- Output DAC0 is connected to: a buzzer: buzzes at 0 V, quiet at 4.5 V' in system
+    assert '- Object of interest (what is tracked): the pharynx of a C. elegans worm' in system
+    assert 'Not described' not in system
+
+
+def test_missing_outputs_are_flagged_so_the_model_asks():
+    text_ = la.setup_section({'dac1': 'a 590 nm LED'})
+    assert 'Not described: Object of interest (what is tracked); Output DAC0 is connected to' in text_
+    assert 'ask the user what it is connected to' in text_
+    assert 'Not described' not in la.setup_section({'subject': 'x', 'dac0': 'y', 'dac1': 'z'})
+
+
+def test_changing_the_setup_starts_a_new_conversation():
+    assert la.AssistantConfig(setup={'dac0': 'a'}) != la.AssistantConfig(setup={'dac0': 'b'})

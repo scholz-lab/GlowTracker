@@ -51,12 +51,23 @@ class AssistantError(Exception):
     """A problem talking to the API, worded for the user."""
 
 
+# The user's own setup, from Settings > AI assistant: (config key, what it describes).
+SETUP_FIELDS = (
+    ('subject', 'Object of interest (what is tracked)'),
+    ('animal', 'Animal and strain'),
+    ('dac0', 'Output DAC0 is connected to'),
+    ('dac1', 'Output DAC1 is connected to'),
+    ('notes', 'Other notes from the lab'),
+)
+
+
 @dataclass
 class AssistantConfig:
     base_url: str = DEFAULT_BASE_URL
     model: str = ''
     api_key: str = ''
     timeout_s: float = 120.0
+    setup: dict = field(default_factory=dict)     # SETUP_FIELDS key -> the user's description
 
     def resolved_key(self) -> str:
         if self.api_key.strip():
@@ -120,10 +131,17 @@ worm's state and a `scope` handle to set the DAQ outputs. Rules:
 - Keep it short, readable and commented for a biologist.
 """
 
+GLOWTRACKER = """\
+GlowTracker is a microscope tracking application that can track a small animal in bright-field,
+single or dual epi-fluorescence imaging. Its interface controls the linear Zaber stages (X, Y and
+Z) and the Basler camera properties. A LabJack DAQ has two analog outputs, DAC0 and DAC1, that
+drive whatever the lab connected to them (see "This microscope" below).
+"""
+
 CHAT_RULES = """\
-You are the assistant inside GlowTracker, a tracking microscope for C. elegans. You talk with a
-biologist about their experiment and write DAQ sequencer scripts (fixed timing) or plugins (when
-the light must react to the worm's behaviour, position or speed).
+You are the assistant inside GlowTracker. You talk with a biologist about their experiment and
+write DAQ sequencer scripts (fixed timing) or plugins (when the outputs must react to the animal's
+behaviour, position or speed).
 
 How to work:
 - If an important detail is missing (voltage, durations, timing, which kind of output), ask a short
@@ -191,10 +209,26 @@ def read_plugin_example(name: str) -> str:
         return f.read()
 
 
-def system_prompt() -> str:
+def setup_section(setup: dict | None) -> str:
+    """'This microscope': the user's own description of their setup, and what is missing."""
+    setup = setup or {}
+    lines = [f'- {label}: {setup[key].strip()}' for key, label in SETUP_FIELDS if (setup.get(key) or '').strip()]
+    missing = [label for key, label in SETUP_FIELDS
+               if key in ('dac0', 'dac1', 'subject') and not (setup.get(key) or '').strip()]
+    text = '=== This microscope (described by the user in Settings > AI assistant) ===\n'
+    text += '\n'.join(lines) if lines else '(nothing described yet)'
+    if missing:
+        text += ('\nNot described: ' + '; '.join(missing) + '. Before writing a script that drives an '
+                 'undescribed output, ask the user what it is connected to and how it responds to voltage.')
+    text += ('\nTake this setup into account: e.g. a sequencer script always sets DAC0 and DAC1 '
+             'together, and a device that is active at 0 V needs idle_voltage in a plugin.\n')
+    return text
+
+
+def system_prompt(setup: dict | None = None) -> str:
     examples = plugin_examples()
     listing = '\n'.join(f'- {name}: {doc}' if doc else f'- {name}' for name, doc in examples.items())
-    return (CHAT_RULES
+    return (GLOWTRACKER + '\n' + setup_section(setup) + '\n' + CHAT_RULES
             + '\n=== Sequencer scripts ===\n' + SEQUENCER_GUIDE
             + '\n=== Plugins ===\n' + PLUGIN_RULES
             + '\n--- plugin API reference (examples/plugins/README.md) ---\n' + _plugin_reference()
@@ -300,7 +334,7 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
             return f'NOT shown to the user, the {kind} is invalid: {problem}\nFix it and call again.'
         bridge.propose(Proposal(kind=kind, code=code, summary=summary.strip(), checks=report,
                                 warnings=warnings))
-        button = 'Use in Sequencer' if kind == SEQUENCER else 'Save plugin'
+        button = 'Save and use in Sequencer' if kind == SEQUENCER else 'Save plugin and select it'
         notes = ('\nWarnings (tell the user):\n- ' + '\n- '.join(warnings)) if warnings else ''
         return (f'Valid. Shown to the user with a "{button}" button; nothing is loaded until they '
                 f'press it.\nAutomatic checks:\n{report}{notes}\n'
@@ -539,7 +573,7 @@ class ChatSession:
         self.config.check()
         data = [UserMessage(content=text)]
         if not self._started:
-            data.insert(0, SystemMessage(content=system_prompt()))
+            data.insert(0, SystemMessage(content=system_prompt(self.config.setup)))
             self._started = True
         self.busy = True
         self._split = ThinkSplitter()

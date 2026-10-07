@@ -18,10 +18,49 @@
         "key": "model"
     },
     {
-        "type": "string",
+        "type": "password",
         "title": "API key",
         "desc": "Your personal key. Stored in your own GlowTracker settings file, not in the code. Leave empty to use the GLOWTRACKER_LLM_API_KEY or OPENAI_API_KEY environment variable.",
         "section": "Assistant",
         "key": "apikey"
+    },
+    {
+        "type": "title",
+        "title": "Your setup (added to every new conversation)"
+    },
+    {
+        "type": "string",
+        "title": "Object of interest",
+        "desc": "What the microscope tracks, e.g. the pharynx of C. elegans.",
+        "section": "Assistant",
+        "key": "subject"
+    },
+    {
+        "type": "string",
+        "title": "Animal and strain",
+        "desc": "Species, strain or genotype, opsin and cofactor, e.g. C. elegans, AWA::Chrimson, grown on ATR.",
+        "section": "Assistant",
+        "key": "animal"
+    },
+    {
+        "type": "string",
+        "title": "Output DAC0",
+        "desc": "What DAC0 drives and how it responds to voltage, e.g. a buzzer that sounds at 0 V and is quiet at 4.5 V.",
+        "section": "Assistant",
+        "key": "dac0"
+    },
+    {
+        "type": "string",
+        "title": "Output DAC1",
+        "desc": "What DAC1 drives and how it responds to voltage, e.g. a 590 nm optogenetic LED, brighter with higher voltage up to 4.95 V.",
+        "section": "Assistant",
+        "key": "dac1"
+    },
+    {
+        "type": "string",
+        "title": "Other notes",
+        "desc": "Anything else the assistant should know: lab rules (baseline before stimulation, maximum light dose), magnification, conventions.",
+        "section": "Assistant",
+        "key": "notes"
     }
 ]

@@ -21,7 +21,8 @@ glowtracker = [
     "settings/default.pfs",
     "settings/gui_settings.json",
     "settings/experiment_settings.json",
-    "settings/assistant_settings.json"
+    "settings/assistant_settings.json",
+    "assistant.kv"
 ]
 
 [project]
