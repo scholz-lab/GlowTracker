@@ -13,7 +13,7 @@
     {
         "type": "string",
         "title": "Model",
-        "desc": "Model name as the API knows it. Press Models in the DAQ > AI assistant tab to list the models your key can use.",
+        "desc": "Model name as the API knows it; it must support tool (function) calling. Press Models in the DAQ > AI assistant tab to list the models your key can use.",
         "section": "Assistant",
         "key": "model"
     },

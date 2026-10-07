@@ -11,7 +11,7 @@ from runtime_control import (
     append_new_focus_values,
     controller_velocity,
 )
-from threading import Thread, Lock, Event, current_thread
+from threading import Thread, Lock, Event, current_thread, main_thread
 
 USE_SHARED_MEMORY_SAVER = sys.platform != 'win32'
 SAVE_HANDOFF_JOIN_TIMEOUT = 2.0
@@ -59,7 +59,9 @@ from kivy.graphics import Color, Line, Ellipse, Mesh
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
+from kivy.utils import escape_markup
 from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty, BooleanProperty
+from kivy.metrics import dp
 from kivy.clock import Clock, ClockEvent, mainthread
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -120,6 +122,7 @@ from AutoFocus import AutoFocusPID, FocusEstimationMethod
 from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 from script_api import PluginHost, WormState, BrightnessStats, worm_position_mm, trail_velocity
 import llm_assist
+import chat_markup
 
 #
 # Math
@@ -1154,25 +1157,323 @@ class DAQControlTabPanel(TabbedPanel):
         self.ids.assistantwidget.setCloseCallback( closeCallback )
 
 
-class AssistantWidget(BoxLayout):
-    """DAQ > AI assistant tab: describe an experiment in words, get a sequencer script or a plugin.
+class ChatInput(TextInput):
+    """Message box: Enter sends, Shift+Enter starts a new line."""
+    send_callback = ObjectProperty(None, allownone=True)
 
-    The request goes to the OpenAI-compatible API set in Settings > AI assistant (llm_assist).
-    Nothing is run automatically: a sequencer script is checked by the real parser and loaded
-    into the Sequencer tab only when the user presses Use; a plugin is saved to a file and put
-    in the Plugin tab, where the user reviews it and presses Start.
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if keycode[1] in ('enter', 'numpadenter') and 'shift' not in modifiers \
+                and self.send_callback is not None:
+            self.send_callback()
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
+class UserBubble(Label):
+    """The user's message: a bubble on the right, as wide as its text up to max_width."""
+    max_width = NumericProperty(dp(400))
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(text=self._fit, max_width=self._fit)
+        self._fit()
+
+    def _fit(self, *args) -> None:
+        self.text_size = (None, None)
+        self.texture_update()
+        if self.texture_size[0] > self.max_width:
+            self.text_size = (self.max_width - 2 * self.padding[0], None)
+            self.texture_update()
+        self.size = self.texture_size
+
+
+class UserRow(BoxLayout):
+    def __init__(self, text: str, **kwargs):
+        super().__init__(**kwargs)
+        self.bubble = UserBubble(text=escape_markup(text))
+        self.add_widget(Widget())
+        self.add_widget(self.bubble)
+        self.bind(width=lambda *a: setattr(self.bubble, 'max_width', self.width * 0.8))
+        self.bubble.bind(height=lambda *a: setattr(self, 'height', self.bubble.height))
+        self.height = self.bubble.height
+
+
+class MessageBody(BoxLayout):
+    """An assistant answer, re-rendered from its Markdown as it streams in: text paragraphs
+    as markup labels, code blocks in selectable monospace boxes."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.raw = ''
+        self._parts: list = []
+        self._pending = None
+
+    def append(self, text: str) -> None:
+        self.raw += text
+        if self._pending is None:     # re-render at most ~15 times a second
+            self._pending = Clock.schedule_once(self._render, 0.06)
+
+    def setText(self, text: str) -> None:
+        self.raw = text
+        self._render()
+
+    def _render(self, *args) -> None:
+        if self._pending is not None:
+            self._pending.cancel()
+            self._pending = None
+        wanted = chat_markup.segments(self.raw)
+        for i, (kind, content) in enumerate(wanted):
+            cls = Factory.ChatCode if kind == 'code' else Factory.ChatText
+            if i < len(self._parts) and isinstance(self._parts[i], cls):
+                if self._parts[i].text != content:
+                    self._parts[i].text = content
+                continue
+            for old in self._parts[i:]:
+                self.remove_widget(old)
+            del self._parts[i:]
+            widget = cls(text=content)
+            self._parts.append(widget)
+            self.add_widget(widget)
+        for old in self._parts[len(wanted):]:
+            self.remove_widget(old)
+        del self._parts[len(wanted):]
+
+
+class ThinkingBlock(BoxLayout):
+    """A reasoning model's thinking: collapsed to one line, tap to read it."""
+    is_open = BooleanProperty(False)
+    header = StringProperty('Thinking')
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.raw = ''
+        self.running = True
+        self._started = time.monotonic()
+
+    def append(self, text: str) -> None:
+        self.raw += text
+        if self.is_open:
+            self.ids.content.text = escape_markup(self.raw.strip())
+
+    def finish(self) -> None:
+        if self.running:
+            self.running = False
+            self.header = f'Thought for {max(1, round(time.monotonic() - self._started))} s'
+
+    def toggle(self) -> None:
+        self.is_open = not self.is_open
+        self.ids.content.text = escape_markup(self.raw.strip()) if self.is_open else ''
+
+    def tick(self, phase: int) -> None:
+        if self.running:
+            self.header = 'Thinking' + '.' * (phase % 3 + 1)
+
+
+class ToolChip(BoxLayout):
+    """One tool call: what the assistant is doing, then whether it worked. Tap for details."""
+    LABELS = {
+        'get_app_state': ('Looking at the current settings', 'Looked at the current settings',
+                          'Could not read the settings'),
+        'read_current_plugin': ('Reading the selected plugin', 'Read the selected plugin',
+                                'Could not read the plugin'),
+        'read_plugin_example': ('Reading an example plugin', 'Read an example plugin',
+                                'Could not read the example'),
+        'propose_sequencer_script': ('Checking the script with the sequencer parser',
+                                     'Script is valid, see the proposal below',
+                                     'Script rejected by the parser; the assistant is fixing it'),
+        'propose_plugin': ('Checking the plugin and test-running it',
+                           'Plugin passed the checks and the test run, see below',
+                           'Plugin rejected by the checks; the assistant is fixing it'),
+    }
+    is_open = BooleanProperty(False)
+    header = StringProperty('')
+    state = StringProperty('running')   # running, ok, failed
+
+    def __init__(self, name: str, arguments: str, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.labels = self.LABELS.get(name, (f'Using {name}', f'Used {name}', f'{name} failed'))
+        self.arguments = arguments
+        self.result = ''
+        self.running = True
+        self.tick(2)
+
+    def finish(self, ok: bool, result: str) -> None:
+        self.running = False
+        self.result = result
+        self.state = 'ok' if ok else 'failed'
+        text = self.labels[1 if ok else 2]
+        if not ok:
+            reason = result.split('invalid:', 1)[-1].split('Fix it and call', 1)[0]
+            lines = [l.strip(' -') for l in reason.splitlines() if l.strip() and not l.strip().endswith(':')]
+            text += f'  [color=bbbbbb]({escape_markup(lines[-1][:160])})[/color]' if lines else ''
+        self.header = text
+        self._refreshDetails()
+
+    def tick(self, phase: int) -> None:
+        if self.running:
+            self.header = self.labels[0] + '.' * (phase % 3 + 1)
+
+    def toggle(self) -> None:
+        self.is_open = not self.is_open
+        self._refreshDetails()
+
+    def _refreshDetails(self) -> None:
+        if not self.is_open:
+            self.ids.details.text = ''
+            return
+        try:
+            args = json.dumps(json.loads(self.arguments or '{}'), indent=1)
+            args = args.replace('\\n', '\n')
+        except (ValueError, TypeError):
+            args = self.arguments
+        self.ids.details.text = f'call {self.name}\n{args}' + (f'\n\nresult\n{self.result}' if self.result else '')
+
+
+class AssistantTurn(BoxLayout):
+    """Everything the assistant does for one user message, in order: thinking, answer text,
+    tool calls and proposals, then possibly more text."""
+
+    def __init__(self, owner: 'AssistantWidget', **kwargs):
+        super().__init__(**kwargs)
+        self.owner = owner
+        self._body: MessageBody | None = None
+        self._thinking: ThinkingBlock | None = None
+        self._chips: dict[str, ToolChip] = {}
+        self._typing = Factory.TypingIndicator()
+        self.add_widget(self._typing)
+
+    def _add(self, widget) -> None:
+        if self._typing is not None and self._typing.parent is self:
+            self.remove_widget(self._typing)
+        self.add_widget(widget)
+
+    def _showTyping(self) -> None:
+        """Waiting for the model again (e.g. after a tool call)."""
+        if self._typing is not None and self._typing.parent is None:
+            self.add_widget(self._typing)
+
+    def addThinking(self, text: str) -> None:
+        if self._thinking is None:
+            self._thinking = ThinkingBlock()
+            self.owner._animated.add(self._thinking)
+            self._add(self._thinking)
+        self._thinking.append(text)
+
+    def addText(self, text: str) -> None:
+        if self._thinking is not None:
+            self._thinking.finish()
+        if self._body is None:
+            if not text.strip():
+                return
+            self._body = MessageBody()
+            self._add(self._body)
+        self._body.append(text)
+
+    def endMessage(self, text: str) -> None:
+        if self._thinking is not None:
+            self._thinking.finish()
+            self._thinking = None
+        if self._body is not None:
+            self._body.setText(text)
+        elif text.strip():
+            self.addText(text)
+            self._body.setText(text)
+        self._body = None
+
+    def toolStart(self, call_id: str, name: str, arguments: str) -> None:
+        chip = ToolChip(name, arguments)
+        self._chips[call_id] = chip
+        self.owner._animated.add(chip)
+        self._add(chip)
+
+    def toolEnd(self, call_id: str, ok: bool, result: str) -> None:
+        chip = self._chips.get(call_id)
+        if chip is not None:
+            chip.finish(ok, result)
+        if all(not c.running for c in self._chips.values()):
+            self._showTyping()
+
+    def addCard(self, card) -> None:
+        self._add(card)
+        if any(c.running for c in self._chips.values()):
+            self._showTyping()
+
+    def addNote(self, text: str, color: str) -> None:
+        self._add(Factory.ChatText(text=f'[color={color}]{escape_markup(text)}[/color]'))
+
+    def finish(self, cancelled: bool) -> None:
+        if self._typing is not None and self._typing.parent is self:
+            self.remove_widget(self._typing)
+        self.owner._animated.discard(self._typing)
+        for chip in self._chips.values():
+            if chip.running:
+                chip.finish(False, 'stopped')
+        if self._thinking is not None:
+            self._thinking.finish()
+        if self._body is not None:
+            self._body._render()
+        if cancelled:
+            self.addNote('Stopped.', '999999')
+
+
+class ProposalCard(BoxLayout):
+    """A script the assistant proposed, shown in the chat for review. The code can be edited
+    before pressing the button; it is checked again when used."""
+
+    def __init__(self, proposal: llm_assist.Proposal, owner: 'AssistantWidget', **kwargs):
+        self.proposal = proposal
+        self.owner = owner
+        super().__init__(**kwargs)
+        plugin = proposal.kind == llm_assist.PLUGIN
+        kindText = 'Plugin' if plugin else 'Sequencer script'
+        summary = f'  [color=bbbbbb]{escape_markup(proposal.summary)}[/color]' if proposal.summary else ''
+        self.ids.title.text = f'[b]{kindText}[/b]{summary}'
+        self.ids.code.text = proposal.code
+        checks = escape_markup(proposal.checks)
+        for warning in proposal.warnings:
+            checks += f'\n[color=f0c27b]Warning: {escape_markup(warning)}[/color]'
+        self.ids.checks.text = checks.strip()
+        self.ids.usebutton.text = 'Save plugin and open in Plugin tab' if plugin else 'Use in Sequencer'
+        self.ids.pluginpath.text = owner._defaultPluginPath() if plugin else ''
+        if not plugin:
+            self.ids.actions.remove_widget(self.ids.pluginpath)
+
+    def setStatus(self, text: str, error: bool = False) -> None:
+        self.ids.status.text = text
+        self.ids.status.color = (1, 0.45, 0.45, 1) if error else (0.6, 0.9, 0.6, 1)
+
+
+class AssistantWidget(BoxLayout):
+    """DAQ > AI assistant tab: chat with a model about the experiment (llm_assist, on the ox
+    agent runtime). Answers stream in; tool calls show as chips; proposed sequencer scripts and
+    plugins appear as cards and are used only when the user presses their button. A sequencer
+    script is checked by the real parser and loaded into the Sequencer tab; a plugin is saved to
+    a file and put in the Plugin tab, where the user reviews it and presses Start.
     """
     closeCallback = ObjectProperty(None)
+    busy = BooleanProperty(False)
 
-    KINDS = {'Sequencer script': llm_assist.SEQUENCER, 'Plugin': llm_assist.PLUGIN}
+    SUGGESTIONS = (
+        '5 pulses of 4.5 V, 1 s long, every 20 s, starting 10 s after Record',
+        'Switch the light on at 3 V while the worm moves forward',
+        'What does the current sequencer script do?',
+    )
 
     def init(self, panel=None):
         self.app: GlowTrackerApp = App.get_running_app()
         self.panel = panel
-        self._busy = False
-        self._lastSavedPlugin = None
-        self.ids.pluginpath.text = self._defaultPluginPath()
-        self._showKind()
+        self._chat: llm_assist.ChatSession | None = None
+        self._turn: AssistantTurn | None = None
+        self._lastSavedPlugins: set[str] = set()
+        self._animated: set = set()
+        self._phase = 0
+        self._stick = True
+        self.ids.message.send_callback = self.sendOrStop
+        self.ids.chatscroll.bind(scroll_y=self._onScroll)
+        self.ids.chatlog.bind(height=self._onContentHeight)
+        self._showEmptyState()
+        self._updateHeader()
 
     def setCloseCallback(self, closeCallback: callable) -> None:
         self.closeCallback = closeCallback
@@ -1183,105 +1484,229 @@ class AssistantWidget(BoxLayout):
             base_url=get('baseurl', llm_assist.DEFAULT_BASE_URL) or llm_assist.DEFAULT_BASE_URL,
             model=get('model'), api_key=get('apikey'))
 
-    def _kind(self) -> str:
-        return self.KINDS.get(self.ids.kind.text, llm_assist.SEQUENCER)
+    def _updateHeader(self) -> None:
+        model = self._config().model.strip()
+        self.ids.header.text = f'[b]AI assistant[/b]  [color=999999]{escape_markup(model or "no model set")}[/color]'
 
-    def _showKind(self, *args) -> None:
-        plugin = self._kind() == llm_assist.PLUGIN
-        self.ids.pluginrow.opacity = 1 if plugin else 0
-        self.ids.pluginrow.disabled = not plugin
-        self.ids.usebutton.text = 'Save plugin and open in Plugin tab' if plugin else 'Use in Sequencer'
-        self.ids.request.hint_text = (
-            'e.g. Every 30 s, switch the LED on at 4.5 V for 2 s while the worm is moving forward.'
-            if plugin else
-            'e.g. 5 pulses of 4.5 V, 1 s long, every 20 s, starting 10 s after Record.')
+    def _session(self) -> llm_assist.ChatSession:
+        """The chat session, restarted when the API settings changed."""
+        config = self._config()
+        self._updateHeader()
+        if self._chat is not None and self._chat.config != config:
+            self._chat.close()
+            self._chat = None
+            self._addInfo('API settings changed: this is a new conversation for the model.')
+        if self._chat is None:
+            self._chat = llm_assist.ChatSession(
+                config, self, lambda event: Clock.schedule_once(lambda dt: self._onEvent(event)))
+        return self._chat
 
+    # --- chat log --------------------------------------------------------------------------
+    def _append(self, widget) -> None:
+        log = self.ids.chatlog
+        if self._empty is not None:
+            log.remove_widget(self._empty)
+            self._empty = None
+        log.add_widget(widget)
+
+    def _addInfo(self, text: str, color: str = '999999') -> None:
+        self._append(Factory.ChatText(text=f'[color={color}]{escape_markup(text)}[/color]'))
+
+    def _showEmptyState(self) -> None:
+        self._empty = Factory.ChatEmptyState()
+        for suggestion in self.SUGGESTIONS:
+            button = Factory.ChatSuggestion(text=suggestion)
+            button.bind(on_release=lambda b: self._useSuggestion(b.text))
+            self._empty.ids.suggestions.add_widget(button)
+        scroll = self.ids.chatscroll
+        fit = lambda *a: self._empty is not None and setattr(self._empty, 'height', scroll.height - dp(20))
+        fit()
+        scroll.bind(height=fit)
+        self.ids.chatlog.add_widget(self._empty)
+
+    def _useSuggestion(self, text: str) -> None:
+        self.ids.message.text = text
+        self.sendOrStop()
+
+    def _onScroll(self, scroll, value) -> None:
+        # Follow new text only while the user is at the bottom.
+        self._stick = value <= 0.02 or self.ids.chatlog.height <= scroll.height
+
+    def _onContentHeight(self, *args) -> None:
+        if self._stick:
+            self.ids.chatscroll.scroll_y = 0
+
+    def _tick(self, dt) -> None:
+        self._phase += 1
+        for widget in list(self._animated):
+            if widget.parent is None and not getattr(widget, 'running', False):
+                self._animated.discard(widget)
+                continue
+            widget.tick(self._phase)
+        if not self.busy:
+            self._animated = {w for w in self._animated if getattr(w, 'running', False)}
+
+    def _setBusy(self, busy: bool) -> None:
+        self.busy = busy
+        if busy and getattr(self, '_ticker', None) is None:
+            self._ticker = Clock.schedule_interval(self._tick, 0.4)
+        elif not busy and getattr(self, '_ticker', None) is not None:
+            self._ticker.cancel()
+            self._ticker = None
+
+    def _onEvent(self, event: llm_assist.ChatEvent) -> None:
+        turn = self._turn
+        if turn is None:
+            return
+        kind = event.kind
+        if kind == 'text':
+            turn.addText(event.text)
+        elif kind == 'thinking':
+            turn.addThinking(event.text)
+        elif kind == 'message':
+            turn.endMessage(event.text)
+        elif kind == 'tool':
+            turn.toolStart(event.call_id, event.name, event.text)
+        elif kind == 'result':
+            turn.toolEnd(event.call_id, event.ok, event.text)
+        elif kind == 'error':
+            turn.addNote(event.text, 'ff7373')
+        elif kind == 'done':
+            turn.finish(event.cancelled)
+            self._turn = None
+            self._setBusy(False)
+
+    # --- actions ---------------------------------------------------------------------------
+    def sendOrStop(self) -> None:
+        if self.busy:
+            if self._chat is not None:
+                self._chat.stop()
+            return
+        text = self.ids.message.text.strip()
+        if not text:
+            return
+        try:
+            chat = self._session()
+            chat.send(text)
+        except llm_assist.AssistantError as e:
+            self._addInfo(str(e), 'ff7373')
+            return
+        self.ids.message.text = ''
+        self._stick = True
+        self._append(UserRow(text))
+        self._turn = AssistantTurn(self)
+        self._animated.add(self._turn._typing)
+        self._append(self._turn)
+        self._setBusy(True)
+
+    def newChat(self) -> None:
+        if self._chat is not None:
+            self._chat.reset()
+        self._turn = None
+        self._setBusy(False)
+        self._animated.clear()
+        self.ids.chatlog.clear_widgets()
+        self._showEmptyState()
+        self._updateHeader()
+
+    def listModels(self) -> None:
+        config = self._config()
+        self._addInfo(f'Listing models at {config.base_url}...')
+
+        def work():
+            try:
+                models = llm_assist.list_models(config)
+                text = ('Models your key can use (copy one into Settings > AI assistant > Model): '
+                        + ', '.join(models)) if models else 'The API listed no models.'
+                Clock.schedule_once(lambda dt: self._addInfo(text, 'bbbbbb'))
+            except Exception as e:
+                message = str(e)
+                Clock.schedule_once(lambda dt: self._addInfo(message, 'ff7373'))
+
+        Thread(target=work, daemon=True).start()
+
+    # --- llm_assist.AppBridge: called from the assistant's thread ----------------------------
+    def _onGui(self, fn, timeout: float = 10.0):
+        """Run fn on the Kivy thread and return its result."""
+        if current_thread() is main_thread():
+            return fn()
+        done, box = Event(), {}
+
+        def run(dt):
+            try:
+                box['value'] = fn()
+            except Exception as e:
+                box['error'] = e
+            finally:
+                done.set()
+
+        Clock.schedule_once(run)
+        if not done.wait(timeout):
+            raise TimeoutError('the GUI did not respond')
+        if 'error' in box:
+            raise box['error']
+        return box.get('value')
+
+    def app_state(self) -> dict:
+        def read() -> dict:
+            daq = self.app.daqControl
+            host = getattr(self.app, 'pluginHost', None)
+            runtime = self.app.root.ids.middlecolumn.runtimecontrols
+            state = {
+                'recording': runtime.imageacquisitionmanager.recordbutton.state == 'down',
+                'tracking': runtime.trackingcheckbox.state == 'down',
+                'daq_mode': daq.daqMode.value,
+                'daq_connected': daq.isConnected(),
+                'daq_voltage': round(daq.currentVoltage, 3),
+                'plugin_file': self.app.config.get('DaqControl', 'pluginscript', fallback=''),
+                'plugin_status': host.status if host is not None else 'unavailable',
+            }
+            if self.panel is not None:
+                sequencer = self.panel.ids.sequencerwidget
+                state['sequencer_file'] = sequencer.ids.daqscriptfile.text
+                state['sequencer_script'] = sequencer.ids.scripttext.text
+            return state
+        return self._onGui(read)
+
+    def current_plugin(self) -> str:
+        path = self.app.config.get('DaqControl', 'pluginscript', fallback='')
+        if not path or not os.path.isfile(path):
+            return ''
+        with open(path, encoding='utf-8', errors='replace') as f:
+            return f'# {path}\n' + f.read(50_000)
+
+    def propose(self, proposal: llm_assist.Proposal) -> None:
+        def show(dt):
+            card = ProposalCard(proposal, self)
+            if self._turn is not None:
+                self._turn.addCard(card)
+            else:
+                self._append(card)
+        Clock.schedule_once(show)
+
+    # --- using a proposal ------------------------------------------------------------------
     def _defaultPluginPath(self) -> str:
         current = self.app.config.get('DaqControl', 'pluginscript', fallback='')
         folder = os.path.dirname(current) if current else os.getcwd()
         return os.path.join(folder, f'assistant_plugin_{time.strftime("%Y%m%d_%H%M%S")}.py')
 
-    def _setStatus(self, text: str, error: bool = False) -> None:
-        self.ids.status.text = text
-        self.ids.status.color = (1, 0.45, 0.45, 1) if error else (0.85, 0.85, 0.85, 1)
-
-    # --- actions ---------------------------------------------------------------------------
-    def generate(self) -> None:
-        if self._busy:
-            return
-        request = self.ids.request.text
-        current = self.ids.result.text if self.ids.editcurrent.active else None
-        kind, config = self._kind(), self._config()
-        self._busy = True
-        self.ids.generatebutton.disabled = True
-        self._setStatus(f'Asking {config.model or "the model"}...')
-
-        def work():
-            try:
-                result = llm_assist.generate(config, kind, request, current=current)
-                Clock.schedule_once(lambda dt: self._showResult(result))
-            except llm_assist.AssistantError as e:
-                message = str(e)
-                Clock.schedule_once(lambda dt: self._showError(message))
-            except Exception as e:
-                message = f'{type(e).__name__}: {e}'
-                Clock.schedule_once(lambda dt: self._showError(message))
-
-        Thread(target=work, daemon=True).start()
-
-    def _done(self) -> None:
-        self._busy = False
-        self.ids.generatebutton.disabled = False
-
-    def _showResult(self, result) -> None:
-        self._done()
-        self.ids.result.text = result.code
-        text = result.explanation or '(no explanation given)'
-        if result.error:
-            self._setStatus(f'{text}\n\nStill not valid after {result.attempts} tries: {result.error}. '
-                            f'Edit it below or rephrase the request.', error=True)
-        else:
-            check = 'checked by the sequencer parser' if self._kind() == llm_assist.SEQUENCER \
-                else 'syntax checked only; read it before you start it'
-            self._setStatus(f'{text}\n\nValid ({check}).')
-
-    def _showError(self, message: str) -> None:
-        self._done()
-        self._setStatus(message, error=True)
-
-    def listModels(self) -> None:
-        config = self._config()
-        self._setStatus(f'Listing models at {config.base_url}...')
-
-        def work():
-            try:
-                models = llm_assist.list_models(config)
-                text = ('Models your key can use (copy one into Settings > AI assistant > Model):\n'
-                        + ', '.join(models)) if models else 'The API listed no models.'
-                Clock.schedule_once(lambda dt: self._setStatus(text))
-            except Exception as e:
-                message = str(e)
-                Clock.schedule_once(lambda dt: self._setStatus(message, error=True))
-
-        Thread(target=work, daemon=True).start()
-
-    def use(self) -> None:
-        code = self.ids.result.text
-        kind = self._kind()
+    def useProposal(self, card: ProposalCard) -> None:
+        code = card.ids.code.text
+        kind = card.proposal.kind
         problem = llm_assist.validate(kind, code)
         if problem:
-            self._setStatus(f'Not used: {problem}', error=True)
+            card.setStatus(f'Not used: {problem}', error=True)
             return
         if kind == llm_assist.SEQUENCER:
-            self._useSequencer(code)
+            self._useSequencer(code, card)
         else:
-            self._savePlugin(code)
+            self._savePlugin(code, card.ids.pluginpath.text, card)
 
-    def _useSequencer(self, code: str) -> None:
+    def _useSequencer(self, code: str, card: ProposalCard) -> None:
         try:
             self.app.daqControl.parseTextScript(code)
         except Exception as e:
-            self._setStatus(f'Not used: {e}', error=True)
+            card.setStatus(f'Not used: {e}', error=True)
             return
         if self.panel is not None:
             sequencer = self.panel.ids.sequencerwidget
@@ -1293,26 +1718,26 @@ class AssistantWidget(BoxLayout):
             if holder is not None:
                 holder.ids.mode.text = DAQMode.Sequencer.value
             self.panel.switch_to(self.panel.ids.sequencertab)
-        self._setStatus('Loaded into the Sequencer tab and set the DAQ mode to Sequencer. It runs when you '
-                        'press Record. Press Save there to keep it in a file.')
+        card.setStatus('Loaded into the Sequencer tab, DAQ mode set to Sequencer. It runs when you '
+                       'press Record. Press Save there to keep it in a file.')
 
-    def _savePlugin(self, code: str) -> None:
-        path = os.path.abspath(self.ids.pluginpath.text.strip())
-        if os.path.exists(path) and path != self._lastSavedPlugin:
-            self._setStatus(f'{path} already exists. Choose another file name.', error=True)
+    def _savePlugin(self, code: str, path: str, card: ProposalCard) -> None:
+        path = os.path.abspath(path.strip())
+        if os.path.exists(path) and path not in self._lastSavedPlugins:
+            card.setStatus(f'{path} already exists. Choose another file name.', error=True)
             return
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(code.rstrip() + '\n')
         except OSError as e:
-            self._setStatus(f'Saving failed: {e}', error=True)
+            card.setStatus(f'Saving failed: {e}', error=True)
             return
-        self._lastSavedPlugin = path
+        self._lastSavedPlugins.add(path)
         if self.panel is not None:
             self.panel.ids.pluginwidget.setPluginPath(path)
             self.panel.switch_to(self.panel.ids.plugintab)
-        self._setStatus(f'Saved {path}. It is selected in the Plugin tab; read it, then press Start there.')
+        card.setStatus(f'Saved {path}. It is selected in the Plugin tab; read it, then press Start there.')
 
 
 class PluginWidget(BoxLayout):
