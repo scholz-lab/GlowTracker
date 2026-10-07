@@ -72,6 +72,7 @@ from kivy.uix.scatterlayout import ScatterLayout
 from kivy.uix.tabbedpanel import TabbedPanel
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
@@ -1214,7 +1215,7 @@ class AssistantHost:
     def get_config(self) -> dict:
         get = lambda key, default='': self.app.config.get('Assistant', key, fallback=default)
         return {'base_url': get('baseurl', llm_assist.DEFAULT_BASE_URL) or llm_assist.DEFAULT_BASE_URL,
-                'model': get('model'), 'api_key': get('apikey'),
+                'model': get('model'), 'api_key': get('apikey'), 'memory_file': get('memoryfile'),
                 'setup': {key: get(key) for key, _ in llm_assist.SETUP_FIELDS}}
 
     def _isRecording(self) -> bool:
@@ -5700,6 +5701,90 @@ class SettingsPassword(SettingItem):
         self.textinput.focus = True
 
 
+class SettingsModel(SettingItem):
+    """The AI assistant's model. With the GWDG / Academic Cloud API (Assistant > baseurl) it opens
+    a list of recommended GWDG models, with "Other model..." for any other name; for any other
+    provider it is a plain text field."""
+
+    popup = ObjectProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._shown = Label(font_size='15sp')
+        self.add_widget(self._shown)
+        self.bind(value=self._show)
+        self._show()
+
+    def _show(self, *args) -> None:
+        self._shown.text = self.value or '(not set)'
+
+    def on_panel(self, instance, value):
+        if value is not None:
+            self.fbind('on_release', self._open)
+
+    def _open(self, *args) -> None:
+        baseUrl = self.panel.config.get('Assistant', 'baseurl', fallback='') if self.panel else ''
+        if llm_assist.is_gwdg(baseUrl):
+            self._openList()
+        else:
+            self._openText()
+
+    def _dismiss(self, *args) -> None:
+        if self.popup is not None:
+            self.popup.dismiss()
+        self.popup = None
+
+    def _choose(self, value: str) -> None:
+        self._dismiss()
+        if value.strip():
+            self.value = value.strip()
+
+    def _openList(self) -> None:
+        content = BoxLayout(orientation='vertical', spacing='5dp')
+        rows = GridLayout(cols=1, spacing='4dp', size_hint_y=None)
+        rows.bind(minimum_height=rows.setter('height'))
+        for name, label in llm_assist.GWDG_MODELS:
+            button = ToggleButton(text=f'{label}\n[size=12sp][color=aaaaaa]{name}[/color][/size]', markup=True,
+                                  halign='left', valign='middle', size_hint_y=None, height='52dp',
+                                  state='down' if name == self.value else 'normal', group='gwdgmodel')
+            button.bind(size=lambda b, size: setattr(b, 'text_size', (size[0] - dp(20), None)))
+            button.bind(on_release=lambda b, n=name: self._choose(n))
+            rows.add_widget(button)
+        scroll = ScrollView(do_scroll_x=False)
+        scroll.add_widget(rows)
+        content.add_widget(scroll)
+        buttons = BoxLayout(size_hint_y=None, height='50dp', spacing='5dp')
+        other = Button(text='Other model...')
+        other.bind(on_release=lambda b: (self._dismiss(), self._openText()))
+        cancel = Button(text='Cancel')
+        cancel.bind(on_release=self._dismiss)
+        buttons.add_widget(other)
+        buttons.add_widget(cancel)
+        content.add_widget(buttons)
+        self.popup = Popup(title='GWDG model (must support tool calling)', content=content,
+                           size_hint=(None, 0.85), width=min(0.95 * Window.width, dp(520)))
+        self.popup.open()
+
+    def _openText(self) -> None:
+        content = BoxLayout(orientation='vertical', spacing='5dp')
+        textinput = TextInput(text=self.value or '', font_size='20sp', multiline=False,
+                              size_hint_y=None, height='42sp')
+        textinput.bind(on_text_validate=lambda t: self._choose(t.text))
+        content.add_widget(Widget())
+        content.add_widget(textinput)
+        content.add_widget(Widget())
+        buttons = BoxLayout(size_hint_y=None, height='50dp', spacing='5dp')
+        for text, action in (('Ok', lambda b: self._choose(textinput.text)), ('Cancel', self._dismiss)):
+            button = Button(text=text)
+            button.bind(on_release=action)
+            buttons.add_widget(button)
+        content.add_widget(buttons)
+        self.popup = Popup(title=self.title, content=content, size_hint=(None, None),
+                           size=(min(0.95 * Window.width, dp(500)), dp(250)))
+        self.popup.open()
+        textinput.focus = True
+
+
 # load the layout
 class GlowTrackerApp(App):
     # stage configuration properties - these will update when changed in config menu
@@ -6052,6 +6137,7 @@ class GlowTrackerApp(App):
             'baseurl': 'https://chat-ai.academiccloud.de/v1',
             'model': '',
             'apikey': '',
+            'memoryfile': '',
             # The user's setup, sent to the assistant (llm_assist.SETUP_FIELDS)
             **{key: '' for key, _ in llm_assist.SETUP_FIELDS},
         })
@@ -6169,6 +6255,7 @@ class GlowTrackerApp(App):
         # Register custom types
         settings.register_type('custom_numeric', SettingsCustomNumeric)
         settings.register_type('password', SettingsPassword)
+        settings.register_type('model', SettingsModel)
 
         # Create settings panel from json
         settings.add_json_panel('GlowTracker', self.config, 'settings/gui_settings.json')

@@ -35,6 +35,7 @@ from kivy.metrics import dp
 from kivy.properties import BooleanProperty, NumericProperty, ObjectProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.utils import escape_markup
@@ -170,6 +171,9 @@ class ToolChip(BoxLayout):
                                 'Could not read the plugin'),
         'read_plugin_example': ('Reading an example plugin', 'Read an example plugin',
                                 'Could not read the example'),
+        'remember': ('Proposing a lesson to remember', 'Remembered for future conversations',
+                     'Lesson not remembered'),
+        'forget': ('Proposing to forget a lesson', 'Forgotten', 'Lesson not forgotten'),
         'propose_sequencer_script': ('Checking the script with the sequencer parser',
                                      'Approved: saved and loaded as the sequencer script',
                                      'Script rejected by the parser; the assistant is fixing it'),
@@ -408,6 +412,100 @@ class ProposalCard(BoxLayout):
         self.ids.status.color = (1, 0.45, 0.45, 1) if error else (0.6, 0.9, 0.6, 1)
 
 
+class MemoryCard(BoxLayout):
+    """The assistant wants to remember (or forget) a lesson for all future conversations.
+    The fact can be edited before approving."""
+
+    def __init__(self, call_id: str, name: str, arguments: dict, details: str, owner: 'AssistantWidget',
+                 **kwargs):
+        self.call_id = call_id
+        self.owner = owner
+        self.arguments = dict(arguments)
+        self.forgetting = name == 'forget'
+        super().__init__(**kwargs)
+        why = escape_markup(arguments.get('why') or '')
+        if self.forgetting:
+            self.ids.title.text = f'[b]Forget a lesson?[/b]  [color=bbbbbb]{why}[/color]'
+            self.ids.fact.text = details
+            self.ids.fact.readonly = True
+            self.ids.approvebutton.text = 'Forget it'
+        else:
+            self.ids.title.text = ('[b]Remember for future conversations?[/b]'
+                                   + (f'  [color=bbbbbb]{why}[/color]' if why else ''))
+            self.ids.fact.text = arguments.get('fact', '')
+            self.ids.approvebutton.text = 'Remember'
+        self.decided = False
+
+    def approve(self) -> None:
+        edited = None
+        if not self.forgetting and self.ids.fact.text.strip() != (self.arguments.get('fact') or '').strip():
+            edited = dict(self.arguments, fact=self.ids.fact.text.strip())
+        self._decide()
+        self.owner.answer(self.call_id, True, edited)
+
+    def decline(self) -> None:
+        self._decide()
+        self.setStatus('Declined; nothing changed in the memory.', error=True)
+        self.owner.answer(self.call_id, False, None)
+
+    def _decide(self) -> None:
+        self.decided = True
+        self.ids.approvebutton.disabled = True
+        self.ids.declinebutton.disabled = True
+        self.ids.fact.readonly = True
+
+    def result(self, ok: bool, text: str) -> None:
+        if 'declined' in text:
+            return
+        lines = [x for x in text.replace('ERROR', '').splitlines()
+                 if x.strip() and not x.startswith(('Approved by the user', 'Their note', '{', '}', ' ', '"'))]
+        self.setStatus(lines[0] if lines else text.strip(), error=not ok)
+
+    def stopped(self) -> None:
+        if not self.decided:
+            self._decide()
+            self.setStatus('Stopped before you decided; nothing changed.', error=True)
+
+    def setStatus(self, text: str, error: bool = False) -> None:
+        self.ids.status.text = text
+        self.ids.status.color = (1, 0.45, 0.45, 1) if error else (0.6, 0.9, 0.6, 1)
+
+
+class MemoryList(BoxLayout):
+    """Popup content: every remembered lesson, each with Delete. The user's own housekeeping;
+    the model is not involved."""
+
+    def __init__(self, store, close, **kwargs):
+        super().__init__(**kwargs)
+        self.store = store
+        self.close = close
+        self.ids.where.text = f'Stored in {escape_markup(store.path)}'
+        self.refresh()
+
+    def refresh(self) -> None:
+        rows = self.ids.rows
+        rows.clear_widgets()
+        try:
+            facts = self.store.facts()
+        except Exception as e:
+            rows.add_widget(Factory.ChatText(text=f'[color=ff7373]{escape_markup(str(e))}[/color]'))
+            return
+        if not facts:
+            rows.add_widget(Factory.ChatText(text='[color=999999]No lessons yet. When the assistant makes a '
+                                                  'mistake you correct, it will propose one for you to approve.[/color]'))
+        for fact in facts:
+            row = Factory.MemoryRow()
+            row.ids.text.text = (f'[b]{fact.id}.[/b] {escape_markup(fact.text)}'
+                                 + (f'\n[color=888888]{escape_markup(fact.why)} · {fact.created}[/color]'
+                                    if fact.why else f'\n[color=888888]{fact.created}[/color]'))
+            row.ids.delete.bind(on_release=lambda button, fid=fact.id: self.delete(fid))
+            rows.add_widget(row)
+
+    def delete(self, fact_id: int) -> None:
+        self.store.remove(fact_id)
+        self.refresh()
+
+
 class AssistantWidget(BoxLayout):
     """The chat: answers stream in, tool calls show as chips, proposed sequencer scripts and plugins
     appear as cards. A card's button asks GlowTracker to save and load the script; GlowTracker
@@ -446,7 +544,8 @@ class AssistantWidget(BoxLayout):
         except assistant_ipc.CommandError as e:
             raise llm_assist.AssistantError(str(e)) from e
         return llm_assist.AssistantConfig(base_url=settings['base_url'], model=settings['model'],
-                                          api_key=settings['api_key'], setup=settings.get('setup') or {})
+                                          api_key=settings['api_key'], setup=settings.get('setup') or {},
+                                          memory_file=settings.get('memory_file') or '')
 
     def _updateHeader(self, config: llm_assist.AssistantConfig | None = None) -> None:
         if config is None:
@@ -569,7 +668,8 @@ class AssistantWidget(BoxLayout):
             turn.toolStart(event.call_id, event.name, event.text)
         elif kind == 'approval':
             turn.toolWaiting(event.call_id)
-            card = ProposalCard(event.call_id, event.name, event.data, event.text, self)
+            cls = MemoryCard if event.name in ('remember', 'forget') else ProposalCard
+            card = cls(event.call_id, event.name, event.data, event.text, self)
             self._cards[event.call_id] = card
             turn.addCard(card)
         elif kind == 'result':
@@ -624,6 +724,17 @@ class AssistantWidget(BoxLayout):
         self.ids.chatlog.clear_widgets()
         self._showEmptyState()
         self._updateHeader()
+
+    def showMemory(self) -> None:
+        try:
+            store = llm_assist.MemoryStore(self._config().memory_path())
+        except llm_assist.AssistantError as e:
+            self._addInfo(str(e), 'ff7373')
+            return
+        popup = Popup(title='Lessons remembered on this microscope', size_hint=(0.92, 0.8),
+                      separator_color=(0.25, 0.42, 0.7, 1))
+        popup.content = MemoryList(store, popup.dismiss)
+        popup.open()
 
     def listModels(self) -> None:
         config = self._config()

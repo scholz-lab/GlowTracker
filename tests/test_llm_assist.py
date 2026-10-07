@@ -1,5 +1,6 @@
 """llm_assist chat against a local fake OpenAI-compatible server (no network, no real key)."""
 import json
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -106,8 +107,10 @@ class FakeAPI:
 
     def __enter__(self):
         self.thread.start()
+        import tempfile
+        memory = os.path.join(tempfile.mkdtemp(prefix='gt_memory_'), 'memory.json')   # never the real one
         return la.AssistantConfig(base_url=f'http://127.0.0.1:{self.server.server_port}/v1',
-                                  model='model-a', api_key='secret', timeout_s=5)
+                                  model='model-a', api_key='secret', timeout_s=5, memory_file=memory)
 
     def __exit__(self, *exc):
         self.server.shutdown()
@@ -212,7 +215,7 @@ def test_request_is_valid_openai_chat_with_only_glowtracker_tools():
     assert chat.streamed() == 'Hello! What should the light do?'
     names = {t['function']['name'] for t in body['tools']}
     assert names == {'get_app_state', 'read_current_plugin', 'read_plugin_example',
-                     'propose_sequencer_script', 'propose_plugin'}
+                     'propose_sequencer_script', 'propose_plugin', 'remember', 'forget'}
 
 
 def test_proposal_goes_through_the_parser_and_reaches_the_app():
@@ -528,3 +531,11 @@ def test_conversations_are_saved_without_the_key(tmp_path):
         assert expected in types
     assert records[0]['model'] == 'model-a' and 'secret' not in raw
     assert next(r for r in records if r['type'] == 'approval')['approved'] is True
+
+
+def test_gwdg_model_list_is_offered_only_for_gwdg():
+    assert la.is_gwdg(la.DEFAULT_BASE_URL) and la.is_gwdg('https://saia.gwdg.de/v1')
+    assert not la.is_gwdg('https://openrouter.ai/api/v1') and not la.is_gwdg('')
+    names = [name for name, _ in la.GWDG_MODELS]
+    assert len(names) == len(set(names)) >= 5
+    assert not any('embed' in n or 'coder' in n for n in names)

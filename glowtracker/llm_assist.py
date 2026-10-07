@@ -30,8 +30,10 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+import platformdirs
 import structlog
 
+from assistant_memory import MAX_FACT_CHARS, MemoryStore  # noqa: F401 (MemoryStore used by the window)
 from ox.agent import AgentServer
 from ox.bus import AsyncPort, Envelope, Msg
 from ox.provider_http import HttpProvider
@@ -44,6 +46,26 @@ if not structlog.is_configured():
     structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.WARNING))
 
 DEFAULT_BASE_URL = 'https://chat-ai.academiccloud.de/v1'
+
+# Chat models offered in Settings when the GWDG / Academic Cloud (SAIA) API is used, largest first.
+# From https://docs.hpc.gwdg.de (SAIA API model names); coding, omni and embedding models left out.
+# The Models button lists everything a key can use, and any other name can still be typed.
+GWDG_MODELS = (
+    ('qwen3.5-397b-a17b', 'Qwen 3.5, 397B mixture of experts: the largest'),
+    ('mistral-medium-3.5-128b', 'Mistral Medium 3.5, 128B'),
+    ('openai-gpt-oss-120b', 'OpenAI GPT-OSS, 120B open weights'),
+    ('deepseek-v4-flash-0731', 'DeepSeek V4 Flash: fast'),
+    ('glm-5.3-flash', 'GLM 5.3 Flash: fast'),
+    ('gemma-4-31b-it', 'Gemma 4, 31B'),
+    ('qwen3.8-27b', 'Qwen 3.8, 27B'),
+    ('qwen3.6-35b-a3b', 'Qwen 3.6, 35B mixture of experts: small and fast'),
+)
+
+
+def is_gwdg(base_url: str) -> bool:
+    return any(host in (base_url or '') for host in ('chat-ai.academiccloud.de', 'saia.gwdg.de'))
+DEFAULT_MEMORY_FILE = os.path.join(platformdirs.user_data_dir('GlowTracker', appauthor=False),
+                                   'assistant_memory.json')
 KEY_ENV_VARS = ('GLOWTRACKER_LLM_API_KEY', 'OPENAI_API_KEY')
 
 SEQUENCER = 'sequencer'
@@ -71,6 +93,10 @@ class AssistantConfig:
     api_key: str = ''
     timeout_s: float = 120.0
     setup: dict = field(default_factory=dict)     # SETUP_FIELDS key -> the user's description
+    memory_file: str = ''                         # '' -> DEFAULT_MEMORY_FILE
+
+    def memory_path(self) -> str:
+        return self.memory_file.strip() or DEFAULT_MEMORY_FILE
 
     def resolved_key(self) -> str:
         if self.api_key.strip():
@@ -165,6 +191,16 @@ How to work:
   done. A plugin still has to be started by the user in DAQ > Plugin, and a sequencer script runs
   when they press Record.
 - Answer in short, plain language: what the script does, the timing, and any assumptions.
+
+Long-term memory:
+- The lessons below were remembered on this microscope from earlier conversations. Follow them.
+- When the user corrects you, or a check, GlowTracker or the user's decision shows a mistake you
+  would likely repeat in another conversation, propose a lesson with remember: one short, general,
+  lasting fact about this microscope, the lab's preferences or how to work here (e.g. "DAC0 drives
+  a buzzer; to keep it quiet, use a plugin that holds DAC0 at 4.5 V, not a sequencer script").
+  Not details of one experiment. The user approves, edits or declines it.
+- Also call remember when the user asks you to remember something, and forget when a lesson is
+  wrong or outdated (give its number). Do not remember what is already in the setup description.
 """
 
 
@@ -231,10 +267,11 @@ def setup_section(setup: dict | None) -> str:
     return text
 
 
-def system_prompt(setup: dict | None = None) -> str:
+def system_prompt(setup: dict | None = None, memory: str = '') -> str:
     examples = plugin_examples()
     listing = '\n'.join(f'- {name}: {doc}' if doc else f'- {name}' for name, doc in examples.items())
     return (GLOWTRACKER + '\n' + setup_section(setup) + '\n' + CHAT_RULES
+            + ('\n' + memory if memory else '')
             + '\n=== Sequencer scripts ===\n' + SEQUENCER_GUIDE
             + '\n=== Plugins ===\n' + PLUGIN_RULES
             + '\n--- plugin API reference (examples/plugins/README.md) ---\n' + _plugin_reference()
@@ -333,6 +370,47 @@ class AppBridge(Protocol):
     def apply(self, kind: str, code: str, path: str) -> str:
         """Save and load an approved script; return what was done. Raise AssistantError to refuse."""
     def default_path(self, kind: str) -> str: ...
+
+
+def _register_memory_tools(tools: ToolResolver, memory: MemoryStore) -> None:
+    def remember_check(args: dict) -> Check:
+        problem = memory.problem(args.get('fact', ''))
+        if problem:
+            return Check(False, f'Not remembered: {problem}.')
+        return Check(True, args.get('why', ''))
+
+    def remember(fact: str, why: str = '') -> str:
+        stored = memory.add(fact, why)
+        return f'Remembered as lesson {stored.id}: {stored.text}'
+
+    def forget_check(args: dict) -> Check:
+        match = [f for f in memory.facts() if f.id == args.get('id')]
+        if not match:
+            return Check(False, f'There is no lesson {args.get("id")}.')
+        return Check(True, f'Lesson {match[0].id}: {match[0].text}')
+
+    def forget(id: int, why: str = '') -> str:
+        removed = memory.remove(id)
+        return f'Forgot lesson {removed.id}: {removed.text}'
+
+    tools.add_function(
+        'remember',
+        'Propose a lasting lesson for this microscope, kept for all future conversations. The user '
+        'approves, edits or declines it; waits for their decision.',
+        lambda fact, why='': asyncio.to_thread(remember, fact, why),
+        {'type': 'object', 'required': ['fact', 'why'], 'additionalProperties': False, 'properties': {
+            'fact': {'type': 'string', 'minLength': 5, 'maxLength': MAX_FACT_CHARS,
+                     'description': 'One short, general fact or rule, understandable without this conversation.'},
+            'why': {'type': 'string', 'description': 'What happened that taught it, in one sentence.'}}},
+        confirm=True, check=remember_check)
+    tools.add_function(
+        'forget',
+        'Propose to delete a remembered lesson that is wrong or outdated. The user approves or declines.',
+        lambda id, why='': asyncio.to_thread(forget, id, why),
+        {'type': 'object', 'required': ['id', 'why'], 'additionalProperties': False, 'properties': {
+            'id': {'type': 'integer', 'description': 'The lesson number.'},
+            'why': {'type': 'string', 'description': 'Why it should go.'}}},
+        confirm=True, check=forget_check)
 
 
 def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
@@ -528,6 +606,7 @@ class ChatSession:
         self.busy = False
         self.usage = {'prompt': 0, 'completion': 0, 'cost': None}
         self.transcript = Transcript(transcript_dir)
+        self.memory = MemoryStore(config.memory_path())
         self._sessionIds = itertools.count(1)
         self._session = next(self._sessionIds)
         self._started = False             # system prompt sent in this session
@@ -544,6 +623,7 @@ class ChatSession:
         asyncio.set_event_loop(self._loop)
         tools = ToolResolver(builtins=False)
         _register_tools(tools, bridge)
+        _register_memory_tools(tools, self.memory)
         self._provider = HttpProvider(self.config.base_url, self.config.resolved_key())
         self._inbox: AsyncPort[Envelope] = AsyncPort()
         self._replies: AsyncPort[Msg] = AsyncPort()
@@ -648,7 +728,7 @@ class ChatSession:
         self.config.check()
         data = [UserMessage(content=text)]
         if not self._started:
-            data.insert(0, SystemMessage(content=system_prompt(self.config.setup)))
+            data.insert(0, SystemMessage(content=system_prompt(self.config.setup, self.memory.prompt_section())))
             self._started = True
             self.transcript.start(self.config)
         self.transcript.write('user', content=text)

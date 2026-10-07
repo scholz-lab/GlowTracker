@@ -30,6 +30,15 @@
             font_size: '14sp'
 
         Button:
+            text: 'Memory'
+            size_hint_x: None
+            width: dp(76)
+            font_size: '13sp'
+            background_normal: ''
+            background_color: 0.17, 0.18, 0.21, 1
+            on_release: root.showMemory()
+
+        Button:
             text: 'Models'
             size_hint_x: None
             width: dp(72)
@@ -414,3 +423,144 @@
         font_size: '12sp'
 
 
+
+
+<MemoryCard>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: self.minimum_height
+    padding: dp(10), dp(8)
+    spacing: dp(6)
+    canvas.before:
+        Color:
+            rgba: 0.16, 0.14, 0.2, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+        Color:
+            rgba: 0.55, 0.42, 0.75, 1
+        Line:
+            rounded_rectangle: self.x, self.y, self.width, self.height, dp(10)
+            width: 1
+
+    Label:
+        id: title
+        size_hint_y: None
+        height: self.texture_size[1] + dp(2)
+        text_size: self.width, None
+        halign: 'left'
+        markup: True
+        font_size: '13sp'
+
+    TextInput:
+        id: fact
+        size_hint_y: None
+        height: max(dp(40), self.minimum_height)
+        font_size: '14sp'
+        padding: dp(10), dp(8)
+        background_normal: ''
+        background_active: ''
+        background_color: 0.105, 0.11, 0.125, 1
+        foreground_color: 0.93, 0.93, 0.95, 1
+        cursor_color: 0.6, 0.8, 1, 1
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(34)
+        spacing: dp(6)
+
+        Widget:
+
+        Button:
+            id: approvebutton
+            size_hint_x: None
+            width: max(dp(120), self.texture_size[0] + dp(24))
+            bold: True
+            font_size: '13sp'
+            background_normal: ''
+            background_color: 0.42, 0.3, 0.62, 1
+            on_release: root.approve()
+
+        Button:
+            id: declinebutton
+            text: 'Decline'
+            size_hint_x: None
+            width: dp(84)
+            font_size: '13sp'
+            background_normal: ''
+            background_color: 0.3, 0.2, 0.2, 1
+            on_release: root.decline()
+
+    Label:
+        id: status
+        size_hint_y: None
+        height: self.texture_size[1] if self.text else 0
+        text_size: self.width, None
+        halign: 'left'
+        font_size: '12sp'
+
+
+<MemoryList>:
+    orientation: 'vertical'
+    spacing: dp(8)
+
+    Label:
+        id: where
+        size_hint_y: None
+        height: self.texture_size[1] + dp(4)
+        text_size: self.width, None
+        halign: 'left'
+        markup: True
+        font_size: '11sp'
+        color: 0.55, 0.55, 0.6, 1
+
+    ScrollView:
+        do_scroll_x: False
+
+        BoxLayout:
+            id: rows
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: dp(6)
+
+    Button:
+        text: 'Close'
+        size_hint_y: None
+        height: dp(40)
+        on_release: root.close()
+
+
+<MemoryRow@BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: max(dp(40), text.texture_size[1] + dp(12))
+    spacing: dp(8)
+    padding: dp(6), dp(4)
+    canvas.before:
+        Color:
+            rgba: 0.14, 0.15, 0.18, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+
+    Label:
+        id: text
+        text_size: self.width, None
+        halign: 'left'
+        valign: 'middle'
+        markup: True
+        font_size: '13sp'
+
+    Button:
+        id: delete
+        text: 'Delete'
+        size_hint: None, None
+        size: dp(70), dp(30)
+        pos_hint: {'center_y': .5}
+        font_size: '12sp'
+        background_normal: ''
+        background_color: 0.3, 0.2, 0.2, 1

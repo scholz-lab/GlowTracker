@@ -11,9 +11,9 @@
         "key": "baseurl"
     },
     {
-        "type": "string",
+        "type": "model",
         "title": "Model",
-        "desc": "Model name as the API knows it; it must support tool (function) calling. Press Models in the DAQ > AI assistant tab to list the models your key can use.",
+        "desc": "With the GWDG / Academic Cloud API, pick one of the recommended models from the list (or Other model... for any name). For other providers, type the model name. It must support tool calling; the Models button in the assistant window lists what your key can use.",
         "section": "Assistant",
         "key": "model"
     },
@@ -23,6 +23,13 @@
         "desc": "Your personal key. Stored in your own GlowTracker settings file, not in the code. Leave empty to use the GLOWTRACKER_LLM_API_KEY or OPENAI_API_KEY environment variable.",
         "section": "Assistant",
         "key": "apikey"
+    },
+    {
+        "type": "string",
+        "title": "Memory file",
+        "desc": "Where the assistant keeps lessons it learned on this microscope (you approve each one). Leave empty for the default in your user data folder; point several PCs at one shared file to share lessons.",
+        "section": "Assistant",
+        "key": "memoryfile"
     },
     {
         "type": "title",
