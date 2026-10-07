@@ -119,6 +119,7 @@ from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
 from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 from script_api import PluginHost, WormState, BrightnessStats, worm_position_mm, trail_velocity
+import llm_assist
 
 #
 # Math
@@ -1136,6 +1137,7 @@ class DAQControlTabPanel(TabbedPanel):
         self.ids.stageprogramwidget.init()
         self.ids.reversalwidget.init()
         self.ids.pluginwidget.init()
+        self.ids.assistantwidget.init(panel= self)
 
 
     def setCloseCallback(self, closeCallback: callable) -> None:
@@ -1149,6 +1151,168 @@ class DAQControlTabPanel(TabbedPanel):
         self.ids.stageprogramwidget.setCloseCallback( closeCallback )
         self.ids.reversalwidget.setCloseCallback( closeCallback )
         self.ids.pluginwidget.setCloseCallback( closeCallback )
+        self.ids.assistantwidget.setCloseCallback( closeCallback )
+
+
+class AssistantWidget(BoxLayout):
+    """DAQ > AI assistant tab: describe an experiment in words, get a sequencer script or a plugin.
+
+    The request goes to the OpenAI-compatible API set in Settings > AI assistant (llm_assist).
+    Nothing is run automatically: a sequencer script is checked by the real parser and loaded
+    into the Sequencer tab only when the user presses Use; a plugin is saved to a file and put
+    in the Plugin tab, where the user reviews it and presses Start.
+    """
+    closeCallback = ObjectProperty(None)
+
+    KINDS = {'Sequencer script': llm_assist.SEQUENCER, 'Plugin': llm_assist.PLUGIN}
+
+    def init(self, panel=None):
+        self.app: GlowTrackerApp = App.get_running_app()
+        self.panel = panel
+        self._busy = False
+        self._lastSavedPlugin = None
+        self.ids.pluginpath.text = self._defaultPluginPath()
+        self._showKind()
+
+    def setCloseCallback(self, closeCallback: callable) -> None:
+        self.closeCallback = closeCallback
+
+    def _config(self) -> llm_assist.AssistantConfig:
+        get = lambda key, default='': self.app.config.get('Assistant', key, fallback=default)
+        return llm_assist.AssistantConfig(
+            base_url=get('baseurl', llm_assist.DEFAULT_BASE_URL) or llm_assist.DEFAULT_BASE_URL,
+            model=get('model'), api_key=get('apikey'))
+
+    def _kind(self) -> str:
+        return self.KINDS.get(self.ids.kind.text, llm_assist.SEQUENCER)
+
+    def _showKind(self, *args) -> None:
+        plugin = self._kind() == llm_assist.PLUGIN
+        self.ids.pluginrow.opacity = 1 if plugin else 0
+        self.ids.pluginrow.disabled = not plugin
+        self.ids.usebutton.text = 'Save plugin and open in Plugin tab' if plugin else 'Use in Sequencer'
+        self.ids.request.hint_text = (
+            'e.g. Every 30 s, switch the LED on at 4.5 V for 2 s while the worm is moving forward.'
+            if plugin else
+            'e.g. 5 pulses of 4.5 V, 1 s long, every 20 s, starting 10 s after Record.')
+
+    def _defaultPluginPath(self) -> str:
+        current = self.app.config.get('DaqControl', 'pluginscript', fallback='')
+        folder = os.path.dirname(current) if current else os.getcwd()
+        return os.path.join(folder, f'assistant_plugin_{time.strftime("%Y%m%d_%H%M%S")}.py')
+
+    def _setStatus(self, text: str, error: bool = False) -> None:
+        self.ids.status.text = text
+        self.ids.status.color = (1, 0.45, 0.45, 1) if error else (0.85, 0.85, 0.85, 1)
+
+    # --- actions ---------------------------------------------------------------------------
+    def generate(self) -> None:
+        if self._busy:
+            return
+        request = self.ids.request.text
+        current = self.ids.result.text if self.ids.editcurrent.active else None
+        kind, config = self._kind(), self._config()
+        self._busy = True
+        self.ids.generatebutton.disabled = True
+        self._setStatus(f'Asking {config.model or "the model"}...')
+
+        def work():
+            try:
+                result = llm_assist.generate(config, kind, request, current=current)
+                Clock.schedule_once(lambda dt: self._showResult(result))
+            except llm_assist.AssistantError as e:
+                message = str(e)
+                Clock.schedule_once(lambda dt: self._showError(message))
+            except Exception as e:
+                message = f'{type(e).__name__}: {e}'
+                Clock.schedule_once(lambda dt: self._showError(message))
+
+        Thread(target=work, daemon=True).start()
+
+    def _done(self) -> None:
+        self._busy = False
+        self.ids.generatebutton.disabled = False
+
+    def _showResult(self, result) -> None:
+        self._done()
+        self.ids.result.text = result.code
+        text = result.explanation or '(no explanation given)'
+        if result.error:
+            self._setStatus(f'{text}\n\nStill not valid after {result.attempts} tries: {result.error}. '
+                            f'Edit it below or rephrase the request.', error=True)
+        else:
+            check = 'checked by the sequencer parser' if self._kind() == llm_assist.SEQUENCER \
+                else 'syntax checked only; read it before you start it'
+            self._setStatus(f'{text}\n\nValid ({check}).')
+
+    def _showError(self, message: str) -> None:
+        self._done()
+        self._setStatus(message, error=True)
+
+    def listModels(self) -> None:
+        config = self._config()
+        self._setStatus(f'Listing models at {config.base_url}...')
+
+        def work():
+            try:
+                models = llm_assist.list_models(config)
+                text = ('Models your key can use (copy one into Settings > AI assistant > Model):\n'
+                        + ', '.join(models)) if models else 'The API listed no models.'
+                Clock.schedule_once(lambda dt: self._setStatus(text))
+            except Exception as e:
+                message = str(e)
+                Clock.schedule_once(lambda dt: self._setStatus(message, error=True))
+
+        Thread(target=work, daemon=True).start()
+
+    def use(self) -> None:
+        code = self.ids.result.text
+        kind = self._kind()
+        problem = llm_assist.validate(kind, code)
+        if problem:
+            self._setStatus(f'Not used: {problem}', error=True)
+            return
+        if kind == llm_assist.SEQUENCER:
+            self._useSequencer(code)
+        else:
+            self._savePlugin(code)
+
+    def _useSequencer(self, code: str) -> None:
+        try:
+            self.app.daqControl.parseTextScript(code)
+        except Exception as e:
+            self._setStatus(f'Not used: {e}', error=True)
+            return
+        if self.panel is not None:
+            sequencer = self.panel.ids.sequencerwidget
+            sequencer.ids.scripttext.text = code
+            sequencer.daqScript = code
+            holder = self.panel.parent
+            while holder is not None and not isinstance(holder, DAQControlTabPanelHolder):
+                holder = holder.parent
+            if holder is not None:
+                holder.ids.mode.text = DAQMode.Sequencer.value
+            self.panel.switch_to(self.panel.ids.sequencertab)
+        self._setStatus('Loaded into the Sequencer tab and set the DAQ mode to Sequencer. It runs when you '
+                        'press Record. Press Save there to keep it in a file.')
+
+    def _savePlugin(self, code: str) -> None:
+        path = os.path.abspath(self.ids.pluginpath.text.strip())
+        if os.path.exists(path) and path != self._lastSavedPlugin:
+            self._setStatus(f'{path} already exists. Choose another file name.', error=True)
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(code.rstrip() + '\n')
+        except OSError as e:
+            self._setStatus(f'Saving failed: {e}', error=True)
+            return
+        self._lastSavedPlugin = path
+        if self.panel is not None:
+            self.panel.ids.pluginwidget.setPluginPath(path)
+            self.panel.switch_to(self.panel.ids.plugintab)
+        self._setStatus(f'Saved {path}. It is selected in the Plugin tab; read it, then press Start there.')
 
 
 class PluginWidget(BoxLayout):
@@ -5823,6 +5987,12 @@ class GlowTrackerApp(App):
             'saveformat': 'frames'
         })
 
+        config.setdefaults('Assistant', {
+            'baseurl': 'https://chat-ai.academiccloud.de/v1',
+            'model': '',
+            'apikey': ''
+        })
+
         config.setdefaults('MacroScript', {
             'recentscript': ''
         })
@@ -5939,6 +6109,7 @@ class GlowTrackerApp(App):
         # Create settings panel from json
         settings.add_json_panel('GlowTracker', self.config, 'settings/gui_settings.json')
         settings.add_json_panel('Experiment', self.config, 'settings/experiment_settings.json')
+        settings.add_json_panel('AI assistant', self.config, 'settings/assistant_settings.json')
 
 
     def create_settings(self):

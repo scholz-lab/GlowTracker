@@ -1184,9 +1184,10 @@ MainWindow:
     size: root.size
     pos: root.pos
     do_default_tab: False
-    tab_width: 220
+    tab_width: 185
 
     TabbedPanelItem:
+        id: sequencertab
         text: 'Sequencer'
 
         SequencerWidget:
@@ -1205,10 +1206,113 @@ MainWindow:
             id: reversalwidget
 
     TabbedPanelItem:
+        id: plugintab
         text: 'Plugin'
 
         PluginWidget:
             id: pluginwidget
+
+    TabbedPanelItem:
+        text: 'AI assistant'
+
+        AssistantWidget:
+            id: assistantwidget
+
+
+<AssistantWidget>:
+    size: root.size
+    pos: root.pos
+    orientation: 'vertical'
+    padding: dp(6)
+    spacing: dp(6)
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(36)
+        spacing: dp(4)
+
+        Spinner:
+            id: kind
+            text: 'Sequencer script'
+            values: 'Sequencer script', 'Plugin'
+            size_hint_x: 0.3
+            on_text: root._showKind()
+
+        CheckBox:
+            id: editcurrent
+            size_hint_x: None
+            width: dp(30)
+
+        Label:
+            text: 'change the script below'
+            size_hint_x: 0.3
+            halign: 'left'
+            text_size: self.size
+            valign: 'middle'
+            font_size: '13sp'
+
+        Button:
+            text: 'Models'
+            size_hint_x: 0.15
+            on_release: root.listModels()
+
+    TextInput:
+        id: request
+        size_hint_y: 0.22
+        hint_text: ''
+
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(36)
+        spacing: dp(4)
+
+        Button:
+            id: generatebutton
+            text: 'Write script'
+            on_release: root.generate()
+
+        Button:
+            id: usebutton
+            text: 'Use in Sequencer'
+            on_release: root.use()
+
+    BoxLayout:
+        id: pluginrow
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: dp(32)
+        spacing: dp(4)
+
+        Label:
+            text: 'Save as'
+            size_hint_x: None
+            width: dp(60)
+            font_size: '13sp'
+
+        TextInput:
+            id: pluginpath
+            multiline: False
+
+    CodeInput:
+        id: result
+        do_wrap: False
+        size_hint_y: 0.45
+
+    ScrollView:
+        do_scroll_x: False
+        size_hint_y: 0.25
+
+        Label:
+            id: status
+            text: 'Describe the experiment, then press Write script. Set the API in Settings > AI assistant.'
+            size_hint_y: None
+            height: max(self.texture_size[1], dp(20))
+            halign: 'left'
+            valign: 'top'
+            text_size: self.width, None
+            font_size: '13sp'
 
 
 <PluginWidget>:

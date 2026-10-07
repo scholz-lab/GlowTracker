@@ -1,0 +1,27 @@
+[
+    {
+        "type": "title",
+        "title": "AI assistant (OpenAI-compatible API)"
+    },
+    {
+        "type": "string",
+        "title": "API base URL",
+        "desc": "Any OpenAI-compatible endpoint. GWDG / Max Planck Chat AI: https://chat-ai.academiccloud.de/v1. OpenAI: https://api.openai.com/v1",
+        "section": "Assistant",
+        "key": "baseurl"
+    },
+    {
+        "type": "string",
+        "title": "Model",
+        "desc": "Model name as the API knows it. Press Models in the DAQ > AI assistant tab to list the models your key can use.",
+        "section": "Assistant",
+        "key": "model"
+    },
+    {
+        "type": "string",
+        "title": "API key",
+        "desc": "Your personal key. Stored in your own GlowTracker settings file, not in the code. Leave empty to use the GLOWTRACKER_LLM_API_KEY or OPENAI_API_KEY environment variable.",
+        "section": "Assistant",
+        "key": "apikey"
+    }
+]
