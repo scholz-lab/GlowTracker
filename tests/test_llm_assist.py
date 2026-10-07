@@ -116,7 +116,8 @@ class FakeAPI:
 
 class FakeApp:
     def __init__(self):
-        self.proposals = []
+        self.applied = []           # (kind, code, path) the user approved
+        self.refuse = ''            # set to make GlowTracker refuse, e.g. while recording
 
     def app_state(self):
         return {'recording': False, 'daq_mode': 'Sequencer', 'sequencer_script': 'mode: [time]\n5: [on, 2]'}
@@ -124,21 +125,34 @@ class FakeApp:
     def current_plugin(self):
         return 'def update(state, scope):\n    pass\n'
 
-    def propose(self, proposal):
-        self.proposals.append(proposal)
+    def apply(self, kind, code, path):
+        if self.refuse:
+            raise la.AssistantError(self.refuse)
+        self.applied.append((kind, code, path))
+        return f'Saved {path} and loaded it.'
+
+    def default_path(self, kind):
+        return f'/data/default_{kind}'
 
 
 class Chat:
     """A ChatSession plus the events it emitted; say() waits for the end of the turn."""
 
-    def __init__(self, config, stream=True):
+    def __init__(self, config, stream=True, transcript_dir=None):
         self.app = FakeApp()
         self.events = []
+        self.decide = lambda event: (True, None)       # the user's answer to an approval request
         self._done = threading.Event()
-        self.session = la.ChatSession(config, self.app, self._onEvent, stream=stream)
+        self.session = la.ChatSession(config, self.app, self._onEvent, stream=stream,
+                                      transcript_dir=transcript_dir)
 
     def _onEvent(self, event):
         self.events.append(event)
+        if event.kind == 'approval':
+            decision = self.decide(event)
+            if decision is not None:
+                approved, arguments = decision
+                self.session.answer(event.call_id, approved, arguments)
         if event.kind == 'done':
             self._done.set()
 
@@ -164,6 +178,8 @@ class Chat:
         """Event kinds in order, with repeated streaming deltas collapsed."""
         out = []
         for e in self.events:
+            if e.kind == 'usage':
+                continue
             if not (out and e.kind in ('text', 'thinking') and out[-1] == e.kind):
                 out.append(e.kind)
         return out
@@ -204,13 +220,15 @@ def test_proposal_goes_through_the_parser_and_reaches_the_app():
                    text('One 1 s pulse at 10 s; press Use in Sequencer.')])
     with api as config, Chat(config) as chat:
         chat.say('1 s of light at 10 s')
-    assert [(p.kind, p.code, p.summary) for p in chat.app.proposals] == [(la.SEQUENCER, GOOD, 'One pulse')]
+    assert chat.app.applied == [(la.SEQUENCER, GOOD, '/data/default_sequencer')]
+    [approval] = [e for e in chat.events if e.kind == 'approval']
+    assert approval.data['summary'] == 'One pulse' and 'Timeline' in approval.text
     assert [e.name for e in chat.events if e.kind == 'tool'] == ['propose_sequencer_script']
     assert [(e.name, e.ok) for e in chat.events if e.kind == 'result'] == [('propose_sequencer_script', True)]
     assert chat.replies() == ['One 1 s pulse at 10 s; press Use in Sequencer.']
     tool_result = api.bodies()[1]['messages'][-1]
     assert tool_result['role'] == 'tool' and tool_result['tool_call_id'] == 'call_propose_sequencer_script'
-    assert tool_result['content'].startswith('Valid.')
+    assert tool_result['content'].startswith('Approved by the user.') and 'Saved /data/default_sequencer' in tool_result['content']
 
 
 def test_invalid_script_is_returned_to_the_model_not_shown():
@@ -219,9 +237,10 @@ def test_invalid_script_is_returned_to_the_model_not_shown():
                    text('Fixed: 4.5 V instead of 9 V.')])
     with api as config, Chat(config) as chat:
         chat.say('bright pulse at 10 s')
-    assert [p.code for p in chat.app.proposals] == [GOOD]
+    assert [a[1] for a in chat.app.applied] == [GOOD]
+    assert len([e for e in chat.events if e.kind == 'approval']) == 1      # the invalid one never reached the user
     feedback = api.bodies()[1]['messages'][-1]['content']
-    assert 'NOT shown' in feedback and '4.95' in feedback
+    assert 'not shown to the user' in feedback and '4.95' in feedback
 
 
 def test_plugin_proposal_is_syntax_checked():
@@ -230,7 +249,7 @@ def test_plugin_proposal_is_syntax_checked():
                    text('Keeps the light off.')])
     with api as config, Chat(config) as chat:
         chat.say('keep the light off')
-    assert [p.kind for p in chat.app.proposals] == [la.PLUGIN]
+    assert [a[0] for a in chat.app.applied] == [la.PLUGIN]
     assert 'neither update' in api.bodies()[1]['messages'][-1]['content']
 
 
@@ -299,11 +318,11 @@ def test_streamed_tool_call_arguments_are_reassembled():
                    text('Done.')])
     with api as config, Chat(config) as chat:
         chat.say('pulse')
-    assert [p.code for p in chat.app.proposals] == [script]
+    assert [a[1] for a in chat.app.applied] == [script]
     sent_back = api.bodies()[1]['messages'][-2]['tool_calls'][0]
     assert sent_back['id'] == 'call_propose_sequencer_script'
     assert json.loads(sent_back['function']['arguments'])['script'] == script
-    assert chat.kinds() == ['message', 'tool', 'result', 'text', 'message', 'done']
+    assert chat.kinds() == ['message', 'tool', 'approval', 'result', 'text', 'message', 'done']
 
 
 def test_thinking_is_separated_from_the_answer_and_not_sent_back():
@@ -391,13 +410,14 @@ def test_plugin_proposals_are_checked_and_test_run_before_they_are_shown():
     with api as config, Chat(config) as chat:
         chat.say('light while reversing')
     static = api.bodies()[1]['messages'][-1]['content']
-    assert 'NOT shown' in static and 'state.worm_speed does not exist' in static
+    assert 'not shown to the user' in static and 'state.worm_speed does not exist' in static
     crashed = api.bodies()[2]['messages'][-1]['content']
-    assert 'NOT shown' in crashed and 'ZeroDivisionError' in crashed and 'line 3' in crashed
+    assert 'not shown to the user' in crashed and 'ZeroDivisionError' in crashed and 'line 3' in crashed
     accepted = api.bodies()[3]['messages'][-1]['content']
-    assert 'ran without errors' in accepted
-    [proposal] = chat.app.proposals
-    assert proposal.code == plugin.strip() and 'ran without errors' in proposal.checks
+    assert 'ran without errors' in accepted and 'Approved by the user' in accepted
+    assert [a[1] for a in chat.app.applied] == [plugin.strip()]
+    [approval] = [e for e in chat.events if e.kind == 'approval']
+    assert 'ran without errors' in approval.text
 
 
 def test_the_users_setup_and_glowtracker_description_open_the_conversation():
@@ -424,3 +444,87 @@ def test_missing_outputs_are_flagged_so_the_model_asks():
 
 def test_changing_the_setup_starts_a_new_conversation():
     assert la.AssistantConfig(setup={'dac0': 'a'}) != la.AssistantConfig(setup={'dac0': 'b'})
+
+
+SCRIPT_B = 'mode: [time]\n0: [off]\n20: [on, 3]\n21: [off]'
+
+
+def test_declining_applies_nothing_and_tells_the_model():
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('Okay, what should change?')])
+    with api as config, Chat(config) as chat:
+        chat.decide = lambda event: (False, None)
+        chat.say('pulse at 10 s')
+    assert chat.app.applied == []
+    told = api.bodies()[1]['messages'][-1]['content']
+    assert 'declined' in told and 'nothing was done' in told
+
+
+def test_edits_before_approving_are_checked_and_reported_to_the_model():
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('Saved your version.')])
+    with api as config, Chat(config) as chat:
+        chat.decide = lambda event: (True, dict(event.data, script=SCRIPT_B, path='/data/mine.txt'))
+        chat.say('pulse')
+    assert chat.app.applied == [(la.SEQUENCER, SCRIPT_B, '/data/mine.txt')]
+    told = api.bodies()[1]['messages'][-1]['content']
+    assert 'after changing: path, script' in told and '20: [on, 3]' in told
+
+
+def test_invalid_edits_are_not_applied():
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('That edit was invalid.')])
+    with api as config, Chat(config) as chat:
+        chat.decide = lambda event: (True, dict(event.data, script='mode: [time]\n1: [on, 9]'))
+        chat.say('pulse')
+    assert chat.app.applied == []
+    assert 'edited version is invalid' in api.bodies()[1]['messages'][-1]['content']
+
+
+def test_glowtracker_can_still_refuse_after_approval():
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('Stop the recording first.')])
+    with api as config, Chat(config) as chat:
+        chat.app.refuse = 'A recording is running. Stop it first.'
+        chat.say('pulse')
+    told = api.bodies()[1]['messages'][-1]['content']
+    assert 'Not applied: A recording is running' in told
+    assert [e.ok for e in chat.events if e.kind == 'result'] == [False]
+
+
+def test_stop_while_waiting_for_approval_keeps_a_valid_history():
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('Fine.')])
+    with api as config, Chat(config) as chat:
+        chat.decide = lambda event: None               # the user does not answer
+        chat.say('pulse', wait=False)
+        wait_for = time.monotonic() + 10
+        while not any(e.kind == 'approval' for e in chat.events) and time.monotonic() < wait_for:
+            time.sleep(0.02)
+        chat.session.stop()
+        chat.wait()
+        assert chat.events[-1].cancelled and chat.app.applied == []
+        chat.say('never mind')
+    roles = [m['role'] for m in api.bodies()[1]['messages']]
+    assert roles == ['system', 'user', 'assistant', 'user']
+
+
+def test_usage_is_summed_per_conversation():
+    api = FakeAPI([text('a'), text('b'), text('c')])
+    with api as config, Chat(config) as chat:
+        chat.say('one')
+        chat.say('two')
+        assert chat.session.usage['prompt'] == 20 and chat.session.usage['completion'] == 10
+        assert [e.data['prompt'] for e in chat.events if e.kind == 'usage'] == [10, 20]
+        chat.session.reset()
+        chat.say('three')
+        assert chat.session.usage['prompt'] == 10
+
+
+def test_conversations_are_saved_without_the_key(tmp_path):
+    api = FakeAPI([call('propose_sequencer_script', script=GOOD), text('Done.')])
+    with api as config, Chat(config, transcript_dir=str(tmp_path)) as chat:
+        chat.say('pulse at 10 s')
+    [path] = list(tmp_path.glob('chat_*.jsonl'))
+    raw = path.read_text()
+    records = [json.loads(line) for line in raw.splitlines()]
+    types = [r['type'] for r in records]
+    for expected in ('start', 'user', 'tool_call', 'approval_request', 'approval', 'tool_result', 'assistant', 'usage'):
+        assert expected in types
+    assert records[0]['model'] == 'model-a' and 'secret' not in raw
+    assert next(r for r in records if r['type'] == 'approval')['approved'] is True

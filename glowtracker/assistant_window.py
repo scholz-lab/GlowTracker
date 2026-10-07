@@ -39,9 +39,14 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.utils import escape_markup
 
+import platformdirs
+
 import assistant_ipc
 import chat_markup
 import llm_assist
+
+# Every conversation is saved here as a .jsonl file (messages, tool calls, approvals, usage).
+TRANSCRIPT_DIR = os.path.join(platformdirs.user_data_dir('GlowTracker', appauthor=False), 'assistant_chats')
 
 
 class ChatInput(TextInput):
@@ -166,15 +171,15 @@ class ToolChip(BoxLayout):
         'read_plugin_example': ('Reading an example plugin', 'Read an example plugin',
                                 'Could not read the example'),
         'propose_sequencer_script': ('Checking the script with the sequencer parser',
-                                     'Script is valid, see the proposal below',
+                                     'Approved: saved and loaded as the sequencer script',
                                      'Script rejected by the parser; the assistant is fixing it'),
         'propose_plugin': ('Checking the plugin and test-running it',
-                           'Plugin passed the checks and the test run, see below',
+                           'Approved: saved and selected in DAQ > Plugin',
                            'Plugin rejected by the checks; the assistant is fixing it'),
     }
     is_open = BooleanProperty(False)
     header = StringProperty('')
-    state = StringProperty('running')   # running, ok, failed
+    state = StringProperty('running')   # running, waiting, ok, failed
 
     def __init__(self, name: str, arguments: str, **kwargs):
         super().__init__(**kwargs)
@@ -185,11 +190,29 @@ class ToolChip(BoxLayout):
         self.running = True
         self.tick(2)
 
+    def waiting(self) -> None:
+        """The checks passed and the call waits for the user's decision on the card below."""
+        self.running = False
+        self.state = 'waiting'
+        self.header = 'Checks passed; waiting for your decision below'
+
     def finish(self, ok: bool, result: str) -> None:
         self.running = False
         self.result = result
         self.state = 'ok' if ok else 'failed'
         text = self.labels[1 if ok else 2]
+        if ok and result.startswith('Approved by the user after changing'):
+            text = text.replace('Approved', 'Approved with your edits')
+        if not ok and 'declined' in result:
+            note = result.split('Their note:', 1)[1].strip() if 'Their note:' in result else ''
+            self.header = 'You declined it' + (f'  [color=bbbbbb]({escape_markup(note[:160])})[/color]' if note else '')
+            self._refreshDetails()
+            return
+        if not ok and 'Not applied' in result:
+            reason = result.split('Not applied:', 1)[-1].strip().splitlines()[0]
+            self.header = f'GlowTracker did not apply it  [color=bbbbbb]({escape_markup(reason[:160])})[/color]'
+            self._refreshDetails()
+            return
         if not ok:
             reason = result.split('invalid:', 1)[-1].split('Fix it and call', 1)[0]
             lines = [x.strip(' -') for x in reason.splitlines() if x.strip() and not x.strip().endswith(':')]
@@ -274,6 +297,13 @@ class AssistantTurn(BoxLayout):
         self.owner._animated.add(chip)
         self._add(chip)
 
+    def toolWaiting(self, call_id: str) -> None:
+        chip = self._chips.get(call_id)
+        if chip is not None:
+            chip.waiting()
+        if self._typing is not None and self._typing.parent is self:
+            self.remove_widget(self._typing)
+
     def toolEnd(self, call_id: str, ok: bool, result: str) -> None:
         chip = self._chips.get(call_id)
         if chip is not None:
@@ -283,8 +313,6 @@ class AssistantTurn(BoxLayout):
 
     def addCard(self, card) -> None:
         self._add(card)
-        if any(c.running for c in self._chips.values()):
-            self._showTyping()
 
     def addNote(self, text: str, color: str) -> None:
         self._add(Factory.ChatText(text=f'[color={color}]{escape_markup(text)}[/color]'))
@@ -294,7 +322,7 @@ class AssistantTurn(BoxLayout):
             self.remove_widget(self._typing)
         self.owner._animated.discard(self._typing)
         for chip in self._chips.values():
-            if chip.running:
+            if chip.running or chip.state == 'waiting':
                 chip.finish(False, 'stopped')
         if self._thinking is not None:
             self._thinking.finish()
@@ -305,24 +333,75 @@ class AssistantTurn(BoxLayout):
 
 
 class ProposalCard(BoxLayout):
-    """A script the assistant proposed, shown in the chat for review. The code and the file name
-    can be edited before pressing the button; GlowTracker checks it again when it is used."""
+    """A script the assistant wants to use, waiting for the user's decision. The code and file
+    name can be edited before approving; ox checks the edited version again before it is
+    applied, and the assistant is told what was changed."""
 
-    def __init__(self, proposal: llm_assist.Proposal, owner: 'AssistantWidget', **kwargs):
-        self.proposal = proposal
+    def __init__(self, call_id: str, name: str, arguments: dict, details: str, owner: 'AssistantWidget',
+                 **kwargs):
+        self.call_id = call_id
         self.owner = owner
+        self.arguments = dict(arguments)
+        self.kind = llm_assist.PLUGIN if name == 'propose_plugin' else llm_assist.SEQUENCER
+        self.codeKey = 'code' if self.kind == llm_assist.PLUGIN else 'script'
         super().__init__(**kwargs)
-        plugin = proposal.kind == llm_assist.PLUGIN
-        kindText = 'Plugin' if plugin else 'Sequencer script'
-        summary = f'  [color=bbbbbb]{escape_markup(proposal.summary)}[/color]' if proposal.summary else ''
-        self.ids.title.text = f'[b]{kindText}[/b]{summary}'
-        self.ids.code.text = proposal.code
-        checks = escape_markup(proposal.checks)
-        for warning in proposal.warnings:
-            checks += f'\n[color=f0c27b]Warning: {escape_markup(warning)}[/color]'
+        plugin = self.kind == llm_assist.PLUGIN
+        summary = arguments.get('summary') or ''
+        summary = f'  [color=bbbbbb]{escape_markup(summary)}[/color]' if summary else ''
+        self.ids.title.text = f'[b]{"Plugin" if plugin else "Sequencer script"}[/b]{summary}'
+        self.ids.code.text = llm_assist._unfence(arguments.get(self.codeKey, '')).strip()
+        self.originalCode = self.ids.code.text
+        checks = ''
+        for line in details.splitlines():
+            line = escape_markup(line)
+            checks += (f'[color=f0c27b]{line}[/color]' if line.startswith('Warning:') else line) + '\n'
         self.ids.checks.text = checks.strip()
-        self.ids.usebutton.text = 'Save plugin and select it' if plugin else 'Save and use in Sequencer'
-        self.ids.path.text = owner.defaultPath(proposal.kind)
+        self.ids.usebutton.text = 'Approve: save and select' if plugin else 'Approve: save and use'
+        self.ids.path.text = arguments.get('path') or owner.defaultPath(self.kind)
+        self.originalPath = self.ids.path.text
+        self.decided = False
+
+    def approve(self) -> None:
+        code, path = self.ids.code.text.strip(), self.ids.path.text.strip()
+        problem = llm_assist.validate(self.kind, code)
+        if problem:
+            self.setStatus(f'Not approved: {problem}', error=True)
+            return
+        # Only what the user changed counts as an edit. A default path the card filled in is
+        # used as shown (default_path() hands it to the tool) without being reported as an edit.
+        edited = dict(self.arguments)
+        if code != self.originalCode:
+            edited[self.codeKey] = code
+        if path != self.originalPath:
+            edited['path'] = path
+        elif not self.arguments.get('path'):
+            self.owner.approvedDefaultPaths[self.kind] = path
+        self._decide()
+        self.setStatus('Approved; saving...')
+        self.owner.answer(self.call_id, True, edited if edited != self.arguments else None)
+
+    def decline(self) -> None:
+        self._decide()
+        self.setStatus('Declined. Tell the assistant what to change, if you like.', error=True)
+        self.owner.answer(self.call_id, False, None)
+
+    def _decide(self) -> None:
+        self.decided = True
+        self.ids.usebutton.disabled = True
+        self.ids.declinebutton.disabled = True
+
+    def result(self, ok: bool, text: str) -> None:
+        """What happened after the decision: GlowTracker's answer (saved, or refused and why)."""
+        if 'declined' in text:
+            return
+        lines = [x for x in text.replace('ERROR', '').splitlines()
+                 if x.strip() and not x.startswith(('Approved by the user', 'Their note', '{', '}', ' ', '"'))]
+        self.setStatus(lines[0] if lines else text.strip().splitlines()[0], error=not ok)
+
+    def stopped(self) -> None:
+        if not self.decided:
+            self._decide()
+            self.setStatus('Stopped before you decided; nothing was applied.', error=True)
 
     def setStatus(self, text: str, error: bool = False) -> None:
         self.ids.status.text = text
@@ -349,6 +428,9 @@ class AssistantWidget(BoxLayout):
         self.client = client
         self._chat: llm_assist.ChatSession | None = None
         self._turn: AssistantTurn | None = None
+        self._cards: dict[str, ProposalCard] = {}
+        self._usage: dict = {}
+        self.approvedDefaultPaths: dict[str, str] = {}     # kind -> default path shown on an approved card
         self._animated: set = set()
         self._phase = 0
         self._stick = True
@@ -373,7 +455,15 @@ class AssistantWidget(BoxLayout):
             except llm_assist.AssistantError:
                 config = llm_assist.AssistantConfig()
         model = config.model.strip()
-        self.ids.header.text = f'[b]AI assistant[/b]  [color=999999]{escape_markup(model or "no model set")}[/color]'
+        usage = ''
+        if self._usage.get('prompt') or self._usage.get('completion'):
+            usage = (f'   [color=777777]in {_tokens(self._usage["prompt"])} · '
+                     f'out {_tokens(self._usage["completion"])}')
+            if self._usage.get('cost') is not None:
+                usage += f' · ${self._usage["cost"]:.4f}'
+            usage += '[/color]'
+        self.ids.header.text = (f'[b]AI assistant[/b]  [color=999999]{escape_markup(model or "no model set")}'
+                                f'[/color]{usage}')
 
     def _session(self) -> llm_assist.ChatSession:
         """The chat session, restarted when the API settings changed in GlowTracker."""
@@ -385,7 +475,8 @@ class AssistantWidget(BoxLayout):
             self._addInfo('API settings changed: this is a new conversation for the model.')
         if self._chat is None:
             self._chat = llm_assist.ChatSession(
-                config, self, lambda event: Clock.schedule_once(lambda dt: self._onEvent(event)))
+                config, self, lambda event: Clock.schedule_once(lambda dt: self._onEvent(event)),
+                transcript_dir=TRANSCRIPT_DIR)
         return self._chat
 
     def disconnected(self) -> None:
@@ -476,12 +567,26 @@ class AssistantWidget(BoxLayout):
             turn.endMessage(event.text)
         elif kind == 'tool':
             turn.toolStart(event.call_id, event.name, event.text)
+        elif kind == 'approval':
+            turn.toolWaiting(event.call_id)
+            card = ProposalCard(event.call_id, event.name, event.data, event.text, self)
+            self._cards[event.call_id] = card
+            turn.addCard(card)
         elif kind == 'result':
             turn.toolEnd(event.call_id, event.ok, event.text)
+            card = self._cards.pop(event.call_id, None)
+            if card is not None:
+                card.result(event.ok, event.text)
+        elif kind == 'usage':
+            self._usage = event.data
+            self._updateHeader(self._chat.config if self._chat is not None else None)
         elif kind == 'error':
             turn.addNote(event.text, 'ff7373')
         elif kind == 'done':
             turn.finish(event.cancelled)
+            for card in self._cards.values():
+                card.stopped()
+            self._cards.clear()
             self._turn = None
             self._setBusy(False)
 
@@ -512,6 +617,8 @@ class AssistantWidget(BoxLayout):
         if self._chat is not None:
             self._chat.reset()
         self._turn = None
+        self._cards.clear()
+        self._usage = {}
         self._setBusy(False)
         self._animated.clear()
         self.ids.chatlog.clear_widgets()
@@ -541,16 +648,23 @@ class AssistantWidget(BoxLayout):
     def current_plugin(self) -> str:
         return self.client.call('current_plugin')
 
-    def propose(self, proposal: llm_assist.Proposal) -> None:
-        def show(dt):
-            card = ProposalCard(proposal, self)
-            if self._turn is not None:
-                self._turn.addCard(card)
-            else:
-                self._append(card)
-        Clock.schedule_once(show)
+    def apply(self, kind: str, code: str, path: str) -> str:
+        """Save and load an approved script in GlowTracker, which checks it again."""
+        command = 'use_sequencer' if kind == llm_assist.SEQUENCER else 'save_plugin'
+        try:
+            return self.client.call(command, code=code, path=path)
+        except assistant_ipc.CommandError as e:
+            raise llm_assist.AssistantError(str(e)) from e
 
-    # --- using a proposal ------------------------------------------------------------------
+    def default_path(self, kind: str) -> str:
+        """The path for a script the model gave none for: the one the approved card showed."""
+        return self.approvedDefaultPaths.pop(kind, None) or self.defaultPath(kind)
+
+    # --- the user's decision on a proposal -----------------------------------------------------
+    def answer(self, call_id: str, approved: bool, arguments: dict | None) -> None:
+        if self._chat is not None:
+            self._chat.answer(call_id, approved, arguments)
+
     def defaultPath(self, kind: str) -> str:
         try:
             return self.client.call('default_path', kind=kind)
@@ -558,27 +672,9 @@ class AssistantWidget(BoxLayout):
             ext = '.txt' if kind == llm_assist.SEQUENCER else '.py'
             return os.path.join(os.path.expanduser('~'), f'assistant_{kind}_{time.strftime("%Y%m%d_%H%M%S")}{ext}')
 
-    def useProposal(self, card: ProposalCard) -> None:
-        code, path, kind = card.ids.code.text, card.ids.path.text, card.proposal.kind
-        problem = llm_assist.validate(kind, code)
-        if problem:
-            card.setStatus(f'Not used: {problem}', error=True)
-            return
-        command = 'use_sequencer' if kind == llm_assist.SEQUENCER else 'save_plugin'
-        card.ids.usebutton.disabled = True
 
-        def work():
-            try:
-                message, error = self.client.call(command, code=code, path=path), False
-            except assistant_ipc.CommandError as e:
-                message, error = str(e), True
-
-            def done(dt):
-                card.ids.usebutton.disabled = False
-                card.setStatus(message, error=error)
-            Clock.schedule_once(done)
-
-        Thread(target=work, daemon=True).start()
+def _tokens(n: int) -> str:
+    return f'{n / 1000:.1f}k' if n >= 1000 else str(n)
 
 
 class AssistantWindowApp(App):

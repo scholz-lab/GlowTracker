@@ -89,7 +89,7 @@
     Label:
         size_hint_y: None
         height: dp(14)
-        text: 'Enter to send, Shift+Enter for a new line. Nothing runs until you press a proposal\'s button.'
+        text: 'Enter to send, Shift+Enter for a new line. Nothing is applied until you approve it.'
         font_size: '11sp'
         color: 0.5, 0.5, 0.55, 1
         halign: 'left'
@@ -230,14 +230,14 @@
     spacing: dp(4)
     canvas.before:
         Color:
-            rgba: {'running': (0.15, 0.17, 0.21, 1), 'ok': (0.13, 0.19, 0.15, 1), 'failed': (0.22, 0.15, 0.14, 1)}[root.state]
+            rgba: {'running': (0.15, 0.17, 0.21, 1), 'waiting': (0.24, 0.2, 0.12, 1), 'ok': (0.13, 0.19, 0.15, 1), 'failed': (0.22, 0.15, 0.14, 1)}[root.state]
         RoundedRectangle:
             pos: self.pos
             size: self.size
             radius: [dp(8)]
 
     Button:
-        text: {'running': '[color=8fb7ff]•[/color]  ', 'ok': '[color=7fd88f]•[/color]  ', 'failed': '[color=ff8a7a]•[/color]  '}[root.state] + root.header
+        text: {'running': '[color=8fb7ff]•[/color]  ', 'waiting': '[color=f0c27b]•[/color]  ', 'ok': '[color=7fd88f]•[/color]  ', 'failed': '[color=ff8a7a]•[/color]  '}[root.state] + root.header
         markup: True
         size_hint_y: None
         height: self.texture_size[1] + dp(2)
@@ -393,7 +393,17 @@
             font_size: '13sp'
             background_normal: ''
             background_color: 0.18, 0.38, 0.68, 1
-            on_release: root.owner.useProposal(root)
+            on_release: root.approve()
+
+        Button:
+            id: declinebutton
+            text: 'Decline'
+            size_hint_x: None
+            width: dp(84)
+            font_size: '13sp'
+            background_normal: ''
+            background_color: 0.3, 0.2, 0.2, 1
+            on_release: root.decline()
 
     Label:
         id: status

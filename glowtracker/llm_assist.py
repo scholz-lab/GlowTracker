@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import functools
 import itertools
 import json
 import logging
 import os
 import re
 import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -34,7 +36,8 @@ from ox.agent import AgentServer
 from ox.bus import AsyncPort, Envelope, Msg
 from ox.provider_http import HttpProvider
 from ox.tools import ToolResolver
-from ox.types import AssistantMessage, ModelSpec, SystemMessage, ToolMessage, UserMessage
+from ox.types import (Approval, AssistantMessage, Check, ModelSpec, SystemMessage, ToolMessage, ToolResult,
+                      UserMessage)
 
 if not structlog.is_configured():
     # ox logs every request at info level; keep the app console quiet.
@@ -151,13 +154,16 @@ How to work:
 - Before writing a plugin, read the closest example with read_plugin_example (the list is below)
   and follow its structure; use only the state fields and scope methods in the API reference.
 - Deliver every script by calling propose_sequencer_script or propose_plugin. Do not paste the code
-  into your message: the user sees the proposal with a button to use it.
-- These tools check automatically: a sequencer script with the real parser (and return its
-  timeline; compare it with the request); a plugin for unknown state/scope names, unsafe or
-  blocking calls and out-of-range voltages, then by executing it once with a fake DAQ to make sure
-  it runs. If a check fails, fix it and call again. Mention any warnings to the user.
-- Nothing runs until the user presses that button (and Record or Start), so never claim that you
-  started, loaded or saved anything.
+  into your message: the user sees it in the chat with Approve and Decline.
+- These tools check automatically first: a sequencer script with the real parser (the result gives
+  its timeline; compare it with the request); a plugin for unknown state/scope names, unsafe or
+  blocking calls and out-of-range voltages, then by executing it once with a fake DAQ. If a check
+  fails, fix it and call again. Mention any warnings to the user.
+- Then the call waits for the user. The result tells you whether they approved (the script was
+  saved and loaded), edited it before approving (the applied version is in the result), or
+  declined (with their reason, if they gave one). Only describe as done what the result says was
+  done. A plugin still has to be started by the user in DAQ > Plugin, and a sequencer script runs
+  when they press Record.
 - Answer in short, plain language: what the script does, the timing, and any assumptions.
 """
 
@@ -282,15 +288,6 @@ def clean_reply(text: str) -> str:
 
 # --- GlowTracker tools ----------------------------------------------------------------------
 
-@dataclass
-class Proposal:
-    kind: str           # SEQUENCER or PLUGIN
-    code: str
-    summary: str
-    checks: str = ''    # what the automatic checks found (timeline, dry-run behaviour)
-    warnings: list[str] = field(default_factory=list)
-
-
 def check(kind: str, code: str) -> tuple[str, str, list[str]]:
     """Run the automatic checks. Returns (problem, report, warnings): problem is '' when the
     script may be shown to the user; report describes what it does."""
@@ -307,8 +304,24 @@ def check(kind: str, code: str) -> tuple[str, str, list[str]]:
         return 'the static check found:\n- ' + '\n- '.join(errors), '', warnings
     run = plugin_check.dry_run(code)
     if not run.ok:
-        return f'the dry run against a simulated recording failed:\n{run.error}', '', warnings
+        return f'the test run failed:\n{run.error}', '', warnings
     return '', run.text(), warnings
+
+
+@functools.lru_cache(maxsize=16)
+def _check_cached(kind: str, code: str) -> tuple[str, str, tuple[str, ...]]:
+    problem, report, warnings = check(kind, code)
+    return problem, report, tuple(warnings)
+
+
+def check_report(kind: str, code: str) -> Check:
+    """check() as an ox Check: the error for the model, or the report shown with the approval.
+    Cached, so applying an approved script does not test-run it again."""
+    problem, report, warnings = _check_cached(kind, _unfence(code).strip())
+    if problem:
+        return Check(False, f'The {kind} is invalid, so it was not shown to the user: {problem}\n'
+                            f'Fix it and call again.')
+    return Check(True, '\n'.join([report] + [f'Warning: {w}' for w in warnings]).strip())
 
 
 class AppBridge(Protocol):
@@ -317,7 +330,9 @@ class AppBridge(Protocol):
 
     def app_state(self) -> dict: ...
     def current_plugin(self) -> str: ...
-    def propose(self, proposal: Proposal) -> None: ...
+    def apply(self, kind: str, code: str, path: str) -> str:
+        """Save and load an approved script; return what was done. Raise AssistantError to refuse."""
+    def default_path(self, kind: str) -> str: ...
 
 
 def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
@@ -327,62 +342,59 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
     def read_current_plugin() -> str:
         return bridge.current_plugin() or '(no plugin file selected in the Plugin tab)'
 
-    def propose(kind: str, code: str, summary: str) -> str:
-        code = _unfence(code).strip()
-        problem, report, warnings = check(kind, code)
-        if problem:
-            return f'NOT shown to the user, the {kind} is invalid: {problem}\nFix it and call again.'
-        bridge.propose(Proposal(kind=kind, code=code, summary=summary.strip(), checks=report,
-                                warnings=warnings))
-        button = 'Save and use in Sequencer' if kind == SEQUENCER else 'Save plugin and select it'
-        notes = ('\nWarnings (tell the user):\n- ' + '\n- '.join(warnings)) if warnings else ''
-        return (f'Valid. Shown to the user with a "{button}" button; nothing is loaded until they '
-                f'press it.\nAutomatic checks:\n{report}{notes}\n'
-                f'If this does not match the request, fix it and propose again; otherwise tell the '
-                f'user briefly what it does.')
-
-    def propose_sequencer_script(script: str, summary: str = '') -> str:
-        return propose(SEQUENCER, script, summary)
-
-    def propose_plugin(code: str, summary: str = '') -> str:
-        return propose(PLUGIN, code, summary)
+    def apply(kind: str, code: str, path: str) -> ToolResult:
+        try:
+            done = bridge.apply(kind, _unfence(code).strip(), path or bridge.default_path(kind))
+        except Exception as e:      # refused by the app, e.g. while recording
+            return ToolResult(f'Not applied: {e}', is_error=True)
+        report = check_report(kind, code).message
+        return ToolResult(f'{done}\nAutomatic checks:\n{report}\nTell the user briefly what it does.')
 
     async def off_loop(fn, **kwargs):
         # The bridge may wait for the GUI thread; do not block the event loop meanwhile.
         return await asyncio.to_thread(fn, **kwargs)
 
-    summary = {'type': 'string', 'description': 'One sentence: what it does, for the proposal card.'}
+    def checked(kind: str, key: str):
+        return lambda args: asyncio.to_thread(check_report, kind, args.get(key, ''))
+
+    summary = {'type': 'string', 'description': 'One sentence: what it does, shown to the user.'}
+    path = {'type': 'string', 'description': 'Where to save it. Leave out to use the default folder.'}
     tools.add_function(
         'get_app_state',
-        'Current GlowTracker state: recording, DAQ mode, the Sequencer tab script, the selected '
-        'plugin file and whether it runs, frame rate.',
-        lambda: off_loop(get_app_state))
+        'Current GlowTracker state: recording, tracking, imaging mode, DAQ mode, the sequencer script, '
+        'the selected plugin file and whether it runs.',
+        lambda: off_loop(get_app_state), {'type': 'object', 'properties': {}, 'additionalProperties': False})
     tools.add_function(
         'read_current_plugin', 'Source code of the plugin file selected in the Plugin tab.',
-        lambda: off_loop(read_current_plugin))
+        lambda: off_loop(read_current_plugin), {'type': 'object', 'properties': {}, 'additionalProperties': False})
     tools.add_function(
         'read_plugin_example',
         'Source code of one of the example plugins listed in the instructions. Read the closest one '
         'before writing a plugin.',
         lambda name: off_loop(read_plugin_example, name=name),
-        {'type': 'object', 'required': ['name'], 'properties': {
+        {'type': 'object', 'required': ['name'], 'additionalProperties': False, 'properties': {
             'name': {'type': 'string', 'description': 'File name, e.g. template_controller.py'}}})
     tools.add_function(
         'propose_sequencer_script',
-        'Check a complete DAQ sequencer script with the real parser and, if valid, show it to the '
-        'user for review. Returns the parser error otherwise.',
-        lambda script, summary='': off_loop(propose_sequencer_script, script=script, summary=summary),
-        {'type': 'object', 'required': ['script'], 'properties': {
-            'script': {'type': 'string', 'description': 'The complete script, starting with the mode line.'},
-            'summary': summary}})
+        'Propose a complete DAQ sequencer script. It is checked with the real parser; if valid, the '
+        'user reviews it and approves (it is then saved and loaded as the sequencer script, DAQ mode '
+        'Sequencer), edits it, or declines. Waits for their decision.',
+        lambda script, summary='', path='': off_loop(apply, kind=SEQUENCER, code=script, path=path),
+        {'type': 'object', 'required': ['script'], 'additionalProperties': False, 'properties': {
+            'script': {'type': 'string', 'minLength': 1,
+                       'description': 'The complete script, starting with the mode line.'},
+            'summary': summary, 'path': path}},
+        confirm=True, check=checked(SEQUENCER, 'script'))
     tools.add_function(
         'propose_plugin',
-        'Syntax-check a complete GlowTracker plugin file and, if valid, show it to the user for '
-        'review. Returns the problem otherwise.',
-        lambda code, summary='': off_loop(propose_plugin, code=code, summary=summary),
-        {'type': 'object', 'required': ['code'], 'properties': {
-            'code': {'type': 'string', 'description': 'The complete Python file.'},
-            'summary': summary}})
+        'Propose a complete GlowTracker plugin file. It is checked (API names, safety, a test run); if '
+        'valid, the user reviews it and approves (it is then saved and selected in DAQ > Plugin, where '
+        'they press Start), edits it, or declines. Waits for their decision.',
+        lambda code, summary='', path='': off_loop(apply, kind=PLUGIN, code=code, path=path),
+        {'type': 'object', 'required': ['code'], 'additionalProperties': False, 'properties': {
+            'code': {'type': 'string', 'minLength': 1, 'description': 'The complete Python file.'},
+            'summary': summary, 'path': path}},
+        confirm=True, check=checked(PLUGIN, 'code'))
 
 
 # --- chat -----------------------------------------------------------------------------------
@@ -410,7 +422,10 @@ class ChatEvent:
     'thinking'  streamed reasoning of a reasoning model (text is the new piece)
     'message'   one assistant message is complete (text is its full answer text)
     'tool'      the model calls a tool (call_id, name; text is the JSON arguments)
+    'approval'  a call waits for the user (call_id, name; data = arguments; text = check report);
+                answer with ChatSession.answer()
     'result'    a tool finished (call_id, name, ok; text is what the model was told)
+    'usage'     tokens used so far in this conversation (data: prompt, completion, cost or None)
     'error'     the turn failed (text is the problem, worded for the user)
     'done'      the turn is over and the user may write again (cancelled if stopped)
     """
@@ -420,6 +435,7 @@ class ChatEvent:
     name: str = ''
     ok: bool = True
     cancelled: bool = False
+    data: dict = field(default_factory=dict)
 
 
 class ThinkSplitter:
@@ -461,7 +477,35 @@ class ThinkSplitter:
 
 
 def _tool_ok(content: str) -> bool:
-    return not content.startswith(('ERROR', 'NOT shown', 'error:'))
+    return not content.startswith(('ERROR', 'NOT shown', 'error:', 'Not applied'))
+
+
+class Transcript:
+    """One conversation as JSON lines (messages, tool calls, approvals, usage), for the lab
+    record of how a script came about. The API key is never written."""
+
+    def __init__(self, folder: str | None) -> None:
+        self.folder = folder
+        self.path: str | None = None
+        self._lock = threading.Lock()
+
+    def start(self, config: AssistantConfig) -> None:
+        self.path = None
+        if not self.folder:
+            return
+        os.makedirs(self.folder, exist_ok=True)
+        self.path = os.path.join(self.folder, f'chat_{time.strftime("%Y%m%d_%H%M%S")}_{os.getpid()}.jsonl')
+        self.write('start', base_url=config.base_url, model=config.model, setup=config.setup)
+
+    def write(self, kind: str, **fields) -> None:
+        if not self.path:
+            return
+        record = {'time': time.strftime('%Y-%m-%dT%H:%M:%S'), 'type': kind, **fields}
+        try:
+            with self._lock, open(self.path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, default=str) + '\n')
+        except OSError:
+            logging.exception('assistant: writing the transcript failed')
 
 
 class ChatSession:
@@ -470,15 +514,20 @@ class ChatSession:
 
     send() returns immediately; on_event is called from the background thread for each
     ChatEvent, so a GUI must hand them to its own thread. One message at a time: wait for
-    'done', or stop() the running turn.
+    'done', or stop() the running turn. Calls that need the user's approval arrive as
+    'approval' events; the turn waits until answer() is called. With transcript_dir set,
+    every conversation is saved there as a .jsonl file.
     """
 
     def __init__(self, config: AssistantConfig, bridge: AppBridge,
-                 on_event: Callable[[ChatEvent], None], stream: bool = True) -> None:
+                 on_event: Callable[[ChatEvent], None], stream: bool = True,
+                 transcript_dir: str | None = None) -> None:
         self.config = config
         self.on_event = on_event
         self.stream = stream
         self.busy = False
+        self.usage = {'prompt': 0, 'completion': 0, 'cost': None}
+        self.transcript = Transcript(transcript_dir)
         self._sessionIds = itertools.count(1)
         self._session = next(self._sessionIds)
         self._started = False             # system prompt sent in this session
@@ -514,16 +563,37 @@ class ChatSession:
             if msg.session_id != self._session:
                 continue                  # reply to a chat that was reset
             meta = msg.metadata or {}
+            request = meta.get('approval_request')
+            if request:
+                self.transcript.write('approval_request', **request)
+                self._emit(ChatEvent('approval', request.get('details', ''), call_id=request['call_id'],
+                                     name=request['name'], data=dict(request.get('arguments') or {})))
             for m in msg.data:
                 if isinstance(m, ToolMessage):
                     name = self._toolNames.get(m.tool_call_id, '')
+                    self.transcript.write('tool_result', call_id=m.tool_call_id, name=name, content=m.content)
                     self._emit(ChatEvent('result', m.content, call_id=m.tool_call_id, name=name,
                                          ok=_tool_ok(m.content)))
                 elif isinstance(m, AssistantMessage):
                     self._onAssistant(m, meta)
+            usage = meta.get('usage')
+            if usage is not None and (meta.get('stream_done') or not meta.get('stream_delta')):
+                self._addUsage(usage)
             if meta.get('turn_done'):
                 self.busy = False
+                if meta.get('cancelled'):
+                    self.transcript.write('stopped')
                 self._emit(ChatEvent('done', cancelled=bool(meta.get('cancelled'))))
+
+    def _addUsage(self, usage) -> None:
+        self.usage['prompt'] += int(getattr(usage, 'prompt_tokens', 0) or 0)
+        self.usage['completion'] += int(getattr(usage, 'completion_tokens', 0) or 0)
+        cost = getattr(usage, 'cost', None)
+        if cost is not None:
+            self.usage['cost'] = (self.usage['cost'] or 0.0) + float(cost)
+        self.transcript.write('usage', prompt_tokens=getattr(usage, 'prompt_tokens', 0),
+                              completion_tokens=getattr(usage, 'completion_tokens', 0), cost=cost)
+        self._emit(ChatEvent('usage', data=dict(self.usage)))
 
     def _onAssistant(self, m: AssistantMessage, meta: dict) -> None:
         text = m.content if isinstance(m.content, str) else \
@@ -537,6 +607,7 @@ class ChatSession:
             return
         if _ERROR.match(text or ''):
             self._split = ThinkSplitter()
+            self.transcript.write('error', content=text)
             self._emit(ChatEvent('error', _error_text(text)))
             return
         # A complete message: the end of a stream, or a non-streamed reply.
@@ -550,12 +621,16 @@ class ChatSession:
                 if kind == 'thinking':
                     self._emit(ChatEvent('thinking', piece))
         self._split = ThinkSplitter()
-        self._emit(ChatEvent('message', clean_reply(text or '')))
+        answer = clean_reply(text or '')
+        if answer:
+            self.transcript.write('assistant', content=answer)
+        self._emit(ChatEvent('message', answer))
         for call in m.tool_calls or []:
             name = call.function.name if call.function else '?'
             self._toolNames[call.id] = name
-            self._emit(ChatEvent('tool', call.function.arguments if call.function else '',
-                                 call_id=call.id, name=name))
+            arguments = call.function.arguments if call.function else ''
+            self.transcript.write('tool_call', call_id=call.id, name=name, arguments=arguments)
+            self._emit(ChatEvent('tool', arguments, call_id=call.id, name=name))
 
     def _emit(self, event: ChatEvent) -> None:
         try:
@@ -575,12 +650,22 @@ class ChatSession:
         if not self._started:
             data.insert(0, SystemMessage(content=system_prompt(self.config.setup)))
             self._started = True
+            self.transcript.start(self.config)
+        self.transcript.write('user', content=text)
         self.busy = True
         self._split = ThinkSplitter()
         envelope = Envelope(msg=Msg(session_id=self._session, data=data,
                                     metadata={'stream': True} if self.stream else None),
                             reply=self._replies)
         asyncio.run_coroutine_threadsafe(self._inbox.send(envelope), self._loop)
+
+    def answer(self, call_id: str, approved: bool, arguments: dict | None = None, note: str = '') -> None:
+        """The user's decision on an 'approval' event. `arguments`: the edited arguments, if any."""
+        self.transcript.write('approval', call_id=call_id, approved=approved, edited=arguments is not None,
+                              arguments=arguments, note=note)
+        approval = Approval(approved=approved, arguments=arguments, note=note)
+        asyncio.run_coroutine_threadsafe(
+            self._server.answer_approval(self._session, call_id, approval), self._loop)
 
     def stop(self) -> None:
         """Stop the running answer; 'done' with cancelled=True follows."""
@@ -593,6 +678,7 @@ class ChatSession:
         self._session = next(self._sessionIds)
         self._started = False
         self.busy = False
+        self.usage = {'prompt': 0, 'completion': 0, 'cost': None}
 
     def close(self) -> None:
         async def shutdown():

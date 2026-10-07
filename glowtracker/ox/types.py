@@ -126,6 +126,7 @@ class ToolSpec(msgspec.Struct, frozen=True):
     input_schema: dict[str, object] = {}
     stdin_json: bool = False
     timeout: float = 120.0
+    confirm: bool = False       # the user must approve each call (see Approval)
 
     def to_tool(self) -> Tool:
         """Convert to LLM-facing Tool definition."""
@@ -134,6 +135,36 @@ class ToolSpec(msgspec.Struct, frozen=True):
             parameters=self.input_schema or {"type": "object", "properties": {}},
             description=self.description,
         ))
+
+
+# ── Confirmation ─────────────────────────────────────────────────────────────
+
+@dataclass(slots=True)
+class Check:
+    """Outcome of a tool's check, run before the user is asked and before it runs.
+    Not ok: `message` goes to the model as the error. Ok: `message` (e.g. a report)
+    is shown to the user with the approval request."""
+    ok: bool
+    message: str = ""
+
+
+@dataclass(slots=True)
+class ApprovalRequest:
+    """A call to a confirm=True tool, waiting for the user."""
+    session_id: int
+    call_id: str
+    name: str
+    arguments: dict
+    details: str = ""           # the check's report, for the user
+
+
+@dataclass(slots=True)
+class Approval:
+    """The user's answer. `arguments` replaces the call's arguments when the user
+    edited them (they are validated and checked again); `note` is passed to the model."""
+    approved: bool
+    arguments: dict | None = None
+    note: str = ""
 
 
 # ── Tool result ──────────────────────────────────────────────────────────────

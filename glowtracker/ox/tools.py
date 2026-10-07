@@ -3,6 +3,10 @@
 Builtins: bash, read, write, edit (can be disabled).
 CLI tools: external commands discovered via --tools flag.
 Functions: Python callables registered by an embedding application.
+
+Every call is validated against the tool's schema first. Function tools can add a
+`check` (runs before anything else) and `confirm=True` (the user must approve the
+call; see ToolResolver.execute).
 """
 
 from __future__ import annotations
@@ -11,13 +15,16 @@ import asyncio
 import inspect
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import msgspec
 import structlog
 
+from ox.schema import validate
 from ox.types import (
+    Approval,
+    Check,
     FunctionDescription,
     Tool,
     ToolResult,
@@ -25,6 +32,9 @@ from ox.types import (
     tool_error,
     tool_ok,
 )
+
+# approve(name, arguments, details) -> Approval; supplied by the agent per call.
+Approver = Callable[[str, dict, str], Awaitable[Approval]]
 
 log = structlog.get_logger()
 
@@ -255,16 +265,33 @@ class FunctionTool:
 
     The callable receives the decoded arguments as keyword arguments and returns
     a str or a ToolResult. Exceptions become tool errors.
+
+    check(args) -> Check | None (sync or async) runs before the call; confirm=True
+    makes every call wait for the user's approval (after a passing check).
     """
 
-    __slots__ = ("name", "description", "parameters", "fn")
+    __slots__ = ("name", "description", "parameters", "fn", "confirm", "check")
 
     def __init__(self, name: str, description: str, fn: Callable[..., Any],
-                 parameters: dict[str, object] | None = None) -> None:
+                 parameters: dict[str, object] | None = None, *, confirm: bool = False,
+                 check: Callable[[dict], Any] | None = None) -> None:
         self.name = name
         self.description = description
         self.parameters = parameters or {"type": "object", "properties": {}}
         self.fn = fn
+        self.confirm = confirm
+        self.check = check
+
+    async def run_check(self, args: dict) -> Check | None:
+        if self.check is None:
+            return None
+        try:
+            result = self.check(args)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as e:
+            return Check(False, f"error: check failed: {type(e).__name__}: {e}")
+        return result
 
     def to_tool(self) -> Tool:
         return Tool(function=FunctionDescription(
@@ -301,8 +328,25 @@ class ToolResolver:
         self._cli_tools[spec.name] = spec
 
     def add_function(self, name: str, description: str, fn: Callable[..., Any],
-                     parameters: dict[str, object] | None = None) -> None:
-        self._functions[name] = FunctionTool(name, description, fn, parameters)
+                     parameters: dict[str, object] | None = None, *, confirm: bool = False,
+                     check: Callable[[dict], Any] | None = None) -> None:
+        self._functions[name] = FunctionTool(name, description, fn, parameters,
+                                             confirm=confirm, check=check)
+
+    def needs_confirmation(self, name: str) -> bool:
+        fn = self._functions.get(name)
+        spec = self._cli_tools.get(name)
+        return bool((fn and fn.confirm) or (spec and spec.confirm))
+
+    def schema(self, name: str) -> dict | None:
+        if self._builtins and name in _BUILTINS:
+            defs = {d.function.name: d.function.parameters for d in _BUILTIN_DEFS if d.function}
+            return defs.get(name)
+        if name in self._functions:
+            return self._functions[name].parameters
+        if name in self._cli_tools:
+            return self._cli_tools[name].input_schema or None
+        return None
 
     def definitions(self) -> list[Tool]:
         builtins = list(_BUILTIN_DEFS) if self._builtins else []
@@ -310,12 +354,23 @@ class ToolResolver:
                 + [f.to_tool() for f in self._functions.values()]
                 + [s.to_tool() for s in self._cli_tools.values()])
 
-    async def execute(self, name: str, args_raw: str | dict) -> ToolResult:
+    async def execute(self, name: str, args_raw: str | dict,
+                      approve: Approver | None = None) -> ToolResult:
+        """Validate, check, ask the user if the tool needs it, then run.
+
+        `approve` is how a confirm=True tool asks the user; without it such a call
+        fails. An approval may carry edited arguments: they are validated and checked
+        again, and the model is told what was applied.
+        """
         if isinstance(args_raw, str):
             try:
                 args = json.loads(args_raw) if args_raw.strip() else {}
-            except (json.JSONDecodeError, TypeError):
-                args = {"command": args_raw} if name == "bash" else {}
+            except (json.JSONDecodeError, TypeError) as e:
+                if name == "bash":
+                    args = {"command": args_raw}
+                else:
+                    return tool_error(f"error: the arguments for {name} are not valid JSON ({e}). "
+                                      f"Send a JSON object matching the tool's parameters.")
         else:
             args = args_raw
         if not isinstance(args, dict):
@@ -324,18 +379,62 @@ class ToolResolver:
         if args.get("help") is True:
             return self._tool_help(name)
 
-        if self._builtins and name in _BUILTINS:
-            return await _BUILTINS[name](args)
-
-        fn = self._functions.get(name)
-        if fn is not None:
-            return await fn.execute(args)
-
-        spec = self._cli_tools.get(name)
-        if spec is None:
+        is_builtin = self._builtins and name in _BUILTINS
+        fn = None if is_builtin else self._functions.get(name)
+        spec = None if is_builtin or fn else self._cli_tools.get(name)
+        if not (is_builtin or fn or spec):
             return tool_error(f"Unknown tool: {name}")
 
-        return await _exec_cli_tool(spec, args)
+        problem = await self._prepare(name, fn, args)
+        if isinstance(problem, ToolResult):
+            return problem
+        report = problem
+
+        applied_note = ""
+        if self.needs_confirmation(name):
+            if approve is None:
+                return tool_error(f"error: {name} needs the user's approval, but this session cannot ask for it")
+            decision = await approve(name, args, report)
+            if not decision.approved:
+                note = f" Their note: {decision.note}" if decision.note else ""
+                return tool_error(f"The user declined this {name} call; nothing was done.{note}")
+            if decision.arguments is not None and decision.arguments != args:
+                problem = await self._prepare(name, fn, decision.arguments)
+                if isinstance(problem, ToolResult):
+                    return tool_error(f"The user edited the arguments before approving, but the edited "
+                                      f"version is invalid; nothing was done.\n{problem.content}")
+                changed = sorted(k for k in set(args) | set(decision.arguments)
+                                 if args.get(k) != decision.arguments.get(k))
+                args = decision.arguments
+                applied_note = (f"Approved by the user after changing: {', '.join(changed)}. Applied arguments:\n"
+                                + json.dumps(args, indent=1) + "\n")
+            else:
+                applied_note = "Approved by the user.\n"
+            if decision.note:
+                applied_note += f"Their note: {decision.note}\n"
+
+        if is_builtin:
+            result = await _BUILTINS[name](args)
+        elif fn is not None:
+            result = await fn.execute(args)
+        else:
+            result = await _exec_cli_tool(spec, args)
+        if applied_note:
+            result = ToolResult(content=applied_note + result.content, is_error=result.is_error)
+        return result
+
+    async def _prepare(self, name: str, fn: FunctionTool | None, args: dict) -> ToolResult | str:
+        """Schema validation and the tool's check. A ToolResult is the error for the model;
+        a string is the check's report (possibly empty)."""
+        errors = validate(self.schema(name), args)
+        if errors:
+            return tool_error(f"error: invalid arguments for {name}: " + "; ".join(errors))
+        if fn is not None:
+            check = await fn.run_check(args)
+            if check is not None and not check.ok:
+                return tool_error(check.message)
+            return check.message if check is not None else ""
+        return ""
 
     def _tool_help(self, name: str) -> ToolResult:
         defs = {d.function.name: d.function for d in self.definitions() if d.function}

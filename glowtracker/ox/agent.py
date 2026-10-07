@@ -10,7 +10,12 @@ turn is signalled with a reply whose metadata contains {"turn_done": True}.
 A running turn can be stopped with cancel(session_id).
 
 Streaming replies carry metadata "stream_delta" (text in content) or
-"reasoning_delta" (text in reasoning), then "stream_done" with the full message.
+"reasoning_delta" (text in reasoning), then "stream_done" with the full message
+(and "usage" when the provider reports it).
+
+Tools registered with confirm=True pause the turn: the reply port gets a message
+with metadata {"approval_request": {"call_id", "name", "arguments", "details"}},
+and the turn continues when the app calls answer_approval(session_id, call_id, Approval).
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from ox.tools import ToolResolver
 from ox.provider import Provider
 from ox.scheduler import Scheduler, ScheduledEvent
 from ox.types import (
+    Approval,
     AssistantMessage,
     CacheControl,
     Error,
@@ -55,6 +61,7 @@ class AgentServer:
         "_port", "_provider", "_tools", "_log",
         "_sessions", "_model", "_workspace", "_scheduler",
         "_provider_retries", "_persistent", "_compactor_model", "_keep_reasoning",
+        "_approvals",
     )
 
     def __init__(
@@ -81,6 +88,7 @@ class AgentServer:
         self._persistent = persistent
         self._compactor_model = compactor_model
         self._keep_reasoning = keep_reasoning  # send reasoning back in the history
+        self._approvals: dict[tuple[int, str], asyncio.Future[Approval]] = {}
 
     # ── Run loop ────────────────────────────────────────────────────────────
 
@@ -189,6 +197,30 @@ class AgentServer:
                     session._current = None
         finally:
             await self._end_session(session)
+
+    async def answer_approval(self, session_id: int, call_id: str, approval: Approval) -> bool:
+        """The user's answer to an approval request. False if nothing was waiting for it."""
+        fut = self._approvals.get((session_id, call_id))
+        if fut is None or fut.done():
+            return False
+        fut.set_result(approval)
+        return True
+
+    async def _request_approval(self, session: Session, envelope: Envelope, call_id: str,
+                                name: str, arguments: dict, details: str) -> Approval:
+        fut: asyncio.Future[Approval] = asyncio.get_running_loop().create_future()
+        key = (session.index, call_id)
+        self._approvals[key] = fut
+        self._log.info("approval_requested", session_id=session.index, tool=name)
+        await self._send_reply(envelope, Msg(
+            session_id=session.index, data=[],
+            metadata={"approval_request": {"call_id": call_id, "name": name,
+                                           "arguments": arguments, "details": details}},
+        ))
+        try:
+            return await fut
+        finally:
+            self._approvals.pop(key, None)
 
     async def cancel(self, session_id: int) -> bool:
         """Stop the running turn of a session. Returns False if nothing was running."""
@@ -371,10 +403,13 @@ class AgentServer:
         self._log_reply(message, usage, response_model)
         session.messages.append(message)
 
+        meta: dict[str, object] = {"stream_done": True}
+        if usage:
+            meta["usage"] = usage
         await self._send_reply(envelope, Msg(
             session_id=envelope.msg.session_id,
             data=[message],
-            metadata={"stream_done": True},
+            metadata=meta,
         ))
 
         match message:
@@ -474,7 +509,10 @@ class AgentServer:
             fut: asyncio.Future[ToolMessage] = asyncio.get_running_loop().create_future()
             _dedup[dedup_key] = fut
 
-            result = await self._tools.execute(name, args)
+            result = await self._tools.execute(
+                name, args,
+                approve=lambda n, a, details: self._request_approval(session, envelope, tc.id, n, a, details),
+            )
             outcome_warn = guard.record_outcome(name, args, result.content)
 
             if result.is_error:
