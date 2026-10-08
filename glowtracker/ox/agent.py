@@ -387,7 +387,8 @@ class AgentServer:
             final_tool_calls = [
                 ToolCallWire(
                     id=entry["id"], type="function",
-                    function=FunctionCall(name=entry["name"], arguments=entry["arguments"]),
+                    # a call without arguments is replayed as "{}": chat templates parse this as JSON
+                    function=FunctionCall(name=entry["name"], arguments=entry["arguments"] or "{}"),
                 )
                 for _idx, entry in sorted(tool_calls_map.items())
             ]

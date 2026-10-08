@@ -340,6 +340,7 @@ def test_streamed_tool_call_arguments_are_reassembled():
     assert [a[1] for a in chat.app.applied] == [script]
     sent_back = api.bodies()[1]['messages'][-2]['tool_calls'][0]
     assert sent_back['id'] == 'call_propose_sequencer_script'
+    assert sent_back['type'] == 'function'          # vLLM (GWDG) rejects the request without it
     assert json.loads(sent_back['function']['arguments'])['script'] == script
     assert chat.kinds() == ['message', 'tool', 'approval', 'result', 'text', 'message', 'done']
 

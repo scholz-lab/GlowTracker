@@ -44,7 +44,10 @@ class HttpProvider:
                     "Authorization": f"Bearer {self._api_key}",
                     "Content-Type": "application/json",
                 },
-                timeout=aiohttp.ClientTimeout(total=300),
+                # No cap on the whole reply (reasoning models can stream for minutes), but give up
+                # on a connection that cannot be opened, or that goes silent: a busy GWDG model can
+                # queue a request before its first byte, so silence is allowed up to 3 minutes.
+                timeout=aiohttp.ClientTimeout(total=None, connect=20, sock_read=180),
             )
         return self._session
 
@@ -64,7 +67,7 @@ class HttpProvider:
             log.warning("http_error", error=str(e))
             return Error(ErrorResponse(code=0, message=str(e)))
         except TimeoutError:
-            return Error(ErrorResponse(code=408, message="Request timed out"))
+            return Error(ErrorResponse(code=408, message=_TIMEOUT_MESSAGE))
         except msgspec.DecodeError as e:
             log.warning("decode_error", error=str(e), body=raw[:500])
             return Error(ErrorResponse(code=502, message=f"Failed to decode response: {e}"))
@@ -105,12 +108,16 @@ class HttpProvider:
             log.warning("stream_http_error", error=str(e))
             yield Error(ErrorResponse(code=0, message=str(e)))
         except TimeoutError:
-            yield Error(ErrorResponse(code=408, message="Stream timed out"))
+            yield Error(ErrorResponse(code=408, message=_TIMEOUT_MESSAGE))
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
+
+
+_TIMEOUT_MESSAGE = ("No reply from the model for 3 minutes, or the server could not be reached. "
+                    "The model may be busy: try again, or choose another model.")
 
 
 def _map_error(status: int, body: bytes) -> ErrorResponse:

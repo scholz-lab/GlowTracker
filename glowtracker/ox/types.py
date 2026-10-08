@@ -74,7 +74,10 @@ class FunctionCall(msgspec.Struct, frozen=True):
 
 class ToolCallWire(msgspec.Struct, frozen=True, omit_defaults=True):
     id: str = ""
-    type: str = "function"
+    # Default "" (not "function"): omit_defaults drops fields equal to their default, and the
+    # real value "function" must always be sent back, or vLLM servers (e.g. GWDG) reject the
+    # conversation with HTTP 400 after the first tool call. Streamed deltas without it stay "".
+    type: str = ""
     function: FunctionCall | None = None
     index: int | None = None
 
