@@ -1,10 +1,20 @@
 #:kivy 2.0
 #:import NumericProperty kivy.properties.NumericProperty
 #:import Image kivy.uix.image.Image
-#:import ScanMinimap Scan_map.ScanMinimap
 #:import StageMinimap Stage_minimap.StageMinimap
 #:import StageMinimapOverlay Stage_minimap.StageMinimapOverlay
 #: import partial functools.partial
+#:import dp kivy.metrics.dp
+# Design tokens for the main window: one palette, one control height, one set of text sizes.
+#:set C_TEXT (0.92, 0.92, 0.94, 1)
+#:set C_MUTED (0.6, 0.6, 0.65, 1)
+#:set C_ACCENT (0.87, 0.38, 0.58, 1)
+#:set C_INPUT (0.14, 0.15, 0.17, 1)
+#:set C_BUTTON (0.25, 0.26, 0.29, 1)
+#:set C_PRESSED (0.2, 0.5, 0.75, 1)
+#:set C_ON (0.13, 0.55, 0.38, 1)
+#:set C_RECORD (0.72, 0.18, 0.2, 1)
+#:set H_CONTROL dp(38)
 # main Window has 3 columns
 # left most is settings  and setting displays
 # middle is the image window
@@ -21,21 +31,21 @@ MainWindow:
     padding: [10,10,10,10]
     spacing: 10
     MyLogo:
-        size_hint: (0.3, 0.12)
+        size_hint: (0.25, 0.09)
 
     Image:
         fit_mode: 'contain'
         source: 'icons/glowtracker_gray_logo.png'
         border: 0,0,0,0
-        size_hint: (0.5, 0.12)
+        size_hint: (0.65, 0.09)
 
     BoxLayout:
-        size_hint: (0.1, 0.12)
+        size_hint: (0.1, 0.09)
         FloatLayout:
             Label:
                 size_hint: (1, 1)
-                font_size: 18
-                color: '#8e0045ff'
+                font_size: '13sp'
+                color: 0.55, 0.55, 0.6, 1
 
                 text: "v. 1.0.1"
                 id: versionlabel
@@ -71,339 +81,865 @@ MainWindow:
     RightColumn:
         id: rightcolumn
 
-# popup confirming closing
+# popup confirming closing: a short note and Cancel / Quit, Quit in red
 <ExitApp>:
+    orientation: 'vertical'
+    spacing: dp(16)
+    padding: dp(8), 0, dp(8), 0     # in line with the popup title
+
+    Label:
+        text: 'Live view, recording, plugins and the hardware connections will be stopped.'
+        halign: 'left'
+        valign: 'top'
+        text_size: self.size
+        font_size: '14sp'
+        color: C_MUTED
+
     BoxLayout:
         size_hint_y: None
-        height: 30
-        Button:
-            text: "Cancel"
+        height: H_CONTROL
+        spacing: dp(10)
+
+        FlatButton:
+            text: 'Cancel'
             on_release: root.cancel()
 
-        Button:
-            text: "Close"
+        FlatButton:
+            text: 'Quit'
+            tint: C_RECORD
+            pressed_tint: 0.55, 0.12, 0.14, 1
             on_release: root.stop()
 
 #################################
 # Left column
 #################################
+# Main window styles: section headings and flat buttons
+<TooltipLabel>:
+    size_hint: None, None
+    font_size: '12sp'
+    color: C_TEXT
+    canvas.before:
+        Color:
+            rgba: 0.17, 0.17, 0.19, 0.97
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: 1, 1, 1, 0.08
+        Line:
+            rounded_rectangle: self.x, self.y, self.width, self.height, dp(6)
+            width: 1
+
+<SectionLabel@Label>:
+    size_hint_y: None
+    height: dp(24)
+    text_size: self.size
+    halign: 'left'
+    valign: 'bottom'
+    font_size: '13sp'
+    bold: True
+    color: C_ACCENT
+
+# A rounded key like the stage pad. `tint` is its colour; `pressed_tint` while pressed.
+<FlatButton@Button>:
+    size_hint_y: None
+    height: H_CONTROL
+    font_size: '14sp'
+    color: C_TEXT if not self.disabled else C_MUTED
+    tint: C_BUTTON
+    pressed_tint: C_PRESSED
+    background_normal: ''
+    background_down: ''
+    background_disabled_normal: ''
+    background_disabled_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        Color:
+            # the tints can still be unset while the button is first built; faded while disabled
+            rgba: list(((self.pressed_tint if self.state == 'down' else self.tint) or C_BUTTON)[:3]) + [0.35 if self.disabled else 1]
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+
+# A rounded dark field; a thin accent outline while typing in it.
+<DarkInput@TextInput>:
+    size_hint_y: None
+    height: H_CONTROL
+    multiline: False
+    font_size: '14sp'
+    padding: dp(10), (self.height - self.line_height) / 2
+    background_normal: ''
+    background_active: ''
+    background_color: 0, 0, 0, 0
+    foreground_color: C_TEXT
+    hint_text_color: C_MUTED
+    cursor_color: 0.36, 0.64, 1, 1
+    cursor_width: dp(1.5)
+    canvas.before:
+        Color:
+            rgba: C_INPUT
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: (0.2, 0.5, 0.75, 1) if self.focus else (1, 1, 1, 0.05)
+        Line:
+            rounded_rectangle: self.x + dp(0.5), self.y + dp(0.5), self.width - dp(1), self.height - dp(1), dp(6)
+            width: dp(1.1)
+        # Kivy draws the cursor right after its own background, under ours: draw it again on top
+        Color:
+            rgba: (self.cursor_color if self.focus and not self._cursor_blink and int(self.x + self.padding[0]) <= self._cursor_visual_pos[0] <= int(self.x + self.width - self.padding[2]) else (0, 0, 0, 0))
+        Rectangle:
+            pos: self._cursor_visual_pos
+            size: self.cursor_width, -self._cursor_visual_height
+        # the field draws its text with the current colour: light for a value, grey for the hint
+        Color:
+            rgba: (1, 1, 1, 1) if self.text else (0.6, 0.6, 0.65, 1)
+
+# A slider with a thin accent track and a small dot instead of the large default cursor.
+<DotSlider@Slider>:
+    cursor_size: 0, 0
+    value_track: True
+    value_track_color: C_ACCENT
+    value_track_width: dp(2)
+    background_width: dp(16)
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Ellipse:
+            pos: self.value_pos[0] - dp(7), self.center_y - dp(7)
+            size: dp(14), dp(14)
+
+<PanelTab@ButtonBehavior+Label>:
+    selected: False
+    size_hint_x: None
+    width: self.texture_size[0]
+    text_size: None, self.height
+    valign: 'bottom'
+    font_size: '13sp'
+    bold: True
+    color: C_ACCENT if self.selected else C_MUTED
+
 <LeftColumn>:
     saveloc:saveloc
-    size_hint: (0.3,1)
+    panel_view: 'activity'
+    size_hint: (0.25,1)
     orientation: 'vertical'
     pos: root.pos
-    spacing: 5
-    MyLabel:
-        text: 'Stage Controls'
-    XControls:
-        id: xcontrols
-    YControls:
-        id: ycontrols
-    ZControls:
-        id: zcontrols
-    GoToControls:
-        id: gotocontrols
-    MyLabel:
-        text: 'Camera Settings'
+    spacing: dp(6)
+    padding: dp(6), 0
+
+    SectionLabel:
+        text: 'Stage'
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        # as large as fits next to Go to, within limits
+        height: max(dp(148), min(dp(300), (self.width - dp(104) - dp(16) - dp(18)) / 1.2))
+        spacing: dp(16)
+        StagePad:
+            id: stagepad
+            size_hint_x: None
+            width: self.height * 1.2 + dp(18)
+        GoToControls:
+            id: gotocontrols
+
+    Widget:
+        size_hint_y: None
+        height: dp(14)
+
+    SectionLabel:
+        text: 'Camera'
     CameraProperties:
         id: camprops
-        size_hint: (1, 1.75)
-    MyButton:
+        size_hint_y: None
+        height: self.minimum_height
+    FlatButton:
         text: 'Load camera settings'
-        pos_hint: {'x': 0.25}
+        tooltip: 'Load exposure, frame rate and gain from a .pfs file'
         on_release: root.show_load()
 
-    MyLabel:
-        text: 'Experiment'
-    TextInput:
-        id: saveloc
+    Widget:
         size_hint_y: None
-        height: 30
-        multiline: False
-        text: root.savefile
-        on_text_validate: root.createRecordingPath()
-        on_focus: app.toggle_key_binding(self.focus)
-        on_focus:
-            if not self.focus: root.createRecordingPath()
+        height: dp(14)
 
-    MyButton:
-        text: 'Save Location'
-        pos_hint: {'x': 0.25}
-        on_release: root.show_save()
+    # Activity log or the -skewness graph: the selected tab in colour, the other grey
+    BoxLayout:
+        size_hint_y: None
+        height: dp(24)
+        spacing: dp(16)
+        PanelTab:
+            text: 'Activity'
+            selected: root.panel_view == 'activity'
+            on_release: root.panel_view = 'activity'
+        PanelTab:
+            text: 'Graph'
+            selected: root.panel_view == 'graph'
+            on_release: root.panel_view = 'graph'
+        Widget:
+    ActivityTerminal:
+        size_hint_y: 1 if root.panel_view == 'activity' else None
+        # re-applied on every switch, so the hidden panel really gives up its space
+        height: 0 if root.panel_view != 'activity' else dp(10)
+        opacity: 1 if root.panel_view == 'activity' else 0
+        disabled: root.panel_view != 'activity'
+    SkewGraph:
+        size_hint_y: 1 if root.panel_view == 'graph' else None
+        # re-applied on every switch, so the hidden panel really gives up its space
+        height: 0 if root.panel_view != 'graph' else dp(10)
+        opacity: 1 if root.panel_view == 'graph' else 0
+        disabled: root.panel_view != 'graph'
+
+    Widget:
+        size_hint_y: None
+        height: dp(10)
+
+    SectionLabel:
+        text: 'Experiment folder'
+    BoxLayout:
+        size_hint_y: None
+        height: H_CONTROL
+        spacing: dp(6)
+        DarkInput:
+            id: saveloc
+            font_size: '13sp'
+            text: root.savefile
+            on_text_validate: root.createRecordingPath()
+            on_focus: app.toggle_key_binding(self.focus)
+            on_focus:
+                if not self.focus: root.createRecordingPath()
+        FlatButton:
+            text: 'Browse'
+            tooltip: 'Choose where recordings are saved'
+            size_hint_x: None
+            width: dp(76)
+            on_release: root.show_save()
+
+    Widget:
+        size_hint_y: None
+        height: dp(6)
 
 
 ### Display camera properties
+<CameraLabel@Label>:
+    size_hint_x: 0.36
+    text_size: self.size
+    halign: 'left'
+    valign: 'middle'
+    font_size: '14sp'
+    color: C_TEXT
+    shorten: True
+
+<CameraValue@DarkInput>:
+    size_hint_x: 0.22
+    input_filter: 'float'
+
 <CameraProperties>:
     cols: 3
     rows: 3
-    Label:
-        text: 'Exposure (us)'
-        size_hint: (.25, 1)
-    Slider:
-        size_hint: (.5, 1)
+    spacing: dp(8), dp(6)
+    row_force_default: True
+    row_default_height: H_CONTROL
+    CameraLabel:
+        text: 'Exposure (µs)'
+    DotSlider:
+        size_hint_x: 0.42
         min: 100
         max: 100000
         step: 100
         on_value: root.exposure = self.value
         on_value: root.change_exposure()
         value: root.exposure
-    TextInput:
-        size_hint: (.25, 1)
+    CameraValue:
         text: str(root.exposure)
-        input_filter: 'float'
-        multiline: False
         on_text_validate: root.exposure = float(self.text)
         on_text_validate: root.change_exposure()
         on_focus: app.toggle_key_binding(self.focus)
         on_focus: if not self.focus: root.change_exposure()
-    Label:
-        text: 'Framerate (fps)'
-        size_hint: (.25, 1)
-    Slider:
-        size_hint: (.5, 1)
+    CameraLabel:
+        text: 'Frame rate (fps)'
+    DotSlider:
+        size_hint_x: 0.42
         min: 0.01
         max: 57
         step: 0.5
         on_value: root.framerate = self.value
         on_value: root.change_framerate()
         value: root.framerate
-    TextInput:
-        size_hint: (.25, 1)
-        text: str(root.framerate)
-        input_filter: 'float'
-        multiline: False
+    CameraValue:
+        text: str(round(root.framerate, 2))
         on_text_validate: root.framerate = float(self.text)
         on_text_validate: root.change_framerate()
         on_focus: app.toggle_key_binding(self.focus)
-        on_focus:  if not self.focus: root.change_framerate()
-        text: str(round(root.framerate, 2))
-    Label:
+        on_focus: if not self.focus: root.change_framerate()
+    CameraLabel:
         text: 'Gain'
-        size_hint: (.25, 1)
-    Slider:
-        size_hint: (.5, 1)
+    DotSlider:
+        size_hint_x: 0.42
         min: 0
         max: 36
         step: 0.5
         on_value: root.gain = self.value
         on_value: root.change_gain()
         value: root.gain
-    TextInput:
-        size_hint: (.25, 1)
+    CameraValue:
         text: str(root.gain)
-        input_filter: 'float'
-        multiline: False
         on_text_validate: root.gain = float(self.text)
         on_text_validate: root.change_gain()
         on_focus: app.toggle_key_binding(self.focus)
-        on_focus:  if not self.focus: root.change_gain()
-        text: str(root.gain)
+        on_focus: if not self.focus: root.change_gain()
 
+
+
+# The activity log, styled as a quiet terminal
+<ActivityTerminal>:
+    orientation: 'vertical'
+    padding: dp(12), dp(10)
+    canvas.before:
+        Color:
+            rgba: 0.075, 0.078, 0.086, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+
+    ScrollView:
+        id: scroll
+        do_scroll_x: False
+        bar_width: dp(3)
+        bar_color: 1, 1, 1, 0.25
+        bar_inactive_color: 1, 1, 1, 0.08
+        Label:
+            id: output
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            halign: 'left'
+            valign: 'top'
+            markup: True
+            font_name: 'RobotoMono-Regular'
+            font_size: '11.5sp'
+            line_height: 1.35
+            color: 0.86, 0.86, 0.88, 1
 
 
 #################################
-# Stage motion buttons
+# Stage pad: XY cross, Z, speed
 #################################
 
-<StageButtonLeftFast@ToggleButton>:
-    size_hint: .5, .9
-    pos_hint: {"x":0.1, "y":0.1}
-    background_normal: 'icons/LeftButtonNormal_Double.jpg'
-    background_down: 'icons/LeftButtonOnPress_Double.jpg'
-    background_disabled_normal: 'icons/LeftButtonDisabled_Double.jpg'
+<PadLabel@Label>:
+    font_size: '14sp'
+    color: C_MUTED
 
-<StageButtonLeft@ToggleButton>:
-    size_hint: .25, .9
-    pos_hint: {"x":0.1, "y":0.1}
-    background_normal: 'icons/LeftButtonNormal.jpg'
-    background_down: 'icons/LeftButtonOnPress.jpg'
-    background_disabled_normal: 'icons/LeftButtonDisabled.jpg'
-
-<StageButtonRightFast@ToggleButton>:
-    size_hint: .5, .9
-    pos_hint: {"x":0.1, "y":0.1}
-    background_normal: 'icons/RightButtonNormal_Double.jpg'
-    background_down: 'icons/RightButtonOnPress_Double.jpg'
-    background_disabled_normal: 'icons/RightButtonDisabled_Double.jpg'
-
-<StageButtonRight@ToggleButton>:
-    size_hint: .25, .9
-    pos_hint: {"x":0.1, "y":0.1}
-    background_normal: 'icons/RightButtonNormal.jpg'
-    background_down: 'icons/RightButtonOnPress.jpg'
-    background_disabled_normal: 'icons/RightButtonDisabled.jpg'
-
-<XControls>:
+# Slow arrows next to the centre, fast (double) arrows outside, as on the arrow keys
+# (Shift = slow). Z: up is Z-, like Page Up.
+<StagePad>:
     orientation: 'horizontal'
-    pos: root.pos
-    size: root.size
+    spacing: dp(12)
+    padding: dp(4), dp(2)
 
-    StageButtonLeftFast:
-        id: sbl1
-        on_state: app.jog((-1,0,0), True)  if self.state=='down' else app.request_stage_stop()
-        #disabled: app.stage.connection is None
-    StageButtonLeft:
-        id: sbl2
-        on_state: app.jog((-1,0,0), False)  if self.state=='down' else app.request_stage_stop()
-        #disabled: app.stage.connection is None
-    Label:
-        text: 'X'
-        font_size: 40
-        size_hint: (0.2,1)
-    StageButtonRight:
-        id: sbl3
-        on_state: app.jog((1,0,0), False)  if self.state=='down' else app.request_stage_stop()
-        #disabled: app.stage.connection is None
-    StageButtonRightFast:
-        id: sbl4
-        on_state: app.jog((1,0,0), True)  if self.state=='down' else app.request_stage_stop()
-        #disabled: app.stage.connection is None
+    # 5 x 5 pad: single arrows slow, double fast; each corner's L is the fast diagonal
+    FloatLayout:
+        size_hint_x: None
+        width: self.height
+        CornerPad:
+            id: xminusyplusfast
+            tooltip: 'Move -X +Y, fast'
+            size_hint: 0.3850, 0.3850
+            pos_hint: {'x': 0.0000, 'top': 1.0000}
+            corner: 'ul'
+            gap: self.width * 0.0649
+            angle: 135
+            double: True
+            on_state: app.jog((-1,1,0), True) if self.state == 'down' else app.request_stage_stop()
+        CornerPad:
+            id: xplusyplusfast
+            tooltip: 'Move +X +Y, fast'
+            size_hint: 0.3850, 0.3850
+            pos_hint: {'x': 0.6150, 'top': 1.0000}
+            corner: 'ur'
+            gap: self.width * 0.0649
+            angle: 45
+            double: True
+            on_state: app.jog((1,1,0), True) if self.state == 'down' else app.request_stage_stop()
+        CornerPad:
+            id: xminusyminusfast
+            tooltip: 'Move -X -Y, fast'
+            size_hint: 0.3850, 0.3850
+            pos_hint: {'x': 0.0000, 'top': 0.3850}
+            corner: 'dl'
+            gap: self.width * 0.0649
+            angle: 225
+            double: True
+            on_state: app.jog((-1,-1,0), True) if self.state == 'down' else app.request_stage_stop()
+        CornerPad:
+            id: xplusyminusfast
+            tooltip: 'Move +X -Y, fast'
+            size_hint: 0.3850, 0.3850
+            pos_hint: {'x': 0.6150, 'top': 0.3850}
+            corner: 'dr'
+            gap: self.width * 0.0649
+            angle: 315
+            double: True
+            on_state: app.jog((1,-1,0), True) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xminusyplus
+            tooltip: 'Move -X +Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.2050, 'top': 0.7950}
+            angle: 135
+            on_state: app.jog((-1,1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xplusyplus
+            tooltip: 'Move +X +Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.6150, 'top': 0.7950}
+            angle: 45
+            on_state: app.jog((1,1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xminusyminus
+            tooltip: 'Move -X -Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.2050, 'top': 0.3850}
+            angle: 225
+            on_state: app.jog((-1,-1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xplusyminus
+            tooltip: 'Move +X -Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.6150, 'top': 0.3850}
+            angle: 315
+            on_state: app.jog((1,-1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: yplusfast
+            tooltip: 'Move +Y, fast'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.4100, 'top': 1.0000}
+            angle: 90
+            double: True
+            on_state: app.jog((0,1,0), True) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: yplus
+            tooltip: 'Move +Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.4100, 'top': 0.7950}
+            angle: 90
+            on_state: app.jog((0,1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xminusfast
+            tooltip: 'Move -X, fast'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.0000, 'top': 0.5900}
+            angle: 180
+            double: True
+            on_state: app.jog((-1,0,0), True) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xminus
+            tooltip: 'Move -X, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.2050, 'top': 0.5900}
+            angle: 180
+            on_state: app.jog((-1,0,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadLabel:
+            text: 'XY'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.4100, 'top': 0.5900}
+        PadArrow:
+            id: xplus
+            tooltip: 'Move +X, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.6150, 'top': 0.5900}
+            angle: 0
+            on_state: app.jog((1,0,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: xplusfast
+            tooltip: 'Move +X, fast'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.8200, 'top': 0.5900}
+            angle: 0
+            double: True
+            on_state: app.jog((1,0,0), True) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: yminus
+            tooltip: 'Move -Y, slow'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.4100, 'top': 0.3850}
+            angle: 270
+            on_state: app.jog((0,-1,0), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: yminusfast
+            tooltip: 'Move -Y, fast'
+            size_hint: 0.1800, 0.1800
+            pos_hint: {'x': 0.4100, 'top': 0.1800}
+            angle: 270
+            double: True
+            on_state: app.jog((0,-1,0), True) if self.state == 'down' else app.request_stage_stop()
 
-<YControls>:
     BoxLayout:
-        pos: root.pos
-        size: root.size
-        orientation: 'horizontal'
-
-        StageButtonLeftFast:
-            id: sbl1
-            on_state: app.jog((0,-1,0), True)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        StageButtonLeft:
-            id: sbl2
-            on_state: app.jog((0,-1,0), False)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        Label:
-            text: 'Y'
-            valign: 'bottom'
-            font_size: 40
-            size_hint: (0.2,1)
-        StageButtonRight:
-            id: sbl3
-            on_state: app.jog((0,1,0), False)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        StageButtonRightFast:
-            id: sbl4
-            on_state: app.jog((0,1,0), True)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-
-
-<ZControls>:
-    BoxLayout:
-        pos: root.pos
-        size: root.size
-        orientation: 'horizontal'
-
-        StageButtonLeftFast:
-            id: sbl1
-            on_state: app.jog((0,0,-1), True)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        StageButtonLeft:
-            id: sbl2
-            on_state: app.jog((0,0,-1), False)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        Label:
+        orientation: 'vertical'
+        spacing: dp(3)
+        size_hint_x: None
+        width: (self.height - dp(12)) / 5
+        PadArrow:
+            id: zminusfast
+            tooltip: 'Move Z- (up), fast'
+            angle: 90
+            double: True
+            on_state: app.jog((0,0,-1), True) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: zminus
+            tooltip: 'Move Z- (up), slow'
+            angle: 90
+            on_state: app.jog((0,0,-1), False) if self.state == 'down' else app.request_stage_stop()
+        PadLabel:
             text: 'Z'
-            font_size: 40
-            size_hint: (0.2,1)
-        StageButtonRight:
-            id: sbl3
-            on_state: app.jog((0,0,1), False)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
-        StageButtonRightFast:
-            id: sbl4
-            on_state: app.jog((0,0,1), True)  if self.state=='down' else app.request_stage_stop()
-            #disabled: app.stage.connection is None
+        PadArrow:
+            id: zplus
+            tooltip: 'Move Z+ (down), slow'
+            angle: 270
+            on_state: app.jog((0,0,1), False) if self.state == 'down' else app.request_stage_stop()
+        PadArrow:
+            id: zplusfast
+            tooltip: 'Move Z+ (down), fast'
+            angle: 270
+            double: True
+            on_state: app.jog((0,0,1), True) if self.state == 'down' else app.request_stage_stop()
+
+# Go to a position: next to the stage pad, X/Y/Z above Fill and Go
+<GoToField@DarkInput>:
+    height: dp(32)
+    font_size: '13sp'
+    input_filter: 'float'
+    on_focus: app.toggle_key_binding(self.focus)
 
 <GoToControls>:
-    orientation: 'horizontal'
-    size_hint_y: None
-    height: 40
-    spacing: 5
-    TextInput:
+    orientation: 'vertical'
+    spacing: dp(5)
+    Widget:
+    GoToField:
         id: gotox
-        input_filter: 'float'
-        multiline: False
-        hint_text: 'X'
-        on_focus: app.toggle_key_binding(self.focus)
-    TextInput:
+        hint_text: 'X (mm)'
+    GoToField:
         id: gotoy
-        input_filter: 'float'
-        multiline: False
-        hint_text: 'Y'
-        on_focus: app.toggle_key_binding(self.focus)
-    TextInput:
+        hint_text: 'Y (mm)'
+    GoToField:
         id: gotoz
-        input_filter: 'float'
-        multiline: False
-        hint_text: 'Z'
-        on_focus: app.toggle_key_binding(self.focus)
-    Button:
-        text: 'Fill'
-        on_release: root.prefill()
-    Button:
-        text: 'Go'
-        on_release: root.go_to()
+        hint_text: 'Z (mm)'
+    BoxLayout:
+        size_hint_y: None
+        height: dp(32)
+        spacing: dp(5)
+        FlatButton:
+            text: 'Fill'
+            tooltip: 'Fill in the current stage position'
+            size_hint_y: 1
+            on_release: root.prefill()
+        FlatButton:
+            text: 'Go'
+            bold: True
+            tooltip: 'Move the stage to X, Y, Z'
+            size_hint_y: 1
+            tint: 0.17, 0.45, 0.72, 1
+            pressed_tint: 0.26, 0.56, 0.86, 1
+            on_release: root.go_to()
+    Widget:
 
 
 # Plate Scan is constructed in scan_ui.py.
 
 
 #################################
+# File browser (file_browser.py): Up key, folder path, search, and a Finder-like list. Used by
+# every load / choose-folder popup.
+#################################
+#:import os os
+
+# One row: folder or file icon, name, size; a rounded blue highlight when selected
+[BrowserEntry@FloatLayout+TreeViewNode]:
+    locked: False
+    entries: []
+    path: ctx.path
+    is_selected: self.path in ctx.controller().selection
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: dp(34)
+    is_leaf: True
+    even_color: 0, 0, 0, 0
+    odd_color: 0, 0, 0, 0
+    color_selected: 0, 0, 0, 0
+    on_touch_down: self.collide_point(*args[1].pos) and ctx.controller().entry_touched(self, args[1])
+    on_touch_up: self.collide_point(*args[1].pos) and ctx.controller().entry_released(self, args[1])
+    canvas.before:
+        Color:
+            rgba: (0.04, 0.52, 1, 0.9) if self.is_selected else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: (self.parent.x + dp(4), self.y + dp(1)) if self.parent else (0, 0)
+            size: (self.parent.width - dp(8), self.height - dp(2)) if self.parent else (1, 1)
+            radius: [dp(6)]
+    BoxLayout:
+        pos: root.pos
+        size_hint_x: None
+        width: root.width - dp(12)
+        spacing: dp(10)
+        padding: dp(10), 0, 0, 0
+        Widget:
+            size_hint_x: None
+            width: dp(22)
+            canvas:
+                # a folder: tab and body
+                Color:
+                    rgba: (0.36, 0.64, 1, 1) if ctx.isdir else (0, 0, 0, 0)
+                RoundedRectangle:
+                    pos: self.x + dp(1), self.center_y + dp(4)
+                    size: dp(9), dp(4)
+                    radius: [dp(1.5)]
+                RoundedRectangle:
+                    pos: self.x + dp(1), self.center_y - dp(7)
+                    size: dp(20), dp(13)
+                    radius: [dp(2.5)]
+                # a file: a page outline with a folded corner
+                Color:
+                    rgba: (0, 0, 0, 0) if ctx.isdir else (0.75, 0.76, 0.8, 1)
+                Line:
+                    points: self.x + dp(4), self.center_y - dp(9), self.x + dp(4), self.center_y + dp(9), self.x + dp(12), self.center_y + dp(9), self.x + dp(18), self.center_y + dp(3), self.x + dp(18), self.center_y - dp(9), self.x + dp(4), self.center_y - dp(9)
+                    width: dp(1.1)
+                    joint: 'round'
+                Line:
+                    points: self.x + dp(12), self.center_y + dp(9), self.x + dp(12), self.center_y + dp(3), self.x + dp(18), self.center_y + dp(3)
+                    width: dp(1.1)
+        Label:
+            id: filename
+            text_size: self.width, None
+            halign: 'left'
+            shorten: True
+            font_size: '14sp'
+            color: 0.92, 0.92, 0.94, 1
+            text: 'Parent folder' if ctx.name.startswith('..') else ctx.name.rstrip(os.sep)
+        Label:
+            text_size: self.width, None
+            size_hint_x: None
+            width: dp(90)
+            halign: 'right'
+            font_size: '12.5sp'
+            color: 0.6, 0.6, 0.65, 1
+            text: '' if ctx.isdir else '{}'.format(ctx.get_nice_size())
+
+<-BrowserListLayout>:
+    on_entry_added: treeview.add_node(args[1])
+    on_entries_cleared: treeview.root.nodes = []
+    on_subentry_to_entry: not args[2].locked and treeview.add_node(args[1], args[2])
+    on_remove_subentry: args[2].nodes = []
+    BoxLayout:
+        pos: root.pos
+        size: root.size
+        size_hint: None, None
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            height: dp(28)
+            padding: dp(46), 0, dp(16), 0
+            Label:
+                text: 'Name'
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+                font_size: '12sp'
+                color: C_MUTED
+            Label:
+                text: 'Size'
+                text_size: self.size
+                size_hint_x: None
+                width: dp(90)
+                halign: 'right'
+                valign: 'middle'
+                font_size: '12sp'
+                color: C_MUTED
+        ScrollView:
+            id: scrollview
+            do_scroll_x: False
+            bar_width: dp(6)
+            bar_color: 0.5, 0.5, 0.55, 0.8
+            bar_inactive_color: 0.4, 0.4, 0.45, 0.4
+            scroll_type: ['bars', 'content']
+            Scatter:
+                do_rotation: False
+                do_scale: False
+                do_translation: False
+                size: treeview.size
+                size_hint_y: None
+                TreeView:
+                    id: treeview
+                    hide_root: True
+                    indent_start: 0
+                    size_hint_y: None
+                    width: scrollview.width
+                    height: self.minimum_height
+                    on_node_expand: root.controller.entry_subselect(args[1])
+                    on_node_collapse: root.controller.close_subselection(args[1])
+
+<BrowserListView>:
+    layout: layout
+    BrowserListLayout:
+        id: layout
+        controller: root
+
+# A round key with a chevron pointing up: the parent folder
+<UpKey@ButtonBehavior+Widget>:
+    size_hint_x: None
+    width: H_CONTROL
+    canvas:
+        Color:
+            rgba: C_PRESSED if self.state == 'down' else C_BUTTON
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: C_TEXT
+        Line:
+            points: self.center_x - dp(6), self.center_y - dp(3), self.center_x, self.center_y + dp(3), self.center_x + dp(6), self.center_y - dp(3)
+            width: dp(1.5)
+            cap: 'round'
+            joint: 'round'
+
+<FileBrowser>:
+    orientation: 'vertical'
+    spacing: dp(10)
+
+    BoxLayout:
+        size_hint_y: None
+        height: H_CONTROL
+        spacing: dp(8)
+
+        UpKey:
+            tooltip: 'Parent folder'
+            on_release: root.up()
+
+        DarkInput:
+            id: pathfield
+            text: root.path
+            on_text_validate: root.go(self.text)
+
+        # search with a drawn magnifier
+        DarkInput:
+            id: search
+            hint_text: 'Search'
+            size_hint_x: None
+            width: dp(220)
+            padding: dp(32), (self.height - self.line_height) / 2, dp(10), (self.height - self.line_height) / 2
+            on_text: root.query = self.text
+            canvas.after:
+                Color:
+                    rgba: C_MUTED
+                Line:
+                    circle: self.x + dp(16), self.center_y + dp(1.5), dp(5.5)
+                    width: dp(1.3)
+                Line:
+                    points: self.x + dp(20), self.center_y - dp(2.5), self.x + dp(24), self.center_y - dp(6.5)
+                    width: dp(1.5)
+                    cap: 'round'
+
+    BoxLayout:
+        padding: 0, dp(4)
+        canvas.before:
+            Color:
+                rgba: C_INPUT
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [dp(8)]
+
+        BrowserListView:
+            id: chooser
+            dirselect: root.dirselect
+
+<FileFooterNote@Label>:
+    font_size: '13sp'
+    color: C_MUTED
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+
+#################################
 # Load camera properties - Popup
 #################################
 <LoadCameraProperties>:
+    orientation: 'vertical'
+    spacing: dp(14)
+
+    FileBrowser:
+        id: filechooser2
+        patterns: ['*.pfs']
+        on_submit: root.load(self.path, self.selection)
+
     BoxLayout:
-        size: root.size
-        pos: root.pos
-        orientation: "vertical"
-        FileChooserListView:
-            id: filechooser2
-            path: ''
-            filters: ['*.pfs']
+        size_hint_y: None
+        height: H_CONTROL
+        spacing: dp(10)
 
-        BoxLayout:
-            size_hint_y: None
-            height: 30
-            Button:
-                text: "Cancel"
-                on_release: root.cancel()
+        FileFooterNote:
+            text: 'Basler camera settings (.pfs)'
 
-            Button:
-                text: "Load"
-                on_release: root.load(filechooser2.path, filechooser2.selection)
+        FlatButton:
+            text: 'Cancel'
+            size_hint_x: None
+            width: dp(120)
+            on_release: root.cancel()
+
+        FlatButton:
+            text: 'Load'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(120)
+            disabled: not filechooser2.selection
+            on_release: root.load(filechooser2.path, filechooser2.selection)
 
 #################################
 # save location experiment - Popup
 #################################
 <SaveExperiment>:
-    rows: 2
-    cols:1
+    rows: 1
+    cols: 1
     text_input: text_input
     BoxLayout:
-        size: root.size
-        pos: root.pos
-        orientation: "vertical"
-        FileChooserListView:
+        orientation: 'vertical'
+        spacing: dp(14)
+
+        FileBrowser:
             id: filechooser
             dirselect: True
-            path: '/home'
-            on_selection: text_input.text = self.selection and self.selection[0] or ''
-        TextInput:
-            id: text_input
-            size_hint_y: None
-            height: 30
-            multiline: False
+            on_path: text_input.text = self.path
+            on_selection: text_input.text = self.selection and self.selection[0] or self.path
 
         BoxLayout:
             size_hint_y: None
-            height: 30
-            Button:
-                text: "Cancel"
+            height: H_CONTROL
+            spacing: dp(10)
+
+            Label:
+                text: 'Save in'
+                font_size: '13sp'
+                color: C_MUTED
+                size_hint_x: None
+                width: self.texture_size[0]
+
+            DarkInput:
+                id: text_input
+
+            FlatButton:
+                text: 'Cancel'
+                size_hint_x: None
+                width: dp(120)
                 on_release: root.cancel()
 
-            Button:
-                text: "Save"
+            FlatButton:
+                text: 'Use folder'
+                tint: 0.04, 0.52, 1, 1
+                size_hint_x: None
+                width: dp(120)
                 on_release: root.save(filechooser.path, text_input.text)
 
 #################################
@@ -462,20 +998,27 @@ MainWindow:
     stagepos: stagepos
     size: root.size
     pos: root.pos
-    size_hint: (0.6,1)
+    size_hint: (0.65,1)
     orientation: 'vertical'
+    spacing: dp(4)
 
     StencilFloatLayout:
         id: stencil
-        size_hint: (1, 0.75)
+        size_hint: (1, 1)
+        # dark like the other views; while there is no image, a faint logo and a hint in the centre
+        logo_size: min(dp(240), self.width * 0.32, self.height * 0.38 * 876 / 739)
         canvas:
             Color:
-                # rgb: 155/255, 152/255, 145/255      # Ammonite
-                rgb: 64/255, 55/255, 58/255         # Mahogany
-                # rgb: 185/255, 76/255, 137/255       # Pink, lighter shade of the main color
+                rgba: 0.095, 0.1, 0.115, 1
             Rectangle:
                 size: self.size
                 pos: self.pos
+            Color:
+                rgba: 1, 1, 1, (0 if app.texture else 0.28)
+            Rectangle:
+                source: 'icons/glowtracker_gray_logo.png'
+                size: self.logo_size, self.logo_size * 739 / 876
+                pos: self.center_x - self.logo_size / 2, self.center_y - self.logo_size * 739 / 876 / 2 + dp(14)
 
         ScalableImage:
             id: scalableimage
@@ -494,11 +1037,22 @@ MainWindow:
                 id: previewimage
                 texture: app.texture
                 source: "icons/scholz-lab_logo.png"
+                # hidden until there is an image; the view shows the logo meanwhile
+                opacity: 1 if app.texture else 0
             ImageOverlay:
                 size_hint: (None, None)
                 pos: previewimage.pos
                 size: previewimage.size
                 id: imageoverlay
+
+        Label:
+            text: 'Live view is off  ·  press play to start'
+            font_size: '13sp'
+            color: C_MUTED
+            opacity: 0 if app.texture else 1
+            size_hint: None, None
+            size: self.texture_size
+            pos: stencil.center_x - self.width / 2, stencil.center_y - stencil.logo_size * 739 / 876 / 2 - dp(18)
 
         LiveAnalysisLabel:
             outline_width: 2
@@ -524,7 +1078,8 @@ MainWindow:
 
     GridLayout:
         cols: 2
-        size_hint: (1, 0.05)
+        size_hint: (1, None)
+        height: dp(20)
         Label:
             #size_hint_y: 30
             #size_hint_: (0.5, 0.05)
@@ -533,6 +1088,8 @@ MainWindow:
             valign: 'top'
             text_size: self.size
             id: stagepos
+            font_size: '13sp'
+            color: C_MUTED
             text: 'Stage (mm): ({:.2f}, {:.2f}, {:.2f})'.format(*app.coords)
         Label:
             #size_hint: (0.5, 0.05)
@@ -540,12 +1097,15 @@ MainWindow:
             pos_hint: {'right': 1}
             text_size: self.size
             id: pixelvalue
+            font_size: '13sp'
+            color: C_MUTED
             text: 'x:0, y:0, intensity:0'
             halign: 'right'
 
     RuntimeControls:
         id:runtimecontrols
-        size_hint: (1, 0.2)
+        size_hint: (1, None)
+        height: dp(58)
 
 
 ### live camera image
@@ -558,158 +1118,464 @@ MainWindow:
             id: circle
 
 
-### toggle tracking or autofocus
+### On/off rows for the image overlays: the name and an iOS-style switch (green when on)
+<TrackingOverlayQuickButton,LiveAnalysisQuickButton>:
+    font_size: '13sp'
+    color: C_TEXT
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.width, None
+    padding: dp(4), 0, dp(52), 0
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.after:
+        Color:
+            rgba: C_ON if self.state == 'down' else (0.32, 0.33, 0.37, 1)
+        RoundedRectangle:
+            pos: self.right - dp(38), self.center_y - dp(9)
+            size: dp(34), dp(18)
+            radius: [dp(9)]
+        Color:
+            rgba: 1, 1, 1, 1
+        Ellipse:
+            pos: (self.right - dp(20) if self.state == 'down' else self.right - dp(36)), self.center_y - dp(7)
+            size: dp(14), dp(14)
+
+### one row under the image: acquisition, run modes, frame counter, overlays
+# Run modes (Tracking, Livefocus): rounded buttons with a drawn icon left of the name;
+# green when on. The icon is drawn by TrackToggle / FocusToggle.
+<RunToggle@ToggleButton>:
+    font_size: '14sp'
+    bold: True
+    color: C_TEXT
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+    padding: dp(54), 0, dp(8), 0
+    background_normal: ''
+    background_down: ''
+    background_disabled_normal: ''
+    background_disabled_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        Color:
+            rgba: (0.15, 0.4, 0.29, 1) if self.state == 'down' else C_BUTTON
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(8)]
+
+# Tracking: a crosshair (centred 26 dp from the left edge)
+<TrackToggle@RunToggle>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            circle: self.x + dp(26), self.center_y, dp(8.5)
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(14), self.center_y, self.x + dp(19.5), self.center_y]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(32.5), self.center_y, self.x + dp(38), self.center_y]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(26), self.center_y + dp(12), self.x + dp(26), self.center_y + dp(6.5)]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(26), self.center_y - dp(12), self.x + dp(26), self.center_y - dp(6.5)]
+            width: dp(1.3)
+        Ellipse:
+            pos: self.x + dp(24.25), self.center_y - dp(1.75)
+            size: dp(3.5), dp(3.5)
+
+# Livefocus: focus brackets around a dot (a 22 dp frame centred 26 dp from the left edge)
+<FocusToggle@RunToggle>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            points: [self.x + dp(15), self.center_y + dp(5), self.x + dp(15), self.center_y + dp(11), self.x + dp(21), self.center_y + dp(11)]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(31), self.center_y + dp(11), self.x + dp(37), self.center_y + dp(11), self.x + dp(37), self.center_y + dp(5)]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(15), self.center_y - dp(5), self.x + dp(15), self.center_y - dp(11), self.x + dp(21), self.center_y - dp(11)]
+            width: dp(1.3)
+        Line:
+            points: [self.x + dp(31), self.center_y - dp(11), self.x + dp(37), self.center_y - dp(11), self.x + dp(37), self.center_y - dp(5)]
+            width: dp(1.3)
+        Ellipse:
+            pos: self.x + dp(24), self.center_y - dp(2)
+            size: dp(4), dp(4)
+
 <RuntimeControls>:
     framecounter: framecounter
     livefocuscheckbox: livefocuscheckbox
     trackingcheckbox: trackingcheckbox
     imageacquisitionmanager: imageacquisitionmanager
-
+    spacing: dp(6)
+    padding: 0, 0, 0, dp(4)
 
     ImageAcquisitionManager:
         id: imageacquisitionmanager
-        size_hint: (2.5, 1)
+        size_hint_x: None
+        width: self.height * 3 + dp(36)
 
-    GridLayout:
-        cols: 2
-        rows: 3
-        MyLabel:
-            text: 'Frames'
-            color: '#ffffff'
+    # Acquisition (Live, Record, Snap) and run modes (Tracking, Livefocus) are separate groups
+    Widget:
+        size_hint_x: None
+        width: dp(12)
+        canvas:
+            Color:
+                rgba: C_MUTED
+            Rectangle:
+                pos: self.center_x - dp(0.5), self.y + dp(8)
+                size: dp(1), self.height - dp(16)
+
+    # Tracking and Livefocus: the ids keep their old names; the code reads .state as before
+    TrackToggle:
+        id: trackingcheckbox
+        text: 'Tracking'
+        tooltip: 'Follow the animal with the stage'
+        on_state: root.trackingButtonCallback() if self.state=='down' else root.stopTracking()
+
+    FocusToggle:
+        id: livefocuscheckbox
+        text: 'Livefocus'
+        tooltip: 'Keep the image in focus while tracking'
+        on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
+
+    # Frame counter: a quiet tile with the count in large, grouped digits
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_x: None
+        width: dp(96)
+        padding: dp(10), dp(6)
+        tooltip: 'Frames recorded in this recording'
+        canvas.before:
+            Color:
+                rgba: 0.11, 0.115, 0.13, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [dp(8)]
+        Label:
+            text: 'FRAMES'
+            font_size: '10sp'
+            bold: True
+            color: C_MUTED
+            size_hint_y: None
+            height: dp(14)
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
         MyCounter:
             id: framecounter
-            color: '#ffffff'
-            text: str(self.value)
-        MyLabel:
-            text: 'Livefocus'
-            color: '#ffffff'
-        CheckBox:
-            id: livefocuscheckbox
-            on_state: root.startLiveFocus() if self.state=='down' else root.stopLiveFocus()
-
-        MyLabel:
-            text: 'Tracking'
-            color: '#ffffff'
-        CheckBox:
-            id: trackingcheckbox
-            on_state: root.trackingButtonCallback() if self.state=='down' else root.stopTracking()
+            color: C_TEXT
+            font_size: '21sp'
+            bold: True
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+            text: '{:,}'.format(int(self.value)).replace(',', ' ')
 
     BoxLayout:
         orientation: 'vertical'
+        spacing: dp(8)
+        padding: 0, dp(2)
+        size_hint_x: 1.7
 
         BoxLayout:
             id: trackingoverlayquickbuttonlayout
-            padding: [dp(5), 0, dp(5), dp(5)]
-
             TrackingOverlayQuickButton:
                 id: trackingoverlayquickbutton
+                tooltip: 'Show the tracking region and centre of mass on the image'
 
         BoxLayout:
             id: liveanalysisquickbuttonlayout
-            padding: [dp(5), dp(5), dp(5), dp(5)]
-
             LiveAnalysisQuickButton:
                 id: liveanalysisquickbutton
+                tooltip: 'Show image brightness statistics on the image'
 
         DualColorViewModeQuickButtonLayout:
             id: dualcolorviewmodequickbuttonlayout
-            padding: [dp(5), dp(5), dp(5), 0]
 
 
-### LiveView, Record, Snap
+### Live view, Record, Snap: round controls drawn on the canvas (camera-app style)
+<RoundControl@ButtonBehavior+Widget>:
+    size_hint_x: None
+    width: self.height
+
 <ImageAcquisitionManager>:
     orientation: 'horizontal'
-    spacing: 30
-    padding: [30,10]
+    spacing: dp(14)
+    padding: dp(4), 0
     recordbutton: recordbutton
     liveviewbutton: liveviewbutton
     snapbutton: snapbutton
 
+    # Live: a play triangle in a ring; while live, a green disc with pause bars
     LiveViewButton:
         id: liveviewbutton
-        border: 0,0,0,0
-        size_hint_x: 0.1
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/play_off.png'
-        background_down: 'icons/play_on.png'
-        background_disabled_normal: 'icons/play_disabled.png'
-        background_disabled_down: 'icons/play_disabled.png'
+        tooltip: 'Stop the live view' if self.state == 'down' else 'Start the live view'
+        size_hint_x: None
+        width: self.height
+        text: ''
+        background_normal: ''
+        background_down: ''
+        background_disabled_normal: ''
+        background_disabled_down: ''
+        background_color: 0, 0, 0, 0
+        canvas.after:
+            Color:
+                rgba: (0.19, 0.82, 0.35, 1) if self.state == 'down' else (1, 1, 1, 0.9 if not self.disabled else 0.3)
+            Line:
+                circle: self.center_x, self.center_y, min(self.size) / 2 - dp(3)
+                width: dp(1.6)
+            Color:
+                rgba: (0.19, 0.82, 0.35, 0.22) if self.state == 'down' else (1, 1, 1, 0.06)
+            Ellipse:
+                pos: self.center_x - min(self.size) / 2 + dp(6), self.center_y - min(self.size) / 2 + dp(6)
+                size: min(self.size) - dp(12), min(self.size) - dp(12)
+            Color:
+                rgba: (0.19, 0.82, 0.35, 1) if self.state == 'down' else (1, 1, 1, 0.92 if not self.disabled else 0.3)
+            Triangle:
+                points: ([0] * 6) if self.state == 'down' else [self.center_x - min(self.size) * 0.1, self.center_y + min(self.size) * 0.15, self.center_x - min(self.size) * 0.1, self.center_y - min(self.size) * 0.15, self.center_x + min(self.size) * 0.16, self.center_y]
+            Rectangle:
+                pos: self.center_x - min(self.size) * 0.11, self.center_y - min(self.size) * 0.13
+                size: (min(self.size) * 0.07, min(self.size) * 0.26) if self.state == 'down' else (0, 0)
+            Rectangle:
+                pos: self.center_x + min(self.size) * 0.04, self.center_y - min(self.size) * 0.13
+                size: (min(self.size) * 0.07, min(self.size) * 0.26) if self.state == 'down' else (0, 0)
 
+    # Record: a red rounded square in a ring; while recording the ring turns red too
     RecordButton:
         id: recordbutton
-        border: 0,0,0,0
-        size_hint_x: 0.1
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/record_inactive.png'
-        background_down: 'icons/record_active.png'
+        tooltip: 'Stop recording' if self.state == 'down' else 'Start recording to the experiment folder'
+        size_hint_x: None
+        width: self.height
+        text: ''
+        background_normal: ''
+        background_down: ''
+        background_disabled_normal: ''
+        background_disabled_down: ''
+        background_color: 0, 0, 0, 0
+        canvas.after:
+            Color:
+                rgba: (1, 0.27, 0.23, 1) if self.state == 'down' else (1, 1, 1, 0.9 if not self.disabled else 0.3)
+            Line:
+                circle: self.center_x, self.center_y, min(self.size) / 2 - dp(3)
+                width: dp(1.6)
+            Color:
+                rgba: (1, 0.27, 0.23, 0.18) if self.state == 'down' else (1, 1, 1, 0.06)
+            Ellipse:
+                pos: self.center_x - min(self.size) / 2 + dp(6), self.center_y - min(self.size) / 2 + dp(6)
+                size: min(self.size) - dp(12), min(self.size) - dp(12)
+            Color:
+                rgba: 1, 0.27, 0.23, 1 if not self.disabled else 0.35
+            RoundedRectangle:
+                pos: self.center_x - min(self.size) * (0.19 if self.state == 'down' else 0.16), self.center_y - min(self.size) * (0.19 if self.state == 'down' else 0.16)
+                size: min(self.size) * (0.38 if self.state == 'down' else 0.32), min(self.size) * (0.38 if self.state == 'down' else 0.32)
+                radius: [dp(4)]
 
-    Button:
+    # Snap: a camera outline in a ring; tinted while pressed
+    RoundControl:
         id: snapbutton
-        border: 0,0,0,0
-        size_hint_x: 0.1
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/snap_inactive.png'
-        background_down: 'icons/snap_active.png'
+        tooltip: 'Save a single image'
         on_release: root.snap()
+        canvas:
+            Color:
+                rgba: 1, 1, 1, 0.9
+            Line:
+                circle: self.center_x, self.center_y, min(self.size) / 2 - dp(3)
+                width: dp(1.6)
+            Color:
+                rgba: (1, 1, 1, 0.22) if self.state == 'down' else (1, 1, 1, 0.06)
+            Ellipse:
+                pos: self.center_x - min(self.size) / 2 + dp(6), self.center_y - min(self.size) / 2 + dp(6)
+                size: min(self.size) - dp(12), min(self.size) - dp(12)
+            Color:
+                rgba: 1, 1, 1, 0.95
+            # body
+            Line:
+                rounded_rectangle: self.center_x - min(self.size) * 0.21, self.center_y - min(self.size) * 0.14, min(self.size) * 0.42, min(self.size) * 0.27, dp(3)
+                width: dp(1.5)
+            # viewfinder bump
+            Line:
+                points: [self.center_x - min(self.size) * 0.09, self.center_y + min(self.size) * 0.13, self.center_x - min(self.size) * 0.06, self.center_y + min(self.size) * 0.18, self.center_x + min(self.size) * 0.06, self.center_y + min(self.size) * 0.18, self.center_x + min(self.size) * 0.09, self.center_y + min(self.size) * 0.13]
+                width: dp(1.5)
+            # lens
+            Line:
+                circle: self.center_x, self.center_y - min(self.size) * 0.005, min(self.size) * 0.075
+                width: dp(1.5)
 
 
 #################################
 # Right column
 #################################
+# Tools: buttons that open a window, each with a small drawn icon (16 dp, centred 20 dp from
+# the left edge) left of the name.
+<ToolButton@FlatButton>:
+    font_size: '14sp'
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.width, None
+    padding: dp(38), 0, dp(6), 0
+
+# Settings: three slider lines
+<SettingsTool@ToolButton>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            points: [self.x + dp(12), self.center_y + dp(5), self.x + dp(28), self.center_y + dp(5)]
+            width: dp(1.2)
+        Line:
+            points: [self.x + dp(12), self.center_y, self.x + dp(28), self.center_y]
+            width: dp(1.2)
+        Line:
+            points: [self.x + dp(12), self.center_y - dp(5), self.x + dp(28), self.center_y - dp(5)]
+            width: dp(1.2)
+        Ellipse:
+            pos: self.x + dp(15), self.center_y + dp(3)
+            size: dp(4), dp(4)
+        Ellipse:
+            pos: self.x + dp(22), self.center_y - dp(2)
+            size: dp(4), dp(4)
+        Ellipse:
+            pos: self.x + dp(17), self.center_y - dp(7)
+            size: dp(4), dp(4)
+
+# Calibrate: a ruler
+<CalibrateTool@ToolButton>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            rounded_rectangle: self.x + dp(11), self.center_y - dp(4), dp(18), dp(8), dp(1.5)
+            width: dp(1.2)
+        Line:
+            points: [self.x + dp(15), self.center_y + dp(4), self.x + dp(15), self.center_y + dp(1)]
+            width: dp(1.1)
+        Line:
+            points: [self.x + dp(20), self.center_y + dp(4), self.x + dp(20), self.center_y - dp(0.5)]
+            width: dp(1.1)
+        Line:
+            points: [self.x + dp(25), self.center_y + dp(4), self.x + dp(25), self.center_y + dp(1)]
+            width: dp(1.1)
+
+# Plate Scan: a 3 x 3 grid of wells
+<PlateScanTool@ToolButton>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Ellipse:
+            pos: self.x + dp(11.75), self.center_y + dp(4.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(18.25), self.center_y + dp(4.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(24.75), self.center_y + dp(4.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(11.75), self.center_y + dp(-1.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(18.25), self.center_y + dp(-1.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(24.75), self.center_y + dp(-1.75)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(11.75), self.center_y + dp(-8.25)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(18.25), self.center_y + dp(-8.25)
+            size: dp(3.5), dp(3.5)
+        Ellipse:
+            pos: self.x + dp(24.75), self.center_y + dp(-8.25)
+            size: dp(3.5), dp(3.5)
+
+# DAQ: a pulse
+<DaqTool@ToolButton>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            points: [self.x + dp(11), self.center_y - dp(5), self.x + dp(16), self.center_y - dp(5), self.x + dp(16), self.center_y + dp(5), self.x + dp(23), self.center_y + dp(5), self.x + dp(23), self.center_y - dp(5), self.x + dp(29), self.center_y - dp(5)]
+            width: dp(1.2)
+            joint: 'miter'
+
+# Assistant: a speech bubble
+<AssistantTool@ToolButton>:
+    canvas.after:
+        Color:
+            rgba: C_TEXT
+        Line:
+            rounded_rectangle: self.x + dp(11), self.center_y - dp(3), dp(18), dp(11), dp(3)
+            width: dp(1.2)
+        Line:
+            points: [self.x + dp(15), self.center_y - dp(3), self.x + dp(14), self.center_y - dp(8), self.x + dp(19), self.center_y - dp(3)]
+            width: dp(1.2)
+        Ellipse:
+            pos: self.x + dp(15), self.center_y + dp(1.5)
+            size: dp(2), dp(2)
+        Ellipse:
+            pos: self.x + dp(19), self.center_y + dp(1.5)
+            size: dp(2), dp(2)
+        Ellipse:
+            pos: self.x + dp(23), self.center_y + dp(1.5)
+            size: dp(2), dp(2)
+
 <RightColumn>:
     size: root.size
     pos: root.pos
     orientation: "vertical"
     size_hint: (0.1, 1)
-    MyLabel:
+    spacing: dp(6)
+    SectionLabel:
+        text: 'Tools'
+    SettingsTool:
         text: 'Settings'
-        size_hint: (1, 0.1)
-    MyButton:
-        size_hint: (1, 0.1)
-        text: 'Settings'
+        tooltip: 'All settings, including recording length and format (Experiment)'
         on_release: root.open_settings()
-    MyButton:
-        size_hint: (1, 0.1)
-        text: 'Macro'
-        on_release: root.open_macro()
-    MyButton:
-        id:recording
-        size_hint: (1, 0.1)
-        text: 'Recording'
-        on_release: root.show_recording_settings()
-    MyButton:
-        size_hint: (1, 0.1)
+    CalibrateTool:
         text: 'Calibrate'
+        tooltip: 'Camera-stage, dual colour and depth calibration'
         on_release: root.show_calibration()
-    MyButton:
-        size_hint: (1, 0.1)
+    PlateScanTool:
         text: 'Plate Scan'
+        tooltip: 'Scan a plate of wells'
         on_release: root.show_scan()
-    MyButton:
-        size_hint: (1, 0.1)
-        text: 'Stop plate run'
-        disabled: not app._plate_run_active
-        on_release: root.stop_plate_run()
-    MyButton:
-        size_hint: (1, 0.1)
+    DaqTool:
         text: 'DAQ'
+        tooltip: 'Sequencer, plugins and outputs'
         on_release: root.open_daq_widget()
-    MyButton:
-        size_hint: (1, 0.1)
+    AssistantTool:
         text: 'Assistant'
+        tooltip: 'Open the AI assistant window'
         on_release: root.open_assistant()
-    MyLabel:
-        text: 'Hardware'
-        size_hint: (1, 0.1)
+    FlatButton:
+        # only while a plate run is going
+        text: 'Stop plate run'
+        font_size: '14sp'
+        disabled: not app._plate_run_active
+        opacity: 1 if app._plate_run_active else 0
+        height: H_CONTROL if app._plate_run_active else 0
+        tint: C_RECORD
+        on_release: root.stop_plate_run()
+    Widget:
     Connections:
         id: connections
-        size_hint: (1,0.2)
+        size_hint_y: None
+        height: self.minimum_height
+    Widget:
+        size_hint_y: None
+        height: dp(8)
 
 ### Popup recording Settings
 <RecordingSettings>:
@@ -880,277 +1746,417 @@ MainWindow:
 
 
 <LoadScriptWidget>:
+    orientation: 'vertical'
+    spacing: dp(14)
+
+    FileBrowser:
+        id: filechooser
+        on_submit: root.load(self.selection)
+
     BoxLayout:
-        size: root.size
-        pos: root.pos
-        orientation: "vertical"
-        FileChooserListView:
-            id: filechooser
-            dirselect: False
-            path: ''
-            # path: '/home'
-            on_submit: root.load(self.selection)
+        size_hint_y: None
+        height: H_CONTROL
+        spacing: dp(10)
 
-        BoxLayout:
-            size_hint_y: None
-            height: 30
-            Button:
-                text: "Cancel"
-                on_release: root.cancel()
+        Widget:
 
-            Button:
-                text: "Load"
-                on_release: root.load(filechooser.selection)
+        FlatButton:
+            text: 'Cancel'
+            size_hint_x: None
+            width: dp(120)
+            on_release: root.cancel()
 
+        FlatButton:
+            text: 'Load'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(120)
+            disabled: not filechooser.selection
+            on_release: root.load(filechooser.selection)
+
+
+#################################
+# Calibration window: the same card, tabs and close key as the DAQ window; each tab shows its
+# images in dark frames, the results as short stats and one blue action button
+#################################
+<CalibrationHolder@FloatLayout>:
+    close: None
+
+    CalibrationTabPanel:
+        id: panel
+        size_hint: 1, 1
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+
+    CloseKey:
+        tooltip: 'Close'
+        pos_hint: {"right": 1, "top": 1}
+        on_release: root.close()
 
 <CalibrationTabPanel>:
     size: root.size
     pos: root.pos
     do_default_tab: False
-    tab_width: 260
+    tab_width: dp(150)
+    tab_height: H_CONTROL
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        Color:
+            rgba: C_INPUT
+        RoundedRectangle:
+            pos: self.x, self.top - self.tab_height
+            size: self.tab_width * len(self.tab_list), self.tab_height
+            radius: [dp(9)]
 
-    TabbedPanelItem:
-        text: 'Camera & Stage Calibration'
+    SegmentTab:
+        text: 'Camera & stage'
 
         CameraAndStageCalibration:
             id: stagecalibration
 
-    TabbedPanelItem:
-        text: 'Dual Color Calibration'
+    SegmentTab:
+        text: 'Dual colour'
 
         DualColorCalibration:
             id: dualcolorcalibration
 
-    TabbedPanelItem:
-        text: 'Depth of Field Calibration'
+    SegmentTab:
+        text: 'Depth of field'
 
         DepthOfFieldCalibration:
             id: depthoffieldcalibration
 
-    TabbedPanelItem:
-        text: 'Intensity Sweep'
+    SegmentTab:
+        text: 'Z sweep'
 
         IntensitySweepCalibration:
             id: intensitysweepcalibration
 
+# A captioned image in a dark rounded frame; the image is added by the rule that uses it
+<CalTile@BoxLayout>:
+    orientation: 'vertical'
+    spacing: dp(8)
+    title: ''
+    canvas.before:
+        Color:
+            rgba: C_INPUT
+        RoundedRectangle:
+            pos: self.pos
+            size: self.width, max(0, self.height - dp(32))
+            radius: [dp(8)]
+    SectionLabel:
+        text: root.title
+
+# Invisible until it has a picture (an empty Image draws a white box)
+<CalImage@Image>:
+    fit_mode: 'contain'
+    color: (1, 1, 1, 1) if self.texture else (0, 0, 0, 0)
+
+# A result: "[muted]Name[/muted]  value", written by the calibration code
+<CalStat@Label>:
+    markup: True
+    font_size: '14sp'
+    color: C_TEXT
+    size_hint_x: None
+    width: self.texture_size[0] + dp(24)
+
+<CalFieldLabel@Label>:
+    font_size: '14sp'
+    color: C_MUTED
+    size_hint_x: None
+    width: self.texture_size[0]
+
+<CalBar@BoxLayout>:
+    size_hint_y: None
+    height: H_CONTROL
+    spacing: dp(16)
 
 <CameraAndStageCalibration>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    spacing: 20
+    padding: 0, dp(18), 0, 0
+    spacing: dp(16)
 
     GridLayout:
         cols: 4
-        spacing: 20
+        spacing: dp(14)
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Fixed'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Fixed'
+            CalImage:
                 id: fixedimage
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Moving X'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Moved in X'
+            CalImage:
                 id: movingimagex
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Moving Y'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Moved in Y'
+            CalImage:
                 id: movingimagey
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Calibrated Camera And Stage Axes'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Camera and stage axes'
+            CalImage:
                 id: cameraandstageaxes
 
-    BoxLayout:
-        size_hint_y: .08
-
-        Label:
+    CalBar:
+        CalStat:
             id: pxsize
-            size_hint_x: .25
-            text: f"Pixelsize ({app.config.get('Calibration', 'step_units')}/px)  {app.config.getfloat('Camera', 'pixelsize'):.2f}"
-        Label:
+            text: f"[color=8e8e93]Pixel size[/color]   {app.config.getfloat('Camera', 'pixelsize'):.2f} {app.config.get('Calibration', 'step_units')}/px"
+        CalStat:
             id: rotation
-            size_hint_x: .25
-            text: f"Rotation (rad)  {app.config.getfloat('Camera', 'rotation'):.3f}"
-        Button:
-            text: "Calibrate"
-            size_hint_x: .35
+            text: f"[color=8e8e93]Rotation[/color]   {app.config.getfloat('Camera', 'rotation'):.3f} rad"
+        Widget:
+        FlatButton:
+            text: 'Calibrate'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(160)
             on_release: root.calibrate()
-        Button:
-            text: "Close"
-            size_hint_x: .15
-            on_release: root.closeCallback()
 
 
 <DualColorCalibration>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    spacing: 20
+    padding: 0, dp(18), 0, 0
+    spacing: dp(16)
 
     GridLayout:
         cols: 3
-        spacing: 10
+        spacing: dp(14)
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Main'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Main side'
+            CalImage:
                 id: mainsideimage
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Minor'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Minor side'
+            CalImage:
                 id: minorsideimage
 
-        BoxLayout:
-            orientation: 'vertical'
-            Label:
-                text: 'Calibrated Minor to Main'
-                size_hint_y: 0.1
-            Image:
+        CalTile:
+            title: 'Minor mapped onto main'
+            CalImage:
                 id: calibratedimage
 
-    BoxLayout:
-        size_hint_y: .08
-
-        Label:
+    CalBar:
+        CalStat:
             id: translation
-            size_hint_x: .25
-            text: f"Translation (x,y): {app.config.getfloat('DualColor', 'translation_x'):.2f}, {app.config.getfloat('DualColor', 'translation_y'):.2f}"
-        Label:
+            text: f"[color=8e8e93]Translation[/color]   {app.config.getfloat('DualColor', 'translation_x'):.2f}, {app.config.getfloat('DualColor', 'translation_y'):.2f} px"
+        CalStat:
             id: rotation
-            size_hint_x: .25
-            text: f"Rotation (rad): {app.config.getfloat('DualColor', 'rotation'):.3f}"
-        Button:
-            text: "Calibrate"
-            size_hint_x: .35
+            text: f"[color=8e8e93]Rotation[/color]   {app.config.getfloat('DualColor', 'rotation'):.3f} rad"
+        Widget:
+        FlatButton:
+            text: 'Calibrate'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(160)
             on_release: root.calibrate()
-        Button:
-            text: "Close"
-            size_hint_x: .15
-            on_release: root.closeCallback()
 
 
 <DepthOfFieldCalibration>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    spacing: 20
-
-    GridLayout:
-        cols: 2
-        spacing: 20
-
-        BoxLayout:
-            orientation: 'vertical'
-            size_hint_x: 0.4
-            Label:
-                text: 'Best focus image'
-                size_hint_y: 0.1
-            Image:
-                id: bestfocusimage
-
-        BoxLayout:
-            orientation: 'vertical'
-            size_hint_x: 0.6
-            Label:
-                text: 'Estimated Depth of Field plot'
-                size_hint_y: 0.1
-            Image:
-                id: estimateddofplot
+    padding: 0, dp(18), 0, 0
+    spacing: dp(16)
 
     BoxLayout:
-        size_hint_y: .08
+        spacing: dp(14)
 
-        Label:
+        CalTile:
+            title: 'Best focus image'
+            size_hint_x: 0.4
+            CalImage:
+                id: bestfocusimage
+
+        CalTile:
+            title: 'Focus over Z'
+            size_hint_x: 0.6
+            CalImage:
+                id: estimateddofplot
+
+    CalBar:
+        CalStat:
             id: estimateddepthoffieldtext
-            # size_hint_x: .5
-            text: f"Estimated Depth of Field: {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
-        Button:
-            text: "Calibrate"
-            size_hint_x: .35
+            text: f"[color=8e8e93]Depth of field[/color]   {app.config.getfloat('Camera', 'depthoffield'):.5f} mm"
+        Widget:
+        FlatButton:
+            text: 'Calibrate'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(160)
             on_release: root.calibrate()
-        Button:
-            text: "Close"
-            size_hint_x: .15
-            on_release: root.closeCallback()
 
 
 <IntensitySweepCalibration>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    spacing: 20
+    padding: 0, dp(18), 0, 0
+    spacing: dp(16)
 
-    BoxLayout:
-        orientation: 'vertical'
-        Label:
-            text: 'Mean intensity over Z sweep'
-            size_hint_y: 0.1
-        Image:
+    CalTile:
+        title: 'Intensity over Z and its first derivative'
+        CalImage:
             id: intensitysweepplot
 
-    BoxLayout:
-        size_hint_y: .08
-        spacing: 10
+    CalBar:
+        CalStat:
+            id: sweepresult
+            text: '[color=8e8e93]Sweep Z to find where the slope of the brightness is largest.[/color]'
 
-        Label:
+    CalBar:
+        spacing: dp(10)
+
+        CalFieldLabel:
             text: 'Z start (mm)'
-            size_hint_x: .1
-        TextInput:
+        DarkInput:
             id: zstart
             text: '0'
-            multiline: False
-            size_hint_x: .12
-        Label:
+            input_filter: 'float'
+            size_hint_x: None
+            width: dp(90)
+        Widget:
+            size_hint_x: None
+            width: dp(8)
+        CalFieldLabel:
             text: 'Z end (mm)'
-            size_hint_x: .1
-        TextInput:
+        DarkInput:
             id: zend
             text: '1'
-            multiline: False
-            size_hint_x: .12
-        Label:
-            text: 'Num photos'
-            size_hint_x: .1
-        TextInput:
+            input_filter: 'float'
+            size_hint_x: None
+            width: dp(90)
+        Widget:
+            size_hint_x: None
+            width: dp(8)
+        CalFieldLabel:
+            text: 'Photos'
+        DarkInput:
             id: numphotos
             text: '50'
-            multiline: False
-            size_hint_x: .12
-        Button:
-            text: "Sweep"
-            size_hint_x: .18
+            input_filter: 'int'
+            size_hint_x: None
+            width: dp(80)
+        Widget:
+        FlatButton:
+            text: 'Sweep'
+            tint: 0.04, 0.52, 1, 1
+            size_hint_x: None
+            width: dp(160)
             on_release: root.sweep()
-        Button:
-            text: "Close"
-            size_hint_x: .14
-            on_release: root.closeCallback()
 
+
+#################################
+# DAQ window: tabs as a segmented control, mode and close in the same row, rows of
+# label + field or label + switch, in the main window's colours
+#################################
+<DaqLabel@Label>:
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+    font_size: '14sp'
+    color: C_TEXT
+
+<DaqHint@Label>:
+    size_hint_y: None
+    height: self.texture_size[1] + dp(4)
+    halign: 'left'
+    valign: 'top'
+    text_size: self.width, None
+    font_size: '12.5sp'
+    color: C_MUTED
+
+<DaqRow@BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: H_CONTROL
+    spacing: dp(12)
+
+<DaqSwitchRow@BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: H_CONTROL
+    text: ''
+    DaqLabel:
+        text: root.text
+
+<DaqSpinnerOption@SpinnerOption>:
+    height: dp(36)
+    font_size: '14sp'
+    color: C_TEXT
+    background_normal: ''
+    background_down: ''
+    background_color: (0.2, 0.5, 0.75, 1) if self.state == 'down' else (0.2, 0.21, 0.235, 1)
+
+# A rounded key with a small chevron that opens its list
+<DaqSpinner@Spinner>:
+    size_hint: None, None
+    height: H_CONTROL
+    font_size: '14sp'
+    color: C_TEXT
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+    padding: dp(12), 0
+    option_cls: 'DaqSpinnerOption'
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        Color:
+            rgba: C_PRESSED if self.is_open else C_BUTTON
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: C_MUTED
+        Line:
+            points: self.right - dp(22), self.center_y + dp(2), self.right - dp(17), self.center_y - dp(3), self.right - dp(12), self.center_y + dp(2)
+            width: dp(1.3)
+
+<SegmentTab@TabbedPanelItem>:
+    font_size: '14sp'
+    bold: self.state == 'down'
+    color: C_TEXT if self.state == 'down' else C_MUTED
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        Color:
+            rgba: (0.3, 0.31, 0.35, 1) if self.state == 'down' else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.x + dp(3), self.y + dp(3)
+            size: self.width - dp(6), self.height - dp(6)
+            radius: [dp(7)]
+
+# A round close key with a drawn cross
+<CloseKey@ButtonBehavior+Widget>:
+    size_hint: None, None
+    size: H_CONTROL, H_CONTROL
+    canvas:
+        Color:
+            rgba: C_PRESSED if self.state == 'down' else C_BUTTON
+        Ellipse:
+            pos: self.center_x - dp(15), self.center_y - dp(15)
+            size: dp(30), dp(30)
+        Color:
+            rgba: C_TEXT
+        Line:
+            points: self.center_x - dp(5), self.center_y - dp(5), self.center_x + dp(5), self.center_y + dp(5)
+            width: dp(1.3)
+        Line:
+            points: self.center_x - dp(5), self.center_y + dp(5), self.center_x + dp(5), self.center_y - dp(5)
+            width: dp(1.3)
 
 <daqcontroltabpanelHolder>:
-
     mode: mode
 
     DAQControlTabPanel:
@@ -1158,58 +2164,69 @@ MainWindow:
         size_hint: 1, 1
         pos_hint: {"center_x": 0.5, "center_y": 0.5}
 
-
     BoxLayout:
         orientation: 'horizontal'
         size_hint: None, None
-        size: self.minimum_size
-        spacing: '6dp'
+        size: self.minimum_width, H_CONTROL
+        spacing: dp(10)
         pos_hint: {"right": 1, "top": 1}
 
         Label:
-            text: '[b][color=018EFF]DAQ Mode[/color][/b]'
+            text: 'DAQ mode'
             size_hint_x: None
             width: self.texture_size[0]
-            markup: True
+            font_size: '13sp'
+            color: C_MUTED
 
-
-        Spinner:
-            size_hint: None, None
-            size: '100dp', '40dp'
+        DaqSpinner:
             id: mode
+            width: dp(140)
             text: 'Off'
             values: 'Off', 'Sequencer', 'StageProgram', 'Reversal', 'Plugin'
             on_text: root.updateMode()
             on_kv_post: self.text = app.config.get('DaqControl', 'mode')
 
+        CloseKey:
+            tooltip: 'Close'
+            on_release: root.closeCallback()
 
 
 <DAQControlTabPanel>:
     size: root.size
     pos: root.pos
     do_default_tab: False
-    tab_width: 185
+    tab_width: dp(132)
+    tab_height: H_CONTROL
+    background_color: 0, 0, 0, 0
+    canvas.before:
+        # the segmented control's track behind the tabs
+        Color:
+            rgba: C_INPUT
+        RoundedRectangle:
+            pos: self.x, self.top - self.tab_height
+            size: self.tab_width * len(self.tab_list), self.tab_height
+            radius: [dp(9)]
 
-    TabbedPanelItem:
+    SegmentTab:
         id: sequencertab
         text: 'Sequencer'
 
         SequencerWidget:
             id: sequencerwidget
 
-    TabbedPanelItem:
+    SegmentTab:
         text: 'Stage program'
 
         StageProgramWidget:
             id: stageprogramwidget
 
-    TabbedPanelItem:
+    SegmentTab:
         text: 'Reversal'
 
         ReversalWidget:
             id: reversalwidget
 
-    TabbedPanelItem:
+    SegmentTab:
         id: plugintab
         text: 'Plugin'
 
@@ -1217,46 +2234,39 @@ MainWindow:
             id: pluginwidget
 
 
-
 <PluginWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
-    padding: dp(6)
-    spacing: dp(6)
+    padding: 0, dp(18), 0, 0
+    spacing: dp(10)
 
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: dp(36)
-        spacing: dp(4)
+    DaqRow:
+        spacing: dp(8)
 
-        TextInput:
+        DarkInput:
             id: pluginfile
-            hint_text: 'Path to plugin .py file'
-            multiline: False
-            size_hint_x: 0.8
+            hint_text: 'Plugin file (.py)'
 
-        Button:
+        FlatButton:
             text: 'Browse'
-            size_hint_x: 0.2
+            size_hint_x: None
+            width: dp(100)
             on_release: root.openLoadPluginWidget()
 
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: None
-        height: dp(36)
-        spacing: dp(4)
+    DaqRow:
+        spacing: dp(8)
 
-        Button:
+        FlatButton:
             text: 'Start'
+            tint: C_ON
             on_release: root.startPlugin()
 
-        Button:
+        FlatButton:
             text: 'Stop'
             on_release: root.stopPlugin()
 
-        Button:
+        FlatButton:
             text: 'Reload'
             on_release: root.reloadPlugin()
 
@@ -1264,90 +2274,109 @@ MainWindow:
         id: pluginstatus
         text: ''
         size_hint_y: None
-        height: dp(64)
+        height: max(dp(30), self.texture_size[1] + dp(12))
         halign: 'left'
-        valign: 'top'
-        text_size: self.width, None
+        valign: 'middle'
+        text_size: self.width - dp(24), None
         font_size: '13sp'
+        color: C_MUTED
+        canvas.before:
+            Color:
+                rgba: C_INPUT
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [dp(6)]
 
+    # the plugin's error, only while there is one
     ScrollView:
         do_scroll_x: False
+        size_hint_y: None
+        height: min(dp(110), pluginerror.height) if pluginerror.text else 0
+        opacity: 1 if pluginerror.text else 0
 
         Label:
             id: pluginerror
             text: ''
             size_hint_y: None
-            height: max(self.texture_size[1], dp(20))
+            height: self.texture_size[1] if self.text else 0
             halign: 'left'
             valign: 'top'
             text_size: self.width, None
             color: 1, 0.45, 0.45, 1
+            font_name: 'RobotoMono-Regular'
             font_size: '12sp'
 
-    Label:
-        text: 'The plugin file defines Controller.update(state, scope). See examples/plugins/README.md. Starting switches the DAQ mode to Plugin.'
-        size_hint_y: None
-        height: dp(40)
-        halign: 'left'
-        valign: 'middle'
-        text_size: self.width, None
-        font_size: '12sp'
-        color: 0.7, 0.7, 0.7, 1
+    ScriptPreview:
+        id: preview
 
 
 <SequencerWidget>:
     size: root.size
     pos: root.pos
-
     orientation: 'vertical'
+    padding: 0, dp(18), 0, 0
+    spacing: dp(10)
 
-    BoxLayout:
-        orientation: 'horizontal'
-        size_hint_y: 0.1
+    SectionLabel:
+        text: 'Sequence file'
 
-        TextInput:
+    DaqRow:
+        spacing: dp(8)
+
+        DarkInput:
             id: daqscriptfile
             text: app.config.get('DaqControl', 'sequencescript')
-            size_hint_x: 0.8
 
-        Button:
-            text: "Load"
+        FlatButton:
+            text: 'Load'
+            size_hint_x: None
+            width: dp(90)
             on_release: root.openLoadSequencerWidget()
-            size_hint_x: None
 
-        Button:
-            text: "Save"
-            on_release: root.saveScript()
+        FlatButton:
+            text: 'Save'
             size_hint_x: None
+            width: dp(90)
+            on_release: root.saveScript()
 
     BoxLayout:
-        orientation: 'horizontal'
+        spacing: dp(16)
 
-        CodeInput:
-            id: scripttext
-            text: ''
-            size_hint_x: 0.9
-            do_wrap: False
-            auto_indent: True
-
+        # the editor in a rounded frame of its own colour
         BoxLayout:
-            orientation: 'vertical'
-            size_hint_x: None
+            size_hint_x: 0.45
+            padding: dp(10)
+            canvas.before:
+                Color:
+                    rgba: 0.157, 0.173, 0.204, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(8)]
 
-            BoxLayout:
-                # Filler
-                size_hint_y: 0.9
+            CodeInput:
+                id: scripttext
+                text: ''
+                style_name: 'one-dark'
+                font_name: 'RobotoMono-Regular'
+                font_size: '14sp'
+                background_normal: ''
+                background_active: ''
+                cursor_color: C_PRESSED
+                do_wrap: False
+                auto_indent: True
 
-            Button:
-                text: "Close"
-                on_release: root.closeCallback()
-                size_hint_y: 0.1
+        ScriptPreview:
+            id: preview
+            size_hint_x: 0.55
 
 
 <StageProgramWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
+    padding: 0, dp(18), 0, 0
     spacing: dp(10)
     exteriorSpinner: exteriorSpinner
 
@@ -1389,380 +2418,285 @@ MainWindow:
 
     BoxLayout:
         orientation: 'horizontal'
-        spacing: dp(10)
+        spacing: dp(28)
 
-        StackLayout:
-            id: stacklayout
-            orientation: 'tb-lr'
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x: 0.5
-            spacing: [0, dp(5)]
+            spacing: dp(10)
 
-            BoxLayout:
-                orientation: 'horizontal'
-                size_hint_y: 0.1
+            SectionLabel:
+                text: 'Voltage program'
 
-                Label:
-                    text: 'Mode'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+            # rows are moved in and out of this stack when the mode changes
+            StackLayout:
+                id: stacklayout
+                orientation: 'tb-lr'
+                spacing: [0, dp(8)]
 
-                Spinner:
-                    id: modeSpinner
-                    text: 'Gaussian'
-                    values: 'Gaussian', 'FourPoint'
-                    on_text: root.updateMode(); root.updateParam()
-                    size_hint_x: None
-                    width: dp(100)
+                DaqRow:
+                    DaqLabel:
+                        text: 'Mode'
+                        size_hint_x: None
+                        width: dp(110)
 
-            BoxLayout:
-                id: exterior_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqSpinner:
+                        id: modeSpinner
+                        width: dp(150)
+                        text: 'Gaussian'
+                        values: 'Gaussian', 'FourPoint'
+                        on_text: root.updateMode(); root.updateParam()
 
-                Label:
-                    text: 'Exterior'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    Widget:
 
-                Spinner:
-                    id: exteriorSpinner
-                    text: 'Zero'
-                    values: 'Zero', 'Constant'
-                    on_text: root.updateExteriorChoice(); root.updateParam()
-                    size_hint_x: None
-                    width: dp(100)
+                DaqRow:
+                    id: exterior_layout
 
-                DaqTextInput:
-                    id: constanttextinput
-                    on_kv_post: root.updateExteriorChoice()
-                    root: root
-                    configKey: 'constanttextinput'
+                    DaqLabel:
+                        text: 'Exterior'
+                        size_hint_x: None
+                        width: dp(110)
 
-            BoxLayout:
-                id: fourpoint_header_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqSpinner:
+                        id: exteriorSpinner
+                        width: dp(150)
+                        text: 'Zero'
+                        values: 'Zero', 'Constant'
+                        on_text: root.updateExteriorChoice(); root.updateParam()
 
-                BoxLayout:
-                    id: padder
-                    size_hint_x: None
-                    width: dp(100)
+                    DaqTextInput:
+                        id: constanttextinput
+                        on_kv_post: root.updateExteriorChoice()
+                        root: root
+                        configKey: 'constanttextinput'
 
-                Label:
-                    text: 'x (mm)'
+                DaqRow:
+                    id: fourpoint_header_layout
+                    height: dp(20)
 
-                Label:
-                    text: 'y (mm)'
+                    Widget:
+                        size_hint_x: None
+                        width: dp(110)
 
-                Label:
-                    text: 'Voltage'
+                    DaqLabel:
+                        text: 'x (mm)'
+                        font_size: '12.5sp'
+                        color: C_MUTED
 
-            BoxLayout:
-                id: p1_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqLabel:
+                        text: 'y (mm)'
+                        font_size: '12.5sp'
+                        color: C_MUTED
 
-                Label:
-                    text: 'Point 1'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqLabel:
+                        text: 'Voltage'
+                        font_size: '12.5sp'
+                        color: C_MUTED
 
-                DaqTextInput:
-                    id: p1x
-                    configKey: 'p1x'
-                    root: root
+                DaqRow:
+                    id: p1_layout
 
-                DaqTextInput:
-                    id: p1y
-                    configKey: 'p1y'
-                    root: root
+                    DaqLabel:
+                        text: 'Point 1'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: p1v
-                    configKey: 'p1v'
-                    root: root
+                    DaqTextInput:
+                        id: p1x
+                        configKey: 'p1x'
+                        root: root
 
-            BoxLayout:
-                id: p2_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqTextInput:
+                        id: p1y
+                        configKey: 'p1y'
+                        root: root
 
-                Label:
-                    text: 'Point 2'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqTextInput:
+                        id: p1v
+                        configKey: 'p1v'
+                        root: root
 
-                DaqTextInput:
-                    id: p2x
-                    configKey: 'p2x'
-                    root: root
+                DaqRow:
+                    id: p2_layout
 
-                DaqTextInput:
-                    id: p2y
-                    configKey: 'p2y'
-                    root: root
+                    DaqLabel:
+                        text: 'Point 2'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: p2v
-                    configKey: 'p2v'
-                    root: root
+                    DaqTextInput:
+                        id: p2x
+                        configKey: 'p2x'
+                        root: root
 
-            BoxLayout:
-                id: p3_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqTextInput:
+                        id: p2y
+                        configKey: 'p2y'
+                        root: root
 
-                Label:
-                    text: 'Point 3'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqTextInput:
+                        id: p2v
+                        configKey: 'p2v'
+                        root: root
 
-                DaqTextInput:
-                    id: p3x
-                    configKey: 'p3x'
-                    root: root
+                DaqRow:
+                    id: p3_layout
 
-                DaqTextInput:
-                    id: p3y
-                    configKey: 'p3y'
-                    root: root
+                    DaqLabel:
+                        text: 'Point 3'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: p3v
-                    configKey: 'p3v'
-                    root: root
+                    DaqTextInput:
+                        id: p3x
+                        configKey: 'p3x'
+                        root: root
 
-            BoxLayout:
-                id: p4_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqTextInput:
+                        id: p3y
+                        configKey: 'p3y'
+                        root: root
 
-                Label:
-                    text: 'Point 4'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqTextInput:
+                        id: p3v
+                        configKey: 'p3v'
+                        root: root
 
-                DaqTextInput:
-                    id: p4x
-                    configKey: 'p4x'
-                    root: root
+                DaqRow:
+                    id: p4_layout
 
-                DaqTextInput:
-                    id: p4y
-                    configKey: 'p4y'
-                    root: root
+                    DaqLabel:
+                        text: 'Point 4'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: p4v
-                    configKey: 'p4v'
-                    root: root
+                    DaqTextInput:
+                        id: p4x
+                        configKey: 'p4x'
+                        root: root
 
-            BoxLayout:
-                id: relative_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqTextInput:
+                        id: p4y
+                        configKey: 'p4y'
+                        root: root
 
-                BoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: 1
-                    size_hint_x: 0.8
-                    padding: [dp(15), 0, 0, 0]
+                    DaqTextInput:
+                        id: p4v
+                        configKey: 'p4v'
+                        root: root
 
-                    Label:
-                        text: 'Is relative to start Recording position'
-                        halign: 'left'
-                        valign: 'middle'
-                        text_size: self.size
-
-                AnchorLayout:
-                    anchor_x: 'right'
-                    anchor_y: 'center'
-                    size_hint_y: 1
-                    size_hint_x: 0.2
+                DaqSwitchRow:
+                    id: relative_layout
+                    text: 'Relative to the position where recording started'
 
                     DaqRelativePositionSwitch:
                         id: relative
                         configKey: 'relative'
                         root: root
+                        size_hint_x: None
+                        width: dp(60)
 
-            BoxLayout:
-                id: g_amplitude_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                DaqRow:
+                    id: g_amplitude_layout
 
-                Label:
-                    text: 'Amplitude'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqLabel:
+                        text: 'Amplitude (V)'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: g_amplitude
-                    configKey: 'g_amplitude'
-                    root: root
+                    DaqTextInput:
+                        id: g_amplitude
+                        configKey: 'g_amplitude'
+                        root: root
 
-            BoxLayout:
-                id: g_x_mean_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                DaqRow:
+                    id: g_x_mean_layout
 
-                Label:
-                    text: 'X mean'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqLabel:
+                        text: 'X mean'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: g_x_mean
-                    configKey: 'g_x_mean'
-                    root: root
+                    DaqTextInput:
+                        id: g_x_mean
+                        configKey: 'g_x_mean'
+                        root: root
 
-            BoxLayout:
-                id: g_x_sigma_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                DaqRow:
+                    id: g_x_sigma_layout
 
-                Label:
-                    text: 'X sigma'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqLabel:
+                        text: 'X sigma'
+                        size_hint_x: None
+                        width: dp(110)
 
-                DaqTextInput:
-                    id: g_x_sigma
-                    configKey: 'g_x_sigma'
-                    root: root
+                    DaqTextInput:
+                        id: g_x_sigma
+                        configKey: 'g_x_sigma'
+                        root: root
 
+                DaqRow:
+                    id: g_y_mean_layout
 
-            BoxLayout:
-                id: g_y_mean_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqLabel:
+                        text: 'Y mean'
+                        size_hint_x: None
+                        width: dp(110)
 
-                Label:
-                    text: 'Y mean'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
+                    DaqTextInput:
+                        id: g_y_mean
+                        configKey: 'g_y_mean'
+                        root: root
 
-                DaqTextInput:
-                    id: g_y_mean
-                    configKey: 'g_y_mean'
-                    root: root
+                DaqRow:
+                    id: g_y_sigma_layout
 
+                    DaqLabel:
+                        text: 'Y sigma'
+                        size_hint_x: None
+                        width: dp(110)
 
-            BoxLayout:
-                id: g_y_sigma_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+                    DaqTextInput:
+                        id: g_y_sigma
+                        configKey: 'g_y_sigma'
+                        root: root
 
-                Label:
-                    text: 'Y sigma'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: None
-                    text_size: [dp(100), root.height]
-
-                DaqTextInput:
-                    id: g_y_sigma
-                    configKey: 'g_y_sigma'
-                    root: root
-
-            BoxLayout:
-                id: g_relative_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                BoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: 1
-                    size_hint_x: 0.8
-                    padding: [dp(15), 0, 0, 0]
-
-                    Label:
-                        text: 'Is relative to start Recording position'
-                        halign: 'left'
-                        valign: 'middle'
-                        text_size: self.size
-
-                AnchorLayout:
-                    anchor_x: 'right'
-                    anchor_y: 'center'
-                    size_hint_y: 1
-                    size_hint_x: 0.2
+                DaqSwitchRow:
+                    id: g_relative_layout
+                    text: 'Relative to the position where recording started'
 
                     DaqRelativePositionSwitch:
                         id: g_relative
                         configKey: 'g_relative'
                         root: root
+                        size_hint_x: None
+                        width: dp(60)
+
+            FlatButton:
+                text: 'Update'
+                tint: 0.04, 0.52, 1, 1
+                size_hint_x: None
+                width: dp(140)
+                on_release: root.updateParam()
 
         BoxLayout:
             orientation: 'vertical'
             size_hint_x: 0.5
-            Label:
-                text: 'Visualization'
-                size_hint_y: 0.1
+            spacing: dp(10)
+
+            SectionLabel:
+                text: 'Voltage map'
+
             Image:
                 id: visualizationplot
-
-    BoxLayout:
-        size_hint_y: .08
-
-        BoxLayout:
-            size_hint_x: .5
-
-            AnchorLayout:
-                anchor_x: 'center'
-                anchor_y: 'center'
-
-                Button:
-                    size_hint_x: 0.5
-                    text: "Update"
-                    on_release: root.updateParam()
-                    background_color: [94.0/255, 190.0/255, 88.0/255, 1]
-
-        BoxLayout:
-            size_hint_x: .3
-
-        Button:
-            text: "Close"
-            size_hint_x: .2
-            on_release: root.closeCallback()
+                fit_mode: 'contain'
 
 
 <ReversalWidget>:
     size: root.size
     pos: root.pos
     orientation: 'vertical'
+    padding: 0, dp(18), 0, 0
 
     animallength: animallength
     traillimit: traillimit
@@ -1773,286 +2707,264 @@ MainWindow:
 
     BoxLayout:
         orientation: 'horizontal'
-        spacing: dp(10)
+        spacing: dp(40)
 
-        StackLayout:
-            id: stacklayout
-            orientation: 'tb-lr'
-            size_hint_x: 0.5
-            spacing: [0, dp(5)]
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: dp(8)
 
-            BoxLayout:
-                id: relative_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+            SectionLabel:
+                text: 'Detection'
 
-                BoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: 1
-                    size_hint_x: 0.8
-                    padding: [dp(15), 0, 0, 0]
-
-                    Label:
-                        text: 'Display trail in overlay'
-                        halign: 'left'
-                        valign: 'middle'
-                        text_size: self.size
-
-                AnchorLayout:
-                    anchor_x: 'right'
-                    anchor_y: 'center'
-                    size_hint_y: 1
-                    size_hint_x: 0.2
-
-                    ReversalSwitch:
-                        id: showtrail
-                        configKey: 'showtrail'
-                        root: root
-
-            BoxLayout:
-                id: relative_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                BoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: 1
-                    size_hint_x: 0.8
-                    padding: [dp(15), 0, 0, 0]
-
-                    Label:
-                        text: 'Display reversal detection indicators'
-                        halign: 'left'
-                        valign: 'middle'
-                        text_size: self.size
-
-                AnchorLayout:
-                    anchor_x: 'right'
-                    anchor_y: 'center'
-                    size_hint_y: 1
-                    size_hint_x: 0.2
-
-                    ReversalSwitch:
-                        id: showreversalindicator
-                        configKey: 'showreversalindicator'
-                        root: root
-
-            BoxLayout:
-                id: animallength_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                Label:
-                    text: 'Animal length (um)'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+            DaqRow:
+                DaqLabel:
+                    text: 'Animal length (µm)'
 
                 DaqTextInput:
                     id: animallength
                     configKey: 'animallength'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: traillimit_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                Label:
-                    text: 'Max trail history (frame)'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+            DaqRow:
+                DaqLabel:
+                    text: 'Trail history (frames)'
 
                 DaqTextInput:
                     id: traillimit
                     configKey: 'traillimit'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: reversalthresholdradian_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                Label:
-                    text: 'Reversal threshold angle (degrees)'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+            DaqRow:
+                DaqLabel:
+                    text: 'Reversal angle (degrees)'
 
                 DaqTextInput:
                     id: reversalthresholdradian
                     configKey: 'reversalthresholdradian'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: velocityhistorypercentage_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                Label:
-                    text: 'Velocity history percentage (1-100%)'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+            DaqRow:
+                DaqLabel:
+                    text: 'Velocity history (1–100 %)'
 
                 DaqTextInput:
                     id: velocityhistorypercentage
                     configKey: 'velocityhistorypercentage'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: reversalvoltage_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+            Widget:
 
-                Label:
-                    text: 'Reversal voltage'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: dp(8)
+
+            SectionLabel:
+                text: 'Output'
+
+            DaqRow:
+                DaqLabel:
+                    text: 'Reversal voltage (V)'
 
                 DaqTextInput:
                     id: reversalvoltage
                     configKey: 'reversalvoltage'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: forwardvoltage_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
-
-                Label:
-                    text: 'Forward voltage'
-                    halign: 'center'
-                    valign: 'middle'
-                    size_hint_x: 0.4
-                    text_size: [dp(150), root.height]
+            DaqRow:
+                DaqLabel:
+                    text: 'Forward voltage (V)'
 
                 DaqTextInput:
                     id: forwardvoltage
                     configKey: 'forwardvoltage'
                     root: root
-                    size_hint_x: 0.6
+                    size_hint_x: None
+                    width: dp(130)
 
-            BoxLayout:
-                id: relative_layout
-                orientation: 'horizontal'
-                size_hint_y: 0.1
-                size_hint_x: 0.9
+            Widget:
+                size_hint_y: None
+                height: dp(8)
 
-                BoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: 1
-                    size_hint_x: 0.8
-                    padding: [dp(15), 0, 0, 0]
+            SectionLabel:
+                text: 'Overlay'
 
-                    Label:
-                        text: 'Display 1mm guideline'
-                        halign: 'left'
-                        valign: 'middle'
-                        text_size: self.size
+            DaqSwitchRow:
+                text: 'Show the trail'
 
-                AnchorLayout:
-                    anchor_x: 'right'
-                    anchor_y: 'center'
-                    size_hint_y: 1
-                    size_hint_x: 0.2
+                ReversalSwitch:
+                    id: showtrail
+                    configKey: 'showtrail'
+                    root: root
+                    size_hint_x: None
+                    width: dp(60)
 
-                    ReversalSwitch:
-                        id: showguideline
-                        configKey: 'showguideline'
-                        root: root
+            DaqSwitchRow:
+                text: 'Show reversal indicators'
 
-        BoxLayout:
-            orientation: 'vertical'
-            size_hint_x: 0.5
+                ReversalSwitch:
+                    id: showreversalindicator
+                    configKey: 'showreversalindicator'
+                    root: root
+                    size_hint_x: None
+                    width: dp(60)
 
-    BoxLayout:
-        size_hint_y: .08
+            DaqSwitchRow:
+                text: 'Show a 1 mm guideline'
 
-        BoxLayout:
-            size_hint_x: .8
+                ReversalSwitch:
+                    id: showguideline
+                    configKey: 'showguideline'
+                    root: root
+                    size_hint_x: None
+                    width: dp(60)
 
-        Button:
-            text: "Close"
-            size_hint_x: .2
-            on_release: root.closeCallback()
+            Widget:
 
 
+# A number field like DarkInput, right-aligned
 <DaqTextInput>:
     multiline: False
     input_filter: 'float'
-    base_direction: 'rtl'
-    size_hint_x: 1
+    halign: 'right'
+    size_hint_y: None
+    height: H_CONTROL
     write_tab: False
+    font_size: '14sp'
+    padding: dp(10), (self.height - self.line_height) / 2
+    background_normal: ''
+    background_active: ''
+    background_disabled_normal: ''
+    background_color: 0, 0, 0, 0
+    foreground_color: C_TEXT
+    disabled_foreground_color: C_MUTED
+    cursor_color: 0.36, 0.64, 1, 1
+    cursor_width: dp(1.5)
+    canvas.before:
+        Color:
+            rgba: C_INPUT
+            a: 0.5 if self.disabled else 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: (0.2, 0.5, 0.75, 1) if self.focus else (1, 1, 1, 0.05)
+        Line:
+            rounded_rectangle: self.x + dp(0.5), self.y + dp(0.5), self.width - dp(1), self.height - dp(1), dp(6)
+            width: dp(1.1)
+        # Kivy draws the cursor right after its own background, under ours: draw it again on top
+        Color:
+            rgba: (self.cursor_color if self.focus and not self._cursor_blink and int(self.x + self.padding[0]) <= self._cursor_visual_pos[0] <= int(self.x + self.width - self.padding[2]) else (0, 0, 0, 0))
+        Rectangle:
+            pos: self._cursor_visual_pos
+            size: self.cursor_width, -self._cursor_visual_height
+        Color:
+            rgba: C_MUTED if self.disabled else C_TEXT
 
 ### display if hardware is connected successfully
+# A hardware connection as a status line: a dot (red off, green on) and the name, no button
+# background. Clicking the line connects or disconnects, as before.
+<ConnectionToggle@ToggleButton>:
+    icon: ''
+
+# A hardware connection: a round badge with the device's icon, green when connected and red
+# when not, and its name. Clicking the row connects or disconnects, as before.
+<ConnectionToggle,DAQConnectionButton>:
+    size_hint_y: None
+    height: dp(38)
+    font_size: '14sp'
+    color: C_TEXT
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.size
+    padding: dp(40), 0, 0, 0
+    background_normal: ''
+    background_down: ''
+    background_disabled_normal: ''
+    background_disabled_down: ''
+    background_color: 0, 0, 0, 0
+    tone: (0.19, 0.82, 0.35) if self.state == 'down' else (0.95, 0.36, 0.36)
+    canvas.after:
+        Color:
+            rgba: list(self.tone or (0.95, 0.36, 0.36)) + [0.16]
+        Ellipse:
+            pos: (self.x + dp(15)) - dp(14), self.center_y - dp(14)
+            size: dp(28), dp(28)
+        Color:
+            rgba: list(self.tone or (0.95, 0.36, 0.36)) + [1]
+        Line:
+            circle: (self.x + dp(15)), self.center_y, dp(14)
+            width: dp(1.1)
+        # camera: body, lens and the top step
+        Line:
+            rounded_rectangle: ((self.x + dp(15)) - dp(7), self.center_y - dp(5), dp(14), dp(10), dp(2)) if self.icon == 'camera' else (0, 0, 0, 0, 0)
+            width: dp(1.2)
+        Line:
+            circle: ((self.x + dp(15)), self.center_y, dp(2.6)) if self.icon == 'camera' else (0, 0, 0)
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)) - dp(3), self.center_y + dp(5), (self.x + dp(15)) - dp(1.5), self.center_y + dp(7), (self.x + dp(15)) + dp(1.5), self.center_y + dp(7), (self.x + dp(15)) + dp(3), self.center_y + dp(5)) if self.icon == 'camera' else ()
+            width: dp(1.2)
+        # stage: arrows along x and y
+        Line:
+            points: ((self.x + dp(15)) - dp(7), self.center_y, (self.x + dp(15)) + dp(7), self.center_y) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)), self.center_y - dp(7), (self.x + dp(15)), self.center_y + dp(7)) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)) + dp(4), self.center_y + dp(3), (self.x + dp(15)) + dp(7), self.center_y, (self.x + dp(15)) + dp(4), self.center_y - dp(3)) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)) - dp(4), self.center_y + dp(3), (self.x + dp(15)) - dp(7), self.center_y, (self.x + dp(15)) - dp(4), self.center_y - dp(3)) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)) - dp(3), self.center_y + dp(4), (self.x + dp(15)), self.center_y + dp(7), (self.x + dp(15)) + dp(3), self.center_y + dp(4)) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        Line:
+            points: ((self.x + dp(15)) - dp(3), self.center_y - dp(4), (self.x + dp(15)), self.center_y - dp(7), (self.x + dp(15)) + dp(3), self.center_y - dp(4)) if self.icon == 'stage' else ()
+            width: dp(1.2)
+        # DAQ: a voltage pulse
+        Line:
+            points: ((self.x + dp(15)) - dp(8), self.center_y - dp(3), (self.x + dp(15)) - dp(3.5), self.center_y - dp(3), (self.x + dp(15)) - dp(3.5), self.center_y + dp(4), (self.x + dp(15)) + dp(3.5), self.center_y + dp(4), (self.x + dp(15)) + dp(3.5), self.center_y - dp(3), (self.x + dp(15)) + dp(8), self.center_y - dp(3)) if self.icon == 'daq' else ()
+            width: dp(1.2)
+            joint: 'round'
+
 <Connections>:
     orientation: 'vertical'
-    size_hint: (0.3, 1)
+    spacing: dp(6)
     cam_connection: cam_connection
     stage_connection: stage_connection
     daq_connection: daq_connection
 
-    Label:
-        text: 'Camera'
-        size_hint: (1,0.33)
-    OnOffButton:
+    ConnectionToggle:
         id: cam_connection
-        border: 0,0,0,0
-        size_hint_x: 0.3
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/connection_off.png'
-        background_down: 'icons/connection_on.png'
+        icon: 'camera'
+        tooltip: 'Click to connect or disconnect the camera'
+        text: 'Camera'
         on_state: root.connectCamera() if self.state=='down' else root.disconnectCamera()
 
-    Label:
-        text: 'Stage'
-        size_hint: (1,0.33)
-    OnOffButton:
+    ConnectionToggle:
         id: stage_connection
-        border: 0,0,0,0
-        size_hint_x: 0.3
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/connection_off.png'
-        background_down: 'icons/connection_on.png'
+        icon: 'stage'
+        tooltip: 'Click to connect or disconnect the stage'
+        text: 'Stage'
         on_state: root.connectStage() if self.state=='down' else root.disconnectStage()
 
-    Label:
-        text: 'DAQ'
-        size_hint: (1,0.33)
     DAQConnectionButton:
         id: daq_connection
-        border: 0,0,0,0
-        size_hint_x: 0.3
-        size_hint_y: None
-        height: self.width
-        pos_hint: {'center_x': .5, 'center_y': .5}
-        background_normal: 'icons/connection_off.png'
-        background_down: 'icons/connection_on.png'
+        tooltip: 'Click to connect or disconnect the DAQ'
+        text: 'DAQ'
 
 
 #################################
@@ -2116,3 +3028,181 @@ MainWindow:
 			height: sp(48)
             text: root.ok_text
             on_press: root.ok()
+
+
+#################################
+# Settings window: Kivy's stock look replaced (<-Rule> also drops the base class rules,
+# so the Label ones draw their text themselves)
+#################################
+#:import SettingBoolean kivy.uix.settings.SettingBoolean
+#:import SettingPath kivy.uix.settings.SettingPath
+
+<-Settings>:
+    orientation: 'horizontal'
+    canvas.before:
+        Color:
+            rgba: 0.075, 0.08, 0.09, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<-MenuSidebar>:
+    size_hint_x: None
+    width: dp(220)
+    buttons_layout: menu
+    close_button: button
+    canvas.before:
+        Color:
+            rgba: 0.1, 0.105, 0.115, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    GridLayout:
+        pos: root.pos
+        cols: 1
+        id: menu
+        padding: dp(10), dp(16)
+        spacing: dp(4)
+    FlatButton:
+        text: 'Close'
+        id: button
+        size_hint: None, None
+        width: root.width - dp(20)
+        height: dp(40)
+        pos: root.x + dp(10), root.y + dp(12)
+
+<-SettingSidebarLabel>:
+    size_hint: 1, None
+    height: dp(38)
+    text_size: self.width - dp(28), None
+    font_size: '14sp'
+    color: (1, 1, 1, 1) if self.selected else C_TEXT
+    canvas.before:
+        Color:
+            rgba: (0.04, 0.52, 1, 1) if self.selected else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(8)]
+    canvas:
+        Color:
+            rgba: self.color
+        Rectangle:
+            texture: self.texture
+            size: self.texture_size
+            pos: int(self.center_x - self.texture_size[0] / 2.), int(self.center_y - self.texture_size[1] / 2.)
+
+<-SettingsPanel>:
+    spacing: 0
+    padding: dp(32), dp(12), dp(32), dp(32)
+    size_hint_y: None
+    height: self.minimum_height
+    Label:
+        size_hint_y: None
+        text: root.title
+        text_size: self.width, None
+        height: dp(56)
+        halign: 'left'
+        valign: 'middle'
+        color: C_TEXT
+        bold: True
+        font_size: '22sp'
+
+<-SettingTitle>:
+    text: self.title.upper()
+    text_size: self.width, self.height
+    size_hint_y: None
+    height: dp(46)
+    halign: 'left'
+    valign: 'bottom'
+    padding: 0, 0, 0, dp(6)
+    color: C_ACCENT
+    bold: True
+    font_size: '12.5sp'
+    canvas:
+        Color:
+            rgba: self.color
+        Rectangle:
+            texture: self.texture
+            size: self.texture_size
+            pos: int(self.center_x - self.texture_size[0] / 2.), int(self.center_y - self.texture_size[1] / 2.)
+
+<-SettingSpacer>:
+    size_hint_y: None
+    height: dp(6)
+
+# A row: title and description on the left; the value (in a rounded chip) or a switch on the right
+<-SettingItem>:
+    size_hint: .25, None
+    height: max(dp(58), labellayout.texture_size[1] + dp(20))
+    content: content
+    canvas:
+        Color:
+            rgba: 0.04, 0.52, 1, self.selected_alpha * 0.35
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(6)]
+        Color:
+            rgba: 1, 1, 1, 0.06
+        Rectangle:
+            pos: self.x, self.y
+            size: self.width, 1
+    BoxLayout:
+        pos: root.pos
+        Label:
+            size_hint_x: .64
+            id: labellayout
+            markup: True
+            text: u'{0}\n[size=12.5sp][color=8e8e93]{1}[/color][/size]'.format(root.title or '', root.desc or '')
+            font_size: '15sp'
+            color: C_TEXT
+            line_height: 1.1
+            text_size: self.width - dp(16), None
+        BoxLayout:
+            id: content
+            size_hint_x: .36
+            padding: dp(8), 0
+            canvas.before:
+                Color:
+                    rgba: (0, 0, 0, 0) if isinstance(root, SettingBoolean) else C_INPUT
+                RoundedRectangle:
+                    pos: self.center_x - min(self.width - dp(16), dp(240)) / 2, self.center_y - dp(17)
+                    size: min(self.width - dp(16), dp(240)), dp(34)
+                    radius: [dp(6)]
+
+# An iOS-style switch everywhere: green track with the knob right when on
+<-Switch>:
+    active_norm_pos: max(0., min(1., (int(self.active) + self.touch_distance / sp(41))))
+    canvas:
+        Color:
+            rgba: (0.19, 0.82, 0.35, 1) if self.active else (0.32, 0.33, 0.37, 1)
+            a: 0.4 if self.disabled else 1
+        RoundedRectangle:
+            pos: self.center_x - dp(23), self.center_y - dp(14)
+            size: dp(46), dp(28)
+            radius: [dp(14)]
+    canvas.after:
+        Color:
+            rgba: 1, 1, 1, 0.5 if self.disabled else 1
+        Ellipse:
+            pos: self.center_x - dp(21) + self.active_norm_pos * dp(18), self.center_y - dp(12)
+            size: dp(24), dp(24)
+
+# The value widgets again: the <-SettingItem> rule above also cleared Kivy's rules for these
+<SettingBoolean>:
+    Switch:
+        pos: root.pos
+        active: bool(root.values.index(root.value)) if root.value in root.values else False
+        on_active: root.value = root.values[int(args[1])]
+
+<SettingString,SettingPath,SettingOptions>:
+    Label:
+        text: root.value or ''
+        pos: root.pos
+        font_size: '14sp'
+        color: C_TEXT
+        shorten: True
+        shorten_from: 'left' if isinstance(root, SettingPath) else 'right'
+        text_size: min(self.width - dp(24), dp(220)), None
+        halign: 'center'

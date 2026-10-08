@@ -35,6 +35,7 @@ import matplotlib as mpl
 import matplotlib.pylab as plt
 plt.set_loglevel('warning')
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+import plot_style
 from skimage.filters import threshold_yen
 from skimage.transform import downscale_local_mean
 from skimage.registration import phase_cross_correlation
@@ -920,20 +921,22 @@ class CameraAndStageCalibrator:
             plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), \
                             ha= 'center', fontsize= 12, color= 'black')
 
-        drawVectorFromOrigWithAnnotation(stageX, 'r', 'Stage +X', linestyle= 'solid')
-        drawVectorFromOrigWithAnnotation(stageY, 'r', 'Stage +Y', linestyle= 'solid')
-        drawVectorFromOrigWithAnnotation(imageX, 'g', 'Image +X', linestyle= 'dashed')
-        drawVectorFromOrigWithAnnotation(imageY, 'g', 'Image +Y', linestyle= 'dashed')
+        drawVectorFromOrigWithAnnotation(stageX, plot_style.PINK, 'Stage +X', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(stageY, plot_style.PINK, 'Stage +Y', linestyle= 'solid')
+        drawVectorFromOrigWithAnnotation(imageX, plot_style.GREEN, 'Image +X', linestyle= 'dashed')
+        drawVectorFromOrigWithAnnotation(imageY, plot_style.GREEN, 'Image +Y', linestyle= 'dashed')
 
         # Set plot limits and labels
         plt.xlim(-1, 1)
         plt.ylim(-1, 1)
-        plt.xlabel('X')
-        plt.ylabel('Y')
+        plt.xlabel('x (normalised)', fontsize=13)
+        plt.ylabel('y (normalised)', fontsize=13)
+        plt.gca().set_aspect('equal')
 
         # Add grid and legend
         plt.grid(True)
-        plt.legend()
+        # the arrows are labelled where they end, so no legend
+        plot_style.darken(fig, grid=True)
 
         # Render the plot to a numpy array
         canvas = FigureCanvasAgg(fig)
@@ -1286,12 +1289,13 @@ class DepthOfFieldEstimator:
 
         y_normal_fit = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fit, *self.normDistParams)
 
-        plt.plot(x_data, y_data, 'bo', label='data')
-        plt.plot(x_fit, y_normal_fit, 'r-', label='fitted normal distribution')
+        plt.plot(x_data, y_data, 'o', markersize=5, markerfacecolor='none', markeredgewidth=0.9, color=plot_style.BLUE, label='measured')
+        plt.plot(x_fit, y_normal_fit, '-', linewidth=1.4, color=plot_style.PINK, label='generalised normal fit')
         plt.xlim(min(x_data), max(x_data))
-        plt.ylim(min(y_data), max(y_data))
-        plt.xlabel('Position Z')
-        plt.ylabel('Estimated Focus')
+        yLow, yHigh = min(min(y_data), y_normal_fit.min()), max(max(y_data), y_normal_fit.max())
+        plt.ylim(yLow - 0.05 * (yHigh - yLow), yHigh + 0.08 * (yHigh - yLow))
+        plt.xlabel(r'$z$ (mm)', fontsize=13)
+        plt.ylabel('Focus measure (a.u.)', fontsize=13)
         plt.tight_layout()
 
         # Find the x position where cumulative area from mu to x is 10%
@@ -1304,14 +1308,16 @@ class DepthOfFieldEstimator:
         # Shade the area from -z to z
         x_fill = np.linspace(x_pct_begin, x_pct_end, 200)
         y_fill = DepthOfFieldEstimator.shiftedGeneralizedNormalDist(x_fill, *self.normDistParams)
-        plt.fill_between(x_fill, y_fill, C, color='green', alpha=0.4, label='20% area at mean')
+        plt.fill_between(x_fill, y_fill, C, color=plot_style.GREEN, alpha=0.3, label='central 20 % of the area')
 
         # Plot vertical lines at x_pct_begin, x_pct_end for clarity
-        plt.axvline(x_pct_begin, color='blue', linestyle='--', label=f'lower boundary (x={x_pct_begin:.2f})')
-        plt.axvline(x_pct_end, color='green', linestyle='--', label=f'upper boundary (x={x_pct_end:.2f})')
+        plt.axvline(x_pct_begin, color=plot_style.BLUE, linestyle='--', label=rf'$z_{{\mathrm{{low}}}}$ = {x_pct_begin:.3f} mm')
+        plt.axvline(x_pct_end, color=plot_style.GREEN, linestyle='--', label=rf'$z_{{\mathrm{{high}}}}$ = {x_pct_end:.3f} mm')
 
         # Add legend
-        plt.legend()
+        plt.legend(fontsize=11)
+        plt.tick_params(labelsize=12)
+        plot_style.darken(fig)
 
         # Render the plot to a numpy array
         canvas = FigureCanvasAgg(fig)
@@ -1409,7 +1415,9 @@ class IntensitySweeper:
         self.dataFrame = df
 
 
-    def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def derivatives(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Z positions, the smoothed intensity and its first derivative (Savitzky-Golay fit; plain
+        gradient for very short sweeps). The focus estimates use only the first derivative."""
         pos_z = np.array(self.dataFrame['pos_z'].tolist(), dtype=np.float64)
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
@@ -1424,13 +1432,11 @@ class IntensitySweeper:
         if windowLength >= polyorder + 2:
             smoothedMeans = savgol_filter(means, windowLength, polyorder)
             firstDeriv = savgol_filter(means, windowLength, polyorder, deriv=1, delta=dz)
-            secondDeriv = savgol_filter(means, windowLength, polyorder, deriv=2, delta=dz)
         else:
             smoothedMeans = means
             firstDeriv = np.gradient(means, pos_z)
-            secondDeriv = np.gradient(firstDeriv, pos_z)
 
-        return pos_z, smoothedMeans, firstDeriv, secondDeriv
+        return pos_z, smoothedMeans, firstDeriv
 
 
     @staticmethod
@@ -1450,7 +1456,7 @@ class IntensitySweeper:
 
 
     def computeFocusEstimates(self) -> None:
-        pos_z, _, firstDeriv, _ = self.derivatives()
+        pos_z, _, firstDeriv = self.derivatives()
 
         peakIndex = int(np.argmax(firstDeriv))
         self.peakZ = float(pos_z[peakIndex])
@@ -1471,39 +1477,47 @@ class IntensitySweeper:
 
 
     def genPlot(self) -> np.ndarray:
-        pos_z, smoothedMeans, firstDeriv, secondDeriv = self.derivatives()
+        """Intensity over Z and its first derivative, with the focus estimates marked."""
+        pos_z, smoothedMeans, firstDeriv = self.derivatives()
         means = np.array(self.dataFrame['mean_intensity'].tolist(), dtype=np.float64)
 
         self.computeFocusEstimates()
 
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 13), sharex=True)
+        # side by side: the plot sits in a wide frame
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5.2), sharex=True)
 
-        def markLines(ax):
-            ax.axvline(self.peakZ, color='k', linestyle='--', label=f'max slope (z={self.peakZ:.4f})')
+        def markLines(ax, label: bool):
+            ax.axvline(self.peakZ, color=plot_style.WHITE, linestyle='--', linewidth=0.9,
+                       label=rf'$z_{{\mathrm{{max\,slope}}}}$ = {self.peakZ:.4f} mm' if label else None)
             if self.zeroDerivZ is not None:
-                ax.axvline(self.zeroDerivZ, color='m', linestyle='--', label=f"d=0 (z={self.zeroDerivZ:.4f})")
+                ax.axvline(self.zeroDerivZ, color=plot_style.VIOLET, linestyle='--', linewidth=0.9,
+                           label=rf'$z_{{\mathrm{{d}}I/\mathrm{{d}}z=0}}$ = {self.zeroDerivZ:.4f} mm' if label else None)
             if self.midZ is not None:
-                ax.axvline(self.midZ, color='c', linestyle='-.', label=f'midpoint (z={self.midZ:.4f})')
+                ax.axvline(self.midZ, color=plot_style.GREEN, linestyle='-.', linewidth=0.9,
+                           label=rf'$z_{{\mathrm{{mid}}}}$ = {self.midZ:.4f} mm' if label else None)
 
-        ax1.plot(pos_z, means, 'b.', label='mean')
-        ax1.plot(pos_z, smoothedMeans, 'b-', label='fit')
-        markLines(ax1)
-        ax1.set_ylabel('Intensity (brightness)')
-        ax1.legend()
+        ax1.plot(pos_z, means, 'o', markersize=4, markerfacecolor='none', markeredgewidth=0.9,
+                 color=plot_style.BLUE, label='measured')
+        ax1.plot(pos_z, smoothedMeans, '-', linewidth=1.4, color=plot_style.BLUE, label='Savitzky–Golay fit')
+        markLines(ax1, label=False)
+        ax1.set_xlabel(r'$z$ (mm)')
+        ax1.set_ylabel(r'Mean intensity $I$ (a.u.)')
+        ax1.legend(fontsize=11, loc='best')
 
-        ax2.plot(pos_z, firstDeriv, 'r-', label="d(intensity) (fit)")
-        ax2.axhline(0, color='gray', linewidth=0.8)
-        markLines(ax2)
-        ax2.set_ylabel('d(intensity)')
-        ax2.legend()
+        ax2.plot(pos_z, firstDeriv, '-', linewidth=1.4, color=plot_style.PINK, label=r'$\mathrm{d}I/\mathrm{d}z$')
+        ax2.axhline(0, color=plot_style.EDGE, linewidth=0.8)
+        markLines(ax2, label=True)
+        ax2.set_xlabel(r'$z$ (mm)')
+        ax2.set_ylabel(r'$\mathrm{d}I/\mathrm{d}z$ (a.u. mm$^{-1}$)')
+        ax2.legend(fontsize=11, loc='best')
+        ax1.set_xlim(pos_z.min(), pos_z.max())
+        for ax, letter in ((ax1, 'a'), (ax2, 'b')):
+            ax.tick_params(labelsize=12)
+            ax.xaxis.label.set_size(13)
+            ax.yaxis.label.set_size(13)
+            plot_style.panelLabel(ax, letter)
 
-        ax3.plot(pos_z, secondDeriv, 'g-', label="d²(intensity) (fit)")
-        ax3.axhline(0, color='gray', linewidth=0.8)
-        markLines(ax3)
-        ax3.set_xlabel('Position Z')
-        ax3.set_ylabel('d²(intensity)')
-        ax3.legend()
-
+        plot_style.darken(fig)
         fig.tight_layout()
 
         canvas = FigureCanvasAgg(fig)

@@ -168,3 +168,24 @@ def test_sequencer_survives_safe_off_from_another_thread(monkeypatch):
     finally:
         stop.set()
         other.join()
+
+
+def test_outputs_can_be_set_separately():
+    control = DAQ.DAQControl()
+    control.parseTextScript('mode: [time]\n0: [dac0, 4.5, dac1, 0]\n10: [dac1, 3]\n11: [dac0, 0]\n12: [on, 1]')
+    assert list(control.sequncerDict.values()) == [['dac', [4.5, 0.0]], ['dac', [None, 3.0]],
+                                                   ['dac', [0.0, None]], ['on', 1.0]]
+
+
+@pytest.mark.parametrize('command', ['[dac0]', '[dac2, 1]', '[dac0, 5]', '[dac0, 1, dac0, 2]', '[dac0, 1, on, 2]'])
+def test_bad_output_commands_are_rejected(command):
+    with pytest.raises(ValueError):
+        DAQ.DAQControl().parseTextScript(f'mode: [time]\n0: {command}')
+
+
+def test_separate_outputs_run_and_commands_in_one_frame_all_apply(monkeypatch):
+    control = _sequencer('mode: [time]\n0: [dac0, 4.5]\n0.01: [dac1, 2]\n5: [dac1, 0]', monkeypatch)
+    control.updateSequencer(frameNum=0, frameTime=0.05)      # both early commands came due in one frame
+    assert control.channelVoltages == [4.5, 2.0]
+    control.updateSequencer(frameNum=1, frameTime=5.0)
+    assert control.channelVoltages == [4.5, 0.0]               # DAC0 kept its voltage

@@ -1,0 +1,157 @@
+{
+  "Demo · 4 plates (2 × 2)": {
+    "repeat_run": false,
+    "plates": [
+      {
+        "id": "demo0001",
+        "name": "N2 control",
+        "center": [
+          40,
+          40
+        ],
+        "radius": 27,
+        "points": [
+          [
+            40.0,
+            67.0
+          ],
+          [
+            16.617,
+            26.5
+          ],
+          [
+            63.383,
+            26.5
+          ]
+        ],
+        "enabled": true,
+        "settings": {
+          "scan_mode": "Sequential",
+          "track_interval": 120,
+          "track_exposure": 5000
+        }
+      },
+      {
+        "id": "demo0002",
+        "name": "AWA::Chrimson",
+        "center": [
+          40,
+          110
+        ],
+        "radius": 27,
+        "points": [
+          [
+            40.0,
+            137.0
+          ],
+          [
+            16.617,
+            96.5
+          ],
+          [
+            63.383,
+            96.5
+          ]
+        ],
+        "enabled": true,
+        "settings": {
+          "scan_mode": "Sequential",
+          "track_interval": 120,
+          "track_exposure": 5000
+        }
+      },
+      {
+        "id": "demo0003",
+        "name": "Mutant A",
+        "center": [
+          110,
+          40
+        ],
+        "radius": 27,
+        "points": [
+          [
+            110.0,
+            67.0
+          ],
+          [
+            86.617,
+            26.5
+          ],
+          [
+            133.383,
+            26.5
+          ]
+        ],
+        "enabled": true,
+        "settings": {
+          "scan_mode": "Sequential",
+          "track_interval": 300,
+          "track_exposure": 5000
+        }
+      },
+      {
+        "id": "demo0004",
+        "name": "Mutant B",
+        "center": [
+          110,
+          110
+        ],
+        "radius": 27,
+        "points": [
+          [
+            110.0,
+            137.0
+          ],
+          [
+            86.617,
+            96.5
+          ],
+          [
+            133.383,
+            96.5
+          ]
+        ],
+        "enabled": true,
+        "settings": {
+          "scan_mode": "Continuous",
+          "track_interval": 120,
+          "track_exposure": 5000
+        }
+      }
+    ]
+  },
+  "Demo · single 90 mm plate, repeated": {
+    "repeat_run": true,
+    "plates": [
+      {
+        "id": "demo0005",
+        "name": "Large plate",
+        "center": [
+          76,
+          76
+        ],
+        "radius": 42,
+        "points": [
+          [
+            76.0,
+            118.0
+          ],
+          [
+            39.627,
+            55.0
+          ],
+          [
+            112.373,
+            55.0
+          ]
+        ],
+        "enabled": true,
+        "settings": {
+          "scan_mode": "Sequential",
+          "track_interval": 600,
+          "track_exposure": 5000
+        }
+      }
+    ]
+  }
+}

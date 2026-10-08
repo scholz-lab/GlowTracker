@@ -22,6 +22,8 @@ glowtracker = [
     "settings/gui_settings.json",
     "settings/experiment_settings.json",
     "settings/assistant_settings.json",
+    "settings/scan_runs.json",
+    "settings/scan_scenarios.json",
     "assistant.kv"
 ]
 

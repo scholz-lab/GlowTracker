@@ -55,13 +55,13 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Mesh
+from kivy.graphics import Color, Line, Ellipse, Mesh, PushMatrix, PopMatrix, Rotate, Triangle, RoundedRectangle
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
 from kivy.utils import escape_markup
 from kivy.properties import ObjectProperty, StringProperty, NumericProperty, ConfigParserProperty, ListProperty, BooleanProperty
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
 from kivy.clock import Clock, ClockEvent, mainthread
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -77,7 +77,9 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.stencilview import StencilView
 from kivy.uix.popup import Popup
 from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
-from Advanced_settings import AdvancedSettingsWithSidebar
+from Advanced_settings import AdvancedSettingsWithSidebar, style_card, style_popup
+from file_browser import FileBrowser, style_file_popup  # noqa: F401  (FileBrowser is used in layout.kv)
+from script_preview_ui import ScriptPreview, dac_labels_from  # noqa: F401  (ScriptPreview is used in layout.kv)
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.behaviors import DragBehavior
@@ -91,6 +93,8 @@ from kivy.uix.stacklayout import StackLayout
 import asyncio
 import datetime
 import json
+from collections import deque
+from types import SimpleNamespace
 import time
 import traceback
 from threading import Thread, Lock
@@ -124,6 +128,8 @@ from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
 from script_api import PluginHost, WormState, BrightnessStats, worm_position_mm, trail_velocity
 import llm_assist
 import assistant_ipc
+from activity_log import ActivityLog, Entry
+from tooltips import Tooltips
 
 #
 # Math
@@ -259,8 +265,9 @@ class LeftColumn(BoxLayout):
     def show_load(self):
         content = LoadCameraProperties(load=self.load, cancel=self.dismiss_popup)
         content.ids.filechooser2.path = self.cameraConfigFile
-        self._popup = Popup(title="Load camera file", content=content,
-                            size_hint=(0.9, 0.9))
+        self._popup = Popup(title="Load camera settings", content=content,
+                            size_hint=(0.7, 0.8))
+        style_file_popup(self._popup)
          #unbind keyboard events
         self.app.unbind_keys()
         self._popup.open()
@@ -270,8 +277,9 @@ class LeftColumn(BoxLayout):
     def show_save(self):
         content = SaveExperiment(save=self.save, cancel=self.dismiss_popup)
         content.ids.filechooser.path = self.savefile
-        self._popup = Popup(title="Select save location", content=content,
-                            size_hint=(0.9, 0.9))
+        self._popup = Popup(title="Experiment folder", content=content,
+                            size_hint=(0.7, 0.8))
+        style_file_popup(self._popup)
         #unbind keyboard events
         self.app.unbind_keys()
         self._popup.open()
@@ -438,10 +446,13 @@ class RightColumn(BoxLayout):
 
         if camera is not None and stage is not None:
             # Create the calibration widget
-            calibrationTabPanel = CalibrationTabPanel()
-            calibrationTabPanel.setCloseCallback(closeCallback= self.dismiss_popup)
+            holder = Factory.CalibrationHolder()
+            holder.close = self.dismiss_popup
+            holder.ids.panel.setCloseCallback(closeCallback= self.dismiss_popup)
             # Launch the widget inside a popup window
-            self._popup = Popup(title= '', separator_height= 0, content= calibrationTabPanel, size_hint= (0.9, 0.75))
+            self._popup = Popup(title= 'Calibration', content= holder, size_hint= (0.9, 0.8))
+            style_card(self._popup, title_size= sp(20), padding= dp(22))
+            self._popup.title_font = 'Roboto-Bold'
             self._popup.open()
 
         else:
@@ -454,8 +465,10 @@ class RightColumn(BoxLayout):
             self._scanPanel = CenterRadiusFromThreePoints()
         if self._scanPanel.parent is not None:
             self._scanPanel.parent.remove_widget(self._scanPanel)
-        self._popup = Popup(title= 'Plate Scan', content= self._scanPanel,
+        self._popup = Popup(title= 'Plate scan', content= self._scanPanel,
                             size_hint= (0.95, 0.95), auto_dismiss=False)
+        style_card(self._popup, title_size= sp(20), padding= dp(22))
+        self._popup.title_font = 'Roboto-Bold'
         self._scanPanel._popup = self._popup
         self._popup.open()
 
@@ -480,7 +493,9 @@ class RightColumn(BoxLayout):
         daqControlTabPanelHolder.setCloseCallback(closeCallback= self.dismiss_popup)
 
         # Launch the widget inside a popup window
-        self._popup = Popup(title= '', separator_height= 0, content= daqControlTabPanelHolder, size_hint= (0.7, 0.7))
+        self._popup = Popup(title= 'DAQ', content= daqControlTabPanelHolder, size_hint= (0.72, 0.8))
+        style_card(self._popup, title_size= sp(20), padding= dp(22))
+        self._popup.title_font = 'Roboto-Bold'
         self._popup.bind(on_dismiss= self._restoreAfterPopup)
         self._popup.open()
 
@@ -655,7 +670,8 @@ class MacroScriptWidget(BoxLayout):
 
         loadWidget = LoadScriptWidget(load= self._loadScriptWidgetCallback)
         self._popup = Popup(title= "Load macro script file", content= loadWidget,
-            size_hint= (0.9, 0.9), auto_dismiss= False)
+            size_hint= (0.7, 0.8), auto_dismiss= False)
+        style_file_popup(self._popup)
 
         loadWidget.cancel = self._popup.dismiss
         self._popup.open()
@@ -869,8 +885,8 @@ class CameraAndStageCalibration(BoxLayout):
         app.imageToStageMat, app.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormDir, pixelSize)
 
         # update labels shown
-        self.ids.pxsize.text = f'Pixelsize ({stepunits}/px)  {pixelSize:.2f}'
-        self.ids.rotation.text = f'Rotation (rad)  {rotation:.3f}'
+        self.ids.pxsize.text = f'[color=8e8e93]Pixel size[/color]   {pixelSize:.2f} {stepunits}/px'
+        self.ids.rotation.text = f'[color=8e8e93]Rotation[/color]   {rotation:.3f} rad'
 
         # save configs
         app.config.write()
@@ -948,8 +964,8 @@ class DualColorCalibration(BoxLayout):
         app.config.write()
 
         # Update labels shown
-        self.ids.translation.text = f"Translation (x,y): {translation_x:.2f}, {translation_y:.2f}"
-        self.ids.rotation.text = f"Rotation (rad): {rotation:.3f}"
+        self.ids.translation.text = f"[color=8e8e93]Translation[/color]   {translation_x:.2f}, {translation_y:.2f} px"
+        self.ids.rotation.text = f"[color=8e8e93]Rotation[/color]   {rotation:.3f} rad"
 
         # Compute minor to main calibration matrix
         minorToMainMat = dualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, mainSideImage.shape[1]/2, mainSideImage.shape[0]/2)
@@ -1026,7 +1042,8 @@ class DepthOfFieldCalibration(BoxLayout):
             self.ids.bestfocusimage.texture = imageToTexture(bestFocusImage)
 
             # Update display text
-            self.ids.estimateddepthoffieldtext.text = f"Estimated Depth of Field: {estimatedDof:.5f} mm. Best in-focused position: {bestFocusPosition:.2f} mm."
+            self.ids.estimateddepthoffieldtext.text = (f"[color=8e8e93]Depth of field[/color]   {estimatedDof:.5f} mm"
+                                                        f"      [color=8e8e93]Best focus at[/color]   {bestFocusPosition:.2f} mm")
 
             # Save to config
             app.config.set('Camera', 'depthoffield', estimatedDof)
@@ -1043,6 +1060,14 @@ class DepthOfFieldCalibration(BoxLayout):
 class IntensitySweepCalibration(BoxLayout):
 
     closeCallback = ObjectProperty(None)
+
+    @staticmethod
+    def resultText(sweeper) -> str:
+        """The sweep's focus estimates (all from the first derivative) as one line of stats."""
+        def stat(name: str, z) -> str:
+            return f'[color=8e8e93]{name}[/color]   {z:.4f} mm' if z is not None else f'[color=8e8e93]{name}[/color]   none'
+        return '      '.join([stat('Max slope', sweeper.peakZ), stat('Slope zero', sweeper.zeroDerivZ),
+                                stat('Midpoint', sweeper.midZ)])
 
     def setCloseCallback(self, closeCallback: callable) -> None:
         self.closeCallback = closeCallback
@@ -1089,6 +1114,7 @@ class IntensitySweepCalibration(BoxLayout):
             intensitySweeper.sweep(camera, stage, zStart, zEnd, numImages, dualColorMode, mainSide, onImage=saveFrame)
             plotImage = intensitySweeper.genPlot()
             self.ids.intensitysweepplot.texture = imageToTexture(plotImage)
+            self.ids.sweepresult.text = self.resultText(intensitySweeper)
             if framesDir is not None:
                 with open(os.path.join(sweepDir, 'sweep.csv'), 'w') as f:
                     f.write(f'# exposure_us {camera.ExposureTime()}\n# gain {camera.Gain()}\n')
@@ -1179,7 +1205,7 @@ class AssistantHost:
         self.launcher = assistant_ipc.WindowLauncher(self.server)
         self._savedByAssistant: set[str] = set()
         for name in ('get_config', 'get_state', 'current_plugin', 'default_path',
-                     'use_sequencer', 'save_plugin'):
+                     'use_sequencer', 'save_plugin', 'get_settings', 'check_setting', 'change_setting'):
             self.server.register(name, getattr(self, name))
 
     def open(self) -> None:
@@ -1300,8 +1326,109 @@ class AssistantHost:
         if holder is not None:
             holder.ids.mode.text = DAQMode.Sequencer.value
             holder.ids.daqcontroltabpanel.ids.sequencerwidget.loadScript(path)
+        self.app.log('ai', f'sequencer script loaded: {os.path.basename(path)}')
         return (f'Saved {path} and loaded it as the sequencer script; DAQ mode is Sequencer. '
                 f'It runs when you press Record.')
+
+    # --- settings: the ones in the Settings panels, except the locked ones ------------------------
+    SETTINGS_PANELS = ('settings/gui_settings.json', 'settings/experiment_settings.json',
+                       'settings/assistant_settings.json')
+    # Never changed by the assistant: its own API access, and what protects or connects hardware.
+    LOCKED_SETTINGS = {('Assistant', 'apikey'), ('Assistant', 'baseurl'), ('Assistant', 'model'),
+                       ('Assistant', 'memoryfile'), ('Stage', 'port'), ('Stage', 'stage_limits')}
+    SECRET_SETTINGS = {('Assistant', 'apikey')}
+
+    def _settingsCatalog(self) -> list[dict]:
+        here = os.path.dirname(os.path.abspath(__file__))
+        catalog = []
+        for panel in self.SETTINGS_PANELS:
+            with open(os.path.join(here, panel), encoding='utf-8') as f:
+                for entry in json.load(f):
+                    if entry.get('section') and entry.get('key'):
+                        catalog.append(entry)
+        return catalog
+
+    def _setting(self, section: str, key: str) -> dict:
+        for entry in self._settingsCatalog():
+            if entry['section'].lower() == section.strip().lower() and entry['key'].lower() == key.strip().lower():
+                return entry
+        raise assistant_ipc.CommandError(f'There is no setting {section}.{key}; call get_settings to see them.')
+
+    def get_settings(self, section: str = '') -> str:
+        """Settings and their current values, one per line; with a section, also their descriptions."""
+        lines = []
+        for entry in self._settingsCatalog():
+            if section and entry['section'].lower() != section.strip().lower():
+                continue
+            where = (entry['section'], entry['key'])
+            value = '(hidden)' if where in self.SECRET_SETTINGS else \
+                self.app.config.get(entry['section'], entry['key'], fallback='')
+            line = f"{entry['section']}.{entry['key']} = {value}  ({entry.get('title', '')}; {entry['type']}"
+            if entry.get('options'):
+                line += f"; one of {entry['options']}"
+            if where in self.LOCKED_SETTINGS:
+                line += '; locked'
+            line += ')'
+            if section and entry.get('desc'):
+                line += f"\n    {entry['desc']}"
+            lines.append(line)
+        if not lines:
+            sections = sorted({e['section'] for e in self._settingsCatalog()})
+            raise assistant_ipc.CommandError(f'No section {section!r}; sections: {", ".join(sections)}')
+        return '\n'.join(lines)
+
+    def _normalize(self, entry: dict, value) -> str:
+        text = str(value).strip()
+        kind = entry['type']
+        if kind == 'bool':
+            if text.lower() in ('1', 'true', 'yes', 'on'):
+                return '1'
+            if text.lower() in ('0', 'false', 'no', 'off'):
+                return '0'
+            raise assistant_ipc.CommandError(f'{entry["title"]} is on/off; use true or false.')
+        if kind in ('numeric', 'custom_numeric'):
+            try:
+                number = float(text)
+            except ValueError:
+                raise assistant_ipc.CommandError(f'{entry["title"]} must be a number, not {text!r}.') from None
+            return str(int(number)) if number.is_integer() and '.' not in text else str(number)
+        if kind == 'options':
+            for option in entry.get('options', []):
+                if option.lower() == text.lower():
+                    return option
+            raise assistant_ipc.CommandError(f'{entry["title"]} must be one of {entry.get("options")}.')
+        return text
+
+    def check_setting(self, section: str, key: str, value) -> dict:
+        """Whether the change may be proposed to the user, and what it would change."""
+        entry = self._setting(section, key)
+        where = (entry['section'], entry['key'])
+        if where in self.LOCKED_SETTINGS:
+            raise assistant_ipc.CommandError(f'{entry["title"]} is locked; the user changes it in '
+                                             f'Settings themselves.')
+        if self._isRecording():
+            raise assistant_ipc.CommandError('A recording is running. Settings are not changed during a recording.')
+        new = self._normalize(entry, value)
+        current = self.app.config.get(*where, fallback='')
+        if new == current:
+            raise assistant_ipc.CommandError(f'{entry["title"]} is already {current}.')
+        return {'section': entry['section'], 'key': entry['key'], 'title': entry.get('title', ''),
+                'current': current, 'new': new, 'desc': entry.get('desc', '')}
+
+    def change_setting(self, section: str, key: str, value) -> str:
+        """Apply an approved change the way the Settings panel does, so the app reacts to it."""
+        change = self.check_setting(section, key, value)
+        where = (change['section'], change['key'])
+        self.app.config.set(*where, change['new'])
+        self.app.config.write()
+        # on_config_change refreshes the open Settings panel; give it an empty one if none is open.
+        settings = getattr(self.app, '_app_settings', None) or SimpleNamespace(
+            interface=SimpleNamespace(content=SimpleNamespace(panels={})))
+        self.app.on_config_change(settings, self.app.config, *where, change['new'])
+        applied = self.app.config.get(*where, fallback='')
+        note = '' if applied == change['new'] else f' (the app adjusted it to {applied})'
+        self.app.log('ai', f'setting {change["section"]}.{change["key"]}: {change["current"]} -> {applied}')
+        return f'Changed {change["title"]} ({change["section"]}.{change["key"]}) from {change["current"]} to {applied}{note}.'
 
     def save_plugin(self, code: str, path: str) -> str:
         problem = llm_assist.validate(llm_assist.PLUGIN, code)
@@ -1313,6 +1440,7 @@ class AssistantHost:
         holder = self._openDaqPanel()
         if holder is not None:
             holder.ids.daqcontroltabpanel.ids.pluginwidget.setPluginPath(path)
+        self.app.log('ai', f'plugin saved and selected: {os.path.basename(path)}')
         running = self.app.pluginHost is not None and self.app.pluginHost.is_running()
         note = ' The plugin that is running now keeps running until you stop it.' if running else ''
         return (f'Saved {path} and selected it in DAQ > Plugin. Read it there, then press Start.{note}')
@@ -1333,6 +1461,19 @@ class PluginWidget(BoxLayout):
         self._statusEvent = Clock.schedule_interval(self._refreshStatus, 0.25)
         self.bind(parent= self._onParentChanged)
         self._refreshStatus(0)
+        # the preview follows the file field (typed, browsed or reloaded)
+        self.ids.preview.dac_labels = dac_labels_from(self.app.config)
+        self._previewEvent = Clock.create_trigger(self.refreshPreview, 0.5)
+        self.ids.pluginfile.bind(text= lambda *args: self._previewEvent())
+        self.refreshPreview()
+
+
+    def refreshPreview(self, *args) -> None:
+        path = self.ids.pluginfile.text.strip()
+        if path and os.path.isfile(path):
+            self.ids.preview.show_plugin_file(path)
+        else:
+            self.ids.preview.clear()
 
 
     def _onParentChanged(self, instance, parent) -> None:
@@ -1351,8 +1492,10 @@ class PluginWidget(BoxLayout):
         if current:
             loadWidget.ids.filechooser.path = os.path.dirname(os.path.abspath(current))
 
+        loadWidget.ids.filechooser.patterns = ['*.py']
         self._popup = Popup(title= "Load plugin file", content= loadWidget,
-            size_hint= (0.9, 0.9), auto_dismiss= False)
+            size_hint= (0.7, 0.8), auto_dismiss= False)
+        style_file_popup(self._popup)
         loadWidget.cancel = self._popup.dismiss
         self._popup.open()
 
@@ -1400,11 +1543,15 @@ class PluginWidget(BoxLayout):
         except Exception:
             host.status = 'error'
             host.last_error = traceback.format_exc()
+            self.app.log('plugin', f'could not load {os.path.basename(path)}: '
+                         + host.last_error.strip().splitlines()[-1], 'error')
             self._refreshStatus(0)
             return
 
         self._selectPluginMode()
         host.start()
+        if not self.app.daqControl.isConnected():
+            self.app.log('daq', 'not connected: the plugin runs, but its output goes nowhere (dry run)', 'warn')
         self._refreshStatus(0)
 
 
@@ -1430,6 +1577,7 @@ class PluginWidget(BoxLayout):
             host.status = 'error'
             host.last_error = traceback.format_exc()
         self._refreshStatus(0)
+        self.refreshPreview()          # the file may have been edited
 
 
     def _refreshStatus(self, dt) -> None:
@@ -1437,12 +1585,13 @@ class PluginWidget(BoxLayout):
         if host is None or 'pluginstatus' not in self.ids:
             return
         daq = self.app.daqControl
-        daqText = 'DAQ connected' if daq.isConnected() else 'DAQ not connected (dry run)'
-        modeText = f'mode {daq.daqMode.value}'
-        line = f'{host.status}  |  frames {host.frames_processed}  |  {host.fps:.1f} fps  |  state {host.last_state_ms:.1f} ms  |  update {host.last_update_ms:.1f} ms'
-        line += f'  |  {daq.currentVoltage:.2f} V  |  {daqText}, {modeText}'
-        if host.log_path:
-            line += f'\nlog: {host.log_path}'
+        # just what matters now: the state, and while running its rate and output
+        parts = [str(host.status).capitalize()]
+        if host.status == 'running':
+            parts += [f'{host.fps:.1f} fps', f'{daq.currentVoltage:.2f} V']
+        if not daq.isConnected():
+            parts.append('DAQ not connected (dry run)')
+        line = '  ·  '.join(parts)
         if host.message:
             line += f'\n{host.message}'
         self.ids.pluginstatus.text = line
@@ -1469,9 +1618,15 @@ class SequencerWidget(BoxLayout):
         self.daqScript: str = ''
         self._popup: Popup = None
         self.daqScriptFile: str = self.ids.daqscriptfile.text
+        # the timeline next to the editor follows the text
+        self.ids.preview.dac_labels = dac_labels_from(self.app.config)
+        self._previewEvent = Clock.create_trigger(
+            lambda dt: self.ids.preview.show_sequencer(self.ids.scripttext.text), 0.5)
+        self.ids.scripttext.bind(text= lambda *args: self._previewEvent())
         # Load the recent script
         if self.daqScriptFile != '':
             self.loadScript(self.daqScriptFile)
+        self._previewEvent()
 
 
     def setCloseCallback( self, closeCallback: callable ) -> None:
@@ -1495,7 +1650,8 @@ class SequencerWidget(BoxLayout):
             loadWidget.ids.filechooser.path = self.daqScriptFile
 
         self._popup = Popup(title= "Load sequence file", content= loadWidget,
-            size_hint= (0.9, 0.9), auto_dismiss= False)
+            size_hint= (0.7, 0.8), auto_dismiss= False)
+        style_file_popup(self._popup)
 
         loadWidget.cancel = self._popup.dismiss
         self._popup.open()
@@ -1968,22 +2124,267 @@ class StageAxisController(BoxLayout):
         for id in self.ids:
             self.ids[id].disabled = False
 
-class XControls(StageAxisController):
+class PadArrow(ToggleButton):
+    """A stage direction key: a rounded key with an arrow drawn on it. `angle` in degrees (0 points
+    right, 90 up, 45 up-right); `double` draws two arrows, for the fast speed. Toggle, like the old
+    buttons: pressed in, the stage jogs; pressed again, it stops."""
+    angle = NumericProperty(0)
+    double = BooleanProperty(False)
 
-    def __init__(self,  **kwargs):
-        super(XControls, self).__init__(**kwargs)
+    KEY = (0.25, 0.26, 0.29, 1)
+    PRESSED = (0.2, 0.5, 0.75, 1)
+    DISABLED = (0.18, 0.19, 0.21, 1)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = self.background_down = ''
+        self.background_disabled_normal = self.background_disabled_down = ''
+        self.background_color = (0, 0, 0, 0)
+        with self.canvas.before:
+            self._keyColor = Color()
+            self._keys = [RoundedRectangle(), RoundedRectangle()]
+        with self.canvas.after:
+            self._color = Color()
+            self._arrows = [Triangle(), Triangle()]
+        self.bind(pos=self._draw, size=self._draw, angle=self._draw, double=self._draw,
+                  disabled=self._draw, state=self._draw)
+        self._draw()
+
+    def _keyRects(self) -> list:
+        """(pos, size) of the key's rounded rectangles."""
+        return [(self.pos, self.size)]
+
+    def _arrowBox(self) -> tuple:
+        """(centre, size) of the square the arrow is drawn in."""
+        return self.center, min(self.size)
+
+    def _draw(self, *args) -> None:
+        self._keyColor.rgba = self.DISABLED if self.disabled else \
+            (self.PRESSED if self.state == 'down' else self.KEY)
+        rects = self._keyRects()
+        for key, rect in zip(self._keys, rects + [((0, 0), (0, 0))]):
+            key.pos, key.size = rect
+            key.radius = [dp(6)]
+        self._color.rgba = (0.5, 0.5, 0.53, 1) if self.disabled else (0.96, 0.96, 0.97, 1)
+        (cx, cy), s = self._arrowBox()
+        # Arrows pointing right, as (offset along the arrow, length, half width); then rotated.
+        if self.double:
+            shapes = [(-0.17 * s, 0.2 * s, 0.24 * s), (0.13 * s, 0.2 * s, 0.24 * s)]
+        else:
+            shapes = [(-0.05 * s, 0.25 * s, 0.26 * s), (0, 0, 0)]
+        if self.angle % 90:
+            # diagonals: narrower, more pointed arrows, so the direction reads at a glance
+            shapes = [(x * 0.85, length * 1.05, half * 0.6) for x, length, half in shapes]
+        c, n = math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle))
+
+        def at(u, v):        # (along, across) -> screen
+            return cx + u * c - v * n, cy + u * n + v * c
+
+        for triangle, (x, length, half) in zip(self._arrows, shapes):
+            triangle.points = [*at(x + length, 0), *at(x - length * 0.6, half), *at(x - length * 0.6, -half)]
 
 
-class YControls(StageAxisController):
+class CornerPad(PadArrow):
+    """The fast diagonal key: an L over the three outer squares of one corner of the 5 x 5 pad,
+    joined to the slow diagonal key on the inner square. The widget covers the corner's 2 x 2
+    squares; the inner square is not part of it (drawing or clicks)."""
+    corner = StringProperty('ul')       # ul, ur, dl, dr
+    gap = NumericProperty(dp(3))
 
-    def __init__(self,  **kwargs):
-        super(YControls, self).__init__(**kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(corner=self._draw, gap=self._draw)
+
+    def _cell(self) -> float:
+        return (self.width - self.gap) / 2
+
+    def _outer(self) -> tuple:
+        """(left, bottom) of the outer corner square."""
+        c = self._cell()
+        left = self.x if self.corner in ('ul', 'dl') else self.right - c
+        bottom = self.top - c if self.corner in ('ul', 'ur') else self.y
+        return left, bottom
+
+    def _keyRects(self) -> list:
+        c = self._cell()
+        left, bottom = self._outer()
+        row = ((self.x, bottom), (self.width, c))           # along the outer row
+        col = ((left, self.y), (c, self.height))            # along the outer column
+        return [row, col]
+
+    def _arrowBox(self) -> tuple:
+        c = self._cell()
+        left, bottom = self._outer()
+        return (left + c / 2, bottom + c / 2), c
+
+    def collide_point(self, x, y) -> bool:
+        if not super().collide_point(x, y):
+            return False
+        c = self._cell()
+        inner_left = self.right - c if self.corner in ('ul', 'dl') else self.x
+        inner_bottom = self.y if self.corner in ('ul', 'ur') else self.top - c
+        return not (inner_left <= x <= inner_left + c and inner_bottom <= y <= inner_bottom + c)
 
 
-class ZControls(StageAxisController):
+class ActivityTerminal(BoxLayout):
+    """The activity log as a terminal: time, a coloured source tag and the message, newest at the
+    bottom, with a blinking cursor. Follows new lines while scrolled to the bottom."""
 
-    def __init__(self,  **kwargs):
-        super(ZControls, self).__init__(**kwargs)
+    SOURCE_COLORS = {'plugin': '0a84ff', 'rec': 'ff453a', 'live': '30d158', 'stage': 'bf5af2',
+                     'hw': '64d2ff', 'daq': 'ff9f0a', 'ai': 'ff375f'}
+    LEVEL_COLORS = {'warn': 'ff9f0a', 'error': 'ff453a'}
+    MAX_LINES = 300
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._lines: list[str] = []
+        self._cursor = True
+        self._pending = None
+        Clock.schedule_once(self._attach)
+
+    def _attach(self, dt) -> None:
+        app = App.get_running_app()
+        if not hasattr(app, 'activity'):
+            return
+        for entry in app.activity.entries():
+            self._lines.append(self._format(entry))
+        if not self._lines:
+            self._lines.append(self._format(Entry(time.time(), 'app', 'GlowTracker ready')))
+        app.activity.subscribe(lambda entry: Clock.schedule_once(lambda dt: self._add(entry)))
+        Clock.schedule_interval(self._blink, 0.55)
+        self._render()
+
+    def _format(self, entry: 'Entry') -> str:
+        tag = escape_markup(entry.source.ljust(6))
+        text = escape_markup(entry.text)
+        if entry.level in self.LEVEL_COLORS:
+            text = f'[color={self.LEVEL_COLORS[entry.level]}]{text}[/color]'
+        return (f'[color=5c5c62]{entry.clock}[/color]  '
+                f'[color={self.SOURCE_COLORS.get(entry.source, "8e8e93")}]{tag}[/color] {text}')
+
+    def _add(self, entry: 'Entry') -> None:
+        self._lines.append(self._format(entry))
+        del self._lines[:-self.MAX_LINES]
+        if self._pending is None:        # several lines in one frame: draw once
+            self._pending = Clock.schedule_once(self._render, 0.05)
+
+    def _blink(self, dt) -> None:
+        self._cursor = not self._cursor
+        self._render()
+
+    def _render(self, *args) -> None:
+        self._pending = None
+        follow = self.ids.scroll.scroll_y <= 0.02 or self.ids.output.height <= self.ids.scroll.height
+        cursor = '[color=8e8e93]' + ('_' if self._cursor else ' ') + '[/color]'
+        self.ids.output.text = '\n'.join(self._lines + [cursor])
+        self.ids.output.texture_update()
+        self.ids.output.height = self.ids.output.texture_size[1]
+        # like a terminal: fill from the top, then follow the newest line (after the layout
+        # has taken the new height, hence on the next frame)
+        if follow:
+            Clock.schedule_once(self._follow)
+
+    def _follow(self, dt) -> None:
+        scroll, output = self.ids.scroll, self.ids.output
+        scroll.scroll_y = 1 if output.height <= scroll.height else 0
+
+
+class SkewGraph(FloatLayout):
+    """-skewness of the live image over the last minute (the Graph tab next to Activity).
+
+    Samples the live-analysis result of each new frame; Live analysis must be on for there to be
+    values. Draws only while visible."""
+    WINDOW_S = 60.0
+    LINE = (0.04, 0.52, 1.0, 1)          # system blue
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._samples: deque = deque()
+        self._lastStamp = None
+        with self.canvas.before:
+            Color(0.075, 0.078, 0.086, 1)
+            self._panel = RoundedRectangle(radius=[dp(10)])
+            Color(1, 1, 1, 0.07)
+            self._grid = [Line(width=1) for _ in range(3)]
+            self._lineColor = Color(*self.LINE)
+            self._trace = Line(width=dp(1.4))
+            self._dot = Ellipse(size=(dp(7), dp(7)))
+        self._title = self._label('-skewness', 12, (0.6, 0.6, 0.65, 1))
+        self._value = self._label('', 20, (0.92, 0.92, 0.94, 1), bold=True)
+        self._axis = [self._label('', 10, (0.45, 0.45, 0.5, 1)) for _ in range(3)]
+        self._ago = self._label('-60 s', 10, (0.45, 0.45, 0.5, 1))
+        self._now = self._label('now', 10, (0.45, 0.45, 0.5, 1))
+        self._hint = self._label('Turn on Live analysis to plot the skewness', 12, (0.6, 0.6, 0.65, 1))
+        self.bind(pos=self._redraw, size=self._redraw, opacity=self._redraw)
+        Clock.schedule_interval(self._sample, 0.1)
+
+    def _label(self, text, size, color, bold=False) -> Label:
+        label = Label(text=text, font_size=f'{size}sp', color=color, bold=bold, size_hint=(None, None))
+        label.bind(texture_size=label.setter('size'))
+        self.add_widget(label)
+        return label
+
+    def _sample(self, dt) -> None:
+        app = App.get_running_app()
+        try:
+            data = app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.liveAnalysisData
+        except (AttributeError, KeyError):
+            return
+        with data.lock:
+            stamp, skewness = data.retrieveTimeStamp, data.skewness
+        now = time.monotonic()
+        if stamp is not None and stamp > 0 and stamp != self._lastStamp:
+            self._lastStamp = stamp
+            value = -float(skewness)
+            if math.isfinite(value):
+                self._samples.append((now, value))
+        while self._samples and now - self._samples[0][0] > self.WINDOW_S:
+            self._samples.popleft()
+        if self.opacity > 0 and self.height > 0:
+            self._redraw()
+
+    def _redraw(self, *args) -> None:
+        self._panel.pos, self._panel.size = self.pos, self.size
+        visible = self.opacity > 0 and self.height > dp(40)
+        left, right = self.x + dp(12), self.right - dp(36)
+        bottom, top = self.y + dp(20), self.top - dp(40)
+        self._title.pos = (self.x + dp(12), self.top - dp(10) - self._title.height)
+        self._ago.pos = (left, self.y + dp(4))
+        self._now.pos = (right - self._now.width, self.y + dp(4))
+        values = [v for _, v in self._samples]
+        self._hint.opacity = 1 if visible and not values else 0
+        self._hint.center = self.center
+        if not values or top <= bottom:
+            self._trace.points, self._dot.size, self._value.text = [], (0, 0), ''
+            for line, label in zip(self._grid, self._axis):
+                line.points, label.text = [], ''
+            return
+        low, high = min(values), max(values)
+        if high - low < 0.2:                       # keep a readable scale for a flat signal
+            middle = (high + low) / 2
+            low, high = middle - 0.1, middle + 0.1
+        pad = (high - low) * 0.12
+        low, high = low - pad, high + pad
+        y = lambda v: bottom + (v - low) / (high - low) * (top - bottom)
+        for line, label, level in zip(self._grid, self._axis, (low + pad, (low + high) / 2, high - pad)):
+            line.points = [left, y(level), right, y(level)]
+            label.text = f'{level:.2f}'
+            label.pos = (right + dp(4), y(level) - label.height / 2)
+        now = time.monotonic()
+        x = lambda t: right - (now - t) / self.WINDOW_S * (right - left)
+        points = []
+        for t, v in self._samples:
+            points += [x(t), y(v)]
+        self._trace.points = points
+        self._dot.size = (dp(7), dp(7))
+        self._dot.pos = (points[-2] - dp(3.5), points[-1] - dp(3.5))
+        self._value.text = f'{values[-1]:.2f}'
+        self._value.pos = (self.right - dp(12) - self._value.width, self.top - dp(8) - self._value.height)
+
+
+class StagePad(StageAxisController):
+    """Stage jog pad: an XY cross (same directions as the arrow keys) and a Z column (up is Z-,
+    like Page Up). Single arrows move slowly, double arrows fast."""
 
 
 class GoToControls(BoxLayout):
@@ -2005,6 +2406,7 @@ class GoToControls(BoxLayout):
             ]
         except ValueError:
             print('invalid coordinate input')
+            app.log('stage', 'go to: enter numbers for X, Y and Z', 'warn')
             return
 
         stage = app.stage
@@ -2017,8 +2419,13 @@ class GoToControls(BoxLayout):
                 or app.stage is not stage
             ),
         )
-        if not started and self._moveWorker.is_active():
+        if started:
+            app.log('stage', 'go to ({:.2f}, {:.2f}, {:.2f}) mm'.format(*target))
+        elif self._moveWorker.is_active():
             print('Go To movement is already active')
+            app.log('stage', 'a go-to move is already running', 'warn')
+        elif stage is None:
+            app.log('stage', 'not connected', 'warn')
 
     def request_stop(self, block_new=False):
         self._moveWorker.request_stop(block_new)
@@ -2558,7 +2965,10 @@ class LiveViewButton(ImageAcquisitionButton):
 
         if self.camera is None or getattr(self.app, '_hardware_teardown', False):
             self.state = 'normal'
+            if self.camera is None:
+                self.app.log('live', 'camera not connected', 'warn')
             return
+        self.app.log('live', 'started')
 
         # Setup image acquisition thread parameters
         grabArgs = basler.CameraGrabParameters(
@@ -2585,6 +2995,7 @@ class LiveViewButton(ImageAcquisitionButton):
         super().stopImageAcquisition()
 
         print('Stop Live view')
+        App.get_running_app().log('live', 'stopped')
 
 
     @override
@@ -2678,11 +3089,14 @@ class RecordButton(ImageAcquisitionButton):
 
         # If there is no camera or recording file path doesn't exists
         if self.camera is None or getattr(self.app, '_hardware_teardown', False):
+            if self.camera is None:
+                self.app.log('rec', 'camera not connected; not recording', 'warn')
             self.state = 'normal'
             return
 
         if not os.path.exists(self.saveFilePath):
             print("The recording path doesn't exist. Can't start recording.")
+            self.app.log('rec', "the experiment folder doesn't exist; not recording", 'error')
             self.state = 'normal'
             return
 
@@ -2734,6 +3148,10 @@ class RecordButton(ImageAcquisitionButton):
             if self.app.daqControl.isConnected() \
                     and self.app.daqControl.daqMode not in (DAQMode.Off, DAQMode.Plugin):
                 self.app.daqControl.start(np.array(self.app.coords[:2]))
+            elif self.app.daqControl.daqMode not in (DAQMode.Off, DAQMode.Plugin):
+                self.app.log('daq', f'not connected: the {self.app.daqControl.daqMode.value} output is '
+                             f'not applied during this recording', 'warn')
+            self.app.log('rec', f'started -> {self.saveFilePath}')
 
             self.initRecordingParams()
             grabArgs = basler.CameraGrabParameters(
@@ -3260,6 +3678,7 @@ class RecordButton(ImageAcquisitionButton):
         recordedFrames = self.frameCounter
         self.frameCounter = 0
         print(f'Recorded {recordedFrames} frames')
+        self.app.log('rec', f'stopped: {recordedFrames} frames')
 
         try:
             if self.camera is not None and self.prevLiveViewButtonState == 'down':
@@ -3603,6 +4022,7 @@ class ImageAcquisitionManager(BoxLayout):
 
 
 class StencilFloatLayout(FloatLayout, StencilView):
+    logo_size = NumericProperty(0)      # the logo shown while there is no image (layout.kv)
 
     def on_touch_down(self, touch):
         """Limits subsequent interactions to only be activated if it's within the StencilFloatLayout
@@ -5140,8 +5560,9 @@ class RuntimeControls(BoxLayout):
 
 class TrackingOverlayQuickButton(ToggleButton):
 
-    normalText = 'Tracking Overlay: [b][color=ff0000]Off[/color][/b]'
-    downText = 'Tracking Overlay: [b][color=00ff00]On[/color][/b]'
+    # The switch drawn next to the name shows on/off (layout.kv)
+    normalText = 'Tracking overlay'
+    downText = 'Tracking overlay'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -5187,8 +5608,9 @@ class TrackingOverlayQuickButton(ToggleButton):
 
 class LiveAnalysisQuickButton(ToggleButton):
 
-    normalText = 'Live analysis: [b][color=ff0000]Off[/color][/b]'
-    downText = 'Live analysis: [b][color=00ff00]On[/color][/b]'
+    # The switch drawn next to the name shows on/off (layout.kv)
+    normalText = 'Live analysis'
+    downText = 'Live analysis'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -5356,8 +5778,10 @@ class Connections(BoxLayout):
 
         if app.camera is None:
             self.cam_connection.state = 'normal'
+            app.log('hw', 'camera not found', 'error')
 
         else:
+            app.log('hw', 'camera connected')
             # load and apply the camera settings
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
 
@@ -5386,6 +5810,7 @@ class Connections(BoxLayout):
                 if app.camera is camera:
                     app.camera = None
                 app._hardware_teardown = False
+                app.log('hw', 'camera disconnected')
 
 
     def connectStage(self):
@@ -5410,13 +5835,12 @@ class Connections(BoxLayout):
         if stage.connection is None:
             self.stage_connection.state = 'normal'
             App.get_running_app().stage = None
+            app.log('hw', f'stage not found on port {port or "(none set)"}', 'error')
 
         else:
             app.stage: Stage = stage # type: ignore
             self._stageSetupCancel = Event()
-            app.root.ids.leftcolumn.ids.xcontrols.disable_all()
-            app.root.ids.leftcolumn.ids.ycontrols.disable_all()
-            app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+            app.root.ids.leftcolumn.ids.stagepad.disable_all()
 
             homing = app.config.getboolean('Stage', 'homing')
             move_start = app.config.getboolean('Stage', 'move_start')
@@ -5454,10 +5878,9 @@ class Connections(BoxLayout):
                     if getattr(app, 'coord_updateevent', None) is not None:
                         app.coord_updateevent.cancel()
                     app.coord_updateevent = Clock.schedule_interval(app.update_coordinates, 0.2)
-                    app.root.ids.leftcolumn.ids.xcontrols.enable_all()
-                    app.root.ids.leftcolumn.ids.ycontrols.enable_all()
-                    app.root.ids.leftcolumn.ids.zcontrols.enable_all()
+                    app.root.ids.leftcolumn.ids.stagepad.enable_all()
                     app.root.ids.leftcolumn.ids.gotocontrols.allow_moves()
+                    app.log('hw', 'stage connected')
 
                 Clock.schedule_once(finishSetup)
 
@@ -5471,9 +5894,7 @@ class Connections(BoxLayout):
         print('Disconnecting Stage')
         app = App.get_running_app()
         self._stageSetupCancel.set()
-        app.root.ids.leftcolumn.ids.xcontrols.disable_all()
-        app.root.ids.leftcolumn.ids.ycontrols.disable_all()
-        app.root.ids.leftcolumn.ids.zcontrols.disable_all()
+        app.root.ids.leftcolumn.ids.stagepad.disable_all()
         if app.stage is None:
             return True
         else:
@@ -5512,6 +5933,7 @@ class Connections(BoxLayout):
 
 
 class DAQConnectionButton(ToggleButton):
+    icon = StringProperty('daq')     # drawn in its status badge (layout.kv)
 
     def on_state(self, widget: Widget, state: str):
 
@@ -5535,7 +5957,9 @@ class DAQConnectionButton(ToggleButton):
         # If no device
         if not app.daqControl.isConnected():
             self.state = 'normal'
+            app.log('hw', 'DAQ not found', 'error')
             return
+        app.log('hw', 'DAQ connected')
 
         app.daqControl.daqMode = DAQMode[app.config.get("DaqControl", "mode")]
 
@@ -5602,6 +6026,7 @@ class DAQConnectionButton(ToggleButton):
 
         if app.daqControl.isConnected():
             app.daqControl.close()
+            app.log('hw', 'DAQ disconnected')
 
 
 class MyCounter():
@@ -5698,6 +6123,7 @@ class SettingsPassword(SettingItem):
             buttons.add_widget(button)
         content.add_widget(buttons)
         self.popup.open()
+        style_popup(self.popup)
         self.textinput.focus = True
 
 
@@ -5764,6 +6190,7 @@ class SettingsModel(SettingItem):
         self.popup = Popup(title='GWDG model (must support tool calling)', content=content,
                            size_hint=(None, 0.85), width=min(0.95 * Window.width, dp(520)))
         self.popup.open()
+        style_popup(self.popup)
 
     def _openText(self) -> None:
         content = BoxLayout(orientation='vertical', spacing='5dp')
@@ -5782,6 +6209,7 @@ class SettingsModel(SettingItem):
         self.popup = Popup(title=self.title, content=content, size_hint=(None, None),
                            size=(min(0.95 * Window.width, dp(500)), dp(250)))
         self.popup.open()
+        style_popup(self.popup)
         textinput.focus = True
 
 
@@ -5818,6 +6246,7 @@ class GlowTrackerApp(App):
         self.daqControl: DAQControl = DAQControl()
         self.pluginHost: PluginHost | None = None
         self.assistantHost: AssistantHost | None = None    # created when the assistant is first opened
+        self.activity = ActivityLog()                       # shown in the terminal panel
         self.updateFpsEvent = None
         self._hardware_teardown = False
 
@@ -5826,6 +6255,10 @@ class GlowTrackerApp(App):
     # User plugin (DAQ > Plugin tab). Providers below run on the plugin thread and only read
     # app state or schedule UI work on the main thread; see script_api.PluginHost.
     #
+    def log(self, source: str, text: str, level: str = 'info') -> None:
+        """A line in the activity panel (thread-safe). Sources: plugin, rec, live, stage, hw, daq, ai."""
+        self.activity.add(source, text, level)
+
     def _createPluginHost(self) -> PluginHost:
         try:
             framerate = self.config.getfloat('Experiment', 'framerate')
@@ -5843,6 +6276,7 @@ class GlowTrackerApp(App):
             recording_state= self._pluginIsRecording,
             log_dir_getter= self._pluginLogDir,
             update_budget_s= budget,
+            message_sink= lambda text, level: self.log('plugin', text, level),
         )
 
 
@@ -6243,6 +6677,8 @@ class GlowTrackerApp(App):
         initialization (after build() has been called) but before the
         application has started running.
         '''
+        Tooltips.install(self.root)
+
         # Display FPS label if enabled
         showfps = self.config.getboolean('Developer', 'showfps')
         if showfps:
@@ -6359,9 +6795,14 @@ class GlowTrackerApp(App):
 
     def jog(self, direction: tuple, fast: bool = True) -> None:
         if self.stage is None:
+            self.log('stage', 'not connected', 'warn')
             return
+        moves = ' '.join(f'{"XYZ"[i]}{"+" if d > 0 else "-"}' for i, d in enumerate(direction) if d)
+        self.log('stage', f'jog {moves} {"fast" if fast else "slow"}')
         speed = self.vhigh if fast else self.vlow
-        self.request_jog(tuple(d * speed for d in direction), fast)
+        # diagonals: the same speed along the path as a straight move
+        norm = math.sqrt(sum(d * d for d in direction)) or 1.0
+        self.request_jog(tuple(d * speed / norm for d in direction), fast)
 
 
     def on_controller_input(self, win, stickid, axisid, value) -> None:
@@ -6755,8 +7196,10 @@ class GlowTrackerApp(App):
     # ask for confirmation of closing
     def on_request_close(self, *args, **kwargs):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
-        self._popup = Popup(title="Exit GlowTracker", content=content,
-                            size_hint=(0.5, 0.2))
+        self._popup = Popup(title="Quit GlowTracker?", content=content,
+                            size_hint=(None, None), size=(dp(420), dp(196)))
+        style_card(self._popup, title_size= sp(18), padding= dp(20))
+        self._popup.title_font = 'Roboto-Bold'
         self._popup.open()
         return True
 

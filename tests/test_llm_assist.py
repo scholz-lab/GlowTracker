@@ -137,6 +137,22 @@ class FakeApp:
     def default_path(self, kind):
         return f'/data/default_{kind}'
 
+    settings_values = {('Camera', 'framerate'): '10'}
+
+    def settings(self, section):
+        return '\n'.join(f'{s}.{k} = {v}' for (s, k), v in self.settings_values.items())
+
+    def check_setting(self, section, key, value):
+        if (section, key) not in self.settings_values:
+            raise la.AssistantError(f'There is no setting {section}.{key}')
+        return {'section': section, 'key': key, 'title': 'Frame rate',
+                'current': self.settings_values[(section, key)], 'new': str(value)}
+
+    def change_setting(self, section, key, value):
+        old = self.settings_values[(section, key)]
+        self.settings_values[(section, key)] = str(value)
+        return f'Changed Frame rate from {old} to {value}.'
+
 
 class Chat:
     """A ChatSession plus the events it emitted; say() waits for the end of the turn."""
@@ -214,8 +230,8 @@ def test_request_is_valid_openai_chat_with_only_glowtracker_tools():
     assert body['stream'] is True and body['stream_options'] == {'include_usage': True}
     assert chat.streamed() == 'Hello! What should the light do?'
     names = {t['function']['name'] for t in body['tools']}
-    assert names == {'get_app_state', 'read_current_plugin', 'read_plugin_example',
-                     'propose_sequencer_script', 'propose_plugin', 'remember', 'forget'}
+    assert names == {'get_app_state', 'read_current_plugin', 'read_plugin_example', 'get_settings',
+                     'change_setting', 'propose_sequencer_script', 'propose_plugin', 'remember', 'forget'}
 
 
 def test_proposal_goes_through_the_parser_and_reaches_the_app():
@@ -539,3 +555,41 @@ def test_gwdg_model_list_is_offered_only_for_gwdg():
     names = [name for name, _ in la.GWDG_MODELS]
     assert len(names) == len(set(names)) >= 5
     assert not any('embed' in n or 'coder' in n for n in names)
+
+
+
+def test_the_model_reads_and_changes_settings_with_approval():
+    api = FakeAPI([call('get_settings'), call('change_setting', section='Camera', key='framerate', value=20,
+                                              why='faster tracking'), text('Done.'),
+                   call('change_setting', section='Camera', key='nope', value=1, why='x'), text('No such setting.')])
+    with api as config, Chat(config) as chat:
+        chat.decide = lambda event: (True, dict(event.data, value='25'))      # the user edits the value
+        chat.say('track faster')
+        assert chat.app.settings_values[('Camera', 'framerate')] == '25'
+        [approval] = [e for e in chat.events if e.kind == 'approval']
+        assert approval.text == 'Camera.framerate (Frame rate): 10 -> 20'
+        assert 'Camera.framerate = 10' in api.bodies()[1]['messages'][-1]['content']
+        assert 'after changing: value' in api.bodies()[2]['messages'][-1]['content']
+        chat.say('change something unknown')
+    assert 'There is no setting Camera.nope' in api.bodies()[4]['messages'][-1]['content']
+    assert len([e for e in chat.events if e.kind == 'approval']) == 1     # the unknown one never reached the user
+
+
+@pytest.mark.parametrize('stream', [True, False])
+def test_reply_cut_off_while_thinking_is_retried_once(stream):
+    # the model spent its whole reply on reasoning: no text, no tool call
+    api = FakeAPI([{'role': 'assistant', 'content': ''}, text('Here is the answer.')])
+    with api as config, Chat(config, stream=stream) as chat:
+        chat.say('5 pulses of 4.5 V')
+        assert chat.replies() == ['Here is the answer.']
+        assert chat.of('error') == []
+        assert la.EMPTY_REPLY_NUDGE in str(api.bodies()[1]['messages'][-1])
+        assert api.bodies()[0]['max_tokens'] == la.MAX_REPLY_TOKENS
+
+
+def test_reply_empty_twice_shows_an_error():
+    api = FakeAPI([{'role': 'assistant', 'content': ''}, {'role': 'assistant', 'content': ''}])
+    with api as config, Chat(config) as chat:
+        chat.say('hello')
+        assert any('gave no answer' in e for e in chat.of('error'))
+        assert not chat.session.busy

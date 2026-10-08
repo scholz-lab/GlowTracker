@@ -12,6 +12,7 @@ import math
 import threading
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from plot_style import darken
 from dataclasses import dataclass
 
 MAX_VOLTAGE = 4.95
@@ -278,7 +279,7 @@ class DAQControl():
             return [DAQControl._parseScriptNode(value) for value in node.elts]
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
             return node.value
-        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off'}:
+        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off', 'dac0', 'dac1'}:
             return node.id
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = DAQControl._parseScriptNode(node.operand)
@@ -289,19 +290,36 @@ class DAQControl():
 
 
     @staticmethod
+    def _checkVoltage(voltage) -> float:
+        if isinstance(voltage, bool) or not isinstance(voltage, (int, float)):
+            raise ValueError('voltage must be numeric')
+        if not math.isfinite(voltage) or not 0 <= voltage <= 4.95:
+            raise ValueError('voltage must be between 0 and 4.95')
+        return float(voltage)
+
+
+    @staticmethod
     def _validateScriptCommand(command):
+        """[off] and [on, V] drive both outputs; [dac0, V], [dac1, V] or [dac0, V, dac1, W] set
+        one or both outputs separately (an output not named keeps its voltage)."""
+        usage = "commands must be [off], [on, voltage], [dac0, voltage], [dac1, voltage] or [dac0, voltage, dac1, voltage]"
         if not isinstance(command, (list, tuple)) or not command:
-            raise ValueError("commands must be [off] or [on, voltage]")
+            raise ValueError(usage)
         if command[0] == 'off' and len(command) == 1:
             return ['off']
         if command[0] == 'on' and len(command) == 2:
-            voltage = command[1]
-            if isinstance(voltage, bool) or not isinstance(voltage, (int, float)):
-                raise ValueError('voltage must be numeric')
-            if not math.isfinite(voltage) or not 0 <= voltage <= 4.95:
-                raise ValueError('voltage must be between 0 and 4.95')
-            return ['on', float(voltage)]
-        raise ValueError("commands must be [off] or [on, voltage]")
+            return ['on', DAQControl._checkVoltage(command[1])]
+        if command[0] in ('dac0', 'dac1') and len(command) in (2, 4):
+            voltages = [None, None]
+            for name, voltage in zip(command[::2], command[1::2]):
+                if name not in ('dac0', 'dac1'):
+                    raise ValueError(usage)
+                channel = 0 if name == 'dac0' else 1
+                if voltages[channel] is not None:
+                    raise ValueError(f'{name} is named twice in one command')
+                voltages[channel] = DAQControl._checkVoltage(voltage)
+            return ['dac', voltages]
+        raise ValueError(usage)
 
 
     def update_safely(self, **kwargs) -> bool:
@@ -394,11 +412,12 @@ class DAQControl():
                     if commandFrameTime > frameTime:
                         break
 
+                # Every command that came due, in order: with separate DAC0/DAC1 commands the
+                # earlier ones may set an output the last one leaves alone.
                 if len(commands) > 0:
-                    # Execute the last command (closest to the frame time)
-                    commandFrameTime, frameCommand = commands[-1]
                     print(f"Time {frameTime:.3f} sec:")
-                    self._executeCommand(frameCommand)
+                    for commandFrameTime, frameCommand in commands:
+                        self._executeCommand(frameCommand)
 
 
     def updateStageProgram(self, stagePosition: List[float]) -> None:
@@ -435,6 +454,14 @@ class DAQControl():
     def _executeCommand(self, frameCommand: list, verbose: bool = True) -> None:
 
         command: list = frameCommand[0]
+
+        if command == 'dac':
+            for channel, vol in enumerate(frameCommand[1]):
+                if vol is not None:
+                    if verbose:
+                        print(f"DAC{channel} {vol} vol")
+                    self.set_voltage(vol, channel)
+            return
 
         if command == 'on':
             if len(frameCommand) != 2:
@@ -648,12 +675,13 @@ class DAQStageProgram():
             extent = (-stageRange[0], stageRange[0], stageRange[1], -stageRange[1])
 
         im = plt.imshow(valMap, cmap= 'magma', extent= extent)
-        plt.colorbar(im)
+        colorbar = plt.colorbar(im)
+        colorbar.set_label('Voltage (V)')
 
         # Plot landmarks
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
             plt.scatter(point[0], point[1], c= color)
-            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
+            plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= '#3ddc97')
 
         if self.mode == StageProgramMode.FourPoint:
             drawPointWithAnnotation(self.quadVertex[0].point, 'r', self.quadVertex[0].name)
@@ -706,8 +734,8 @@ class DAQStageProgram():
             plt.xlim(0, stageRange[0])
             plt.ylim(0, stageRange[1])
 
-        plt.xlabel('Stage X (mm)')
-        plt.ylabel('Stage Y (mm)')
+        plt.xlabel(r'Stage $x$ (mm)')
+        plt.ylabel(r'Stage $y$ (mm)')
 
         title = "Stage position to Voltage map"
         if isRelativeToStart:
@@ -717,6 +745,7 @@ class DAQStageProgram():
 
         # Add grid and legend
         plt.grid(True)
+        darken(fig)
 
         # Render the plot to a numpy array
         canvas = FigureCanvasAgg(fig)

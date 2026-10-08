@@ -119,21 +119,25 @@ class AssistantConfig:
 # --- prompt ---------------------------------------------------------------------------------
 
 SEQUENCER_GUIDE = """\
-DAQ sequencer scripts drive a LabJack DAQ whose two analog outputs (DAC0 and DAC1, always set
-together) control an optogenetic LED or other device. The sequence starts when the user presses
-Record.
+DAQ sequencer scripts drive a LabJack DAQ with two analog outputs, DAC0 and DAC1, which control
+an optogenetic LED or other devices. They can be set together or separately. The sequence starts
+when the user presses Record.
 
 Exact format, one entry per line, nothing else:
     mode: [frame]          or    mode: [time]
-    <trigger>: [on, <volts>]
-    <trigger>: [off]
+    <trigger>: [on, <volts>]                      both outputs to <volts>
+    <trigger>: [off]                              both outputs to 0 V
+    <trigger>: [dac0, <volts>]                    DAC0 only; DAC1 keeps its voltage
+    <trigger>: [dac1, <volts>]                    DAC1 only; DAC0 keeps its voltage
+    <trigger>: [dac0, <volts>, dac1, <volts>]     each output to its own voltage
 
 Rules:
 - The first line chooses the clock. frame: triggers are whole frame numbers counted from the
   first recorded frame (0). time: triggers are seconds since recording started (decimals allowed).
-- [on, V] sets both outputs to V volts, 0 <= V <= 4.95. [off] sets them to 0 V.
-- An output keeps its value until the next command. Triggers must be unique and non-negative.
-- In time mode, if several triggers pass between two camera frames only the latest one runs.
+- Voltages are 0 <= V <= 4.95. [on, V] / [off] set both outputs; [dac0, ...] / [dac1, ...] set
+  only the outputs named, so a device on one output can be held while the other is pulsed.
+- An output keeps its value until a command changes it. Triggers must be unique and non-negative.
+- In time mode, the commands whose triggers passed between two camera frames all run, in order.
 - When the recording ends the outputs return to 0 V.
 - No comments, no other text and no Python: the parser accepts only this format.
 - Prefer time mode unless the user explicitly wants frame-exact timing.
@@ -145,6 +149,14 @@ mode: [time]
 11: [off]
 30: [on, 4.5]
 31: [off]
+
+Example (DAC0 held at 4.5 V the whole time, 1 s pulses of 4.5 V on DAC1 at 10 s and 30 s):
+mode: [time]
+0: [dac0, 4.5, dac1, 0]
+10: [dac1, 4.5]
+11: [dac1, 0]
+30: [dac1, 4.5]
+31: [dac1, 0]
 """
 
 PLUGIN_RULES = """\
@@ -191,13 +203,17 @@ How to work:
   done. A plugin still has to be started by the user in DAQ > Plugin, and a sequencer script runs
   when they press Record.
 - Answer in short, plain language: what the script does, the timing, and any assumptions.
+- GlowTracker's settings: get_settings lists them with their current values (pass a section to
+  also get descriptions). change_setting changes one setting after the user approves it; say what
+  the change does. Some are locked (API access, stage port and limits) and no setting changes
+  during a recording.
 
 Long-term memory:
 - The lessons below were remembered on this microscope from earlier conversations. Follow them.
 - When the user corrects you, or a check, GlowTracker or the user's decision shows a mistake you
   would likely repeat in another conversation, propose a lesson with remember: one short, general,
   lasting fact about this microscope, the lab's preferences or how to work here (e.g. "DAC0 drives
-  a buzzer; to keep it quiet, use a plugin that holds DAC0 at 4.5 V, not a sequencer script").
+  a buzzer that sounds at 0 V; hold DAC0 at 4.5 V for the whole recording unless asked otherwise").
   Not details of one experiment. The user approves, edits or declines it.
 - Also call remember when the user asks you to remember something, and forget when a lesson is
   wrong or outdated (give its number). Do not remember what is already in the setup description.
@@ -262,8 +278,9 @@ def setup_section(setup: dict | None) -> str:
     if missing:
         text += ('\nNot described: ' + '; '.join(missing) + '. Before writing a script that drives an '
                  'undescribed output, ask the user what it is connected to and how it responds to voltage.')
-    text += ('\nTake this setup into account: e.g. a sequencer script always sets DAC0 and DAC1 '
-             'together, and a device that is active at 0 V needs idle_voltage in a plugin.\n')
+    text += ('\nTake this setup into account: e.g. drive only the output a request is about (a sequencer '
+             'script can set DAC0 and DAC1 separately with [dac0, V] / [dac1, V]), and a device that is '
+             'active at 0 V must be held at its quiet voltage (dac0/dac1 commands, or idle_voltage in a plugin).\n')
     return text
 
 
@@ -323,6 +340,11 @@ def clean_reply(text: str) -> str:
     return _THINK.sub('', text).strip()
 
 
+MAX_REPLY_TOKENS = 16_000
+EMPTY_REPLY_NUDGE = ('(Your last reply ended before you answered: you ran out of room while thinking. '
+                     'Answer the previous message now; think briefly.)')
+
+
 # --- GlowTracker tools ----------------------------------------------------------------------
 
 def check(kind: str, code: str) -> tuple[str, str, list[str]]:
@@ -342,7 +364,12 @@ def check(kind: str, code: str) -> tuple[str, str, list[str]]:
     run = plugin_check.dry_run(code)
     if not run.ok:
         return f'the test run failed:\n{run.error}', '', warnings
-    return '', run.text(), warnings
+    import script_preview
+    report = run.text()
+    preview = script_preview.timeline(code)
+    if preview.get('ok'):
+        report += '\n' + script_preview.describe(preview)
+    return '', report, warnings
 
 
 @functools.lru_cache(maxsize=16)
@@ -370,6 +397,10 @@ class AppBridge(Protocol):
     def apply(self, kind: str, code: str, path: str) -> str:
         """Save and load an approved script; return what was done. Raise AssistantError to refuse."""
     def default_path(self, kind: str) -> str: ...
+    def settings(self, section: str) -> str: ...
+    def check_setting(self, section: str, key: str, value: str) -> dict:
+        """{'title', 'current', 'new', ...} if the change may be proposed; raise AssistantError if not."""
+    def change_setting(self, section: str, key: str, value: str) -> str: ...
 
 
 def _register_memory_tools(tools: ToolResolver, memory: MemoryStore) -> None:
@@ -452,6 +483,32 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
         lambda name: off_loop(read_plugin_example, name=name),
         {'type': 'object', 'required': ['name'], 'additionalProperties': False, 'properties': {
             'name': {'type': 'string', 'description': 'File name, e.g. template_controller.py'}}})
+    def setting_check(args: dict) -> Check:
+        try:
+            change = bridge.check_setting(args.get('section', ''), args.get('key', ''), args.get('value', ''))
+        except Exception as e:
+            return Check(False, f'Not proposed: {e}')
+        return Check(True, f"{change['section']}.{change['key']} ({change['title']}): "
+                           f"{change['current']} -> {change['new']}")
+
+    tools.add_function(
+        'get_settings',
+        "GlowTracker's settings (as in its Settings panels) with their current values. Give a section "
+        'to get only that section, with descriptions.',
+        lambda section='': off_loop(bridge.settings, section=section),
+        {'type': 'object', 'additionalProperties': False, 'properties': {
+            'section': {'type': 'string', 'description': 'e.g. Camera, Stage, Tracking, Experiment; empty for all'}}})
+    tools.add_function(
+        'change_setting',
+        'Change one GlowTracker setting. It is checked first; the user approves, edits the value or '
+        'declines; waits for their decision.',
+        lambda section, key, value, why='': off_loop(bridge.change_setting, section=section, key=key, value=value),
+        {'type': 'object', 'required': ['section', 'key', 'value', 'why'], 'additionalProperties': False,
+         'properties': {
+             'section': {'type': 'string'}, 'key': {'type': 'string'},
+             'value': {'type': ['string', 'number', 'boolean'], 'description': 'The new value.'},
+             'why': {'type': 'string', 'description': 'One sentence: why, and what it changes.'}}},
+        confirm=True, check=lambda args: asyncio.to_thread(setting_check, args))
     tools.add_function(
         'propose_sequencer_script',
         'Propose a complete DAQ sequencer script. It is checked with the real parser; if valid, the '
@@ -604,6 +661,7 @@ class ChatSession:
         self.on_event = on_event
         self.stream = stream
         self.busy = False
+        self._emptyReply, self._emptyRetries = False, 0
         self.usage = {'prompt': 0, 'completion': 0, 'cost': None}
         self.transcript = Transcript(transcript_dir)
         self.memory = MemoryStore(config.memory_path())
@@ -627,7 +685,8 @@ class ChatSession:
         self._provider = HttpProvider(self.config.base_url, self.config.resolved_key())
         self._inbox: AsyncPort[Envelope] = AsyncPort()
         self._replies: AsyncPort[Msg] = AsyncPort()
-        model = ModelSpec(id=self.config.model.strip(), temperature=0.2, max_tokens=4096)
+        # reasoning models think inside this budget too: a small one can end the reply before any answer
+        model = ModelSpec(id=self.config.model.strip(), temperature=0.2, max_tokens=MAX_REPLY_TOKENS)
         self._server = AgentServer(self._inbox, self._provider, model, tools, persistent=True,
                                    compactor_model=model.id, keep_reasoning=False)
         self._loop.create_task(self._server.run())
@@ -660,6 +719,18 @@ class ChatSession:
             if usage is not None and (meta.get('stream_done') or not meta.get('stream_delta')):
                 self._addUsage(usage)
             if meta.get('turn_done'):
+                if self._emptyReply and not meta.get('cancelled'):
+                    self._emptyReply = False
+                    if self._emptyRetries < 1:
+                        # the model ran out of reply tokens while thinking: ask it once to answer now
+                        self._emptyRetries += 1
+                        self.transcript.write('retry', reason='empty reply')
+                        self._post([UserMessage(content=EMPTY_REPLY_NUDGE)])
+                        continue
+                    self.transcript.write('error', content='empty reply')
+                    self._emit(ChatEvent('error', 'The model thought but gave no answer. Ask again, or try '
+                                                  'another model in Settings > AI assistant.'))
+                self._emptyReply = False
                 self.busy = False
                 if meta.get('cancelled'):
                     self.transcript.write('stopped')
@@ -704,6 +775,8 @@ class ChatSession:
         answer = clean_reply(text or '')
         if answer:
             self.transcript.write('assistant', content=answer)
+        if not answer and not m.tool_calls:
+            self._emptyReply = True
         self._emit(ChatEvent('message', answer))
         for call in m.tool_calls or []:
             name = call.function.name if call.function else '?'
@@ -733,6 +806,10 @@ class ChatSession:
             self.transcript.start(self.config)
         self.transcript.write('user', content=text)
         self.busy = True
+        self._emptyReply, self._emptyRetries = False, 0
+        self._post(data)
+
+    def _post(self, data: list) -> None:
         self._split = ThinkSplitter()
         envelope = Envelope(msg=Msg(session_id=self._session, data=data,
                                     metadata={'stream': True} if self.stream else None),

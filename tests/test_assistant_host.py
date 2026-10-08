@@ -36,7 +36,19 @@ def fake_app(tmp_path, recording=False):
     config = FakeConfig({('Assistant', 'model'): 'm', ('Assistant', 'apikey'): 'k',
                          ('Experiment', 'exppath'): str(tmp_path)})
     plugin_host = SimpleNamespace(status='idle', is_running=lambda: False)
-    return SimpleNamespace(config=config, root=root, daqControl=DAQ_control.DAQControl(), pluginHost=plugin_host)
+    config.set('Camera', 'display_fps', '10')
+    config.set('Stage', 'speed_unit', 'mm/s')
+    config.set('Tracking', 'showtrackingoverlay', '1')
+    changes = []
+
+    def on_config_change(settings, cfg, section, key, value):
+        changes.append((section, key, value))
+        if (section, key) == ('Camera', 'display_fps'):        # the app may adjust a value
+            cfg.set(section, key, str(min(float(value), 50.0)))
+
+    return SimpleNamespace(config=config, root=root, daqControl=DAQ_control.DAQControl(), pluginHost=plugin_host,
+                           on_config_change=on_config_change, changes=changes, _app_settings=None,
+                           log=lambda source, text, level='info': None)
 
 
 @pytest.fixture
@@ -109,3 +121,48 @@ def test_the_window_reaches_the_commands_over_the_connection(host, tmp_path):
     with pytest.raises(ipc.CommandError, match='already exists'):
         client.call('save_plugin', code=PLUGIN, path=str(foreign))
     client.close()
+
+
+
+def test_settings_are_listed_without_the_api_key(host):
+    host.app.config.set('Assistant', 'apikey', 'sk-secret')
+    everything = host.get_settings()
+    assert 'Camera.display_fps = 10' in everything and 'sk-secret' not in everything
+    assert 'Assistant.apikey = (hidden)' in everything and 'locked' in everything
+    camera = host.get_settings('camera')
+    assert all(line.startswith(('Camera.', '    ')) for line in camera.splitlines())
+    assert '\n    ' in camera                                  # descriptions for one section
+    with pytest.raises(ipc.CommandError, match='sections:'):
+        host.get_settings('Nope')
+
+
+def test_settings_are_checked_before_the_user_is_asked(host):
+    assert host.check_setting('camera', 'DISPLAY_FPS', '20')['new'] == '20'
+    assert host.check_setting('Stage', 'speed_unit', 'UM/S')['new'] == 'um/s'          # canonical option
+    assert host.check_setting('Tracking', 'showtrackingoverlay', 'false')['new'] == '0'
+    for args, error in (((('Camera', 'nope', '1')), 'no setting'),
+                        ((('Assistant', 'apikey', 'x')), 'locked'),
+                        ((('Stage', 'stage_limits', '1,2,3')), 'locked'),
+                        ((('Camera', 'display_fps', 'fast')), 'must be a number'),
+                        ((('Stage', 'speed_unit', 'km/h')), 'one of'),
+                        ((('Camera', 'display_fps', '10')), 'already 10')):
+        with pytest.raises(ipc.CommandError, match=error):
+            host.check_setting(*args)
+
+
+def test_no_settings_change_during_a_recording(tmp_path):
+    host = G.AssistantHost(fake_app(tmp_path, recording=True))
+    try:
+        with pytest.raises(ipc.CommandError, match='recording is running'):
+            host.check_setting('Camera', 'display_fps', '20')
+    finally:
+        host.server.close()
+
+
+def test_an_approved_change_is_applied_like_the_settings_panel(host):
+    message = host.change_setting('Camera', 'display_fps', '20')
+    assert host.app.config.get('Camera', 'display_fps') == '20.0' or host.app.config.get('Camera', 'display_fps') == '20'
+    assert host.app.changes == [('Camera', 'display_fps', '20')] and host.app.config.writes >= 1
+    assert 'from 10 to' in message
+    adjusted = host.change_setting('Camera', 'display_fps', '80')
+    assert 'the app adjusted it to 50.0' in adjusted

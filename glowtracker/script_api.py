@@ -230,9 +230,10 @@ class Scope:
         self._host._log(fields)
 
     def print(self, *args) -> None:
-        """Show a message in the Plugin tab status line (also printed to the console)."""
+        """Show a message in the Plugin tab status line and the activity log (also printed to the console)."""
         self._host.message = ' '.join(str(a) for a in args)
         print('[plugin]', self._host.message)
+        self._host._emit(self._host.message, 'info')
 
     @property
     def is_stopping(self) -> bool:
@@ -258,6 +259,7 @@ class PluginHost:
             recording_state: Callable[[], bool] = lambda: False,
             log_dir_getter: Callable[[], str | None] = lambda: None,
             update_budget_s: float = 0.1,
+            message_sink: Callable[[str, str], None] = lambda text, level: None,
     ):
         self._state_provider = state_provider
         self._frame_provider = frame_provider
@@ -268,6 +270,7 @@ class PluginHost:
         self._recording_state = recording_state
         self._log_dir_getter = log_dir_getter
         self.update_budget_s = update_budget_s
+        self._message_sink = message_sink     # (text, 'info' | 'warn' | 'error') for the app's activity log
 
         self.path: str | None = None
         self.module = None
@@ -352,6 +355,7 @@ class PluginHost:
         self.last_error = ''
         self._budget_warned = False
         self.status = 'running'
+        self._emit(f'started {os.path.basename(self.path or "")}', 'info')
         self._thread = threading.Thread(target=self._run, name='ScriptPlugin', daemon=True)
         self._thread.start()
         return True
@@ -427,6 +431,7 @@ class PluginHost:
             self.last_error = traceback.format_exc()
             self.status = 'error'
             print(f'[plugin] stopped with error:\n{self.last_error}')
+            self._emit('stopped with an error: ' + self.last_error.strip().splitlines()[-1], 'error')
         finally:
             teardown = getattr(controller, 'teardown', None)
             if callable(teardown):
@@ -442,6 +447,7 @@ class PluginHost:
             self._close_log()
             if not failed:
                 self.status = 'stopped'
+                self._emit('stopped', 'info')
 
     def _light_off(self) -> None:
         """Put the outputs in their resting state when the plugin stops or fails.
@@ -474,6 +480,13 @@ class PluginHost:
     def _warn(self, text: str) -> None:
         self.message = text
         print(f'[plugin] {text}')
+        self._emit(text, 'warn')
+
+    def _emit(self, text: str, level: str) -> None:
+        try:
+            self._message_sink(text, level)
+        except Exception:
+            pass
 
     # --- logging ---------------------------------------------------------------------------
     def _log(self, fields: dict) -> None:

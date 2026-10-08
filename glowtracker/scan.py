@@ -16,6 +16,7 @@ from plate_run import PlateRunController, RunCancelled
 from plate_plan import FIELDS, SearchReport, validate_plate
 from platformdirs import user_config_dir
 from continuous_scan import ContinuousScanMixin
+import scan_presets
 
 class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLayout):
     points = ListProperty([])
@@ -25,6 +26,7 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
     scan_progress = NumericProperty(0)
     scan_mode = StringProperty('Sequential')
     saved_scenarios = ListProperty([])
+    run_presets = ListProperty([])
     scan_z = NumericProperty(133)
     scan_exposure = NumericProperty(100000)
     scan_gain = NumericProperty(30)
@@ -73,22 +75,60 @@ class CenterRadiusFromThreePoints(ContinuousScanMixin, PlateRunController, BoxLa
         app = App.get_running_app()
         self.record_directory = app.root.ids.leftcolumn.savefile if app.root is not None else ''
         self.refresh_scenarios()
+        self.refresh_run_presets()
 
     def _scenario_path(self):
         return os.path.join(user_config_dir('GlowTracker', 'Monika Scholz'), 'scan_scenarios.json')
 
     def _read_scenarios(self):
-        try:
-            path = self._scenario_path()
-            if not os.path.exists(path):
-                path = os.path.join(os.path.dirname(__file__), 'settings', 'scan_scenarios.json')
-            with open(path) as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
+        """The plate presets bundled with the app (e.g. a demo plate), then the user's own."""
+        scenarios = {}
+        for path in (os.path.join(os.path.dirname(__file__), 'settings', 'scan_scenarios.json'),
+                     self._scenario_path()):
+            try:
+                with open(path) as f:
+                    scenarios.update(json.load(f))
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        return scenarios
 
     def refresh_scenarios(self):
         self.saved_scenarios = sorted(self._read_scenarios().keys())
+
+    # --- saved runs: the whole plate list and the run options ------------------------------
+    def _run_presets_path(self):
+        return os.path.join(user_config_dir('GlowTracker', 'Monika Scholz'), 'scan_runs.json')
+
+    def refresh_run_presets(self):
+        self.run_presets = scan_presets.names(self._run_presets_path())
+
+    def save_run_preset(self, name):
+        if self.running:
+            return False
+        try:
+            scan_presets.save(self._run_presets_path(), name, list(self.plates), self.repeat_run)
+        except (ValueError, OSError) as error:
+            self.run_status = str(error)
+            return False
+        self.refresh_run_presets()
+        self.run_status = f'Saved the run as {name.strip()}'
+        return True
+
+    def load_run_preset(self, name):
+        if self.running:
+            return False
+        try:
+            preset = scan_presets.get(self._run_presets_path(), name)
+        except (KeyError, ValueError) as error:
+            self.run_status = str(error).strip("'\"")
+            return False
+        self.selected_plate = -1
+        self.reset()
+        self.plates = preset['plates']
+        self.repeat_run = preset['repeat_run']
+        self._update_cycle_summary()
+        self.run_status = f'Loaded {name}: {len(self.plates)} plate{"s" if len(self.plates) != 1 else ""}'
+        return True
 
     def save_scenario(self, name):
         if not self.commit_fields():

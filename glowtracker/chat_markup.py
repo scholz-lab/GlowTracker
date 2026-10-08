@@ -1,8 +1,10 @@
 """Render the Markdown that chat models write as Kivy label markup.
 
 Covers what assistants actually use: paragraphs, headings, bullet and numbered lists, **bold**,
-*italic*, `inline code` and fenced code blocks. Code blocks are returned separately so the GUI can
-show them in a selectable monospace box. No Kivy import, so it can be tested on its own.
+*italic*, `inline code`, fenced code blocks and tables. Code blocks and tables are returned
+separately so the GUI can show them in a selectable monospace box. Markers that are not closed yet
+(a reply still streaming) are hidden rather than shown as asterisks. No Kivy import, so it can be
+tested on its own.
 """
 from __future__ import annotations
 
@@ -15,8 +17,12 @@ _FENCE = re.compile(r'^[ \t]*```[ \t]*([\w+.-]*)[ \t]*$', re.MULTILINE)
 _HEADING = re.compile(r'^(#{1,6})\s+(.*)$')
 _BULLET = re.compile(r'^(\s*)[-*+]\s+(.*)$')
 _NUMBERED = re.compile(r'^(\s*)(\d+)[.)]\s+(.*)$')
+_BOLD_ITALIC = re.compile(r'(\*\*\*|___)(?=\S)(.+?)(?<=\S)\1')
 _BOLD = re.compile(r'(\*\*|__)(?=\S)(.+?)(?<=\S)\1')
 _ITALIC = re.compile(r'(?<![\w*])([*_])(?=\S)(.+?)(?<=\S)\1(?![\w*])')
+_CODE = re.compile(r'`([^`\n]+)`')
+_TABLE_ROW = re.compile(r'^\s*\|.*\|\s*$')
+_TABLE_RULE = re.compile(r'^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$')
 
 
 # Symbols models like to use that the default Kivy font (Roboto) cannot draw.
@@ -53,7 +59,58 @@ def segments(text: str) -> list[tuple[str, str]]:
     rest = text[pos:]
     if rest.strip():
         out.append(('text', inline_block(rest.strip('\n'))))
+    return _split_tables(out)
+
+
+def _split_tables(parts: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Pull Markdown tables out of the text parts as aligned monospace ('code') parts."""
+    out: list[tuple[str, str]] = []
+    for kind, content in parts:
+        if kind != 'text' or '|' not in content:
+            out.append((kind, content))
+            continue
+        lines, block = [], []
+
+        def flush_text():
+            if lines and '\n'.join(lines).strip():
+                out.append(('text', '\n'.join(lines).strip('\n')))
+            lines.clear()
+
+        for line in content.split('\n') + ['']:
+            if _TABLE_ROW.match(line):
+                block.append(line)
+                continue
+            if len(block) >= 2:
+                flush_text()
+                out.append(('code', _table(block)))
+            else:
+                lines.extend(block)
+            block = []
+            lines.append(line)
+        flush_text()
     return out
+
+
+def _table(rows: list[str]) -> str:
+    """A Markdown table as plain aligned text. Rows arrive already converted to markup, so the
+    markup is removed again for the monospace box."""
+    cells = []
+    for row in rows:
+        if _TABLE_RULE.match(_plain(row)):
+            continue
+        cells.append([_plain(c).strip() for c in row.strip().strip('|').split('|')])
+    widths = [max(len(r[i]) if i < len(r) else 0 for r in cells) for i in range(max(map(len, cells)))]
+    out = []
+    for n, row in enumerate(cells):
+        out.append('  '.join(c.ljust(widths[i]) for i, c in enumerate(row)).rstrip())
+        if n == 0 and len(cells) > 1:
+            out.append('  '.join('-' * w for w in widths))
+    return '\n'.join(out)
+
+
+def _plain(markup: str) -> str:
+    text = re.sub(r'\[/?(?:b|i|font|color)(?:=[^\]]*)?\]', '', markup)
+    return text.replace('&bl;', '[').replace('&br;', ']').replace('&amp;', '&')
 
 
 def inline_block(text: str) -> str:
@@ -76,15 +133,18 @@ def inline_block(text: str) -> str:
 
 
 def _inline(text: str) -> str:
-    # Inline code first, so ** or * inside it stay literal.
-    parts = re.split(r'(`[^`\n]+`)', text)
-    out = []
-    for part in parts:
-        if len(part) > 1 and part.startswith('`') and part.endswith('`'):
-            out.append(f'[font={MONO}][color={CODE_COLOR}]{escape(part[1:-1])}[/color][/font]')
-        else:
-            part = escape(part)
-            part = _BOLD.sub(r'[b]\2[/b]', part)
-            part = _ITALIC.sub(r'[i]\2[/i]', part)
-            out.append(part)
-    return ''.join(out)
+    # Inline code is set aside first (so ** or * inside it stay literal), but bold and italic are
+    # applied to the whole line, so **`code` in bold** works.
+    codes: list[str] = []
+
+    def keep(match: re.Match) -> str:
+        codes.append(f'[font={MONO}][color={CODE_COLOR}]{escape(match.group(1))}[/color][/font]')
+        return f'\x00{len(codes) - 1}\x00'
+
+    line = escape(_CODE.sub(keep, text))
+    line = _BOLD_ITALIC.sub(r'[b][i]\2[/i][/b]', line)
+    line = _BOLD.sub(r'[b]\2[/b]', line)
+    line = _ITALIC.sub(r'[i]\2[/i]', line)
+    line = re.sub(r'(?<!\*)\*\*\*?(?=\S)|(?<=\S)\*\*\*?(?!\*)', '', line)   # unclosed (still streaming)
+    line = line.replace('`', '')
+    return re.sub('\x00(\\d+)\x00', lambda m: codes[int(m.group(1))], line)

@@ -1,5 +1,73 @@
 #:kivy 2.0
 # Layout of the AI assistant window (assistant_window.py).
+# Its own process, so its colours and button style are defined here (they match layout.kv).
+#:set A_TEXT (0.92, 0.92, 0.94, 1)
+#:set A_MUTED (0.6, 0.6, 0.65, 1)
+#:set A_BUTTON (0.2, 0.21, 0.24, 1)
+#:set A_INPUT (0.14, 0.15, 0.17, 1)
+#:set A_BLUE (0.04, 0.52, 1, 1)
+#:set A_PURPLE (0.5, 0.36, 0.82, 1)
+
+# A rounded key: `tint` is its colour (dimmed while pressed or disabled), `radius` its corners
+<ChatButton@Button>:
+    font_size: '13sp'
+    color: A_TEXT
+    tint: A_BUTTON
+    radius: dp(8)
+    background_normal: ''
+    background_down: ''
+    background_disabled_normal: ''
+    background_disabled_down: ''
+    background_color: 0, 0, 0, 0
+    disabled_color: A_MUTED
+    canvas.before:
+        Color:
+            rgba: list((self.tint or A_BUTTON)[:3]) + [0.4 if self.disabled else (0.72 if self.state == 'down' else 1)]
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [self.radius or dp(8)]
+
+# A pill in the header
+<HeaderPill@ChatButton>:
+    size_hint: None, None
+    height: dp(30)
+    width: self.texture_size[0] + dp(28)
+    radius: dp(15)
+    font_size: '12.5sp'
+    pos_hint: {'center_y': .5}
+
+# A rounded dark field with a thin blue outline while typing
+<ChatField@TextInput>:
+    font_size: '13sp'
+    background_normal: ''
+    background_active: ''
+    background_color: 0, 0, 0, 0
+    foreground_color: A_TEXT
+    hint_text_color: A_MUTED
+    cursor_color: A_BLUE
+    cursor_width: dp(1.5)
+    canvas.before:
+        Color:
+            rgba: 0.105, 0.11, 0.125, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(8)]
+        Color:
+            rgba: (0.04, 0.52, 1, 0.9) if self.focus else (1, 1, 1, 0.06)
+        Line:
+            rounded_rectangle: self.x + dp(0.5), self.y + dp(0.5), self.width - dp(1), self.height - dp(1), dp(8)
+            width: dp(1.1)
+        # Kivy draws the cursor right after its own background, under ours: draw it again on top
+        Color:
+            rgba: (self.cursor_color if self.focus and not self._cursor_blink and int(self.x + self.padding[0]) <= self._cursor_visual_pos[0] <= int(self.x + self.width - self.padding[2]) else (0, 0, 0, 0))
+        Rectangle:
+            pos: self._cursor_visual_pos
+            size: self.cursor_width, -self._cursor_visual_height
+        # the field draws its text with the current colour
+        Color:
+            rgba: A_TEXT if self.text else A_MUTED
 
 <AssistantWidget>:
     size: root.size
@@ -17,8 +85,9 @@
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
-        height: dp(30)
-        spacing: dp(4)
+        height: dp(38)
+        spacing: dp(6)
+        padding: dp(4), 0
 
         Label:
             id: header
@@ -29,31 +98,16 @@
             shorten: True
             font_size: '14sp'
 
-        Button:
+        HeaderPill:
             text: 'Memory'
-            size_hint_x: None
-            width: dp(76)
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.17, 0.18, 0.21, 1
             on_release: root.showMemory()
 
-        Button:
+        HeaderPill:
             text: 'Models'
-            size_hint_x: None
-            width: dp(72)
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.17, 0.18, 0.21, 1
             on_release: root.listModels()
 
-        Button:
+        HeaderPill:
             text: 'New chat'
-            size_hint_x: None
-            width: dp(84)
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.17, 0.18, 0.21, 1
             on_release: root.newChat()
 
     ScrollView:
@@ -83,40 +137,80 @@
             id: message
             hint_text: 'Message the assistant'
 
+        # round send key: an arrow up, or a stop square while the assistant works
         Button:
             id: sendbutton
-            text: 'Stop' if root.busy else 'Send'
+            text: ''
             size_hint: None, None
-            size: dp(76), dp(46)
+            size: dp(46), dp(46)
             pos_hint: {'y': 0}
-            bold: True
             background_normal: ''
-            background_color: (0.55, 0.22, 0.22, 1) if root.busy else (0.18, 0.38, 0.68, 1)
+            background_down: ''
+            background_disabled_normal: ''
+            background_disabled_down: ''
+            background_color: 0, 0, 0, 0
             disabled: not root.busy and not message.text.strip()
             on_release: root.sendOrStop()
+            canvas.before:
+                Color:
+                    rgba: (0.85, 0.25, 0.27, 1) if root.busy else ((0.25, 0.26, 0.29, 1) if self.disabled else A_BLUE)
+                    a: 0.75 if self.state == 'down' else 1
+                Ellipse:
+                    pos: self.center_x - dp(19), self.center_y - dp(19)
+                    size: dp(38), dp(38)
+                Color:
+                    rgba: 1, 1, 1, (1 if root.busy else 0)
+                RoundedRectangle:
+                    pos: self.center_x - dp(6), self.center_y - dp(6)
+                    size: dp(12), dp(12)
+                    radius: [dp(2)]
+                Color:
+                    rgba: 1, 1, 1, (0 if root.busy else (0.45 if self.disabled else 1))
+                Line:
+                    points: self.center_x, self.center_y - dp(8), self.center_x, self.center_y + dp(8)
+                    width: dp(1.6)
+                    cap: 'round'
+                Line:
+                    points: self.center_x - dp(6), self.center_y + dp(2), self.center_x, self.center_y + dp(8), self.center_x + dp(6), self.center_y + dp(2)
+                    width: dp(1.6)
+                    cap: 'round'
+                    joint: 'round'
 
-    Label:
-        size_hint_y: None
-        height: dp(14)
-        text: 'Enter to send, Shift+Enter for a new line. Nothing is applied until you approve it.'
-        font_size: '11sp'
-        color: 0.5, 0.5, 0.55, 1
-        halign: 'left'
-        text_size: self.size
-        shorten: True
 
 
 <ChatInput>:
     multiline: True
     write_tab: False
     font_size: '14sp'
-    padding: dp(10), dp(12)
+    padding: dp(14), dp(13)
     background_normal: ''
     background_active: ''
-    background_color: 0.14, 0.15, 0.17, 1
+    background_color: 0, 0, 0, 0
     foreground_color: 0.95, 0.95, 0.95, 1
-    cursor_color: 0.6, 0.8, 1, 1
+    cursor_color: A_BLUE
+    cursor_width: dp(1.5)
     hint_text_color: 0.5, 0.5, 0.55, 1
+    canvas.before:
+        Color:
+            rgba: A_INPUT
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(14)]
+        Color:
+            rgba: (0.04, 0.52, 1, 0.9) if self.focus else (1, 1, 1, 0.06)
+        Line:
+            rounded_rectangle: self.x + dp(0.5), self.y + dp(0.5), self.width - dp(1), self.height - dp(1), dp(14)
+            width: dp(1.1)
+        # Kivy draws the cursor right after its own background, under ours: draw it again on top
+        Color:
+            rgba: (self.cursor_color if self.focus and not self._cursor_blink and int(self.x + self.padding[0]) <= self._cursor_visual_pos[0] <= int(self.x + self.width - self.padding[2]) else (0, 0, 0, 0))
+        Rectangle:
+            pos: self._cursor_visual_pos
+            size: self.cursor_width, -self._cursor_visual_height
+        # the field draws its text with the current colour
+        Color:
+            rgba: (0.95, 0.95, 0.95, 1) if self.text else (0.5, 0.5, 0.55, 1)
 
 
 <ChatText@Label>:
@@ -290,15 +384,6 @@
         text: '[b]What should the experiment do?[/b]'
 
     Label:
-        size_hint_y: None
-        height: self.texture_size[1] + dp(8)
-        text_size: self.width, None
-        halign: 'center'
-        font_size: '13sp'
-        color: 0.6, 0.6, 0.65, 1
-        text: 'Describe light timing or behaviour-triggered stimulation in plain words. The assistant writes a sequencer script or a plugin, checks it, and shows it to you for review. Set the API in GlowTracker: Settings > AI assistant. Keep this window open while you run experiments.'
-
-    Label:
         id: reminder
         size_hint_y: None
         height: self.texture_size[1] + dp(4) if self.text else 0
@@ -317,15 +402,14 @@
     Widget:
 
 
-<ChatSuggestion@Button>:
+<ChatSuggestion@ChatButton>:
     size_hint_y: None
-    height: self.texture_size[1] + dp(16)
-    text_size: self.width - dp(24), None
+    height: self.texture_size[1] + dp(20)
+    text_size: self.width - dp(28), None
     halign: 'left'
-    font_size: '13sp'
     color: 0.85, 0.87, 0.92, 1
-    background_normal: ''
-    background_color: 0.14, 0.15, 0.18, 1
+    tint: A_INPUT
+    radius: dp(10)
 
 
 <ProposalCard>:
@@ -381,38 +465,38 @@
         font_size: '12sp'
         color: 0.68, 0.72, 0.78, 1
 
+    ScriptPreview:
+        id: preview
+        size_hint_y: None
+        height: dp(340)
+
     BoxLayout:
         id: actions
         orientation: 'horizontal'
         size_hint_y: None
-        height: dp(34)
-        spacing: dp(6)
+        height: dp(36)
+        spacing: dp(8)
 
-        TextInput:
+        ChatField:
             id: path
             multiline: False
             font_size: '12sp'
-            padding: dp(8), dp(9)
+            padding: dp(10), (self.height - self.line_height) / 2
 
-        Button:
-            id: usebutton
-            size_hint_x: None
-            width: max(dp(170), self.texture_size[0] + dp(24))
-            bold: True
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.18, 0.38, 0.68, 1
-            on_release: root.approve()
-
-        Button:
+        ChatButton:
             id: declinebutton
             text: 'Decline'
             size_hint_x: None
-            width: dp(84)
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.3, 0.2, 0.2, 1
+            width: dp(90)
             on_release: root.decline()
+
+        ChatButton:
+            id: usebutton
+            size_hint_x: None
+            width: max(dp(120), self.texture_size[0] + dp(32))
+            bold: True
+            tint: A_BLUE
+            on_release: root.approve()
 
     Label:
         id: status
@@ -453,45 +537,35 @@
         markup: True
         font_size: '13sp'
 
-    TextInput:
+    ChatField:
         id: fact
         size_hint_y: None
         height: max(dp(40), self.minimum_height)
         font_size: '14sp'
         padding: dp(10), dp(8)
-        background_normal: ''
-        background_active: ''
-        background_color: 0.105, 0.11, 0.125, 1
-        foreground_color: 0.93, 0.93, 0.95, 1
-        cursor_color: 0.6, 0.8, 1, 1
 
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
-        height: dp(34)
-        spacing: dp(6)
+        height: dp(36)
+        spacing: dp(8)
 
         Widget:
 
-        Button:
-            id: approvebutton
-            size_hint_x: None
-            width: max(dp(120), self.texture_size[0] + dp(24))
-            bold: True
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.42, 0.3, 0.62, 1
-            on_release: root.approve()
-
-        Button:
+        ChatButton:
             id: declinebutton
             text: 'Decline'
             size_hint_x: None
-            width: dp(84)
-            font_size: '13sp'
-            background_normal: ''
-            background_color: 0.3, 0.2, 0.2, 1
+            width: dp(90)
             on_release: root.decline()
+
+        ChatButton:
+            id: approvebutton
+            size_hint_x: None
+            width: max(dp(120), self.texture_size[0] + dp(32))
+            bold: True
+            tint: A_PURPLE
+            on_release: root.approve()
 
     Label:
         id: status
@@ -505,6 +579,7 @@
 <MemoryList>:
     orientation: 'vertical'
     spacing: dp(8)
+    padding: dp(8), 0     # in line with the popup title
 
     Label:
         id: where
@@ -526,11 +601,17 @@
             height: self.minimum_height
             spacing: dp(6)
 
-    Button:
-        text: 'Close'
+    BoxLayout:
         size_hint_y: None
-        height: dp(40)
-        on_release: root.close()
+        height: dp(38)
+
+        Widget:
+
+        ChatButton:
+            text: 'Close'
+            size_hint_x: None
+            width: dp(110)
+            on_release: root.close()
 
 
 <MemoryRow@BoxLayout>:
@@ -541,11 +622,11 @@
     padding: dp(6), dp(4)
     canvas.before:
         Color:
-            rgba: 0.14, 0.15, 0.18, 1
+            rgba: A_INPUT
         RoundedRectangle:
             pos: self.pos
             size: self.size
-            radius: [dp(6)]
+            radius: [dp(8)]
 
     Label:
         id: text
@@ -555,12 +636,12 @@
         markup: True
         font_size: '13sp'
 
-    Button:
+    ChatButton:
         id: delete
         text: 'Delete'
         size_hint: None, None
-        size: dp(70), dp(30)
+        size: dp(72), dp(30)
         pos_hint: {'center_y': .5}
         font_size: '12sp'
-        background_normal: ''
-        background_color: 0.3, 0.2, 0.2, 1
+        color: 1, 0.45, 0.45, 1
+        tint: 0.24, 0.17, 0.18, 1
