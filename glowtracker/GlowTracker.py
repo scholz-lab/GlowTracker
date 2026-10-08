@@ -5,7 +5,7 @@ from multiprocessing.managers import SharedMemoryManager
 from SharedMemory import SharedMemoryQueue
 from scan import CenterRadiusFromThreePoints
 import image_saver
-from image_utils import prepare_texture_data
+from image_utils import prepare_texture_data, brightness_stats
 from runtime_control import (
     ManagedStageMove,
     append_new_focus_values,
@@ -51,6 +51,11 @@ from kivy.config import Config, ConfigParser
 # Config.set('graphics', 'KIVY_CLOCK', 'free')
 # Config.set('modules', 'monitor', '')
 Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-touch emulation
+
+# Reopen the window where it was last time, before Kivy creates it (importing kivy.core.window
+# does): on Windows the layout is built at the scale of the display the window starts on.
+import window_geometry
+_savedWindow = None if __name__ == '__mp_main__' else window_geometry.apply_before_window_created(Config)
 
 from kivy.cache import Cache
 from kivy.base import EventLoop
@@ -137,7 +142,6 @@ from tooltips import Tooltips
 import math
 import numpy as np
 import cv2
-from scipy.stats import skew
 
 import gc
 
@@ -2148,6 +2152,13 @@ class PadArrow(ToggleButton):
             self._arrows = [Triangle(), Triangle()]
         self.bind(pos=self._draw, size=self._draw, angle=self._draw, double=self._draw,
                   disabled=self._draw, state=self._draw)
+        # Also redraw once the layout has settled (just before the next frame) and on window
+        # resizes. On Windows with display scaling, a resize or move reaches the window in two
+        # steps, and the immediate redraws above could be left at an intermediate geometry,
+        # leaving the arrows where the keys used to be.
+        self._redrawSoon = Clock.create_trigger(self._draw, -1)
+        self.bind(pos=self._redrawSoon, size=self._redrawSoon)
+        Window.bind(size=self._redrawSoon)
         self._draw()
 
     def _keyRects(self) -> list:
@@ -2316,6 +2327,10 @@ class SkewGraph(FloatLayout):
         self._now = self._label('now', 10, (0.45, 0.45, 0.5, 1))
         self._hint = self._label('Turn on Live analysis to plot the skewness', 12, (0.6, 0.6, 0.65, 1))
         self.bind(pos=self._redraw, size=self._redraw, opacity=self._redraw)
+        # And once more after the layout settles: see PadArrow (Windows display-scaling resizes).
+        self._redrawSoon = Clock.create_trigger(self._redraw, -1)
+        self.bind(pos=self._redrawSoon, size=self._redrawSoon)
+        Window.bind(size=self._redrawSoon)
         Clock.schedule_interval(self._sample, 0.1)
 
     def _label(self, text, size, color, bold=False) -> Label:
@@ -2891,16 +2906,18 @@ class ImageAcquisitionButton(ToggleButton):
 
         imageAcquisitionManager: ImageAcquisitionManager = self.parent
         liveAnalysisData = imageAcquisitionManager.liveAnalysisData
-        sample = image[::4, ::4]
+        # Computed outside the lock: min/max/mean over every pixel, the rest on every 4th pixel
+        # (image_utils.brightness_stats; ~3 ms instead of ~14 ms at 2048 x 2048).
+        stats = brightness_stats(image, step= 4)
         with liveAnalysisData.lock:
-            imageAcquisitionManager.liveAnalysisData.minBrightness = np.min(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.maxBrightness = np.max(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.meanBrightness = np.mean(image, axis= None)
-            imageAcquisitionManager.liveAnalysisData.medianBrightness = np.median(sample, axis= None)
-            imageAcquisitionManager.liveAnalysisData.skewness = skew(sample, axis= None, nan_policy= 'omit')
-            imageAcquisitionManager.liveAnalysisData.percentile_5 = np.percentile(sample, q= 5, axis= None)
-            imageAcquisitionManager.liveAnalysisData.percentile_95 = np.percentile(sample, q= 95, axis= None)
-            imageAcquisitionManager.liveAnalysisData.retrieveTimeStamp = self.imageRetrieveTimeStamp
+            liveAnalysisData.minBrightness = stats['min']
+            liveAnalysisData.maxBrightness = stats['max']
+            liveAnalysisData.meanBrightness = stats['mean']
+            liveAnalysisData.medianBrightness = stats['median']
+            liveAnalysisData.skewness = stats['skewness']
+            liveAnalysisData.percentile_5 = stats['p5']
+            liveAnalysisData.percentile_95 = stats['p95']
+            liveAnalysisData.retrieveTimeStamp = self.imageRetrieveTimeStamp
 
 
     def receiveImageCallback(self) -> None:
@@ -2925,8 +2942,8 @@ class ImageAcquisitionButton(ToggleButton):
         if pluginHost is not None:
             pluginHost.notify_frame()
 
-        # Update live analysis data
-        self.app.root.ids.middlecolumn.ids.liveanalysislabel.updateText(imageAcquisitionManager.liveAnalysisData)
+        # The live-analysis label refreshes itself a few times a second on the GUI thread
+        # (LiveAnalysisLabel), instead of being rewritten from this camera thread on every frame.
 
 
     def finishAcquisitionCallback(self) -> None:
@@ -4172,10 +4189,25 @@ class PreviewImage(Image):
 
 
 class LiveAnalysisLabel(Label):
+    """The live-analysis numbers over the image. Refreshes itself REFRESH_S on the GUI thread,
+    only while shown, rather than being rewritten from the camera thread on every frame."""
+    REFRESH_S = 0.25
 
     def __init__(self, **kwargs):
         super(LiveAnalysisLabel, self).__init__(**kwargs)
         self.updateText(LiveAnalysisData())
+        self._refreshEvent = Clock.schedule_interval(self._refresh, self.REFRESH_S)
+
+
+    def _refresh(self, dt) -> None:
+        if self.opacity <= 0:
+            return
+        try:
+            data = App.get_running_app().root.ids.middlecolumn.ids.runtimecontrols.imageacquisitionmanager.liveAnalysisData
+        except (AttributeError, KeyError):
+            return
+        with data.lock:
+            self.updateText(data)
 
 
     def on_touch_down(self, touch):
@@ -6677,6 +6709,7 @@ class GlowTrackerApp(App):
         initialization (after build() has been called) but before the
         application has started running.
         '''
+        self._trackWindowState()
         Tooltips.install(self.root)
 
         # Display FPS label if enabled
@@ -7194,6 +7227,29 @@ class GlowTrackerApp(App):
 
 
     # ask for confirmation of closing
+    def _trackWindowState(self) -> None:
+        self._windowMaximized = bool(_savedWindow and _savedWindow.get('maximized'))
+        Window.bind(on_maximize=lambda *a: setattr(self, '_windowMaximized', True),
+                    on_restore=lambda *a: setattr(self, '_windowMaximized', False))
+        if self._windowMaximized:
+            Clock.schedule_once(lambda dt: Window.maximize(), 0)
+
+
+    def on_stop(self):
+        """Remember the window's place for the next start (see window_geometry)."""
+        try:
+            maximized = getattr(self, '_windowMaximized', False)
+            geometry = window_geometry.capture(Window, maximized)
+            if maximized:
+                # keep the size it had before maximizing, not the screen size
+                previous = window_geometry.load() or {}
+                geometry['width'] = previous.get('width', 0)
+                geometry['height'] = previous.get('height', 0)
+            window_geometry.save(geometry)
+        except Exception as e:
+            print(f'Saving the window position failed: {e}')
+
+
     def on_request_close(self, *args, **kwargs):
         content = ExitApp(stop=self.graceful_exit, cancel=self.dismiss_popup)
         self._popup = Popup(title="Quit GlowTracker?", content=content,
@@ -7446,10 +7502,9 @@ def main():
         mp.set_start_method('forkserver', force=True)
         mp.set_forkserver_preload(['image_saver'])
     reset()
-    Window.size = (1280, 800)
-    Config.set('graphics', 'position', 'custom')
-    Config.set('graphics', 'top', '0')
-    Config.set('graphics', 'left', '0')
+    # The position was applied before the window was created (see window_geometry at the top);
+    # setting Config here would be too late, the window already exists.
+    Window.size = window_geometry.logical_size(_savedWindow, (1280, 800))
 
     # Last barrier for catching unhandled exception.
     try:

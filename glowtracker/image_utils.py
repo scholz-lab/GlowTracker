@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 
 
@@ -62,3 +63,36 @@ def prepare_texture_data(image):
     except TypeError:
         converted = np.rint(normalize_image(source) * 255).astype(np.uint8)
         return np.ascontiguousarray(converted), 'ubyte'
+
+
+def sample_skewness(values) -> float:
+    """Population skewness (the same value as scipy.stats.skew with its defaults), several times
+    faster on large images. NaNs are ignored; a flat image gives NaN, as SciPy does."""
+    x = np.asarray(values).ravel()
+    if x.dtype.kind == 'f':
+        x = x[~np.isnan(x)]
+    if x.size == 0:
+        return float('nan')
+    x = x.astype(np.float64 if x.dtype == np.float64 else np.float32, copy=False)
+    d = x - x.mean(dtype=np.float64)
+    m2 = float(np.dot(d, d)) / d.size
+    if m2 <= 0:
+        return float('nan')
+    m3 = float(np.dot(d * d, d)) / d.size
+    return m3 / m2 ** 1.5
+
+
+def brightness_stats(image, step: int = 4) -> dict:
+    """Live-analysis values of one frame. Min, max and mean use every pixel (OpenCV, so cheap even
+    at 2048 x 2048), so a small bright animal is never missed. Median, 5th/95th percentile and
+    skewness use every `step`-th pixel in each direction, as before."""
+    image = np.asarray(image)
+    if image.ndim == 2 and image.dtype in (np.uint8, np.uint16, np.int16, np.float32, np.float64):
+        lo, hi, _, _ = cv2.minMaxLoc(image)
+        mean = cv2.mean(image)[0]
+    else:
+        lo, hi, mean = image.min(), image.max(), image.mean()
+    sample = image[::step, ::step]
+    p5, median, p95 = np.percentile(sample, [5, 50, 95])
+    return {'min': float(lo), 'max': float(hi), 'mean': float(mean), 'median': float(median),
+            'skewness': sample_skewness(sample), 'p5': float(p5), 'p95': float(p95)}
