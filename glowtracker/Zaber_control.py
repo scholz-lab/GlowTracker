@@ -92,6 +92,7 @@ class Stage:
         self._last_pos: List[float] | None = None
         self._last_pos_time: float = 0.0
         self._position_cache_condition = threading.Condition()
+        self._async_local = threading.local()      # one asyncio loop per thread for move_xy_rel
         self._position_read_lock = threading.Lock()
         self._position_poller_lock = threading.Lock()
         self._position_poll_stop = threading.Event()
@@ -375,20 +376,8 @@ class Stage:
         Returns:
                     bool: True if the move command was issued without fault, False otherwise.
         """
-        if check_safety:
-            factor = self._UNIT_TO_MM.get(unit)
-            if factor is None:
-                print(f'move_y: unknown unit {unit!r}; refusing for safety')
-                return False
-            cur = self._safe_position_mm()
-            if cur is None:
-                print('move_y: cannot read current position; refusing')
-                return False
-            if self.axis_z is not None and len(cur) > 2:
-                target_y = cur[1] + float(step) * factor
-                if not self.is_safe(cur[0], target_y, cur[2]):
-                    print(f'move_y refused: would enter keep-out (y={target_y:.1f}, z={cur[2]:.1f})')
-                    return False
+        if check_safety and not self._y_move_allowed(step, unit):
+            return False
         try:
             if self.axis_y is not None:
                 self.axis_y.move_relative(float(step), units_from_literals(unit), wait_until_idle)
@@ -397,6 +386,79 @@ class Stage:
             print(f'move_y by {step} {unit} failed: {e}')
             return False
 
+        return True
+
+
+    # Tracking moves are tiny and Z barely changes during tracking (only Live focus nudges it),
+    # so when the last known position is this far from the keep-out zone the check is skipped.
+    TRACKING_CLEARANCE_MM = 5.0
+    TRACKING_CLEARANCE_MAX_AGE_S = 2.0
+
+    def clearly_outside_keepout(self) -> bool:
+        """True when the last known position is at least TRACKING_CLEARANCE_MM away from the
+        keep-out zone in Y or in Z: then a tracking correction cannot reach it. Uses only the
+        cached position (no stage query); unknown or old positions give False."""
+        if self.axis_z is None:
+            return True
+        pos = self.get_cached_position(unit='mm', max_age=self.TRACKING_CLEARANCE_MAX_AGE_S)
+        if pos is None or len(pos) < 3:
+            return False
+        y_lim = self.KEEPOUT_Y + self.KEEPOUT_MARGIN
+        z_lim = self.KEEPOUT_Z - self.KEEPOUT_MARGIN
+        return pos[1] >= y_lim + self.TRACKING_CLEARANCE_MM or pos[2] <= z_lim - self.TRACKING_CLEARANCE_MM
+
+    def _y_move_allowed(self, step: float, unit: str) -> bool:
+        """The keep-out check move_y does before a relative Y move."""
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move: unknown unit {unit!r}; refusing for safety')
+            return False
+        cur = self._safe_position_mm()
+        if cur is None:
+            print('move: cannot read current position; refusing')
+            return False
+        if self.axis_z is not None and len(cur) > 2:
+            target_y = cur[1] + float(step) * factor
+            if not self.is_safe(cur[0], target_y, cur[2]):
+                print(f'move refused: would enter keep-out (y={target_y:.1f}, z={cur[2]:.1f})')
+                return False
+        return True
+
+    def _run_async(self, coroutine):
+        """Run a motion-library coroutine to completion on this thread's own event loop."""
+        loop = getattr(self._async_local, 'loop', None)
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
+            self._async_local.loop = loop
+        return loop.run_until_complete(coroutine)
+
+    def move_xy_rel(self, dx: float, dy: float, unit: str = 'um') -> bool:
+        """Relative X and Y move in one go, for tracking: both commands are sent back to back and
+        their replies awaited together, instead of one full round trip per axis. Returns once both
+        moves are accepted (not when they finish). A zero step leaves that axis alone.
+
+        The Y keep-out check runs as in move_y, except when clearly_outside_keepout().
+        """
+        if self.connection is None:
+            return False
+        if dy and not self.clearly_outside_keepout() and not self._y_move_allowed(dy, unit):
+            return False
+        u = units_from_literals(unit)
+        moves = []
+        if dx and self.axis_x is not None:
+            moves.append(self.axis_x.move_relative_async(float(dx), u, False))
+        if dy and self.axis_y is not None:
+            moves.append(self.axis_y.move_relative_async(float(dy), u, False))
+        if not moves:
+            return True
+
+        async def both():
+            return await asyncio.gather(*moves)
+        try:
+            self._run_async(both())
+        except MotionLibException as e:
+            print(f'move_xy_rel by ({dx}, {dy}) {unit} failed: {e}')
+            return False
         return True
 
 

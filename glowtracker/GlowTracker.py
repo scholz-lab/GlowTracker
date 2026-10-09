@@ -2301,11 +2301,11 @@ class ActivityTerminal(BoxLayout):
 
 
 class SkewGraph(FloatLayout):
-    """-skewness of the live image over the last minute (the Graph tab next to Activity).
+    """-skewness of the live image over the last 10 seconds (the Graph tab next to Activity).
 
     Samples the live-analysis result of each new frame; Live analysis must be on for there to be
     values. Draws only while visible."""
-    WINDOW_S = 60.0
+    WINDOW_S = 10.0          # seconds shown; at most 10 samples per second
     LINE = (0.04, 0.52, 1.0, 1)          # system blue
 
     def __init__(self, **kwargs):
@@ -2323,7 +2323,7 @@ class SkewGraph(FloatLayout):
         self._title = self._label('-skewness', 12, (0.6, 0.6, 0.65, 1))
         self._value = self._label('', 20, (0.92, 0.92, 0.94, 1), bold=True)
         self._axis = [self._label('', 10, (0.45, 0.45, 0.5, 1)) for _ in range(3)]
-        self._ago = self._label('-60 s', 10, (0.45, 0.45, 0.5, 1))
+        self._ago = self._label('-10 s', 10, (0.45, 0.45, 0.5, 1))
         self._now = self._label('now', 10, (0.45, 0.45, 0.5, 1))
         self._hint = self._label('Turn on Live analysis to plot the skewness', 12, (0.6, 0.6, 0.65, 1))
         self.bind(pos=self._redraw, size=self._redraw, opacity=self._redraw)
@@ -5430,25 +5430,22 @@ class RuntimeControls(BoxLayout):
             if not self.isTracking or self.trackingcheckbox.state != 'down' \
                     or getattr(app, '_hardware_teardown', False):
                 return
+            # X and Y go to the stage together (one round trip instead of two); the keep-out
+            # check is skipped while the stage is clearly far from the keep-out zone.
+            moveX = xstep if abs(xstep) > minstep else 0.0
+            moveY = ystep if abs(ystep) > minstep else 0.0
             movedDistances = []
-            if abs(xstep) > minstep:
-                if not stage.move_x(xstep, unit=units, wait_until_idle =False):
-                    print('Tracking stopped because the X move was refused or failed')
+            if moveX or moveY:
+                if not stage.move_xy_rel(moveX, moveY, unit=units):
+                    print('Tracking stopped because the stage move was refused or failed')
                     stage.emergency_stop()
                     return
-                app.coords[0] += xstep * unitToMm
-                movedDistances.append(abs(xstep) * unitToMm)
-                prevImage = image
-
-            if abs(ystep) > minstep:
-                if not self.isTracking:
-                    return
-                if not stage.move_y(ystep, unit=units, wait_until_idle = False):
-                    print('Tracking stopped because the Y move was refused or failed')
-                    stage.emergency_stop()
-                    return
-                app.coords[1] += ystep * unitToMm
-                movedDistances.append(abs(ystep) * unitToMm)
+                if moveX:
+                    app.coords[0] += moveX * unitToMm
+                    movedDistances.append(abs(moveX) * unitToMm)
+                if moveY:
+                    app.coords[1] += moveY * unitToMm
+                    movedDistances.append(abs(moveY) * unitToMm)
                 prevImage = image
 
             posHist.append((app.coords[0], app.coords[1], app.coords[2]))

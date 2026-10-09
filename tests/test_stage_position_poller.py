@@ -265,3 +265,68 @@ def test_ui_coordinate_paths_only_read_the_stage_cache():
         / 'layout.kv'
     ).read_text()
     assert 'app.stage.stop()' not in layout
+
+
+# --- move_xy_rel (tracking) ---------------------------------------------------------------
+
+class AsyncAxis(FakeAxis):
+    """Answers each move after `latency` s, like a stage reply over the serial line."""
+    latency = 0.05
+
+    def __init__(self, position):
+        super().__init__(position)
+        self.moves = []
+
+    events = []                                         # shared: ('sent'|'replied', step) in order
+
+    async def move_relative_async(self, step, unit, wait_until_idle=False):
+        import asyncio
+        self.moves.append(step)
+        AsyncAxis.events.append(('sent', step))
+        await asyncio.sleep(self.latency)
+        AsyncAxis.events.append(('replied', step))
+
+
+def make_xy_stage(monkeypatch, cached=None):
+    stage, _ = make_stage(monkeypatch)
+    stage.axis_x, stage.axis_y, stage.axis_z = AsyncAxis(0), AsyncAxis(0), AsyncAxis(0)
+    reads = []
+    monkeypatch.setattr(stage, '_safe_position_mm', lambda max_age=0.3: reads.append(1) or list(cached or [0, 0, 0]))
+    if cached is not None:
+        with stage._position_cache_condition:
+            stage._last_pos, stage._last_pos_time = list(cached), time.monotonic()
+    return stage, reads
+
+
+def test_xy_move_sends_both_axes_without_waiting_for_each_other(monkeypatch):
+    stage, _ = make_xy_stage(monkeypatch, cached=[50.0, 100.0, 20.0])
+    AsyncAxis.events.clear()
+    assert stage.move_xy_rel(0.2, -0.3, unit='mm')
+    assert stage.axis_x.moves == [0.2] and stage.axis_y.moves == [-0.3]
+    # both commands go out before either reply comes back: one round trip, not two
+    assert [kind for kind, _ in AsyncAxis.events] == ['sent', 'sent', 'replied', 'replied']
+
+
+def test_xy_move_skips_the_safety_read_far_from_keepout_and_checks_near_it(monkeypatch):
+    far, reads = make_xy_stage(monkeypatch, cached=[50.0, 100.0, 140.0])   # high Z, but Y far away
+    assert far.move_xy_rel(0, -0.5, unit='mm') and reads == []
+    y_edge = zaber.Stage.KEEPOUT_Y + zaber.Stage.KEEPOUT_MARGIN
+    near, reads = make_xy_stage(monkeypatch, cached=[50.0, y_edge + 0.2, 140.0])
+    assert not near.move_xy_rel(0, -1.0, unit='mm')                       # would enter the zone
+    assert reads and near.axis_y.moves == []
+    assert near.move_xy_rel(0, +1.0, unit='mm')                           # moving away is fine
+
+
+def test_xy_move_zero_steps_and_unknown_position(monkeypatch):
+    stage, reads = make_xy_stage(monkeypatch, cached=None)
+    assert stage.move_xy_rel(0, 0, unit='mm') and stage.axis_x.moves == [] == stage.axis_y.moves
+    assert stage.move_xy_rel(0.1, 0, unit='mm') and reads == []           # X only: no keep-out check
+
+
+def test_xy_move_works_from_a_worker_thread(monkeypatch):
+    stage, _ = make_xy_stage(monkeypatch, cached=[50.0, 100.0, 20.0])
+    results = []
+    worker = threading.Thread(target=lambda: results.extend(
+        [stage.move_xy_rel(0.1, 0.1, unit='mm'), stage.move_xy_rel(-0.1, -0.1, unit='mm')]))
+    worker.start(); worker.join(5)
+    assert results == [True, True] and stage.axis_x.moves == [0.1, -0.1]
