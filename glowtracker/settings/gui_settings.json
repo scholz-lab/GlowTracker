@@ -405,6 +405,20 @@
         "key": "min_step"
     },
     {
+        "type": "bool",
+        "title": "Continuous tracking (experimental)",
+        "desc": "Use every camera frame and send the stage a new target while it is still moving, instead of waiting for it to stop and for a fresh frame after every correction. Tracking then runs at the camera frame rate. Off: the classic move, settle and wait loop.",
+        "section": "Tracking",
+        "key": "continuoustracking"
+    },
+    {
+        "type": "numeric",
+        "title": "Continuous tracking: frame latency (ms)",
+        "desc": "Time from the middle of a frame's exposure until GlowTracker receives it: about half the exposure plus transfer time. Used to work out where the stage was when the frame was taken. Tune on the rig: if the worm oscillates around the centre, change it in steps of 5 ms.",
+        "section": "Tracking",
+        "key": "continuouslatency"
+    },
+    {
         "type": "numeric",
         "title": "threshold (bits)",
         "desc": "What is considered a relevant change in the image (e.g., grayscale out of 255)?",

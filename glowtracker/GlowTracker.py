@@ -55,6 +55,7 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 # Reopen the window where it was last time, before Kivy creates it (importing kivy.core.window
 # does): on Windows the layout is built at the scale of the display the window starts on.
 import window_geometry
+from tracking_motion import StageModel
 _savedWindow = None if __name__ == '__mp_main__' else window_geometry.apply_before_window_created(Config)
 
 from kivy.cache import Cache
@@ -5345,10 +5346,130 @@ class RuntimeControls(BoxLayout):
                 )
 
 
+    def _trackingLoopContinuous(self, minstep, units, capture_radius, binning, dark_bg, area, threshold,
+                                mode, min_brightness, max_brightness, posHist) -> None:
+        """Continuous tracking (Settings > Tracking > Continuous tracking): every camera frame is
+        used. The stage position at that frame's exposure comes from a model of the motion already
+        commanded (tracking_motion.StageModel), the worm's offset in the image is added, and that
+        absolute position is sent as the new target while the stage may still be moving. There is
+        no settle wait and no wait for a post-motion frame, so tracking runs at the camera rate.
+        """
+        app: GlowTrackerApp = App.get_running_app()
+        stage = app.stage
+        camera = app.camera
+        unitToMm = {'mm': 1.0, 'um': 0.001}.get(units)
+        if unitToMm is None:
+            raise ValueError(f'Unsupported tracking unit {units!r}')
+
+        def cameraActive():
+            try:
+                return camera is not None and (camera.IsGrabbing() or camera.isOnHold())
+            except Exception:
+                return False
+
+        def tracking():
+            return self.isTracking and self.trackingcheckbox.state == 'down'
+
+        dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
+        latency = max(0.0, app.config.getfloat('Tracking', 'continuouslatency', fallback=15.0)) / 1000.0
+        minstepMm = abs(float(minstep)) * unitToMm
+        vmax = float(getattr(stage, 'maxspeed', 0) or 0) or float(app.config.get('Stage', 'track_speed'))
+        accel = float(getattr(stage, 'accel', 0) or 0) or float(app.config.get('Stage', 'track_acceleration'))
+        model = StageModel(app.coords[0], app.coords[1], vmax, accel, time.perf_counter())
+        manager = self.imageacquisitionmanager
+        lastStamp = manager.imageRetrieveTimeStamp
+        prevImage = None
+        print(f'Continuous tracking: {vmax:g} mm/s, {accel:g} mm/s^2, frame latency {latency * 1000:.0f} ms')
+
+        bench_window, bench_n = 30, 0
+        bench_detect = bench_move = bench_frame = 0.0
+        bench_sent = 0
+        bench_start = time.perf_counter()
+
+        while tracking() and cameraActive():
+            wait_begin = time.perf_counter()
+            while tracking() and manager.imageRetrieveTimeStamp <= lastStamp:
+                if not cameraActive():
+                    return
+                time.sleep(0.0005)
+            if not tracking() or not cameraActive():
+                return
+            stamp = manager.imageRetrieveTimeStamp
+            lastStamp = stamp
+            image = manager.dualColorMainSideImage if dualColorMode else manager.image
+            if prevImage is None:
+                prevImage = image
+            _t_fetch = time.perf_counter()
+
+            found = True
+            try:
+                if mode == 'Diff':
+                    ystep, xstep = macro.extractWormsDiff(prevImage, image, capture_radius, binning, area, threshold, dark_bg)
+                elif mode == 'Min/Max':
+                    ystep, xstep = macro.extractWorms(image, capture_radius=capture_radius, bin_factor=binning,
+                                                      dark_bg=dark_bg, display=False)
+                else:
+                    ystep, xstep, self.trackingMask = macro.extractWormsCMS(
+                        image, capture_radius=capture_radius, bin_factor=binning, dark_bg=dark_bg, display=False,
+                        min_brightness=min_brightness, max_brightness=max_brightness)
+            except ValueError:
+                ystep, xstep, found = 0, 0, False
+            prevImage = image
+            self.cmsOffset_x = xstep
+            self.cmsOffset_y = -ystep
+            _t_detect = time.perf_counter()
+
+            if found:
+                # Image offset -> stage distance (same convention as the classic loop), then the
+                # worm's absolute position = stage position at this exposure + that offset.
+                dy, dx = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
+                exposure = stamp - latency
+                sx, sy = model.position(exposure)
+                targetX, targetY = sx + dx * unitToMm, sy + dy * unitToMm
+                currentX, currentY = model.target
+                sendX = targetX if abs(targetX - currentX) > minstepMm else None
+                sendY = targetY if abs(targetY - currentY) > minstepMm else None
+                if (sendX is not None or sendY is not None):
+                    if not tracking() or getattr(app, '_hardware_teardown', False):
+                        return
+                    sent_at = time.perf_counter()
+                    if not stage.move_xy_abs_nowait(sendX, sendY, unit='mm'):
+                        print('Tracking stopped because the stage move was refused or failed')
+                        stage.emergency_stop()
+                        return
+                    model.retarget(sent_at, x=sendX, y=sendY)
+                    bench_sent += 1
+
+            # The app's stage position follows the model (it is what recordings and plugins read).
+            app.coords[0], app.coords[1] = model.position(time.perf_counter())
+            posHist.append((app.coords[0], app.coords[1], app.coords[2]))
+            trailLimit = max(2, app.config.getint('DaqControl', 'traillimit'))
+            if len(posHist) > trailLimit:
+                del posHist[:-trailLimit]
+            _t_move = time.perf_counter()
+
+            bench_n += 1
+            bench_frame += _t_fetch - wait_begin
+            bench_detect += _t_detect - _t_fetch
+            bench_move += _t_move - _t_detect
+            if bench_n >= bench_window:
+                elapsed = time.perf_counter() - bench_start
+                per = lambda v: v / bench_n * 1000.0
+                print(f'track (continuous): detect {per(bench_detect):.1f} | move {per(bench_move):.1f} | '
+                      f'frame {per(bench_frame):.1f}ms | {bench_n / elapsed:.1f} fps | '
+                      f'{bench_sent} of {bench_n} frames sent a new target')
+                bench_n, bench_sent = 0, 0
+                bench_detect = bench_move = bench_frame = 0.0
+                bench_start = time.perf_counter()
+
+
     def _trackingLoop(self, minstep: int, units: str, capture_radius: int, binning: int, dark_bg: bool, area: int, threshold: int, mode: str, min_brightness: int, max_brightness: int, posHist: List[Vec3]) -> None:
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
+        if app.config.getboolean('Tracking', 'continuoustracking', fallback=False):
+            return self._trackingLoopContinuous(minstep, units, capture_radius, binning, dark_bg, area,
+                                                threshold, mode, min_brightness, max_brightness, posHist)
         stage = app.stage
         camera = app.camera
 
@@ -6575,7 +6696,9 @@ class GlowTrackerApp(App):
             'mode': 'CMS',
             'area': '400',
             'min_brightness': '0',
-            'max_brightness': '65535'
+            'max_brightness': '65535',
+            'continuoustracking': 'false',
+            'continuouslatency': '15'
         })
 
         config.setdefaults('LiveAnalysis', {

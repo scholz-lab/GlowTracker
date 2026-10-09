@@ -462,6 +462,47 @@ class Stage:
         return True
 
 
+    def move_xy_abs_nowait(self, x: float | None, y: float | None, unit: str = 'mm') -> bool:
+        """Absolute X and/or Y targets for continuous tracking: sent together, returning once the
+        stage has accepted them (not when it arrives). A new target while moving is fine: the
+        controller re-plans from its current motion. None leaves that axis alone.
+
+        The keep-out zone is checked against the target and the current Z, except when
+        clearly_outside_keepout() (no position read then)."""
+        if self.connection is None:
+            return False
+        factor = self._UNIT_TO_MM.get(unit)
+        if factor is None:
+            print(f'move_xy_abs_nowait: unknown unit {unit!r}; refusing for safety')
+            return False
+        if self.axis_z is not None and y is not None and not self.clearly_outside_keepout():
+            cur = self._safe_position_mm()
+            if cur is None or len(cur) < 3:
+                print('move_xy_abs_nowait: cannot read current position; refusing')
+                return False
+            tx = cur[0] if x is None else float(x) * factor
+            if not self.is_safe(tx, float(y) * factor, cur[2]):
+                print(f'move_xy_abs_nowait refused: target would enter keep-out (y={float(y) * factor:.1f}, z={cur[2]:.1f})')
+                return False
+        u = units_from_literals(unit)
+        moves = []
+        if x is not None and self.axis_x is not None:
+            moves.append(self.axis_x.move_absolute_async(float(x), u, False))
+        if y is not None and self.axis_y is not None:
+            moves.append(self.axis_y.move_absolute_async(float(y), u, False))
+        if not moves:
+            return True
+
+        async def both():
+            return await asyncio.gather(*moves)
+        try:
+            self._run_async(both())
+        except MotionLibException as e:
+            print(f'move_xy_abs_nowait to ({x}, {y}) {unit} failed: {e}')
+            return False
+        return True
+
+
     # move single axis
     def move_z(self, step, unit = 'um', wait_until_idle = False) -> bool:
         """Move to a given relative location.
