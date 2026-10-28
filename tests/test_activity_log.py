@@ -65,3 +65,24 @@ def test_corner_key_is_an_L_and_leaves_the_inner_square_to_the_slow_key():
     assert not key.collide_point(80, 20)    # inner square: the slow diagonal key
     (cx, cy), size = key._arrowBox()
     assert (cx, cy) == (24, 76) and size == 48
+
+
+def test_pad_arrows_follow_the_camera_image_in_image_space_mode():
+    """With this rig's calibration (camera turned ~90 degrees) screen-up is stage -X."""
+    from types import SimpleNamespace, MethodType
+    import GlowTracker as G
+    import Microscope_macros as macro
+    _, rot = macro.CameraAndStageCalibrator.genImageToStageMatrix(-1.5789470661590022, 1, 0.9884629)
+    sent = []
+    app = SimpleNamespace(stage=object(), vhigh=2.0, vlow=0.5, moveImageSpaceMode=True, imageToStageRotMat=rot,
+                          request_jog=lambda velocity, fast: sent.append(velocity), log=lambda *a, **k: None)
+    app.imageToStageXY = MethodType(G.GlowTrackerApp.imageToStageXY, app)
+    G.GlowTrackerApp.jog(app, (0, 1, 0), True)          # pad: up
+    G.GlowTrackerApp.jog(app, (1, 0, 0), True)          # pad: right
+    G.GlowTrackerApp.jog(app, (0, 0, 1), True)          # Z is never remapped
+    (ux, uy, _), (rx, ry, _), z = sent
+    assert ux < -1.99 and abs(uy) < 0.05 and ry > 1.99 and abs(rx) < 0.05
+    assert z == (0.0, 0.0, 2.0)
+    app.moveImageSpaceMode = False
+    G.GlowTrackerApp.jog(app, (0, 1, 0), True)          # stage axes: up is +Y, as before
+    assert sent[-1] == (0.0, 2.0, 0.0)

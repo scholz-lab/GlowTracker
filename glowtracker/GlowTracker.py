@@ -7103,12 +7103,31 @@ class GlowTrackerApp(App):
         )
 
 
+    def imageToStageXY(self, right: float, up: float) -> tuple:
+        """A move given as on screen (right, up) as stage (X, Y), using the camera calibration.
+        The same mapping the arrow keys have always used in image-space mode."""
+        stageSpace = self.imageToStageRotMat @ np.array([up, right], np.float32)
+        return float(stageSpace[1]), float(stageSpace[0])
+
+
+    def setImageSpaceArrows(self, on: bool) -> None:
+        """Pad, arrow keys and gamepad move along the camera image (on) or the stage axes (off)."""
+        self.moveImageSpaceMode = bool(on)
+        self.config.set('Stage', 'move_image_space_mode', '1' if on else '0')
+        self.config.write()
+        self.log('stage', 'arrows follow the camera image' if on else 'arrows follow the stage axes')
+
+
     def jog(self, direction: tuple, fast: bool = True) -> None:
         if self.stage is None:
             self.log('stage', 'not connected', 'warn')
             return
         moves = ' '.join(f'{"XYZ"[i]}{"+" if d > 0 else "-"}' for i, d in enumerate(direction) if d)
-        self.log('stage', f'jog {moves} {"fast" if fast else "slow"}')
+        imageSpace = bool(getattr(self, 'moveImageSpaceMode', False)) and any(direction[:2])
+        self.log('stage', f'jog {moves}{" (image)" if imageSpace else ""} {"fast" if fast else "slow"}')
+        if imageSpace:
+            # pad arrows are screen directions (right = X, up = Y): follow the image like the keys
+            direction = (*self.imageToStageXY(direction[0], direction[1]), direction[2])
         speed = self.vhigh if fast else self.vlow
         # diagonals: the same speed along the path as a straight move
         norm = math.sqrt(sum(d * d for d in direction)) or 1.0
@@ -7137,6 +7156,9 @@ class GlowTrackerApp(App):
                 1: (0,v,0),
                 4: (0,0,v)
             }
+            if self.moveImageSpaceMode:
+                direction[0] = (*self.imageToStageXY(v, 0), 0)
+                direction[1] = (*self.imageToStageXY(0, v), 0)
             if axisid in [0,1,4]:
                 self.stopevent = Clock.schedule_once(lambda dt: self.stage_stop(), 0.1)
                 self.request_jog(direction[axisid], True)
@@ -7172,13 +7194,8 @@ class GlowTrackerApp(App):
         # Stage movement mode
         if self.moveImageSpaceMode:
             move_img_space = direction[key]
-
             # Translate from image space into stage space
-            translation_vec_img_space = np.array([move_img_space[1], move_img_space[0]], np.float32)
-            translation_vec_stage_space = self.imageToStageRotMat @ translation_vec_img_space
-
-            # Convert back to a 3D tuple
-            velocity = ( float(translation_vec_stage_space[1]), float(translation_vec_stage_space[0]), move_img_space[2] )
+            velocity = (*self.imageToStageXY(move_img_space[0], move_img_space[1]), move_img_space[2])
 
         # Move
         if not self.request_jog(velocity, fast):
@@ -7308,6 +7325,10 @@ class GlowTrackerApp(App):
                 elif key == 'move_image_space_mode':
                     # value is a str of int or float, i.e. '0', '1' so we have to parse it to boolean
                     self.moveImageSpaceMode = bool(int(value))
+                    try:
+                        self.root.ids.leftcolumn.ids.gotocontrols.ids.arrowmode.text =                             'Arrows: image' if self.moveImageSpaceMode else 'Arrows: stage'
+                    except (AttributeError, KeyError):
+                        pass
 
         elif section == 'Camera':
 

@@ -136,11 +136,10 @@
     },
     {
         "type": "bool",
-        "title": "Move in image space mode",
-        "desc": "Control the stage movement relative to the image space. Requires calibration.",
+        "title": "Arrows follow the camera image",
+        "desc": "On: the stage pad, arrow keys and gamepad move the way you see it in the image (up moves the view up), using the camera calibration. Off: they move the stage's own X and Y axes. Also switchable under Fill and Go.",
         "section": "Stage",
-        "key": "move_image_space_mode",
-        "advanced": true
+        "key": "move_image_space_mode"
     },
     {
         "type": "title",

@@ -651,6 +651,16 @@ MainWindow:
             tint: 0.17, 0.45, 0.72, 1
             pressed_tint: 0.26, 0.56, 0.86, 1
             on_release: root.go_to()
+    FlatButton:
+        id: arrowmode
+        size_hint_y: None
+        height: dp(32)
+        font_size: '12sp'
+        text: 'Arrows: image' if app.config.getboolean('Stage', 'move_image_space_mode') else 'Arrows: stage'
+        tooltip: 'Image: pad, arrow keys and gamepad move the way you see it in the image (uses the camera calibration). Stage: they move the stage X and Y axes. Click to switch.'
+        on_release:
+            app.setImageSpaceArrows(not app.moveImageSpaceMode)
+            self.text = 'Arrows: image' if app.moveImageSpaceMode else 'Arrows: stage'
     Widget:
 
 
