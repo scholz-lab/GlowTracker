@@ -396,7 +396,7 @@ class AppBridge(Protocol):
     def current_plugin(self) -> str: ...
     def apply(self, kind: str, code: str, path: str) -> str:
         """Save and load an approved script; return what was done. Raise AssistantError to refuse."""
-    def default_path(self, kind: str) -> str: ...
+    def default_path(self, kind: str, name: str = '') -> str: ...
     def settings(self, section: str) -> str: ...
     def check_setting(self, section: str, key: str, value: str) -> dict:
         """{'title', 'current', 'new', ...} if the change may be proposed; raise AssistantError if not."""
@@ -451,9 +451,9 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
     def read_current_plugin() -> str:
         return bridge.current_plugin() or '(no plugin file selected in the Plugin tab)'
 
-    def apply(kind: str, code: str, path: str) -> ToolResult:
+    def apply(kind: str, code: str, path: str, name: str = '') -> ToolResult:
         try:
-            done = bridge.apply(kind, _unfence(code).strip(), path or bridge.default_path(kind))
+            done = bridge.apply(kind, _unfence(code).strip(), path or bridge.default_path(kind, name))
         except Exception as e:      # refused by the app, e.g. while recording
             return ToolResult(f'Not applied: {e}', is_error=True)
         report = check_report(kind, code).message
@@ -467,7 +467,10 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
         return lambda args: asyncio.to_thread(check_report, kind, args.get(key, ''))
 
     summary = {'type': 'string', 'description': 'One sentence: what it does, shown to the user.'}
-    path = {'type': 'string', 'description': 'Where to save it. Leave out to use the default folder.'}
+    path = {'type': 'string', 'description': 'Where to save it. Leave out to use the scripts folder.'}
+    name = {'type': 'string', 'description': 'A short, human-readable file name for it: 2 to 6 words '
+                                             'saying what it does, e.g. "awa 1 s pulses every 30 s". '
+                                             'No folder, no extension.'}
     tools.add_function(
         'get_app_state',
         'Current GlowTracker state: recording, tracking, imaging mode, DAQ mode, the sequencer script, '
@@ -514,21 +517,23 @@ def _register_tools(tools: ToolResolver, bridge: AppBridge) -> None:
         'Propose a complete DAQ sequencer script. It is checked with the real parser; if valid, the '
         'user reviews it and approves (it is then saved and loaded as the sequencer script, DAQ mode '
         'Sequencer), edits it, or declines. Waits for their decision.',
-        lambda script, summary='', path='': off_loop(apply, kind=SEQUENCER, code=script, path=path),
+        lambda script, summary='', path='', name='': off_loop(apply, kind=SEQUENCER, code=script, path=path,
+                                                               name=name or summary),
         {'type': 'object', 'required': ['script'], 'additionalProperties': False, 'properties': {
             'script': {'type': 'string', 'minLength': 1,
                        'description': 'The complete script, starting with the mode line.'},
-            'summary': summary, 'path': path}},
+            'name': name, 'summary': summary, 'path': path}},
         confirm=True, check=checked(SEQUENCER, 'script'))
     tools.add_function(
         'propose_plugin',
         'Propose a complete GlowTracker plugin file. It is checked (API names, safety, a test run); if '
         'valid, the user reviews it and approves (it is then saved and selected in DAQ > Plugin, where '
         'they press Start), edits it, or declines. Waits for their decision.',
-        lambda code, summary='', path='': off_loop(apply, kind=PLUGIN, code=code, path=path),
+        lambda code, summary='', path='', name='': off_loop(apply, kind=PLUGIN, code=code, path=path,
+                                                             name=name or summary),
         {'type': 'object', 'required': ['code'], 'additionalProperties': False, 'properties': {
             'code': {'type': 'string', 'minLength': 1, 'description': 'The complete Python file.'},
-            'summary': summary, 'path': path}},
+            'name': name, 'summary': summary, 'path': path}},
         confirm=True, check=checked(PLUGIN, 'code'))
 
 

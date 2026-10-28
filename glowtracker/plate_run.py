@@ -428,6 +428,8 @@ class PlateRunController:
                                       for k in ('iscontinuous', 'extension', 'duration', 'nframes')}))
                 def record():
                     left.savefile = str(folder)
+                    # this visit's folder is the recording folder: no extra subfolder
+                    mgr.recordbutton.recordIntoFolder = True
                     left.ids.camprops.framerate = plate['settings']['track_framerate']
                     app.config.set('Experiment', 'iscontinuous', '1')
                     app.config.set('Experiment', 'extension', self.record_format)
@@ -461,6 +463,7 @@ class PlateRunController:
                 if saved is not None and not self._teardown_requested:
                     def restore():
                         left.savefile = saved[0]
+                        mgr.recordbutton.recordIntoFolder = False
                         for key, value in saved[1].items():
                             app.config.set('Experiment', key, value)
                         app.config.write()

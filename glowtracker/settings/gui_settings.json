@@ -420,6 +420,13 @@
     },
     {
         "type": "numeric",
+        "title": "Continuous tracking: correction gain",
+        "desc": "Fraction of the way the stage is sent towards the measured worm position on each frame (0.05 to 1). Lower is steadier but follows a fast worm less closely; raise it only if tracking lags behind.",
+        "section": "Tracking",
+        "key": "continuousgain"
+    },
+    {
+        "type": "numeric",
         "title": "threshold (bits)",
         "desc": "What is considered a relevant change in the image (e.g., grayscale out of 255)?",
         "section": "Tracking",

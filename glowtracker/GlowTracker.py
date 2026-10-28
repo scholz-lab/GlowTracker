@@ -55,6 +55,7 @@ Config.set('input', 'mouse', 'mouse,disable_multitouch')  # turns off the multi-
 # Reopen the window where it was last time, before Kivy creates it (importing kivy.core.window
 # does): on Windows the layout is built at the scale of the display the window starts on.
 import window_geometry
+import run_records
 from tracking_motion import StageModel
 _savedWindow = None if __name__ == '__mp_main__' else window_geometry.apply_before_window_created(Config)
 
@@ -276,6 +277,51 @@ class LeftColumn(BoxLayout):
          #unbind keyboard events
         self.app.unbind_keys()
         self._popup.open()
+
+
+    def show_new_experiment(self):
+        """Ask for a name and create <data root>/experiments/<date>_<name> as the experiment folder.
+        Each recording then becomes a subfolder of it (run_records)."""
+        root = run_records.data_root(self.app.config.get('Experiment', 'dataroot', fallback=''))
+        box = BoxLayout(orientation='vertical', spacing=dp(12))
+        name = Factory.DarkInput(hint_text='e.g. AWA guidance, N2 controls', multiline=False,
+                                 size_hint_y=None, height=dp(40))
+        hint = Label(text=f'Creates a dated folder in {run_records.experiments_dir(root)}',
+                     font_size='13sp', halign='left', valign='middle', color=(0.7, 0.7, 0.74, 1))
+        hint.bind(size=lambda w, *a: setattr(w, 'text_size', (w.width, None)))
+        buttons = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
+        cancel = Factory.FlatButton(text='Cancel')
+        create = Factory.FlatButton(text='Create')
+        buttons.add_widget(Widget())
+        buttons.add_widget(cancel)
+        buttons.add_widget(create)
+        for w in (name, hint, buttons):
+            box.add_widget(w)
+        popup = Popup(title='New experiment', content=box, size_hint=(None, None),
+                      size=(dp(560), dp(250)), auto_dismiss=True)
+        style_card(popup, title_size=sp(18), padding=dp(20))
+
+        def make(*args):
+            if not name.text.strip():
+                hint.text = 'Give the experiment a name first.'
+                return
+            try:
+                path = run_records.new_experiment(root, name.text)
+            except OSError as e:
+                hint.text = f'Could not create it: {e}'
+                return
+            popup.dismiss()
+            self.saveloc.text = path
+            self.createRecordingPath()
+            self.app.log('rec', f'new experiment: {os.path.basename(path)}')
+
+        create.bind(on_release=make)
+        name.bind(on_text_validate=make)
+        cancel.bind(on_release=lambda *a: popup.dismiss())
+        self.app.unbind_keys()
+        popup.bind(on_dismiss=lambda *a: self.app.bind_keys())
+        popup.open()
+        Clock.schedule_once(lambda dt: setattr(name, 'focus', True), 0.1)
 
 
     # popup experiment dialog selector
@@ -1277,13 +1323,11 @@ class AssistantHost:
         code = self._read(path, 50_000)
         return f'# {path}\n{code}' if code else ''
 
-    def default_path(self, kind: str) -> str:
-        key, prefix, ext = (('sequencescript', 'assistant_sequence', '.txt') if kind == llm_assist.SEQUENCER
-                            else ('pluginscript', 'assistant_plugin', '.py'))
-        current = self.app.config.get('DaqControl', key, fallback='')
-        folder = os.path.dirname(current) if current else \
-            self.app.config.get('Experiment', 'exppath', fallback='') or os.path.expanduser('~')
-        return os.path.join(folder, f'{prefix}_{time.strftime("%Y%m%d_%H%M%S")}{ext}')
+    def default_path(self, kind: str, name: str = '') -> str:
+        """<data root>/scripts/<readable name>.txt|.py, never an existing file (run_records)."""
+        fallback, ext = ('sequence', '.txt') if kind == llm_assist.SEQUENCER else ('plugin', '.py')
+        root = run_records.data_root(self.app.config.get('Experiment', 'dataroot', fallback=''))
+        return run_records.script_path(root, ext, name, f'{fallback}-{time.strftime("%Y%m%d-%H%M%S")}')
 
     @staticmethod
     def _read(path: str, limit: int) -> str:
@@ -3118,6 +3162,20 @@ class RecordButton(ImageAcquisitionButton):
             self.state = 'normal'
             return
 
+        # Each recording gets its own subfolder of the experiment folder (run_records), unless a
+        # plate run already made one for this visit (recordIntoFolder).
+        self.experimentPath = None
+        self.runDir = None
+        if not getattr(self, 'recordIntoFolder', False):
+            try:
+                self.experimentPath = self.saveFilePath
+                self.saveFilePath = run_records.new_recording_dir(self.experimentPath, self._recordingLabel())
+            except OSError as e:
+                self.app.log('rec', f'cannot create the recording folder: {e}', 'error')
+                self.state = 'normal'
+                return
+        self.runDir = self.saveFilePath
+
         # Stop camera if already running and disable the LiveView button
         # If the camera is already running it in live view button,
         #   put the transition "OnHold" flag, and restart camera in Recording mode
@@ -3170,6 +3228,7 @@ class RecordButton(ImageAcquisitionButton):
                 self.app.log('daq', f'not connected: the {self.app.daqControl.daqMode.value} output is '
                              f'not applied during this recording', 'warn')
             self.app.log('rec', f'started -> {self.saveFilePath}')
+            self._startRunRecord()
 
             self.initRecordingParams()
             grabArgs = basler.CameraGrabParameters(
@@ -3678,6 +3737,85 @@ class RecordButton(ImageAcquisitionButton):
         return coordinateFile
 
 
+    def _recordingLabel(self) -> str:
+        """Short name for the recording folder: the plugin or sequencer script in use, else 'rec'."""
+        daq = self.app.daqControl
+        try:
+            if daq.daqMode == DAQMode.Plugin:
+                path = self.app.config.get('DaqControl', 'pluginscript', fallback='')
+                if path:
+                    return os.path.splitext(os.path.basename(path))[0]
+            if daq.daqMode == DAQMode.Sequencer:
+                path = self.app.config.get('DaqControl', 'sequencescript', fallback='')
+                if path:
+                    return os.path.splitext(os.path.basename(path))[0]
+        except Exception:
+            pass
+        return 'rec'
+
+    def _startRunRecord(self) -> None:
+        """run.json, settings.ini and a frozen copy of the script or plugin, in the recording's
+        folder. A failure here is logged but never stops the recording."""
+        try:
+            app, daq = self.app, self.app.daqControl
+            frozen = []
+            mode = daq.daqMode.value
+            if daq.daqMode == DAQMode.Sequencer:
+                frozen.append(run_records.freeze(app.config.get('DaqControl', 'sequencescript', fallback=''),
+                                                 self.runDir, 'sequencer'))
+            host = getattr(app, 'pluginHost', None)
+            pluginRunning = host is not None and host.is_running()
+            if daq.daqMode == DAQMode.Plugin or pluginRunning:
+                frozen.append(run_records.freeze(getattr(host, 'path', None)
+                                                 or app.config.get('DaqControl', 'pluginscript', fallback=''),
+                                                 self.runDir, 'plugin'))
+            rtc = self.runtimeControls
+            camera = {}
+            for key, read in (('exposure_us', lambda: self.camera.ExposureTime()),
+                              ('gain', lambda: self.camera.Gain()),
+                              ('framerate', lambda: self.camera.ResultingFrameRate())):
+                try:
+                    camera[key] = round(float(read()), 4)
+                except Exception:
+                    camera[key] = None
+            acquisition = {
+                **camera,
+                'save_format': app.config.get('Experiment', 'saveformat', fallback='frames'),
+                'continuous': app.config.get('Experiment', 'iscontinuous', fallback=''),
+                'tracking': bool(getattr(rtc, 'isTracking', False)),
+                'tracking_mode': app.config.get('Tracking', 'mode', fallback=''),
+                'continuous_tracking': app.config.get('Tracking', 'continuoustracking', fallback='false'),
+                'stage_start_mm': [round(float(v), 4) for v in app.coords[:3]],
+            }
+            stimulation = {'daq_mode': mode, 'daq_connected': daq.isConnected(),
+                           'plugin_running': pluginRunning}
+            run_records.start_run(
+                self.runDir, experiment=self.experimentPath or os.path.dirname(self.runDir),
+                settings=run_records.config_dict(app.config),
+                software=run_records.software_version(os.path.dirname(os.path.abspath(__file__))),
+                acquisition=acquisition, stimulation=stimulation, frozen=frozen,
+                context={'plate_run': bool(getattr(self, 'recordIntoFolder', False))})
+        except Exception as e:
+            print(f'Writing run.json failed: {e}')
+            self.app.log('rec', f'could not write run.json: {e}', 'warn')
+
+    def _finishRunRecord(self, captured: int, saved: int, failed: int) -> None:
+        runDir = getattr(self, 'runDir', None)
+        if not runDir:
+            return
+        try:
+            dropped = self.saveDropBudget.total if self.saveDropBudget is not None else 0
+            error = self.saveHandoffError or (str(self.acquisitionError) if self.acquisitionError else None)
+            run_records.finish_run(runDir, {'frames_captured': captured, 'frames_saved': saved,
+                                            'frames_failed': failed, 'frames_dropped': dropped,
+                                            'stopped_by_error': error},
+                                   experiment=self.experimentPath)
+            self.app.log('rec', f'saved in {os.path.basename(runDir)}')
+        except Exception as e:
+            print(f'Completing run.json failed: {e}')
+        finally:
+            self.runDir = None
+
     @override
     def stopImageAcquisition(self) -> None:
         """Extend the stop image acquisition functionality:
@@ -3759,6 +3897,7 @@ class RecordButton(ImageAcquisitionButton):
                   f'(they have no image and no coordinate row)')
         if self.saveHandoffError is not None:
             print(f'WARNING: recording stopped after saver failure: {self.saveHandoffError}')
+        self._finishRunRecord(recordedFrames, savedFrames, failedFrames)
 
 
 
@@ -5373,13 +5512,16 @@ class RuntimeControls(BoxLayout):
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         latency = max(0.0, app.config.getfloat('Tracking', 'continuouslatency', fallback=15.0)) / 1000.0
         minstepMm = abs(float(minstep)) * unitToMm
+        # Fraction of the way to the newly measured worm position each frame. Below 1 it damps the
+        # loop, which otherwise oscillates when the latency setting is off by more than ~10 ms.
+        gain = min(1.0, max(0.05, app.config.getfloat('Tracking', 'continuousgain', fallback=0.5)))
         vmax = float(getattr(stage, 'maxspeed', 0) or 0) or float(app.config.get('Stage', 'track_speed'))
         accel = float(getattr(stage, 'accel', 0) or 0) or float(app.config.get('Stage', 'track_acceleration'))
         model = StageModel(app.coords[0], app.coords[1], vmax, accel, time.perf_counter())
         manager = self.imageacquisitionmanager
         lastStamp = manager.imageRetrieveTimeStamp
         prevImage = None
-        print(f'Continuous tracking: {vmax:g} mm/s, {accel:g} mm/s^2, frame latency {latency * 1000:.0f} ms')
+        print(f'Continuous tracking: {vmax:g} mm/s, {accel:g} mm/s^2, frame latency {latency * 1000:.0f} ms, gain {gain:g}')
 
         bench_window, bench_n = 30, 0
         bench_detect = bench_move = bench_frame = 0.0
@@ -5425,8 +5567,10 @@ class RuntimeControls(BoxLayout):
                 dy, dx = macro.getStageDistances(np.array([-ystep, xstep]), app.imageToStageMat)
                 exposure = stamp - latency
                 sx, sy = model.position(exposure)
-                targetX, targetY = sx + dx * unitToMm, sy + dy * unitToMm
+                wormX, wormY = sx + dx * unitToMm, sy + dy * unitToMm
                 currentX, currentY = model.target
+                targetX = currentX + gain * (wormX - currentX)
+                targetY = currentY + gain * (wormY - currentY)
                 sendX = targetX if abs(targetX - currentX) > minstepMm else None
                 sendY = targetY if abs(targetY - currentY) > minstepMm else None
                 if (sendX is not None or sendY is not None):
@@ -5467,7 +5611,11 @@ class RuntimeControls(BoxLayout):
         """Tracking function to be running inside a thread
         """
         app: GlowTrackerApp = App.get_running_app()
-        if app.config.getboolean('Tracking', 'continuoustracking', fallback=False):
+        try:
+            continuous = app.config.getboolean('Tracking', 'continuoustracking')
+        except Exception:
+            continuous = False          # setting missing or unreadable: the classic loop
+        if continuous:
             return self._trackingLoopContinuous(minstep, units, capture_radius, binning, dark_bg, area,
                                                 threshold, mode, min_brightness, max_brightness, posHist)
         stage = app.stage
@@ -6572,9 +6720,16 @@ class GlowTrackerApp(App):
 
 
     def _pluginLogDir(self) -> str | None:
+        """The running recording's own folder while recording, else the experiment folder."""
         root = self.root
         if root is None:
             return None
+        try:
+            record = root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.recordbutton
+            if record.state == 'down' and getattr(record, 'runDir', None):
+                return record.runDir
+        except (AttributeError, KeyError):
+            pass
         return root.ids.leftcolumn.savefile or None
 
 
@@ -6698,7 +6853,8 @@ class GlowTrackerApp(App):
             'min_brightness': '0',
             'max_brightness': '65535',
             'continuoustracking': 'false',
-            'continuouslatency': '15'
+            'continuouslatency': '15',
+            'continuousgain': '0.5'
         })
 
         config.setdefaults('LiveAnalysis', {
@@ -6716,7 +6872,8 @@ class GlowTrackerApp(App):
             'duration': '150.0',
             'buffersize': '3000',
             'savequeue': '60',
-            'saveformat': 'frames'
+            'saveformat': 'frames',
+            'dataroot': ''
         })
 
         config.setdefaults('Assistant', {

@@ -312,6 +312,12 @@ MainWindow:
             on_focus:
                 if not self.focus: root.createRecordingPath()
         FlatButton:
+            text: 'New'
+            tooltip: 'Start a new experiment: a dated folder; each recording becomes a subfolder of it'
+            size_hint_x: None
+            width: dp(60)
+            on_release: root.show_new_experiment()
+        FlatButton:
             text: 'Browse'
             tooltip: 'Choose where recordings are saved'
             size_hint_x: None

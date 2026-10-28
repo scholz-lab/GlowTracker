@@ -355,7 +355,8 @@ class ProposalCard(BoxLayout):
         warnings = [escape_markup(line) for line in details.splitlines() if line.startswith('Warning:')]
         self.ids.checks.text = '\n'.join(f'[color=f0c27b]{line}[/color]' for line in warnings)
         self.ids.usebutton.text = 'Approve'
-        self.ids.path.text = arguments.get('path') or owner.defaultPath(self.kind)
+        self.ids.path.text = arguments.get('path') or owner.defaultPath(
+            self.kind, arguments.get('name') or arguments.get('summary') or '')
         self.originalPath = self.ids.path.text
         self.decided = False
         # what the script does, again after the user edits it
@@ -812,18 +813,18 @@ class AssistantWidget(BoxLayout):
         except assistant_ipc.CommandError as e:
             raise llm_assist.AssistantError(str(e)) from e
 
-    def default_path(self, kind: str) -> str:
+    def default_path(self, kind: str, name: str = '') -> str:
         """The path for a script the model gave none for: the one the approved card showed."""
-        return self.approvedDefaultPaths.pop(kind, None) or self.defaultPath(kind)
+        return self.approvedDefaultPaths.pop(kind, None) or self.defaultPath(kind, name)
 
     # --- the user's decision on a proposal -----------------------------------------------------
     def answer(self, call_id: str, approved: bool, arguments: dict | None) -> None:
         if self._chat is not None:
             self._chat.answer(call_id, approved, arguments)
 
-    def defaultPath(self, kind: str) -> str:
+    def defaultPath(self, kind: str, name: str = '') -> str:
         try:
-            return self.client.call('default_path', kind=kind)
+            return self.client.call('default_path', kind=kind, name=name)
         except assistant_ipc.CommandError:
             ext = '.txt' if kind == llm_assist.SEQUENCER else '.py'
             return os.path.join(os.path.expanduser('~'), f'assistant_{kind}_{time.strftime("%Y%m%d_%H%M%S")}{ext}')

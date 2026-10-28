@@ -134,7 +134,7 @@ class FakeApp:
         self.applied.append((kind, code, path))
         return f'Saved {path} and loaded it.'
 
-    def default_path(self, kind):
+    def default_path(self, kind, name=''):
         return f'/data/default_{kind}'
 
     settings_values = {('Camera', 'framerate'): '10'}

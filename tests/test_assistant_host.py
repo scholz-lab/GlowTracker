@@ -34,7 +34,7 @@ def fake_app(tmp_path, recording=False):
     root = SimpleNamespace(ids=SimpleNamespace(middlecolumn=SimpleNamespace(runtimecontrols=runtime),
                                                rightcolumn=SimpleNamespace(_popup=None)))
     config = FakeConfig({('Assistant', 'model'): 'm', ('Assistant', 'apikey'): 'k',
-                         ('Experiment', 'exppath'): str(tmp_path)})
+                         ('Experiment', 'exppath'): str(tmp_path), ('Experiment', 'dataroot'): str(tmp_path)})
     plugin_host = SimpleNamespace(status='idle', is_running=lambda: False)
     config.set('Camera', 'display_fps', '10')
     config.set('Stage', 'speed_unit', 'mm/s')
@@ -106,8 +106,11 @@ def test_config_state_and_default_paths(host, tmp_path):
     assert host.get_state()['dual_color_mode'] is False
     state = host.get_state()
     assert state['recording'] is False and state['tracking'] is True and state['daq_mode'] == 'Off'
-    assert os.path.dirname(host.default_path('sequencer')) == str(tmp_path)
-    assert host.default_path('plugin').endswith('.py')
+    assert host.default_path('sequencer', 'AWA pulses every 30 s') == str(tmp_path / 'scripts' / 'awa-pulses-every-30-s.txt')
+    assert host.default_path('plugin', 'Buzzer').endswith(os.path.join('scripts', 'buzzer.py'))
+    open(host.default_path('plugin', 'Buzzer'), 'w').close()
+    assert host.default_path('plugin', 'Buzzer').endswith('buzzer-2.py')      # never overwrites
+    assert os.path.basename(host.default_path('plugin')).startswith('plugin-')
 
 
 def test_the_window_reaches_the_commands_over_the_connection(host, tmp_path):
