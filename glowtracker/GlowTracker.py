@@ -131,7 +131,8 @@ from Microscope_macros import Vertex2D
 import Basler_control as basler
 from MacroScript import MacroScriptExecutor
 from AutoFocus import AutoFocusPID, FocusEstimationMethod
-from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams
+from DAQ_control import DAQControl, DAQMode, StageProgramMode, GaussianParams, sequencer_output_of, \
+    with_sequencer_output
 from script_api import PluginHost, WormState, BrightnessStats, worm_position_mm, trail_velocity
 import llm_assist
 import assistant_ipc
@@ -1669,8 +1670,7 @@ class SequencerWidget(BoxLayout):
         self.daqScriptFile: str = self.ids.daqscriptfile.text
         # the timeline next to the editor follows the text
         self.ids.preview.dac_labels = dac_labels_from(self.app.config)
-        self._previewEvent = Clock.create_trigger(
-            lambda dt: self.ids.preview.show_sequencer(self.ids.scripttext.text), 0.5)
+        self._previewEvent = Clock.create_trigger(lambda dt: self._scriptChanged(), 0.5)
         self.ids.scripttext.bind(text= lambda *args: self._previewEvent())
         # Load the recent script
         if self.daqScriptFile != '':
@@ -1685,6 +1685,38 @@ class SequencerWidget(BoxLayout):
             closeCallback (callable): the closing callback.
         """
         self.closeCallback = closeCallback
+
+
+    OUTPUT_CHOICES = {'Both outputs': None, 'DAC0 only': 0, 'DAC1 only': 1}
+
+    def _scriptChanged(self) -> None:
+        """Timeline preview and the output selector follow the editor text."""
+        text = self.ids.scripttext.text
+        self.ids.preview.show_sequencer(text)
+        output = sequencer_output_of(text)
+        self.ids.output.text = next(k for k, v in self.OUTPUT_CHOICES.items() if v == output)
+
+
+    def setOutput(self, choice: str) -> None:
+        """Write the chosen output into the script ('output: [dac0]' line) and save it, so the
+        file says which output it drives. [on, V] and [off] then drive that output only."""
+        if not hasattr(self, 'app') or choice not in self.OUTPUT_CHOICES:
+            return
+        output = self.OUTPUT_CHOICES[choice]
+        text = self.ids.scripttext.text
+        if sequencer_output_of(text) == output:
+            return
+        newText = with_sequencer_output(text, output)
+        try:
+            DAQControl().parseTextScript(newText)
+        except ValueError as e:
+            self.app.log('daq', f'cannot drive {choice}: {e}', 'warn')
+            self._scriptChanged()       # back to what the file says
+            return
+        self.ids.scripttext.text = newText
+        if self.ids.daqscriptfile.text.strip():
+            self.saveScript()
+        self.app.log('daq', f'sequence drives {choice.replace(" only", "")}')
 
 
     def openLoadSequencerWidget(self):
@@ -3789,6 +3821,8 @@ class RecordButton(ImageAcquisitionButton):
             }
             stimulation = {'daq_mode': mode, 'daq_connected': daq.isConnected(),
                            'plugin_running': pluginRunning}
+            if daq.daqMode == DAQMode.Sequencer:
+                stimulation['sequencer_output'] = {None: 'both', 0: 'dac0', 1: 'dac1'}[daq.sequencerOutput]
             run_records.start_run(
                 self.runDir, experiment=self.experimentPath or os.path.dirname(self.runDir),
                 settings=run_records.config_dict(app.config),

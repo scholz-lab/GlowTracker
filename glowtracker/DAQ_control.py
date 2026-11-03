@@ -1,5 +1,6 @@
 from __future__ import annotations
 import ast
+import re
 import LabJackPython
 import u3
 from enum import Enum
@@ -16,6 +17,29 @@ from plot_style import darken
 from dataclasses import dataclass
 
 MAX_VOLTAGE = 4.95
+
+# 'output: [...]' in a sequencer script: the output [on, V] and [off] drive (None = both)
+SEQUENCER_OUTPUTS = {('both',): None, ('dac0',): 0, ('dac1',): 1}
+_OUTPUT_LINE = re.compile(r'^\s*output\s*:')
+
+
+def sequencer_output_of(text: str) -> int | None:
+    """The output a sequencer script's text names (None = both), without parsing the rest."""
+    for line in (text or '').split('\n'):
+        if _OUTPUT_LINE.match(line):
+            word = line.split(':', 1)[1].strip().strip('[],').strip().lower()
+            return SEQUENCER_OUTPUTS.get((word,))
+    return None
+
+
+def with_sequencer_output(text: str, output: int | None) -> str:
+    """The script text with its 'output:' line set to output, after the mode line.
+    None removes the line: both outputs, as in scripts written before the line existed."""
+    lines = [line for line in (text or '').split('\n') if not _OUTPUT_LINE.match(line)]
+    if output is not None:
+        at = next((i + 1 for i, line in enumerate(lines) if line.strip().startswith('mode')), 0)
+        lines.insert(at, f'output: [dac{output}]')
+    return '\n'.join(lines)
 
 
 class DAQMode(Enum):
@@ -76,6 +100,8 @@ class DAQControl():
         # self.isEnable: bool = False
         self.daqMode: DAQMode = DAQMode.Off
         self.sequencerMode: SequencerMode = SequencerMode.Frame
+        # The output the loaded sequence drives with [on, V] / [off]: None both, 0 DAC0, 1 DAC1
+        self.sequencerOutput: int | None = None
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
         self.reversalDetector: ReversalDetector = ReversalDetector()
         self.currentVoltage: float = 0
@@ -248,6 +274,10 @@ class DAQControl():
             mode = modeValue[0]
             if mode not in ('frame', 'time'):
                 raise ValueError("'mode' must be [frame] or [time]")
+            outputValue = processedDict.pop('output', ['both'])
+            if not isinstance(outputValue, (list, tuple)) or tuple(outputValue) not in SEQUENCER_OUTPUTS:
+                raise ValueError("'output' must be [both], [dac0] or [dac1]")
+            output = SEQUENCER_OUTPUTS[tuple(outputValue)]
 
             commands = {}
             for trigger, command in processedDict.items():
@@ -257,10 +287,11 @@ class DAQControl():
                     raise ValueError('command keys must be finite and non-negative')
                 if mode == 'frame' and (not isinstance(trigger, int) or isinstance(trigger, bool)):
                     raise ValueError('frame command keys must be integers')
-                commands[trigger] = self._validateScriptCommand(command)
+                commands[trigger] = self._toOutput(self._validateScriptCommand(command), output, trigger)
 
             self.sequncerDict = OrderedDict(sorted(commands.items()))
             self.sequencerMode = SequencerMode.Frame if mode == 'frame' else SequencerMode.Time
+            self.sequencerOutput = output
         except Exception as e:
             raise ValueError(f"Failed to parse DAQ script text: {e}")
 
@@ -279,7 +310,8 @@ class DAQControl():
             return [DAQControl._parseScriptNode(value) for value in node.elts]
         if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
             return node.value
-        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off', 'dac0', 'dac1'}:
+        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off', 'dac0', 'dac1',
+                                                      'output', 'both'}:
             return node.id
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = DAQControl._parseScriptNode(node.operand)
@@ -287,6 +319,20 @@ class DAQControl():
                 raise ValueError('signs may only be applied to numbers')
             return value if isinstance(node.op, ast.UAdd) else -value
         raise ValueError(f'unsupported syntax: {type(node).__name__}')
+
+
+    @staticmethod
+    def _toOutput(command: list, output: int | None, trigger) -> list:
+        """With 'output: [dac0]' or '[dac1]', [on, V] and [off] drive that output only; the other
+        output is left alone."""
+        if output is None:
+            return command
+        if command[0] == 'dac':
+            if command[1][1 - output] is not None:
+                raise ValueError(f'{trigger:g}: sets DAC{1 - output}, but the script says output: [dac{output}]')
+            return command
+        volts = command[1] if command[0] == 'on' else 0.0
+        return ['dac', [volts, None] if output == 0 else [None, volts]]
 
 
     @staticmethod

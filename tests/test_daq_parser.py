@@ -189,3 +189,41 @@ def test_separate_outputs_run_and_commands_in_one_frame_all_apply(monkeypatch):
     assert control.channelVoltages == [4.5, 2.0]
     control.updateSequencer(frameNum=1, frameTime=5.0)
     assert control.channelVoltages == [4.5, 0.0]               # DAC0 kept its voltage
+
+
+def test_output_line_routes_on_and_off_to_one_output(monkeypatch):
+    control = _sequencer('mode: [time]\noutput: [dac1]\n0: [off]\n1: [on, 4.5]\n2: [off]', monkeypatch)
+    assert control.sequencerOutput == 1
+    assert list(control.sequncerDict.values()) == [['dac', [None, 0.0]], ['dac', [None, 4.5]],
+                                                   ['dac', [None, 0.0]]]
+    control.set_voltage(3.0, 0)                                 # something else holds DAC0
+    control.updateSequencer(frameNum=0, frameTime=1.0)
+    assert control.channelVoltages == [3.0, 4.5]
+    control.updateSequencer(frameNum=1, frameTime=2.0)
+    assert control.channelVoltages == [3.0, 0.0]               # DAC0 never touched
+
+
+def test_without_output_line_both_outputs_are_driven():
+    control = DAQ.DAQControl()
+    control.parseTextScript('mode: [time]\noutput: [both]\n1: [on, 2]')
+    assert control.sequencerOutput is None
+    assert list(control.sequncerDict.values()) == [['on', 2.0]]
+
+
+@pytest.mark.parametrize('script', ['mode: [time]\noutput: [dac2]\n0: [off]',
+                                    'mode: [time]\noutput: dac0\n0: [off]',
+                                    'mode: [time]\noutput: [dac1]\n0: [dac0, 1]'])
+def test_bad_output_lines_are_rejected(script):
+    with pytest.raises(ValueError):
+        DAQ.DAQControl().parseTextScript(script)
+
+
+def test_output_line_is_written_and_read_back():
+    text = 'mode: [time]\n0: [off]\n10: [on, 4.5]'
+    one = DAQ.with_sequencer_output(text, 0)
+    assert one.split('\n')[:2] == ['mode: [time]', 'output: [dac0]']
+    assert DAQ.sequencer_output_of(one) == 0
+    other = DAQ.with_sequencer_output(one, 1)
+    assert other.count('output') == 1 and DAQ.sequencer_output_of(other) == 1
+    assert DAQ.with_sequencer_output(other, None) == text      # both: the file as before
+    assert DAQ.sequencer_output_of(text) is None

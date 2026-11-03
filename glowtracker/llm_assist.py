@@ -131,6 +131,11 @@ Exact format, one entry per line, nothing else:
     <trigger>: [dac1, <volts>]                    DAC1 only; DAC0 keeps its voltage
     <trigger>: [dac0, <volts>, dac1, <volts>]     each output to its own voltage
 
+Optionally, right after the mode line:
+    output: [dac0]    or    output: [dac1]       [on, V] / [off] drive only that output; the
+                                                 other output is never touched (no [dacN] commands
+                                                 for it allowed). Leave the line out for both.
+
 Rules:
 - The first line chooses the clock. frame: triggers are whole frame numbers counted from the
   first recorded frame (0). time: triggers are seconds since recording started (decimals allowed).
@@ -144,6 +149,15 @@ Rules:
 
 Example (1 s of 4.5 V light at 10 s and at 30 s):
 mode: [time]
+0: [off]
+10: [on, 4.5]
+11: [off]
+30: [on, 4.5]
+31: [off]
+
+Example (1 s pulses of 4.5 V at 10 s and 30 s on DAC1 only):
+mode: [time]
+output: [dac1]
 0: [off]
 10: [on, 4.5]
 11: [off]

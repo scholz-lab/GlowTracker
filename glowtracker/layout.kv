@@ -2344,6 +2344,13 @@ MainWindow:
             id: daqscriptfile
             text: app.config.get('DaqControl', 'sequencescript')
 
+        DaqSpinner:
+            id: output
+            width: dp(150)
+            text: 'Both outputs'
+            values: 'Both outputs', 'DAC0 only', 'DAC1 only'
+            on_text: root.setOutput(self.text)
+
         FlatButton:
             text: 'Load'
             size_hint_x: None
