@@ -1,11 +1,16 @@
 from __future__ import annotations
 from pypylon import genicam, pylon
 import os
+import re
 import time
 from skimage.io import imsave
 from typing import Dict, Tuple
 from dataclasses import dataclass
 import numpy as np
+
+# What the camera settings panel edits. Exposure comes first: it limits the frame rate.
+SETTINGS = ('ExposureTime', 'Gain', 'AcquisitionFrameRate', 'BlackLevel', 'Gamma')
+
 
 @dataclass
 class CameraGrabParameters:
@@ -93,6 +98,148 @@ class Camera(pylon.InstantCamera):
 
         except genicam.RuntimeException as e:
             print(f"Camera features could not be loaded. {e}")
+
+
+    def _node(self, name: str):
+        """A camera setting, or None if this model does not have it."""
+        try:
+            return self.GetNodeMap().GetNode(name)
+        except genicam.GenericException:
+            return None
+
+
+    def settingRange(self, name: str) -> Tuple[float, float] | None:
+        """The (lowest, highest) value a setting takes now, or None if it cannot be set."""
+        node = self._node(name)
+        if node is None or not genicam.IsWritable(node):
+            return None
+        return float(node.Min), float(node.Max)
+
+
+    def readSettings(self) -> dict:
+        """The imaging settings this camera has, as they are set now, and its pixel format."""
+        values = {}
+        for name in SETTINGS:
+            node = self._node(name)
+            if node is not None and genicam.IsReadable(node):
+                values[name] = float(node.Value)
+        node = self._node('PixelFormat')
+        if node is not None and genicam.IsReadable(node):
+            values['PixelFormat'] = str(node.Value)
+        if self.binningFactors():
+            values['Binning'] = self.binning()
+            values['BinningMode'] = str(self._node('BinningHorizontalMode').Value)
+        return values
+
+
+    def applySettings(self, values: dict) -> list[str]:
+        """Set the given SETTINGS, each kept within what the camera allows. These can change
+        during grabbing. Returns what could not be set; the rest is applied."""
+        problems = []
+        for name, auto in (('ExposureTime', 'ExposureAuto'), ('Gain', 'GainAuto')):
+            node = self._node(auto)
+            if name in values and node is not None and genicam.IsWritable(node):
+                node.Value = 'Off'              # a set value means no automatic control
+        if 'AcquisitionFrameRate' in values:
+            node = self._node('AcquisitionFrameRateEnable')
+            if node is not None and genicam.IsWritable(node):
+                node.Value = True
+        for name in SETTINGS:
+            if name not in values:
+                continue
+            limits = self.settingRange(name)
+            if limits is None:
+                problems.append(f'{name} cannot be set on this camera now.')
+                continue
+            value = min(max(float(values[name]), limits[0]), limits[1])
+            self._node(name).Value = value
+            if value != float(values[name]):
+                problems.append(f'{name} is limited to {value:g} here.')
+        return problems
+
+
+    def monoFormats(self) -> list[str]:
+        """The grayscale pixel formats of this camera. The app works on single-channel images."""
+        node = self._node('PixelFormat')
+        if node is None or not genicam.IsReadable(node):
+            return []
+        return [name for name in node.Symbolics if name.startswith('Mono')]
+
+
+    def binning(self) -> int:
+        """Sensor pixels per image pixel, in each direction."""
+        node = self._node('BinningHorizontal')
+        return int(node.Value) if node is not None and genicam.IsReadable(node) else 1
+
+
+    def binningFactors(self) -> list[int]:
+        """The binning this camera offers, the same in both directions; empty if it has none."""
+        names = ('BinningHorizontal', 'BinningVertical', 'BinningHorizontalMode', 'BinningVerticalMode')
+        nodes = [self._node(name) for name in names]
+        if any(node is None or not genicam.IsReadable(node) for node in nodes):
+            return []
+        return list(range(1, min(int(nodes[0].Max), int(nodes[1].Max)) + 1))
+
+
+    def setBinning(self, factor: int, mode: str | None = None) -> None:
+        """Bin factor x factor sensor pixels, with Sum or Average. The image keeps showing the same
+        part of the sensor. Not while grabbing: the camera has to be idle."""
+        if self.IsGrabbing():
+            raise RuntimeError('stop grabbing before changing the binning')
+        old = self.binning()
+        width, height = self.Width(), self.Height()
+        offsetX, offsetY = self.OffsetX(), self.OffsetY()
+        centering = self._centering()
+        # offsets first: the camera checks that the image stays on the sensor
+        for name in centering:
+            self._node(name).Value = False
+        self.OffsetX.Value = 0
+        self.OffsetY.Value = 0
+        if mode is not None:
+            self._node('BinningHorizontalMode').Value = mode
+            self._node('BinningVerticalMode').Value = mode
+        self._node('BinningHorizontal').Value = int(factor)
+        self._node('BinningVertical').Value = int(factor)
+        self.Width.Value = self._fitted(self.Width, width * old / factor)
+        self.Height.Value = self._fitted(self.Height, height * old / factor)
+        self.OffsetX.Value = self._fitted(self.OffsetX, offsetX * old / factor)
+        self.OffsetY.Value = self._fitted(self.OffsetY, offsetY * old / factor)
+        for name, value in centering.items():
+            self._node(name).Value = value
+
+
+    def _centering(self) -> dict:
+        """CenterX and CenterY, on the cameras that have them."""
+        nodes = {name: self._node(name) for name in ('CenterX', 'CenterY')}
+        return {name: bool(node.Value) for name, node in nodes.items()
+                if node is not None and genicam.IsWritable(node)}
+
+
+    def imageGeometry(self) -> dict:
+        """The image size and position, as cameraConfig holds them for tracking to restore."""
+        centering = self._centering()
+        return {'Width': self.Width(), 'Height': self.Height(), 'OffsetX': self.OffsetX(), 'OffsetY': self.OffsetY(),
+                'CenterX': int(centering.get('CenterX', False)), 'CenterY': int(centering.get('CenterY', False))}
+
+
+    @staticmethod
+    def _fitted(parameter, value: float) -> int:
+        """value as the camera can take it: on its increment and within its limits."""
+        step = max(int(parameter.Inc), 1)
+        return min(max(int(value) // step * step, int(parameter.Min)), int(parameter.Max))
+
+
+    def significantBits(self) -> int:
+        """How many bits of each pixel carry signal: 12 for Mono12, though it arrives as 16."""
+        match = re.match(r'Mono(\d+)', self.readSettings().get('PixelFormat', ''))
+        return int(match.group(1)) if match else 8
+
+
+    def setPixelFormat(self, name: str) -> None:
+        """Change the pixel format. Not while grabbing: the frame buffers are sized for the old one."""
+        if self.IsGrabbing():
+            raise RuntimeError('stop grabbing before changing the pixel format')
+        self._node('PixelFormat').Value = name
 
 
     def retrieveGrabbingResult(self, timeout_ms=1000) -> Tuple[ bool, np.ndarray, int, int]:

@@ -5,7 +5,7 @@ from multiprocessing.managers import SharedMemoryManager
 from SharedMemory import SharedMemoryQueue
 from scan import CenterRadiusFromThreePoints
 import image_saver
-from image_utils import prepare_texture_data, brightness_stats
+from image_utils import prepare_texture_data, brightness_stats, set_significant_bits
 from runtime_control import (
     ManagedStageMove,
     append_new_focus_values,
@@ -87,6 +87,10 @@ from kivy.uix.settings import SettingsWithSidebar, SettingItem, SettingNumeric
 from Advanced_settings import AdvancedSettingsWithSidebar, style_card, style_popup
 from file_browser import FileBrowser, style_file_popup  # noqa: F401  (FileBrowser is used in layout.kv)
 from script_preview_ui import ScriptPreview, dac_labels_from  # noqa: F401  (ScriptPreview is used in layout.kv)
+from daq_outputs import DaqOutputsTile  # noqa: F401  (used in layout.kv)
+import camera_panel
+import camera_presets
+import image_scale
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
 from kivy.uix.behaviors import DragBehavior
@@ -233,6 +237,7 @@ class LeftColumn(BoxLayout):
 
         # Camera config value
         self.cameraConfig: dict[str:any] = dict()
+        self.cameraPanel = None
 
         Clock.schedule_once(self._do_setup)
 
@@ -337,9 +342,52 @@ class LeftColumn(BoxLayout):
         self._popup.open()
 
 
+    def show_camera_settings(self) -> None:
+        """Open or close the camera settings panel."""
+        if self.cameraPanel is not None:
+            self.cameraPanel.close()
+            return
+        self.cameraPanel = camera_panel.CameraSettingsPanel(self)
+        Window.add_widget(self.cameraPanel)
+        self.cameraPanel.place()
+
+
+    def whileLiveStopped(self, change: callable) -> None:
+        """Run change with live view stopped, for what cannot change during grabbing."""
+        live = self.app.root.ids.middlecolumn.ids.runtimecontrols.ids.imageacquisitionmanager.ids.liveviewbutton
+        wasLive = live.state == 'down'
+        live.state = 'normal'
+        thread = getattr(live, 'imageAcquisitionThread', None)
+        if thread is not None:
+            thread.join(timeout=3.0)    # a restart must not run beside the old loop
+        try:
+            change()
+        finally:
+            if wasLive:
+                live.state = 'down'
+
+
+    def noteImageGeometry(self) -> None:
+        """The image size or binning changed: tracking restores this size, and pixels changed scale."""
+        self.cameraConfig = {**(self.cameraConfig or {}), **self.app.camera.imageGeometry()}
+        self.app.updateImageScale()
+
+
+    def restoreCameraPreset(self) -> None:
+        """The preset in use last time, if there is one: a newly connected camera gets it again."""
+        name = self.app.config.get('Camera', 'preset', fallback='')
+        preset = camera_presets.find(camera_panel.data_root(self.app), name) if name else None
+        if preset is not None:
+            try:
+                camera_panel.apply_preset(self.app, preset)
+            except Exception as e:
+                self.app.log('hw', f'could not apply the camera preset {name}: {e}', 'warn')
+
+
     def load(self, path, filename):
         self.cameraConfigFile = os.path.join(path, filename[0])
-        self.apply_cam_settings()
+        # a .pfs file also sets the image size, which cannot change during grabbing
+        self.whileLiveStopped(self.apply_cam_settings)
         self.dismiss_popup()
 
 
@@ -369,10 +417,13 @@ class LeftColumn(BoxLayout):
 
                 # Update display values on the GUI
                 self.update_settings_display()
+                self.app.updateImageScale()
 
             else:
                 # Otherwise, don't modify the camera and only copy attributes from camera object to dict
                 self.cameraConfig = camera.getAllFeatures()
+                self.update_settings_display()
+                self.app.updateImageScale()
 
 
     # when file is loaded - update slider values which updates the camera
@@ -931,7 +982,7 @@ class CameraAndStageCalibration(BoxLayout):
         rotation, imageNormDir, pixelSize = calibratedParameters
         app.config.set('Camera', 'rotation', rotation)
         app.config.set('Camera', 'imagenormaldir', '+Z' if imageNormDir == 1 else '-Z')
-        app.config.set('Camera', 'pixelsize', pixelSize)
+        app.config.set('Camera', 'pixelsize', pixelSize / image_scale.binning(app))
 
         # update calibration matrix
         app.imageToStageMat, app.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormDir, pixelSize)
@@ -1010,8 +1061,8 @@ class DualColorCalibration(BoxLayout):
         translation_x, translation_y, rotation = dualColorImageCalibrator.calibrateMinorToMainTransformationMatrix()
 
         # Save settines to config
-        app.config.set('DualColor', 'translation_x', translation_x)
-        app.config.set('DualColor', 'translation_y', translation_y)
+        app.config.set('DualColor', 'translation_x', translation_x * image_scale.binning(app))
+        app.config.set('DualColor', 'translation_y', translation_y * image_scale.binning(app))
         app.config.set('DualColor', 'rotation', rotation)
         app.config.write()
 
@@ -1074,7 +1125,7 @@ class DepthOfFieldCalibration(BoxLayout):
         depthoffieldnumsampleimages = app.config.getint('Calibration', 'depthoffieldnumsampleimages')
         dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
         mainSide = app.config.get('DualColor', 'mainside')
-        capturedRadius = app.config.getint('Tracking', 'capture_radius')
+        capturedRadius = image_scale.capture_radius(app)
         focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
 
 
@@ -1257,7 +1308,8 @@ class AssistantHost:
         self.launcher = assistant_ipc.WindowLauncher(self.server)
         self._savedByAssistant: set[str] = set()
         for name in ('get_config', 'get_state', 'current_plugin', 'default_path',
-                     'use_sequencer', 'save_plugin', 'get_settings', 'check_setting', 'change_setting'):
+                     'use_sequencer', 'save_plugin', 'get_settings', 'check_setting', 'change_setting',
+                     'set_model'):
             self.server.register(name, getattr(self, name))
 
     def open(self) -> None:
@@ -1295,6 +1347,17 @@ class AssistantHost:
         return {'base_url': get('baseurl', llm_assist.DEFAULT_BASE_URL) or llm_assist.DEFAULT_BASE_URL,
                 'model': get('model'), 'api_key': get('apikey'), 'memory_file': get('memoryfile'),
                 'setup': {key: get(key) for key, _ in llm_assist.SETUP_FIELDS}}
+
+    def set_model(self, model: str) -> str:
+        """The user chose a model in the assistant window. Not a tool of the model: for it, the
+        Assistant settings stay locked (change_setting)."""
+        model = str(model).strip()
+        if not model:
+            raise assistant_ipc.CommandError('No model given')
+        self.app.config.set('Assistant', 'model', model)
+        self.app.config.write()
+        self.app.log('ai', f'model: {model}')
+        return model
 
     def _isRecording(self) -> bool:
         runtime = self.app.root.ids.middlecolumn.runtimecontrols
@@ -2818,6 +2881,7 @@ class ImageAcquisitionButton(ToggleButton):
 
         self.acquisitionError = None
         try:
+            set_significant_bits(self.camera.significantBits())
             if grabArgs.isContinuous:
                 self.camera.StartGrabbing(grabArgs.grabStrategy)
             else:
@@ -2906,8 +2970,7 @@ class ImageAcquisitionButton(ToggleButton):
 
             # Compute minor to main calibration matrix if first time
             if self.dualColorMinorToMainMat is None:
-                translation_x = self.app.config.getfloat('DualColor', 'translation_x')
-                translation_y = self.app.config.getfloat('DualColor', 'translation_y')
+                translation_x, translation_y = image_scale.dual_color_translation(self.app)
                 rotation = self.app.config.getfloat('DualColor', 'rotation')
 
                 self.dualColorMinorToMainMat = macro.DualColorImageCalibrator.genMinorToMainMatrix(translation_x, translation_y, rotation, self.dualColorMainSideImage.shape[1]/2, self.dualColorMainSideImage.shape[0]/2)
@@ -2976,7 +3039,7 @@ class ImageAcquisitionButton(ToggleButton):
             # Crop to only the tracking region
 
             # Get tracking configs
-            capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+            capture_radius = image_scale.capture_radius(self.app)
 
             # Crop to tracking region
             image = macro.cropCenterImage(image, capture_radius * 2, capture_radius * 2)
@@ -3706,8 +3769,9 @@ class RecordButton(ImageAcquisitionButton):
         imagenormaldir = self.app.config.get('Camera', 'imagenormaldir')
         coordinateFile.write(f'imagenormaldir {imagenormaldir}\n')
         #   pixelsize
-        pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+        pixelsize = image_scale.pixel_size(self.app)
         coordinateFile.write(f'pixelsize {pixelsize}\n')
+        coordinateFile.write(f'camera_binning {image_scale.binning(self.app)}\n')
 
         #  Dual color
         coordinateFile.write(f'# Dual color\n')
@@ -3724,10 +3788,9 @@ class RecordButton(ImageAcquisitionButton):
         recordingmode = self.app.config.get('DualColor', 'recordingmode')
         coordinateFile.write(f'recordingmode {recordingmode}\n')
         #   translation_x
-        translation_x = self.app.config.getfloat('DualColor', 'translation_x')
+        translation_x, translation_y = image_scale.dual_color_translation(self.app)
         coordinateFile.write(f'translation_x {translation_x}\n')
         #   translation_y
-        translation_y = self.app.config.getfloat('DualColor', 'translation_y')
         coordinateFile.write(f'translation_y {translation_y}\n')
         #   rotation
         rotation = self.app.config.getfloat('DualColor', 'rotation')
@@ -3736,13 +3799,12 @@ class RecordButton(ImageAcquisitionButton):
         # Tracking
         coordinateFile.write(f'# Tracking\n')
         #   roi_x
-        roi_x = self.app.config.getint('Tracking', 'roi_x')
+        roi_x, roi_y = image_scale.roi(self.app)
         coordinateFile.write(f'roi_x {roi_x}\n')
         #   roi_y
-        roi_y = self.app.config.getint('Tracking', 'roi_y')
         coordinateFile.write(f'roi_y {roi_y}\n')
         #   capture_radius
-        capture_radius = self.app.config.getint('Tracking', 'capture_radius')
+        capture_radius = image_scale.capture_radius(self.app)
         coordinateFile.write(f'capture_radius {capture_radius}\n')
         #   min_step
         min_step = self.app.config.getint('Tracking', 'min_step')
@@ -3751,7 +3813,7 @@ class RecordButton(ImageAcquisitionButton):
         threshold = self.app.config.getint('Tracking', 'threshold')
         coordinateFile.write(f'threshold {threshold}\n')
         #   binning
-        binning = self.app.config.getint('Tracking', 'binning')
+        binning = image_scale.tracking_bin_factor(self.app)
         coordinateFile.write(f'binning {binning}\n')
         #   dark_bg
         dark_bg = self.app.config.getboolean('Tracking', 'dark_bg')
@@ -3760,7 +3822,7 @@ class RecordButton(ImageAcquisitionButton):
         mode = self.app.config.get('Tracking', 'mode')
         coordinateFile.write(f'mode {mode}\n')
         #   area
-        area = self.app.config.getint('Tracking', 'area')
+        area = image_scale.area(self.app)
         coordinateFile.write(f'area {area}\n')
 
         # Write recording header
@@ -3819,6 +3881,15 @@ class RecordButton(ImageAcquisitionButton):
                 'continuous_tracking': app.config.get('Tracking', 'continuoustracking', fallback='false'),
                 'stage_start_mm': [round(float(v), 4) for v in app.coords[:3]],
             }
+            try:
+                settings = self.camera.readSettings()
+                acquisition['camera_settings'] = settings
+                preset = camera_presets.find(camera_panel.data_root(app), app.config.get('Camera', 'preset', fallback=''))
+                # only if it still holds: the sliders may have moved since
+                if preset is not None and camera_presets.matches(preset, settings, camera_panel.tracking_values(app)):
+                    acquisition['camera_preset'] = preset['name']
+            except Exception as e:
+                print(f'Reading the camera settings for run.json failed: {e}')
             stimulation = {'daq_mode': mode, 'daq_connected': daq.isConnected(),
                            'plugin_running': pluginRunning}
             if daq.daqMode == DAQMode.Sequencer:
@@ -4326,7 +4397,7 @@ class PreviewImage(Image):
         image = App.get_running_app().image
         h, w = image.shape[0], image.shape[1]
         # paint a circle and make the coordinates available
-        radius = App.get_running_app().config.getfloat('Tracking', 'capture_radius')
+        radius = image_scale.capture_radius(App.get_running_app())
         # make the circle into pixel units
         r = radius/w*self.norm_image_size[0]#, radius/h*self.norm_image_size[1]
         self.circle = (*pos, r)
@@ -4546,7 +4617,7 @@ class ImageOverlay(FloatLayout):
         # Compute the overlay bbox
         imageSize = previewImage.texture_size
         displayedScale = normImageSize[0] / imageSize[0]
-        radius = self.app.config.getint('Tracking', 'capture_radius') * displayedScale
+        radius = image_scale.capture_radius(self.app) * displayedScale
         btm_left = center - radius
         top_right = center + radius
 
@@ -4603,7 +4674,7 @@ class ImageOverlay(FloatLayout):
         #   We support only mm and um
         prefix = 1e-3 if stepunits == Units.LENGTH_MILLIMETRES else 1e-6
 
-        pixelsize = self.app.config.getfloat('Camera', 'pixelsize')
+        pixelsize = image_scale.pixel_size(self.app)
         pixelsize_meter = pixelsize * prefix
 
         stageToImageMat = stageToImageRotOnlyMat / pixelsize_meter
@@ -5125,7 +5196,7 @@ class RuntimeControls(BoxLayout):
             SP = app.config.getfloat('Autofocus', 'bestfocusvalue')
             focusEstimationMethod = FocusEstimationMethod(app.config.get('Autofocus', 'focusestimationmethod'))
             dualColorMode = app.config.getboolean('DualColor', 'dualcolormode')
-            capturedRadius = app.config.getint('Tracking', 'capture_radius')
+            capturedRadius = image_scale.capture_radius(app)
             isshowgraph = app.config.getboolean('Autofocus', 'isshowgraph')
             depthoffield = app.config.getfloat('Camera', 'depthoffield')
             smoothingwindow = app.config.getint('Autofocus', 'smoothingwindow')
@@ -5394,7 +5465,7 @@ class RuntimeControls(BoxLayout):
             offset_from_center = start_pos_tex_coord - np.array([imageWidth/2, imageHeight/2])
 
             # Set tracking ROI
-            roiX, roiY  = app.config.getint('Tracking', 'roi_x'), app.config.getint('Tracking', 'roi_y')
+            roiX, roiY = image_scale.roi(app)
             self.set_ROI(roiX, roiY)
 
         # Convert from texture coordinates to stage coordinates
@@ -5426,11 +5497,11 @@ class RuntimeControls(BoxLayout):
         #
         # Start the tracking
         #
-        capture_radius = app.config.getint('Tracking', 'capture_radius')
-        binning = app.config.getint('Tracking', 'binning')
+        capture_radius = image_scale.capture_radius(app)
+        binning = image_scale.tracking_bin_factor(app)
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
         trackingMode =  app.config.get('Tracking', 'mode')
-        area = app.config.getint('Tracking', 'area')
+        area = image_scale.area(app)
         threshold = app.config.getfloat('Tracking', 'threshold')
         min_brightness = app.config.getfloat('Tracking', 'min_brightness')
         max_brightness = app.config.getfloat('Tracking', 'max_brightness')
@@ -5872,8 +5943,8 @@ class RuntimeControls(BoxLayout):
             image = self.imageacquisitionmanager.image
 
         # Get tracking configs
-        capture_radius = app.config.getint('Tracking', 'capture_radius')
-        binning = app.config.getint('Tracking', 'binning')
+        capture_radius = image_scale.capture_radius(app)
+        binning = image_scale.tracking_bin_factor(app)
         dark_bg = app.config.getboolean('Tracking', 'dark_bg')
         min_brightness = app.config.getint('Tracking', 'min_brightness')
         max_brightness = app.config.getint('Tracking', 'max_brightness')
@@ -6116,6 +6187,7 @@ class Connections(BoxLayout):
             app.log('hw', 'camera connected')
             # load and apply the camera settings
             self.parent.parent.ids.leftcolumn.apply_cam_settings()
+            self.parent.parent.ids.leftcolumn.restoreCameraPreset()
 
 
     def disconnectCamera(self):
@@ -6547,6 +6619,7 @@ class SettingsModel(SettingItem):
 
 # load the layout
 class GlowTrackerApp(App):
+    cameraBinning = 1       # sensor pixels per image pixel; see image_scale
     # stage configuration properties - these will update when changed in config menu
     vhigh = ConfigParserProperty(30,
                     'Stage', 'input_fast_speed', 'app', val_type=float)
@@ -6832,6 +6905,7 @@ class GlowTrackerApp(App):
 
         config.setdefaults('Camera', {
             'default_settings': 'settings/defaults.pfs',
+            'preset': '',
             'display_fps': '15',
             'rotation': '0',
             'imagenormaldir': '+Z',
@@ -7000,11 +7074,7 @@ class GlowTrackerApp(App):
         self.stopevent = Clock.create_trigger(lambda dt: self.request_stage_stop(), 0.1)
 
         # Load and gen camera&stage transformation matricies
-        rotation = self.config.getfloat('Camera', 'rotation')
-        imageNormalDir = self.config.get('Camera', 'imagenormaldir')
-        imageNormalDir = +1 if imageNormalDir == '+Z' else -1
-        pixelsize = self.config.getfloat('Camera', 'pixelsize')
-        self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation, imageNormalDir, pixelsize)
+        self.rebuildImageToStage()
 
         # Load moveImageSpaceMode
         self.moveImageSpaceMode = self.config.getboolean('Stage', 'move_image_space_mode')
@@ -7135,6 +7205,21 @@ class GlowTrackerApp(App):
             self.config.getfloat('Stage', key),
             self.config.get('Stage', 'acceleration_unit'),
         )
+
+
+    def rebuildImageToStage(self) -> None:
+        """The image to stage matrices, from the calibration and the camera's binning."""
+        rotation = self.config.getfloat('Camera', 'rotation')
+        imageNormalDir = +1 if self.config.get('Camera', 'imagenormaldir') == '+Z' else -1
+        self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(
+            rotation, imageNormalDir, image_scale.pixel_size(self))
+
+
+    def updateImageScale(self) -> None:
+        """The camera's binning may have changed: stage moves and the overlay must follow."""
+        self.cameraBinning = self.camera.binning() if self.camera is not None else 1
+        self.rebuildImageToStage()
+        self.root.ids.middlecolumn.ids.imageoverlay.updateOverlay()
 
 
     def imageToStageXY(self, right: float, up: float) -> tuple:
@@ -7369,12 +7454,7 @@ class GlowTrackerApp(App):
             if key in ['pixelsize', 'rotation']:
 
                 print('Updated calibration matrix')
-                pixelsize = self.config.getfloat('Camera', 'pixelsize')
-                imageNormalDir = self.config.get('Camera', 'imagenormaldir')
-                imageNormalDir = 1 if imageNormalDir == '+Z' else -1
-                rotation = self.config.getfloat('Camera', 'rotation')
-
-                self.imageToStageMat, self.imageToStageRotMat = macro.CameraAndStageCalibrator.genImageToStageMatrix(rotation= rotation, imageNormalDir= imageNormalDir, pixelSize= pixelsize)
+                self.rebuildImageToStage()
 
         elif section == 'DualColor':
 
@@ -7766,7 +7846,7 @@ class GlowTrackerApp(App):
             fov_y = (stage[:, 0].max() - stage[:, 0].min()) * to_mm
             return (fov_x, fov_y)
 
-        pixelsize = self.config.getfloat('Camera', 'pixelsize')
+        pixelsize = image_scale.pixel_size(self)
         if pixelsize <= 0:
             return None
         return (pixelsize * W * to_mm, pixelsize * H * to_mm)
@@ -7786,7 +7866,7 @@ class GlowTrackerApp(App):
         depthoffieldsearchdistance = self.config.getfloat('Calibration', 'depthoffieldsearchdistance')
         dualColorMode = self.config.getboolean('DualColor', 'dualcolormode')
         dualColorModeMainSide = self.config.get('DualColor', 'mainside')
-        capturedRadius = self.config.getint('Tracking', 'capture_radius')
+        capturedRadius = image_scale.capture_radius(self)
         focusEstimationMethod = FocusEstimationMethod(self.config.get('Autofocus', 'focusestimationmethod'))
 
         depthOfFieldEstimator = macro.DepthOfFieldEstimator()

@@ -11,6 +11,8 @@ Both share the main window's minimap orientation: stage X runs down the view, st
 """
 from __future__ import annotations
 
+import image_scale
+
 import math
 
 from kivy.app import App
@@ -299,7 +301,7 @@ class CameraView(Image):
                 return
             app = App.get_running_app()
             try:
-                pixel = app.config.getfloat('Camera', 'pixelsize')
+                pixel = image_scale.pixel_size(app)
                 pixel_um = pixel * (1000.0 if app.config.get('Calibration', 'step_units') == 'mm' else 1.0)
             except Exception:
                 return

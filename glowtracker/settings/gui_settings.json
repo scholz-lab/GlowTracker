@@ -188,7 +188,7 @@
     {
         "type": "numeric",
         "title": "Pixelsize",
-        "desc": "How large of a distance dose a pixel cover (isotropic). The unit is either um/px or mm/px depends on Calibration:Calibration-step-unit.",
+        "desc": "How large of a distance does a sensor pixel cover (isotropic), without camera binning: binning is taken into account by itself. The unit is either um/px or mm/px depends on Calibration:Calibration-step-unit.",
         "section": "Camera",
         "key": "pixelsize",
         "advanced": true
@@ -378,21 +378,21 @@
     {
         "type": "numeric",
         "title": "ROI (Width)",
-        "desc": "Width of the tracking image in px",
+        "desc": "Width of the tracking image in sensor px, without camera binning",
         "section": "Tracking",
         "key": "roi_x"
     },
     {
         "type": "numeric",
         "title": "ROI (Height)",
-        "desc": "Height of the tracking image in px",
+        "desc": "Height of the tracking image in sensor px, without camera binning",
         "section": "Tracking",
         "key": "roi_y"
     },
     {
         "type": "numeric",
         "title": "Capture radius (px)",
-        "desc": "Radius around center that captures a worm",
+        "desc": "Radius around center that captures a worm, in sensor px without camera binning",
         "section": "Tracking",
         "key": "capture_radius"
     },
@@ -441,7 +441,7 @@
     {
         "type": "numeric",
         "title": "Binning",
-        "desc": "Binning factor to increase thresholding speed.",
+        "desc": "Tracking shrinks the image by this factor to run faster. Not the camera binning (Camera settings), which counts towards it.",
         "section": "Tracking",
         "key": "binning"
     },

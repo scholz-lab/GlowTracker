@@ -2,6 +2,16 @@ import cv2
 import numpy as np
 
 
+# How many of a 16-bit pixel's bits the camera fills: Mono12 reaches 4095, not 65535. Only display
+# and detection scale by it; saved images keep the camera's values.
+_significantBits = 16
+
+
+def set_significant_bits(bits: int) -> None:
+    global _significantBits
+    _significantBits = min(max(int(bits), 8), 16)
+
+
 def normalize_image(image):
     source = np.asarray(image)
     if source.size == 0:
@@ -14,6 +24,8 @@ def normalize_image(image):
     if np.issubdtype(source.dtype, np.integer):
         limits = np.iinfo(source.dtype)
         scale = float(limits.max - limits.min)
+        if source.dtype == np.dtype(np.uint16):
+            scale = float(2 ** _significantBits - 1)
         if scale == 0:
             return np.zeros(source.shape, dtype=np.float32)
         values = (values - limits.min) / scale
@@ -59,6 +71,8 @@ def prepare_texture_data(image):
     source = np.asarray(image)
     try:
         buffer_format = texture_buffer_format(source)
+        if source.dtype == np.dtype(np.uint16) and _significantBits < 16:
+            source = np.left_shift(source, 16 - _significantBits)      # the GPU takes 65535 as white
         return np.ascontiguousarray(source), buffer_format
     except TypeError:
         converted = np.rint(normalize_image(source) * 255).astype(np.uint8)

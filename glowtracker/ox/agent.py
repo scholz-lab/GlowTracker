@@ -90,6 +90,13 @@ class AgentServer:
         self._keep_reasoning = keep_reasoning  # send reasoning back in the history
         self._approvals: dict[tuple[int, str], asyncio.Future[Approval]] = {}
 
+    def set_model(self, model: ModelSpec) -> None:
+        """Use another model from the next request on; conversations carry on."""
+        self._model = model
+        self._compactor_model = model.id
+        for session in self._sessions.values():
+            session.model = model
+
     # ── Run loop ────────────────────────────────────────────────────────────
 
     async def run(self) -> None:

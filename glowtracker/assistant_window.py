@@ -11,8 +11,10 @@ Run on its own for UI work with a fake app: python assistant_window.py --demo
 # ruff: noqa: E402  (the Kivy window size must be configured before Kivy is imported)
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
+import subprocess
 import sys
 import time
 from threading import Thread
@@ -43,6 +45,8 @@ from kivy.utils import escape_markup
 import platformdirs
 
 from Advanced_settings import style_card
+import assistant_chats
+import assistant_documents
 import assistant_ipc
 import chat_markup
 import llm_assist
@@ -50,6 +54,16 @@ from script_preview_ui import ScriptPreview, short_dac_label  # noqa: F401  (Scr
 
 # Every conversation is saved here as a .jsonl file (messages, tool calls, approvals, usage).
 TRANSCRIPT_DIR = os.path.join(platformdirs.user_data_dir('GlowTracker', appauthor=False), 'assistant_chats')
+
+# The system's own file dialog, in a process of its own: it needs a main thread and Kivy has that one.
+FILE_DIALOG = '''
+import json, tkinter
+from tkinter import filedialog
+root = tkinter.Tk()
+root.withdraw()
+root.attributes('-topmost', True)
+print(json.dumps(list(filedialog.askopenfilenames(title='Attach to your message'))))
+'''
 
 
 class ChatInput(TextInput):
@@ -170,8 +184,8 @@ class ToolChip(BoxLayout):
         'get_app_state': ('Reading the app state', 'Read the app state', 'Could not read the app state'),
         'read_current_plugin': ('Reading the plugin', 'Read the plugin', 'Could not read the plugin'),
         'read_plugin_example': ('Reading an example', 'Read an example', 'Could not read the example'),
-        'remember': ('Proposing a lesson', 'Lesson saved', 'Lesson not saved'),
-        'forget': ('Proposing to forget a lesson', 'Lesson removed', 'Lesson not removed'),
+        'remember': ('Proposing to remember', 'Saved to memory', 'Not saved to memory'),
+        'forget': ('Proposing to forget', 'Removed from memory', 'Not removed from memory'),
         'get_settings': ('Reading the settings', 'Read the settings', 'Could not read the settings'),
         'change_setting': ('Checking the setting', 'Setting changed', 'Setting not changed'),
         'propose_sequencer_script': ('Checking the script', 'Saved and loaded', 'Script invalid, fixing it'),
@@ -424,7 +438,7 @@ class ProposalCard(BoxLayout):
 
 
 class MemoryCard(BoxLayout):
-    """The assistant wants to remember (or forget) a lesson for all future conversations.
+    """The assistant wants to remember (or forget) a fact for all future conversations.
     The fact can be edited before approving."""
 
     def __init__(self, call_id: str, name: str, arguments: dict, details: str, owner: 'AssistantWidget',
@@ -436,7 +450,7 @@ class MemoryCard(BoxLayout):
         super().__init__(**kwargs)
         why = escape_markup(arguments.get('why') or '')
         if self.forgetting:
-            self.ids.title.text = f'[b]Forget this lesson?[/b]  [color=bbbbbb]{why}[/color]'
+            self.ids.title.text = f'[b]Forget this?[/b]  [color=bbbbbb]{why}[/color]'
             self.ids.fact.text = details
             self.ids.fact.readonly = True
             self.ids.approvebutton.text = 'Forget'
@@ -503,8 +517,8 @@ class SettingCard(MemoryCard):
 
 
 class MemoryList(BoxLayout):
-    """Popup content: every remembered lesson, each with Delete. The user's own housekeeping;
-    the model is not involved."""
+    """Popup content: everything remembered, each with Delete, and a field to add a fact. The
+    user's own housekeeping; the model is not involved."""
 
     def __init__(self, store, close, **kwargs):
         super().__init__(**kwargs)
@@ -522,7 +536,7 @@ class MemoryList(BoxLayout):
             rows.add_widget(Factory.ChatText(text=f'[color=ff7373]{escape_markup(str(e))}[/color]'))
             return
         if not facts:
-            rows.add_widget(Factory.ChatText(text='[color=999999]No lessons yet.[/color]'))
+            rows.add_widget(Factory.ChatText(text='[color=999999]Nothing remembered yet.[/color]'))
         for fact in facts:
             row = Factory.MemoryRow()
             row.ids.text.text = (f'[b]{fact.id}.[/b] {escape_markup(fact.text)}'
@@ -535,6 +549,130 @@ class MemoryList(BoxLayout):
         self.store.remove(fact_id)
         self.refresh()
 
+    def add(self) -> None:
+        text = self.ids.newfact.text.strip()
+        if not text:
+            return
+        try:
+            self.store.add(text, 'added by hand')
+        except (ValueError, OSError) as e:
+            self.ids.where.text = f'[color=ff7373]{escape_markup(str(e))}[/color]'
+            return
+        self.ids.newfact.text = ''
+        self.ids.where.text = f'Stored in {escape_markup(self.store.path)}'
+        self.refresh()
+
+
+class ChatList(BoxLayout):
+    """Popup content: the saved conversations, newest first. Tap one to continue it."""
+
+    def __init__(self, owner: 'AssistantWidget', close, **kwargs):
+        super().__init__(**kwargs)
+        self.owner = owner
+        self.close = close
+        self.chats = assistant_chats.list_chats(TRANSCRIPT_DIR)
+        self.refresh()
+
+    def refresh(self, *args) -> None:
+        rows = self.ids.rows
+        rows.clear_widgets()
+        query = self.ids.search.text.strip().lower()
+        chats = [c for c in self.chats if query in c.title.lower() or query in c.model.lower()]
+        if not chats:
+            text = 'No chat matches.' if query else 'No saved chats yet.'
+            rows.add_widget(Factory.ChatText(text=f'[color=999999]{text}[/color]'))
+        current = self.owner.currentChat()
+        for chat in chats:
+            row = Factory.ChatRow()
+            row.ids.open.text = (f'{"[b]" if chat.path == current else ""}{escape_markup(chat.title)}'
+                                 f'{"[/b]" if chat.path == current else ""}\n'
+                                 f'[size=11sp][color=888888]{chat.when}  ·  {escape_markup(chat.model)}[/color][/size]')
+            row.ids.open.bind(on_release=lambda b, path=chat.path: self.choose(path))
+            row.ids.delete.bind(on_release=lambda b, c=chat: self.delete(b, c))
+            rows.add_widget(row)
+
+    def choose(self, path: str) -> None:
+        self.close()
+        self.owner.openChat(path)
+
+    def delete(self, button, chat) -> None:
+        """The transcript is also the record of how a script came about: ask once more."""
+        if button.text != 'Sure?':
+            button.text = 'Sure?'
+            return
+        try:
+            os.remove(chat.path)
+        except OSError as e:
+            self.owner._addInfo(f'Could not delete the chat: {e}', 'ff7373')
+            return
+        if chat.path == self.owner.currentChat():
+            self.owner.newChat()
+        self.chats.remove(chat)
+        self.refresh()
+
+
+class ModelList(BoxLayout):
+    """Popup content: the models to choose from. The recommended ones come first, then what the
+    API lists for this key; any other name can be typed."""
+
+    def __init__(self, owner: 'AssistantWidget', config: llm_assist.AssistantConfig, close, **kwargs):
+        super().__init__(**kwargs)
+        self.owner = owner
+        self.close = close
+        self.current = config.model.strip()
+        self.recommended = dict(llm_assist.GWDG_MODELS) if llm_assist.is_gwdg(config.base_url) else {}
+        self.available: list[str] | None = None
+        self.ids.status.text = 'Asking the API which models your key can use...'
+        self.refresh()
+        Thread(target=self._fetch, args=(config,), daemon=True).start()
+
+    def _fetch(self, config) -> None:
+        try:
+            models, problem = llm_assist.list_models(config), ''
+        except Exception as e:
+            models, problem = None, str(e)
+        Clock.schedule_once(lambda dt: self._fetched(models, problem))
+
+    def _fetched(self, models: list[str] | None, problem: str) -> None:
+        self.available = models
+        self.ids.status.text = f'[color=ff7373]{escape_markup(problem)}[/color]' if problem else ''
+        self.refresh()
+
+    def names(self) -> list[str]:
+        if self.available is None:
+            return list(self.recommended)
+        first = [name for name in self.recommended if name in self.available]
+        return first + [name for name in self.available if name not in first]
+
+    def refresh(self, *args) -> None:
+        rows = self.ids.rows
+        rows.clear_widgets()
+        query = self.ids.search.text.strip()
+        names = [n for n in self.names() if query.lower() in n.lower()]
+        for name in names:
+            about = self.recommended.get(name, '')
+            row = Factory.ChatSuggestion(tint=(0.18, 0.3, 0.5, 1) if name == self.current else (0.14, 0.15, 0.17, 1))
+            row.markup = True
+            row.text = escape_markup(name) + (f'\n[size=11sp][color=999999]{escape_markup(about)}[/color][/size]'
+                                              if about else '')
+            row.bind(on_release=lambda b, model=name: self.choose(model))
+            rows.add_widget(row)
+        if query and query not in names:
+            row = Factory.ChatSuggestion(text=f'Use "{escape_markup(query)}"', markup=True)
+            row.bind(on_release=lambda b: self.choose(query))
+            rows.add_widget(row)
+
+    def typed(self) -> None:
+        """Enter in the search field: the only match, or the name as typed."""
+        query = self.ids.search.text.strip()
+        names = [n for n in self.names() if query.lower() in n.lower()]
+        if query:
+            self.choose(names[0] if len(names) == 1 else query)
+
+    def choose(self, model: str) -> None:
+        self.close()
+        self.owner.chooseModel(model)
+
 
 class AssistantWidget(BoxLayout):
     """The chat: answers stream in, tool calls show as chips, proposed sequencer scripts and plugins
@@ -544,6 +682,7 @@ class AssistantWidget(BoxLayout):
     """
     busy = BooleanProperty(False)
     connected = BooleanProperty(True)
+    attachmentCount = NumericProperty(0)
 
     SUGGESTIONS = (
         '5 pulses of 4.5 V, 1 s long, every 20 s, starting 10 s after Record',
@@ -562,6 +701,9 @@ class AssistantWidget(BoxLayout):
         self._animated: set = set()
         self._phase = 0
         self._stick = True
+        self.attachments: list[dict] = []
+        self._picking = False
+        Window.bind(on_drop_file=lambda window, path, *args: self.addFiles([path.decode('utf-8')]))
         self.ids.message.send_callback = self.sendOrStop
         self.ids.chatscroll.bind(scroll_y=self._onScroll)
         self.ids.chatlog.bind(height=self._onContentHeight)
@@ -584,24 +726,27 @@ class AssistantWidget(BoxLayout):
             except llm_assist.AssistantError:
                 config = llm_assist.AssistantConfig()
         model = config.model.strip()
+        self.ids.modelbutton.text = (model if len(model) <= 26 else model[:24] + '..') or 'Choose a model'
         usage = ''
         if self._usage.get('prompt') or self._usage.get('completion'):
-            usage = (f'   [color=777777]in {_tokens(self._usage["prompt"])} · '
+            usage = (f'[color=777777]in {_tokens(self._usage["prompt"])} · '
                      f'out {_tokens(self._usage["completion"])}')
             if self._usage.get('cost') is not None:
                 usage += f' · ${self._usage["cost"]:.4f}'
             usage += '[/color]'
-        self.ids.header.text = (f'[b]AI assistant[/b]  [color=999999]{escape_markup(model or "no model set")}'
-                                f'[/color]{usage}')
+        self.ids.header.text = usage
 
     def _session(self) -> llm_assist.ChatSession:
         """The chat session, restarted when the API settings changed in GlowTracker."""
         config = self._config()
         self._updateHeader(config)
         if self._chat is not None and self._chat.config != config:
-            self._chat.close()
-            self._chat = None
-            self._addInfo('Settings changed: new conversation.')
+            if dataclasses.replace(self._chat.config, model=config.model) == config:
+                self._chat.set_model(config.model)      # the conversation can carry on
+            else:
+                self._chat.close()
+                self._chat = None
+                self._addInfo('Settings changed: new conversation.')
         if self._chat is None:
             self._chat = llm_assist.ChatSession(
                 config, self, lambda event: Clock.schedule_once(lambda dt: self._onEvent(event)),
@@ -727,33 +872,190 @@ class AssistantWidget(BoxLayout):
                 self._chat.stop()
             return
         text = self.ids.message.text.strip()
-        if not text:
+        attachments = list(self.attachments)
+        if not text and not attachments:
             return
         try:
             chat = self._session()
-            chat.send(text)
+            chat.send(text, attachments)
         except llm_assist.AssistantError as e:
             self._addInfo(str(e), 'ff7373')
             return
         self.ids.message.text = ''
+        self._clearAttachments()
         self._stick = True
-        self._append(UserRow(text))
+        self._showUser(text, attachments)
         self._turn = AssistantTurn(self)
         self._animated.add(self._turn._typing)
         self._append(self._turn)
         self._setBusy(True)
 
-    def newChat(self) -> None:
-        if self._chat is not None:
-            self._chat.reset()
+    def _showUser(self, text: str, attachments: list[dict]) -> None:
+        if attachments:
+            names = ', '.join(a['name'] for a in attachments)
+            self._append(Factory.ChatText(text=f'[color=999999]{escape_markup(names)}[/color]', halign='right',
+                                          font_size='12sp'))
+        if text:
+            self._append(UserRow(text))
+
+    def _clearLog(self) -> None:
         self._turn = None
         self._cards.clear()
         self._usage = {}
         self._setBusy(False)
         self._animated.clear()
         self.ids.chatlog.clear_widgets()
+        self._empty = None
+
+    def newChat(self) -> None:
+        if self._chat is not None:
+            self._chat.reset()
+        self._clearLog()
         self._showEmptyState()
         self._updateHeader()
+
+    def currentChat(self) -> str | None:
+        """The transcript of the conversation on screen."""
+        return self._chat.transcript.path if self._chat is not None else None
+
+    def showChats(self) -> None:
+        self._openList('Chats', lambda close: ChatList(self, close))
+
+    def openChat(self, path: str) -> None:
+        """Show a saved conversation and carry on with it."""
+        if path == self.currentChat():
+            return
+        try:
+            records = assistant_chats.read(path)
+            chat = self._session()
+        except (OSError, llm_assist.AssistantError) as e:
+            self._addInfo(f'Could not open the chat: {e}', 'ff7373')
+            return
+        self._clearLog()
+        chat.resume(path, records)
+        self._usage = dict(chat.usage)
+        self._stick = True
+        self._replay(records)
+        self._updateHeader(chat.config)
+
+    def _replay(self, records: list[dict]) -> None:
+        """Rebuild the chat log from a transcript. Approval cards are not shown again: what was
+        decided is in the tool's chip."""
+        turn = None
+        for record in records:
+            kind = record.get('type')
+            if kind == 'user':
+                if turn is not None:
+                    turn.finish(False)
+                    turn = None
+                self._showUser(record.get('content') or '', record.get('attachments') or [])
+            elif kind in ('assistant', 'tool_call', 'tool_result', 'error', 'stopped'):
+                if turn is None:
+                    turn = AssistantTurn(self)
+                    self._append(turn)
+                if kind == 'assistant':
+                    turn.endMessage(record.get('content') or '')
+                elif kind == 'tool_call':
+                    turn.toolStart(record.get('call_id', ''), record.get('name', ''), record.get('arguments') or '')
+                elif kind == 'tool_result':
+                    content = record.get('content') or ''
+                    turn.toolEnd(record.get('call_id', ''), llm_assist._tool_ok(content), content)
+                elif kind == 'error':
+                    turn.addNote(llm_assist._error_text(record.get('content') or ''), 'ff7373')
+                else:
+                    turn.finish(True)
+                    turn = None
+        if turn is not None:
+            turn.finish(False)
+        self._animated.clear()
+
+    def _openList(self, title: str, content) -> None:
+        """A popup holding a list; content is called with the function that closes it."""
+        popup = Popup(title=title, size_hint=(0.92, 0.8))
+        style_card(popup, padding=dp(16))
+        popup.title_font = 'Roboto-Bold'
+        popup.content = content(popup.dismiss)
+        popup.open()
+
+    # --- model -----------------------------------------------------------------------------
+    def showModels(self) -> None:
+        try:
+            config = self._config()
+        except llm_assist.AssistantError as e:
+            self._addInfo(str(e), 'ff7373')
+            return
+        self._openList('Model', lambda close: ModelList(self, config, close))
+
+    def chooseModel(self, model: str) -> None:
+        """Use this model from now on, in this conversation too, and keep it in the settings."""
+        if self.busy:
+            self._addInfo('Wait for the answer before switching the model.', 'ff7373')
+            return
+        try:
+            self._call('set_model', model=model)
+            if self._chat is not None:
+                self._chat.set_model(model)
+        except llm_assist.AssistantError as e:
+            self._addInfo(str(e), 'ff7373')
+            return
+        if self._empty is None:
+            self._addInfo(f'Answers now come from {model}.')
+        self._updateHeader()
+
+    # --- attachments -----------------------------------------------------------------------
+    def pickFiles(self) -> None:
+        if self._picking:
+            return
+        self._picking = True
+
+        def work():
+            try:
+                done = subprocess.run([sys.executable, '-c', FILE_DIALOG], capture_output=True, text=True)
+                paths = json.loads(done.stdout)
+            except (OSError, ValueError):
+                paths = None
+            Clock.schedule_once(lambda dt: self._picked(paths))
+
+        Thread(target=work, daemon=True).start()
+
+    def _picked(self, paths: list | None) -> None:
+        self._picking = False
+        if paths is None:
+            self._addInfo('Could not open a file dialog here. Drag the files onto this window instead.', 'ff7373')
+            return
+        self.addFiles(paths)
+
+    def addFiles(self, paths: list[str]) -> None:
+        """Read the files for the next message. Off the GUI thread: a long PDF takes a while."""
+        def work():
+            for path in paths:
+                try:
+                    attachment = assistant_documents.load(path)
+                except assistant_documents.AttachmentError as e:
+                    message = str(e)
+                    Clock.schedule_once(lambda dt, message=message: self._addInfo(message, 'ff7373'))
+                    continue
+                Clock.schedule_once(lambda dt, a=attachment: self._attach(a))
+
+        Thread(target=work, daemon=True).start()
+
+    def _attach(self, attachment: dict) -> None:
+        self.attachments.append(attachment)
+        self.attachmentCount = len(self.attachments)
+        note = f'  ({attachment["note"]})' if attachment.get('note') else ''
+        chip = Factory.AttachmentChip(text=f'{attachment["name"]}{note}   x')
+        chip.bind(on_release=lambda button: self._detach(attachment, button))
+        self.ids.attachments.add_widget(chip)
+
+    def _detach(self, attachment: dict, chip) -> None:
+        self.attachments.remove(attachment)
+        self.attachmentCount = len(self.attachments)
+        self.ids.attachments.remove_widget(chip)
+
+    def _clearAttachments(self) -> None:
+        self.attachments = []
+        self.attachmentCount = 0
+        self.ids.attachments.clear_widgets()
 
     def showMemory(self) -> None:
         try:
@@ -761,27 +1063,7 @@ class AssistantWidget(BoxLayout):
         except llm_assist.AssistantError as e:
             self._addInfo(str(e), 'ff7373')
             return
-        popup = Popup(title='Lessons remembered on this microscope', size_hint=(0.92, 0.8))
-        style_card(popup, padding=dp(16))
-        popup.title_font = 'Roboto-Bold'
-        popup.content = MemoryList(store, popup.dismiss)
-        popup.open()
-
-    def listModels(self) -> None:
-        config = self._config()
-        self._addInfo(f'Listing models at {config.base_url}...')
-
-        def work():
-            try:
-                models = llm_assist.list_models(config)
-                text = ('Models your key can use (copy one into Settings > AI assistant > Model): '
-                        + ', '.join(models)) if models else 'The API listed no models.'
-                Clock.schedule_once(lambda dt: self._addInfo(text, 'bbbbbb'))
-            except Exception as e:
-                message = str(e)
-                Clock.schedule_once(lambda dt: self._addInfo(message, 'ff7373'))
-
-        Thread(target=work, daemon=True).start()
+        self._openList('Memory', lambda close: MemoryList(store, close))
 
     # --- llm_assist.AppBridge: called from the chat's thread, answered by GlowTracker ----------
     def app_state(self) -> dict:
@@ -886,6 +1168,9 @@ class DemoClient:
             return ''
         if cmd == 'default_path':
             return os.path.join(os.path.expanduser('~'), f'demo_{args["kind"]}.txt')
+        if cmd == 'set_model':
+            os.environ['OX_MODEL'] = args['model']
+            return args['model']
         if cmd in ('use_sequencer', 'save_plugin'):
             return f'(demo) would {cmd.replace("_", " ")} to {args["path"]}'
         if cmd == 'get_settings':

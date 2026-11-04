@@ -13,7 +13,7 @@
     {
         "type": "model",
         "title": "Model",
-        "desc": "With the GWDG / Academic Cloud API, pick one of the recommended models from the list (or Other model... for any name). For other providers, type the model name. It must support tool calling; the Models button in the assistant window lists what your key can use.",
+        "desc": "With the GWDG / Academic Cloud API, pick one of the recommended models from the list (or Other model... for any name). For other providers, type the model name. It must support tool calling. The model button in the assistant window lists what your key can use and switches model during a chat.",
         "section": "Assistant",
         "key": "model"
     },
@@ -27,7 +27,7 @@
     {
         "type": "string",
         "title": "Memory file",
-        "desc": "Where the assistant keeps lessons it learned on this microscope (you approve each one). Leave empty for the default in your user data folder; point several PCs at one shared file to share lessons.",
+        "desc": "Where the assistant keeps what it remembers about this microscope (you approve each fact). Leave empty for the default in your user data folder; point several PCs at one shared file to share its memory.",
         "section": "Assistant",
         "key": "memoryfile"
     },

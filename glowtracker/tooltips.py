@@ -12,6 +12,7 @@ from kivy.metrics import dp
 from kivy.uix.label import Label
 
 DELAY_S = 0.5
+MAX_WIDTH = 320             # a longer text wraps
 
 
 class TooltipLabel(Label):
@@ -46,16 +47,24 @@ class Tooltips:
     @classmethod
     def _under(cls, pos):
         root = cls._root
-        top = [w for w in Window.children if w is not cls._label]
-        if root is None or not top or top[0] is not root:
-            return None                     # a popup is open
+        floating = [w for w in Window.children if getattr(w, 'keepsTooltips', False)]
+        if root is None or cls._popupOpen():
+            return None
+        under = next((w for w in floating if w.collide_point(*pos)), root)
         found = None
-        for widget in root.walk(restrict=True):
+        for widget in under.walk(restrict=True):
             text = getattr(widget, 'tooltip', '')
             if text and widget.get_root_window() is not None and widget.opacity > 0 \
                     and widget.collide_point(*widget.to_widget(*pos)):
                 found = widget              # the deepest match wins
         return found
+
+    @classmethod
+    def _popupOpen(cls) -> bool:
+        """Something over the main window, other than the floating panels (the DAQ outputs, the
+        camera settings), which leave it usable."""
+        top = [w for w in Window.children if w is not cls._label and not getattr(w, 'keepsTooltips', False)]
+        return not top or top[0] is not cls._root
 
     @classmethod
     def _show(cls, target, pos) -> None:
@@ -64,7 +73,11 @@ class Tooltips:
             return
         label = cls._label
         label.text = target.tooltip
+        label.text_size = (None, None)
         label.texture_update()
+        if label.texture_size[0] > dp(MAX_WIDTH):
+            label.text_size = (dp(MAX_WIDTH), None)
+            label.texture_update()
         label.size = (label.texture_size[0] + dp(16), label.texture_size[1] + dp(10))
         x = min(pos[0] + dp(12), Window.width - label.width - dp(4))
         y = pos[1] - label.height - dp(14)
@@ -76,8 +89,7 @@ class Tooltips:
 
     @classmethod
     def _covered(cls) -> None:
-        top = [w for w in Window.children if w is not cls._label]
-        if not top or top[0] is not cls._root:
+        if cls._popupOpen():
             if cls._pending is not None:
                 cls._pending.cancel()
             cls._target = None

@@ -119,10 +119,14 @@ def create_run_directory(destination, name):
     base = Path(destination).expanduser()
     if not base.is_dir():
         raise ValueError('Choose an existing recording folder')
-    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-    run = base / f'{safe_name(name)}_{stamp}'
-    run.mkdir(exist_ok=False)
-    return run
+    while True:     # the clock moves in steps (about 16 ms on Windows): the same stamp can come twice
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        run = base / f'{safe_name(name)}_{stamp}'
+        try:
+            run.mkdir(exist_ok=False)
+            return run
+        except FileExistsError:
+            continue
 
 
 def create_visit_directory(run, plate, cycle):

@@ -4,19 +4,21 @@ import re
 import LabJackPython
 import u3
 from enum import Enum
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from copy import deepcopy
 from typing import List
 from Microscope_macros import Vertex2D, Exterior, computeAngleBetweenTwo2DVecs
 import numpy as np
 import math
 import threading
+import time
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from plot_style import darken
 from dataclasses import dataclass
 
 MAX_VOLTAGE = 4.95
+VOLTAGE_HISTORY = 4000      # output changes kept for the live plot
 
 # 'output: [...]' in a sequencer script: the output [on, V] and [off] drive (None = both)
 SEQUENCER_OUTPUTS = {('both',): None, ('dac0',): 0, ('dac1',): 1}
@@ -108,6 +110,10 @@ class DAQControl():
         # Per-output voltages (DAC0, DAC1). currentVoltage is the larger of the two, which is
         # what the built-in modes (always both outputs together) and the recording log expect.
         self.channelVoltages: list = [0.0, 0.0]
+        # Every change of the outputs as (monotonic seconds, DAC0, DAC1), for the live plot.
+        # Kept where the outputs are set, so a pulse shorter than a plot refresh still shows.
+        self._voltageHistory: deque = deque([(time.monotonic(), 0.0, 0.0)], maxlen=VOLTAGE_HISTORY)
+        self._historyLock = threading.Lock()
         # Serializes USB traffic: the acquisition thread (built-in modes) and a plugin thread
         # may both drive the outputs.
         self._io_lock = threading.RLock()
@@ -118,10 +124,34 @@ class DAQControl():
         return self.daq is not None
 
 
+    def _setVoltages(self, dac0: float, dac1: float) -> None:
+        """Note what the outputs were set to."""
+        self.channelVoltages = [dac0, dac1]
+        self.currentVoltage = max(dac0, dac1)
+        with self._historyLock:
+            if self._voltageHistory[-1][1:] != (dac0, dac1):
+                self._voltageHistory.append((time.monotonic(), dac0, dac1))
+
+
+    def voltageHistory(self) -> list:
+        """The changes of the outputs so far: [(monotonic seconds, DAC0, DAC1)], oldest first."""
+        with self._historyLock:
+            return list(self._voltageHistory)
+
+
+    def manualBlockedReason(self, recording: bool, pluginRunning: bool) -> str:
+        """Why the outputs cannot be set by hand now, or ''. A hand-set voltage would fight
+        whatever is driving them."""
+        if pluginRunning:
+            return 'The running plugin drives the outputs.'
+        if recording and self.daqMode != DAQMode.Off:
+            return f'The {self.daqMode.value} mode drives the outputs during this recording.'
+        return ''
+
+
     def safe_off(self) -> bool:
         if not self.isConnected():
-            self.currentVoltage = 0
-            self.channelVoltages = [0.0, 0.0]
+            self._setVoltages(0.0, 0.0)
             return True
 
         with self._io_lock:
@@ -155,8 +185,7 @@ class DAQControl():
                 return safe
             finally:
                 self.sequnceDictRunning.clear()
-                self.currentVoltage = 0
-                self.channelVoltages = [0.0, 0.0]
+                self._setVoltages(0.0, 0.0)
 
 
     def close(self) -> bool:
@@ -230,8 +259,7 @@ class DAQControl():
 
         if channel is None:
             if not self.isConnected():
-                self.channelVoltages = [volts, volts]
-                self.currentVoltage = volts
+                self._setVoltages(volts, volts)
                 return volts
             if math.isclose(volts, self.channelVoltages[0]) \
                     and math.isclose(volts, self.channelVoltages[1]):
@@ -250,8 +278,9 @@ class DAQControl():
             with self._io_lock:
                 bits = self.daq.voltageToDACBits(volts= volts, dacNumber= channel, is16Bits= False)
                 self.daq.getFeedback(commandType(bits))
-        self.channelVoltages[channel] = volts
-        self.currentVoltage = max(self.channelVoltages)
+        voltages = list(self.channelVoltages)
+        voltages[channel] = volts
+        self._setVoltages(*voltages)
         return volts
 
 
@@ -528,8 +557,7 @@ class DAQControl():
                     dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
                     dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
                     self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
-                self.currentVoltage = vol
-                self.channelVoltages = [vol, vol]
+                self._setVoltages(vol, vol)
 
         elif command == 'off':
 
@@ -541,8 +569,7 @@ class DAQControl():
                     dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
                     dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
                     self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
-                self.currentVoltage = 0
-                self.channelVoltages = [0.0, 0.0]
+                self._setVoltages(0.0, 0.0)
 
 
 @dataclass

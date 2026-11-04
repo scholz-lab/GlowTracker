@@ -6,6 +6,7 @@
 #: import partial functools.partial
 #:import dp kivy.metrics.dp
 # Design tokens for the main window: one palette, one control height, one set of text sizes.
+#:import Window kivy.core.window.Window
 #:set C_TEXT (0.92, 0.92, 0.94, 1)
 #:set C_MUTED (0.6, 0.6, 0.65, 1)
 #:set C_ACCENT (0.87, 0.38, 0.58, 1)
@@ -258,9 +259,9 @@ MainWindow:
         size_hint_y: None
         height: self.minimum_height
     FlatButton:
-        text: 'Load camera settings'
-        tooltip: 'Load exposure, frame rate and gain from a .pfs file'
-        on_release: root.show_load()
+        text: 'Camera settings'
+        tooltip: 'All imaging settings and your presets, e.g. brightfield and fluorescence'
+        on_release: root.show_camera_settings()
 
     Widget:
         size_hint_y: None
@@ -351,6 +352,7 @@ MainWindow:
     row_default_height: H_CONTROL
     CameraLabel:
         text: 'Exposure (µs)'
+        tooltip: 'How long the sensor collects light for each frame. Longer gives a brighter image, but a moving animal blurs.'
     DotSlider:
         size_hint_x: 0.42
         min: 100
@@ -367,6 +369,7 @@ MainWindow:
         on_focus: if not self.focus: root.change_exposure()
     CameraLabel:
         text: 'Frame rate (fps)'
+        tooltip: 'Frames per second. It cannot go above what the exposure allows.'
     DotSlider:
         size_hint_x: 0.42
         min: 0.01
@@ -383,6 +386,7 @@ MainWindow:
         on_focus: if not self.focus: root.change_framerate()
     CameraLabel:
         text: 'Gain'
+        tooltip: 'Amplifies the signal, and the noise with it. Prefer more light or a longer exposure.'
     DotSlider:
         size_hint_x: 0.42
         min: 0
@@ -1584,6 +1588,7 @@ MainWindow:
         height: H_CONTROL if app._plate_run_active else 0
         tint: C_RECORD
         on_release: root.stop_plate_run()
+    DaqOutputsTile:
     Widget:
     Connections:
         id: connections
@@ -1592,6 +1597,436 @@ MainWindow:
     Widget:
         size_hint_y: None
         height: dp(8)
+
+# The camera settings panel (camera_panel.py)
+<SettingRow>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: H_CONTROL
+    spacing: dp(8)
+
+    Label:
+        size_hint_x: None
+        width: dp(100)
+        text: root.title
+        font_size: '13sp'
+        color: C_TEXT
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+
+    DotSlider:
+        id: slider
+        min: root.low
+        max: root.high
+        on_value: root.sliderMoved()
+
+    DarkInput:
+        id: field
+        size_hint_x: None
+        width: dp(72)
+        on_focus: app.toggle_key_binding(self.focus)
+        on_text_validate: root.typed()
+
+<CameraPresetHint@Label>:
+    size_hint_y: None
+    height: self.texture_size[1]
+    text: 'No presets yet. Set up one imaging mode below, give it a name and press Save.'
+    font_size: '12sp'
+    color: C_MUTED
+    text_size: self.width, None
+    halign: 'left'
+
+<CameraPresetRow@BoxLayout>:
+    size_hint_y: None
+    height: dp(34)
+    spacing: dp(6)
+
+    FlatButton:
+        id: use
+        height: dp(34)
+        font_size: '13sp'
+
+    FlatButton:
+        id: delete
+        text: 'Delete'
+        size_hint_x: None
+        width: dp(64)
+        height: dp(34)
+        font_size: '12sp'
+
+<CameraSettingsPanel>:
+    orientation: 'vertical'
+    size_hint: None, None
+    width: dp(340)
+    height: min(body.minimum_height + dp(66), Window.height - dp(16))
+    padding: dp(14)
+    spacing: dp(8)
+    canvas.before:
+        Color:
+            rgba: 0.11, 0.115, 0.13, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: 1, 1, 1, 0.08
+        Line:
+            rounded_rectangle: self.x, self.y, self.width, self.height, dp(12)
+            width: 1
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(30)
+
+        Label:
+            text: 'Camera settings'
+            bold: True
+            font_size: '15sp'
+            color: C_TEXT
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+
+        FlatButton:
+            text: 'Close'
+            font_size: '12sp'
+            size_hint_x: None
+            width: dp(64)
+            height: dp(30)
+            on_release: root.close()
+
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+
+        BoxLayout:
+            id: body
+            padding: 0, 0, dp(8), 0
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: dp(8)
+
+            Label:
+                size_hint_y: None
+                height: self.texture_size[1] if self.text else 0
+                text: root.hint
+                font_size: '12sp'
+                color: 0.94, 0.76, 0.48, 1
+                text_size: self.width, None
+                halign: 'left'
+
+            SectionLabel:
+                text: 'Presets'
+
+            BoxLayout:
+                id: presets
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(6)
+                disabled: root.locked
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(6)
+                disabled: app.camera is None
+
+                DarkInput:
+                    id: presetname
+                    hint_text: 'Name, e.g. Brightfield'
+                    on_focus: app.toggle_key_binding(self.focus)
+                    on_text: savebutton.text = 'Save'
+                    on_text_validate: root.savePreset()
+
+                FlatButton:
+                    id: savebutton
+                    text: 'Save'
+                    size_hint_x: None
+                    width: dp(84)
+                    tooltip: 'Keep all settings below as a preset under this name, to come back to with one click'
+                    on_release: root.savePreset()
+
+            SectionLabel:
+                text: 'Camera'
+
+            BoxLayout:
+                id: rows
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(4)
+                disabled: root.locked
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(8)
+                disabled: root.locked
+                tooltip: 'Combines neighbouring sensor pixels into one, for faint samples. The image gets smaller (2 x 2 halves its width and height) and detail is lost, but noise falls, frames are smaller and the frame rate can rise. Stage moves and tracking adjust by themselves. Live view restarts.'
+
+                Label:
+                    size_hint_x: None
+                    width: dp(100)
+                    text: 'Binning'
+                    font_size: '13sp'
+                    color: C_TEXT
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+                DaqSpinner:
+                    id: binning
+                    size_hint_x: 1
+                    on_text: root.setBinning(self.text)
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(8)
+                disabled: root.locked
+                tooltip: 'Sum adds the pixels, so the image is also brighter: best for faint fluorescence, but bright parts can saturate. Average keeps the brightness the same and only lowers the noise.'
+
+                Label:
+                    size_hint_x: None
+                    width: dp(100)
+                    text: 'Binning mode'
+                    font_size: '13sp'
+                    color: C_TEXT
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+                DaqSpinner:
+                    id: binningmode
+                    size_hint_x: 1
+                    values: 'Sum', 'Average'
+                    on_text: root.setBinning(binning.text, self.text)
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(8)
+                disabled: root.locked
+                tooltip: 'How many brightness levels each pixel has. Mono8: 256 levels, the smallest files. Mono12: 4096 levels, for faint signals or measuring, but files are twice as large and the top frame rate can drop. Mono12p packs them tighter. Live view restarts.'
+
+                Label:
+                    size_hint_x: None
+                    width: dp(100)
+                    text: 'Pixel format'
+                    font_size: '13sp'
+                    color: C_TEXT
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+                DaqSpinner:
+                    id: pixelformat
+                    size_hint_x: 1
+                    on_text: root.setPixelFormat(self.text)
+
+            SectionLabel:
+                text: 'Tracking'
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(8)
+                disabled: root.locked
+                tooltip: 'What tracking looks for. Fluorescence is usually a bright animal on a dark background, brightfield a dark animal on a bright one. If this is wrong, tracking follows the wrong thing.'
+
+                Label:
+                    size_hint_x: None
+                    width: dp(100)
+                    text: 'Animal looks'
+                    font_size: '13sp'
+                    color: C_TEXT
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+                DaqSpinner:
+                    id: polarity
+                    size_hint_x: 1
+                    values: 'Bright on dark', 'Dark on bright'
+                    on_text: root.setPolarity(self.text)
+
+            BoxLayout:
+                size_hint_y: None
+                height: H_CONTROL
+                spacing: dp(8)
+                disabled: root.locked
+                tooltip: 'Only for the Diff tracking mode: how much a pixel must change between frames to count as movement. CMS and Min/Max do not use it.'
+
+                Label:
+                    size_hint_x: None
+                    width: dp(100)
+                    text: 'Threshold'
+                    font_size: '13sp'
+                    color: C_TEXT
+                    text_size: self.size
+                    halign: 'left'
+                    valign: 'middle'
+
+                DarkInput:
+                    id: threshold
+                    input_filter: 'int'
+                    on_focus:
+                        app.toggle_key_binding(self.focus)
+                        if not self.focus: root.setThreshold()
+                    on_text_validate: root.setThreshold()
+
+            FlatButton:
+                text: 'Load a Basler .pfs file'
+                font_size: '13sp'
+                tooltip: 'Load a settings file saved from the Basler pylon Viewer. It sets everything in the file, including the image size. Live view restarts.'
+                disabled: root.locked
+                on_release: root.left.show_load()
+
+# The DAQ outputs under Tools (daq_outputs.py); only while a DAQ is connected
+<DaqOutputsTile>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(96) if self.connected else 0
+    opacity: 1 if self.connected else 0
+    disabled: not self.connected
+    padding: dp(4)
+    spacing: dp(2)
+    canvas.before:
+        Color:
+            rgba: C_PRESSED if self.state == 'down' else C_INPUT
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(8)]
+
+    VoltagePlot:
+        id: plot
+
+    Label:
+        size_hint_y: None
+        height: dp(18)
+        text: root.values
+        markup: True
+        font_size: '11sp'
+        shorten: True
+        text_size: self.size
+        halign: 'center'
+        valign: 'middle'
+
+<OutputRow>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(66)
+
+    Label:
+        size_hint_y: None
+        height: dp(20)
+        text: root.name
+        markup: True
+        font_size: '13sp'
+        color: C_TEXT
+        shorten: True
+        text_size: self.size
+        halign: 'left'
+        valign: 'middle'
+
+    BoxLayout:
+        spacing: dp(8)
+
+        DotSlider:
+            id: slider
+            min: 0
+            max: root.maximum
+            step: 0.01
+            on_value: root.sliderMoved()
+
+        DarkInput:
+            id: field
+            size_hint_x: None
+            width: dp(64)
+            input_filter: 'float'
+            on_focus: app.toggle_key_binding(self.focus)
+            on_text_validate: root.typed()
+
+        Label:
+            size_hint_x: None
+            width: dp(14)
+            text: 'V'
+            font_size: '13sp'
+            color: C_MUTED
+
+<DaqOutputsPanel>:
+    orientation: 'vertical'
+    size_hint: None, None
+    size: dp(340), self.minimum_height
+    padding: dp(14)
+    spacing: dp(8)
+    canvas.before:
+        Color:
+            rgba: 0.11, 0.115, 0.13, 1
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: 1, 1, 1, 0.08
+        Line:
+            rounded_rectangle: self.x, self.y, self.width, self.height, dp(12)
+            width: 1
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(30)
+
+        Label:
+            text: 'DAQ outputs'
+            bold: True
+            font_size: '15sp'
+            color: C_TEXT
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+
+        FlatButton:
+            text: 'Close'
+            font_size: '12sp'
+            size_hint_x: None
+            width: dp(64)
+            on_release: root.tile.closePanel()
+
+    VoltagePlot:
+        id: plot
+        axes: True
+        size_hint_y: None
+        height: dp(100)
+
+    OutputRow:
+        id: dac0
+        channel: 0
+
+    OutputRow:
+        id: dac1
+        channel: 1
+
+    Label:
+        size_hint_y: None
+        height: self.texture_size[1] if self.text else 0
+        text: root.hint
+        font_size: '12sp'
+        color: 0.94, 0.76, 0.48, 1
+        text_size: self.width, None
+        halign: 'left'
+
+    FlatButton:
+        text: 'Both to 0 V'
+        font_size: '13sp'
+        size_hint_y: None
+        height: dp(34)
+        disabled: bool(root.hint)
+        on_release: root.setVoltage(None, 0.0, True)
 
 ### Popup recording Settings
 <RecordingSettings>:

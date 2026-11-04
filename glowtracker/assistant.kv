@@ -89,6 +89,21 @@
         spacing: dp(6)
         padding: dp(4), 0
 
+        HeaderPill:
+            id: modelbutton
+            tint: A_INPUT
+            padding: 0, 0, dp(16), 0
+            width: self.texture_size[0] + dp(26)
+            on_release: root.showModels()
+            canvas.after:
+                Color:
+                    rgba: A_MUTED
+                Line:
+                    points: self.right - dp(20), self.center_y + dp(2), self.right - dp(15), self.center_y - dp(3), self.right - dp(10), self.center_y + dp(2)
+                    width: dp(1.2)
+                    cap: 'round'
+                    joint: 'round'
+
         Label:
             id: header
             markup: True
@@ -96,15 +111,15 @@
             valign: 'middle'
             text_size: self.size
             shorten: True
-            font_size: '14sp'
+            font_size: '12.5sp'
+
+        HeaderPill:
+            text: 'Chats'
+            on_release: root.showChats()
 
         HeaderPill:
             text: 'Memory'
             on_release: root.showMemory()
-
-        HeaderPill:
-            text: 'Models'
-            on_release: root.listModels()
 
         HeaderPill:
             text: 'New chat'
@@ -122,16 +137,50 @@
             id: chatlog
             orientation: 'vertical'
             size_hint_y: None
-            # At least the visible height, so a short conversation starts at the top.
-            height: max(self.minimum_height, chatscroll.height)
+            # Its own height: the ScrollView then shows a short conversation at the top.
+            height: self.minimum_height
             spacing: dp(12)
             padding: dp(4), dp(8), dp(10), dp(8)
+
+    # the files going with the next message
+    StackLayout:
+        id: attachments
+        size_hint_y: None
+        height: self.minimum_height
+        spacing: dp(6)
 
     BoxLayout:
         orientation: 'horizontal'
         size_hint_y: None
         height: max(dp(46), min(dp(150), message.minimum_height))
         spacing: dp(6)
+
+        # round attach key; files can also be dropped on the window
+        Button:
+            size_hint: None, None
+            size: dp(46), dp(46)
+            pos_hint: {'y': 0}
+            background_normal: ''
+            background_down: ''
+            background_color: 0, 0, 0, 0
+            on_release: root.pickFiles()
+            canvas.before:
+                Color:
+                    rgba: A_BUTTON
+                    a: 0.75 if self.state == 'down' else 1
+                Ellipse:
+                    pos: self.center_x - dp(19), self.center_y - dp(19)
+                    size: dp(38), dp(38)
+                Color:
+                    rgba: A_TEXT
+                Line:
+                    points: self.center_x - dp(7), self.center_y, self.center_x + dp(7), self.center_y
+                    width: dp(1.5)
+                    cap: 'round'
+                Line:
+                    points: self.center_x, self.center_y - dp(7), self.center_x, self.center_y + dp(7)
+                    width: dp(1.5)
+                    cap: 'round'
 
         ChatInput:
             id: message
@@ -149,7 +198,7 @@
             background_disabled_normal: ''
             background_disabled_down: ''
             background_color: 0, 0, 0, 0
-            disabled: not root.busy and not message.text.strip()
+            disabled: not root.busy and not message.text.strip() and not root.attachmentCount
             on_release: root.sendOrStop()
             canvas.before:
                 Color:
@@ -590,6 +639,134 @@
         markup: True
         font_size: '11sp'
         color: 0.55, 0.55, 0.6, 1
+
+    ScrollView:
+        do_scroll_x: False
+
+        BoxLayout:
+            id: rows
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: dp(6)
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(38)
+        spacing: dp(8)
+
+        ChatField:
+            id: newfact
+            hint_text: 'Add something to remember'
+            multiline: False
+            padding: dp(10), (self.height - self.line_height) / 2
+            on_text_validate: root.add()
+
+        ChatButton:
+            text: 'Add'
+            size_hint_x: None
+            width: dp(70)
+            on_release: root.add()
+
+        ChatButton:
+            text: 'Close'
+            size_hint_x: None
+            width: dp(90)
+            on_release: root.close()
+
+
+<AttachmentChip@ChatButton>:
+    size_hint: None, None
+    height: dp(28)
+    width: min(self.texture_size[0] + dp(20), dp(300))
+    radius: dp(14)
+    font_size: '12sp'
+    tint: A_INPUT
+    shorten: True
+
+
+<ChatList>:
+    orientation: 'vertical'
+    spacing: dp(8)
+    padding: dp(8), 0
+
+    ChatField:
+        id: search
+        hint_text: 'Search chats'
+        multiline: False
+        size_hint_y: None
+        height: dp(38)
+        padding: dp(10), (self.height - self.line_height) / 2
+        on_text: root.refresh()
+
+    ScrollView:
+        do_scroll_x: False
+
+        BoxLayout:
+            id: rows
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: dp(6)
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(38)
+
+        Widget:
+
+        ChatButton:
+            text: 'Close'
+            size_hint_x: None
+            width: dp(110)
+            on_release: root.close()
+
+
+<ChatRow@BoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: max(dp(46), open.height)
+    spacing: dp(6)
+
+    ChatSuggestion:
+        id: open
+        markup: True
+
+    ChatButton:
+        id: delete
+        text: 'Delete'
+        size_hint: None, None
+        size: dp(72), dp(30)
+        pos_hint: {'center_y': .5}
+        font_size: '12sp'
+        color: 1, 0.45, 0.45, 1
+        tint: 0.24, 0.17, 0.18, 1
+
+
+<ModelList>:
+    orientation: 'vertical'
+    spacing: dp(8)
+    padding: dp(8), 0
+
+    ChatField:
+        id: search
+        hint_text: 'Search, or type any model name'
+        multiline: False
+        size_hint_y: None
+        height: dp(38)
+        padding: dp(10), (self.height - self.line_height) / 2
+        on_text: root.refresh()
+        on_text_validate: root.typed()
+
+    Label:
+        id: status
+        size_hint_y: None
+        height: self.texture_size[1] if self.text else 0
+        text_size: self.width, None
+        halign: 'left'
+        markup: True
+        font_size: '12sp'
+        color: A_MUTED
 
     ScrollView:
         do_scroll_x: False

@@ -1,4 +1,4 @@
-"""Long-term memory: lessons the assistant proposes and the user approves."""
+"""Long-term memory: facts the assistant proposes and the user approves."""
 import json
 
 import pytest
@@ -11,7 +11,7 @@ from test_llm_assist import Chat, FakeAPI, call, text
 def test_store_adds_removes_and_persists(tmp_path):
     path = tmp_path / 'sub' / 'memory.json'
     store = MemoryStore(str(path))
-    assert store.facts() == [] and '(none yet)' in store.prompt_section()
+    assert store.facts() == [] and '(nothing yet)' in store.prompt_section()
     a = store.add('DAC0 drives a buzzer that is quiet at 4.5 V.', 'it buzzed during a test')
     b = store.add('Prefer time mode for sequencer scripts.')
     assert (a.id, b.id) == (1, 2)
@@ -56,11 +56,11 @@ def test_an_approved_lesson_opens_every_later_conversation():
         chat.say('the buzzer went off the whole time, remember that')
         assert [f.text for f in chat.session.memory.facts()] == [LESSON]
         told = api.bodies()[1]['messages'][-1]['content']
-        assert 'Remembered as lesson 1' in told
+        assert 'Remembered as fact 1' in told
         chat.session.reset()
         chat.say('new experiment')
     system = api.bodies()[2]['messages'][0]['content']
-    assert f'- [1] {LESSON}' in system and 'Lessons remembered on this microscope' in system
+    assert f'- [1] {LESSON}' in system and 'Remembered on this microscope' in system
 
 
 def test_declined_and_edited_lessons():

@@ -227,3 +227,24 @@ def test_output_line_is_written_and_read_back():
     assert other.count('output') == 1 and DAQ.sequencer_output_of(other) == 1
     assert DAQ.with_sequencer_output(other, None) == text      # both: the file as before
     assert DAQ.sequencer_output_of(text) is None
+
+
+def test_every_output_change_is_kept_for_the_plot(monkeypatch):
+    control = _sequencer('mode: [time]\n0: [on, 2]\n1: [dac1, 3]\n2: [off]', monkeypatch)
+    for t in (0.0, 1.0, 2.0):
+        control.updateSequencer(frameNum=0, frameTime=t)
+    assert [event[1:] for event in control.voltageHistory()] == [(0.0, 0.0), (2.0, 2.0), (2.0, 3.0), (0.0, 0.0)]
+    control.safe_off()                                          # nothing changed: nothing noted
+    assert len(control.voltageHistory()) == 4
+    times = [event[0] for event in control.voltageHistory()]
+    assert times == sorted(times)
+
+
+def test_hand_set_voltages_wait_for_whatever_drives_the_outputs():
+    control = DAQ.DAQControl()
+    assert control.manualBlockedReason(recording=True, pluginRunning=False) == ''      # mode Off
+    control.daqMode = DAQ.DAQMode.Sequencer
+    assert control.manualBlockedReason(recording=False, pluginRunning=False) == ''
+    assert 'Sequencer' in control.manualBlockedReason(recording=True, pluginRunning=False)
+    control.daqMode = DAQ.DAQMode.Off
+    assert 'plugin' in control.manualBlockedReason(recording=False, pluginRunning=True)

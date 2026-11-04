@@ -84,9 +84,9 @@ class MemoryStore:
         try:
             facts = self.facts()
         except MemoryFileError as e:
-            return f'=== Lessons remembered on this microscope ===\n(unavailable: {e})\n'
+            return f'=== Remembered on this microscope ===\n(unavailable: {e})\n'
         if not facts:
-            return ('=== Lessons remembered on this microscope ===\n(none yet)\n')
+            return ('=== Remembered on this microscope ===\n(nothing yet)\n')
         lines, size = [], 0
         for fact in reversed(facts):
             line = f'- [{fact.id}] {fact.text}'
@@ -96,7 +96,7 @@ class MemoryStore:
                 break
             lines.append(line)
             size += len(line)
-        return ('=== Lessons remembered on this microscope (follow them) ===\n'
+        return ('=== Remembered on this microscope (follow these facts) ===\n'
                 + '\n'.join(reversed(lines)) + '\n')
 
     def _save(self, facts: list[Fact]) -> None:
