@@ -120,10 +120,10 @@ class OutputRow(BoxLayout):
     channel = NumericProperty(0)
     name = StringProperty('')
     maximum = NumericProperty(MAX_VOLTAGE)
+    dragging = False        # here, not in __init__: building the rule can already move the slider
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.dragging = False
         self._sendSoon = Clock.create_trigger(lambda dt: self._send(), SEND_S)
 
     def on_touch_down(self, touch):

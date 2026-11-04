@@ -347,9 +347,14 @@ class LeftColumn(BoxLayout):
         if self.cameraPanel is not None:
             self.cameraPanel.close()
             return
-        self.cameraPanel = camera_panel.CameraSettingsPanel(self)
-        Window.add_widget(self.cameraPanel)
-        self.cameraPanel.place()
+        try:
+            panel = camera_panel.CameraSettingsPanel(self)
+        except Exception as e:
+            self.app.log('hw', f'could not open the camera settings: {type(e).__name__}: {e}', 'error')
+            return
+        self.cameraPanel = panel
+        Window.add_widget(panel)
+        panel.place()
 
 
     def whileLiveStopped(self, change: callable) -> None:

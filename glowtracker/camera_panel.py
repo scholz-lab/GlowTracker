@@ -103,6 +103,7 @@ class SettingRow(BoxLayout):
     title = StringProperty('')
     low = NumericProperty(0)
     high = NumericProperty(1)
+    dragging = False        # here, not in __init__: setting the limits can already move the slider
 
     def __init__(self, panel, name: str, title: str, log: bool, limits: tuple, **kwargs):
         super().__init__(**kwargs)
@@ -110,7 +111,6 @@ class SettingRow(BoxLayout):
         self.title = title
         low = max(limits[0], 1e-3) if log else limits[0]
         self.low, self.high = self._toSlider(low), self._toSlider(limits[1])
-        self.dragging = False
         self._sendSoon = Clock.create_trigger(lambda dt: self._send(self._fromSlider(self.ids.slider.value)), SEND_S)
 
     def _toSlider(self, value: float) -> float:
@@ -167,11 +167,12 @@ class CameraSettingsPanel(BoxLayout):
         self._format = None
         self.rows: dict[str, SettingRow] = {}
         self._active = None
-        self._refreshEvent = Clock.schedule_interval(self.refresh, REFRESH_S)
-        self.bind(size=self.place)
-        Window.bind(size=self.place)
+        self._failed = False
         self.showPresets()
         self.refresh()
+        self.bind(size=self.place)
+        Window.bind(size=self.place)
+        self._refreshEvent = Clock.schedule_interval(self._poll, REFRESH_S)
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -210,6 +211,18 @@ class CameraSettingsPanel(BoxLayout):
     @staticmethod
     def binningName(factor: int) -> str:
         return 'Off' if factor == 1 else f'{factor} x {factor}'
+
+    def _poll(self, dt) -> None:
+        """The regular refresh. An error here would end the whole app, recording included, so a
+        camera that stops answering is only reported, once."""
+        try:
+            self.refresh()
+            self._failed = False
+        except Exception as e:
+            if not self._failed:
+                self.app.log('hw', f'camera settings: {type(e).__name__}: {e}', 'error')
+            self._failed = True
+            self.hint = 'The camera does not answer.'
 
     def refresh(self, *args) -> None:
         camera = self.app.camera
