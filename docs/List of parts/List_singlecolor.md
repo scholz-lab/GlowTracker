@@ -42,16 +42,16 @@ However, if you choose the objectives from other vendors, such as **Canon**, the
 {:.parts-table}
 | Part No. | Description | Link | Quantity | Price per unit € (02/2025) |
 | --- | --- | --- | --- | --- |
-| 15 | ET470/24m: GFP bandpass excitation filter | [Chroma](https://www.chroma.com/products/parts/et470-24m#tabs-0-main-2%7Ctabs-detail_page_plot-left-1) | 1 | 347,96 |
+| 15 | ET470/24m: GFP bandpass excitation filter, Ø25 mm | [Chroma](https://www.chroma.com/products/parts/et470-24m#tabs-0-main-2%7Ctabs-detail_page_plot-left-1) | 1 | 347,96 |
 | 16 | FF495-Di03-25x36: 495 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter | [Semrock](https://www.idex-hs.com/store/product-detail/ff495_di03_25x36/fl-007145) | 1 | 290,80 |
-| 17 | ET510lp: GFP longpass emission Filter | [Chroma](https://www.chroma.com/products/parts/et510lp) | 1 | 347,96 |
+| 17 | ET510lp: GFP longpass emission Filter, Ø25 mm | [Chroma](https://www.chroma.com/products/parts/et510lp) | 1 | 347,96 |
 
 The above filter set are used for green fluorescent protein. 
 These can be exchanged appropriately according to your needs.
 For example, a filter set for red fluorescent protein would be:
-- FF01-562/40-25: 562/40 nm BrightLine® single-band bandpass filter [Semrock](https://www.idex-hs.com/store/product-detail/ff01_562_40_25/fl-004456)
+- FF01-562/40-25: 562/40 nm BrightLine® single-band bandpass filter, Ø25 mm [Semrock](https://www.idex-hs.com/store/product-detail/ff01_562_40_25/fl-004456)
 - FF593-Di03-25x36: 593 nm edge BrightLine® single-edge standard epi-fluorescence dichroic beamsplitter [Semrock](https://www.idex-hs.com/store/product-detail/ff593_di03_25x36/fl-007026)
-- FF02-641/75-25: 641/75 nm BrightLine® single-band bandpass filter [Semrock](https://www.idex-hs.com/store/product-detail/ff02_641_75_25/fl-004436)
+- FF02-641/75-25: 641/75 nm BrightLine® single-band bandpass filter, Ø25 mm [Semrock](https://www.idex-hs.com/store/product-detail/ff02_641_75_25/fl-004436)
 
 
 ## Illumination
