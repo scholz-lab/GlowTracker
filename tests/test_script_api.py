@@ -550,3 +550,50 @@ def test_bad_idle_voltage_falls_back_to_zero(tmp_path):
     pump(host, 1)
     host.stop()
     assert daq.channelVoltages == [0.0, 0.0]
+
+
+# --- scope.plot --------------------------------------------------------------------------------
+
+def test_plot_feeds_the_graph_and_the_log(tmp_path):
+    path = write_plugin(tmp_path, '''
+        import math
+        def update(state, scope):
+            scope.plot(angle=state.frame * 1.5, light=state.frame % 2 == 0, gap=math.nan)
+    ''')
+    host = make_host(DAQ.DAQControl(), log_dir_getter=lambda: str(tmp_path / 'rec'))
+    host.load(path)
+    host.start()
+    pump(host, 3)
+    host.stop()
+    series = host.plots.snapshot()
+    assert list(series) == ['angle', 'light', 'gap']
+    assert [v for _, v in series['angle']] == [0.0, 0.0, 0.0]
+    assert {v for _, v in series['light']} == {1.0} and {v for _, v in series['gap']} == {None}
+    lines = open(host.log_path, encoding='utf-8').read().splitlines()
+    assert len(lines) == 3 and '"plot": {"angle": 0.0, "light": 1.0, "gap": null}' in lines[0]
+    host.start()                                   # a new run starts with an empty graph
+    assert host.plots.snapshot() == {}
+    host.stop()
+
+
+def test_plot_refuses_non_numbers_and_a_fifth_line():
+    from script_api import PlotBuffer, Scope
+    host = make_host(None)
+    warnings = []
+    host._warn = warnings.append
+    scope = Scope(host)
+    with pytest.raises(TypeError, match='angle must be a number'):
+        scope.plot(angle='left')
+    scope.plot(a=1, b=2, c=3, d=4, e=5)
+    scope.plot(e=6)
+    assert list(host.plots.snapshot()) == ['a', 'b', 'c', 'd']
+    assert len(warnings) == 1 and 'e is not shown' in warnings[0]
+
+
+def test_plot_buffer_keeps_the_last_ten_seconds():
+    from script_api import PlotBuffer
+    plots = PlotBuffer()
+    for t in range(15):
+        plots.add({'x': float(t)}, now=100.0 + t)
+    assert [v for _, v in plots.snapshot(now=114.0)['x']] == [float(t) for t in range(4, 15)]
+    assert plots.snapshot(now=200.0) == {'x': []}

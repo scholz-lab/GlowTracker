@@ -62,7 +62,8 @@ _savedWindow = None if __name__ == '__mp_main__' else window_geometry.apply_befo
 from kivy.cache import Cache
 from kivy.base import EventLoop
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Ellipse, Mesh, PushMatrix, PopMatrix, Rotate, Triangle, RoundedRectangle
+from kivy.graphics import Color, Line, Ellipse, Mesh, PushMatrix, PopMatrix, Rotate, Triangle, RoundedRectangle, Rectangle, InstructionGroup
+from kivy.core.text import Label as CoreLabel
 from kivy.graphics.texture import Texture
 from kivy.graphics.transformation import Matrix
 from kivy.factory import Factory
@@ -90,6 +91,8 @@ from script_preview_ui import ScriptPreview, dac_labels_from  # noqa: F401  (Scr
 from daq_outputs import DaqOutputsTile  # noqa: F401  (used in layout.kv)
 import camera_panel
 import camera_presets
+import view_actions
+from context_menu import ContextMenu  # noqa: F401  (used in layout.kv)
 import image_scale
 from kivy.uix.textinput import TextInput
 from kivy.uix.codeinput import CodeInput
@@ -426,7 +429,8 @@ class LeftColumn(BoxLayout):
 
             else:
                 # Otherwise, don't modify the camera and only copy attributes from camera object to dict
-                self.cameraConfig = camera.getAllFeatures()
+                # (the size explicitly: stopping tracking restores it, whatever this pylon lists)
+                self.cameraConfig = {**camera.getAllFeatures(), **camera.imageGeometry()}
                 self.update_settings_display()
                 self.app.updateImageScale()
 
@@ -2445,32 +2449,35 @@ class ActivityTerminal(BoxLayout):
         scroll.scroll_y = 1 if output.height <= scroll.height else 0
 
 
-class SkewGraph(FloatLayout):
-    """-skewness of the live image over the last 10 seconds (the Graph tab next to Activity).
-
-    Samples the live-analysis result of each new frame; Live analysis must be on for there to be
-    values. Draws only while visible."""
-    WINDOW_S = 10.0          # seconds shown; at most 10 samples per second
-    LINE = (0.04, 0.52, 1.0, 1)          # system blue
+class LiveGraph(FloatLayout):
+    """The Graph tab next to Activity: the last 10 seconds of what a running plugin plots with
+    scope.plot, one line per name; otherwise the -skewness of the live image (Live analysis must
+    be on for there to be values). Draws only while visible."""
+    WINDOW_S = 10.0          # seconds shown; the skew is sampled at most 10 times per second
+    # system blue, orange, green, pink: one per plotted name, in the order the plugin first plots them
+    LINES = ((0.04, 0.52, 1.0, 1), (1.0, 0.62, 0.04, 1), (0.19, 0.82, 0.35, 1), (1.0, 0.22, 0.37, 1))
+    SKEW = '-skewness'
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._samples: deque = deque()
+        self._skew: deque = deque()
         self._lastStamp = None
         with self.canvas.before:
             Color(0.075, 0.078, 0.086, 1)
             self._panel = RoundedRectangle(radius=[dp(10)])
             Color(1, 1, 1, 0.07)
             self._grid = [Line(width=1) for _ in range(3)]
-            self._lineColor = Color(*self.LINE)
-            self._trace = Line(width=dp(1.4))
-            self._dot = Ellipse(size=(dp(7), dp(7)))
-        self._title = self._label('-skewness', 12, (0.6, 0.6, 0.65, 1))
+            self._traces = InstructionGroup()
+        self.canvas.before.add(self._traces)
+        self._title = self._label(self.SKEW, 12, (0.6, 0.6, 0.65, 1))
         self._value = self._label('', 20, (0.92, 0.92, 0.94, 1), bold=True)
+        self._legend = self._label('', 11, (0.78, 0.78, 0.82, 1))
+        self._legend.markup = True
+        self._legend.halign = 'right'
         self._axis = [self._label('', 10, (0.45, 0.45, 0.5, 1)) for _ in range(3)]
         self._ago = self._label('-10 s', 10, (0.45, 0.45, 0.5, 1))
         self._now = self._label('now', 10, (0.45, 0.45, 0.5, 1))
-        self._hint = self._label('Turn on Live analysis to plot the skewness', 12, (0.6, 0.6, 0.65, 1))
+        self._hint = self._label('', 12, (0.6, 0.6, 0.65, 1))
         self.bind(pos=self._redraw, size=self._redraw, opacity=self._redraw)
         # And once more after the layout settles: see PadArrow (Windows display-scaling resizes).
         self._redrawSoon = Clock.create_trigger(self._redraw, -1)
@@ -2497,25 +2504,46 @@ class SkewGraph(FloatLayout):
             self._lastStamp = stamp
             value = -float(skewness)
             if math.isfinite(value):
-                self._samples.append((now, value))
-        while self._samples and now - self._samples[0][0] > self.WINDOW_S:
-            self._samples.popleft()
+                self._skew.append((now, value))
+        while self._skew and now - self._skew[0][0] > self.WINDOW_S:
+            self._skew.popleft()
         if self.opacity > 0 and self.height > 0:
             self._redraw()
 
+    def _shown(self) -> tuple[str, dict, str]:
+        """(title, {name: [(time, value or None)]}, hint when there is nothing to draw)."""
+        host = getattr(App.get_running_app(), 'pluginHost', None)
+        if host is not None and host.is_running():
+            series = host.plots.snapshot()
+            if series:
+                return (f'plugin: {os.path.basename(host.path or "")}', series,
+                        'The plugin plotted nothing in the last 10 s')
+        return self.SKEW, {self.SKEW: list(self._skew)}, 'Turn on Live analysis to plot the skewness'
+
+    @staticmethod
+    def _number(value: float) -> str:
+        magnitude = abs(value)
+        if magnitude >= 1000 or (0 < magnitude < 0.01):
+            return f'{value:.2g}'
+        return f'{value:.0f}' if magnitude >= 100 else f'{value:.2f}'
+
     def _redraw(self, *args) -> None:
         self._panel.pos, self._panel.size = self.pos, self.size
+        self._traces.clear()
         visible = self.opacity > 0 and self.height > dp(40)
+        title, series, hint = self._shown()
         left, right = self.x + dp(12), self.right - dp(36)
         bottom, top = self.y + dp(20), self.top - dp(40)
+        self._title.text = title
         self._title.pos = (self.x + dp(12), self.top - dp(10) - self._title.height)
         self._ago.pos = (left, self.y + dp(4))
         self._now.pos = (right - self._now.width, self.y + dp(4))
-        values = [v for _, v in self._samples]
+        values = [v for points in series.values() for _, v in points if v is not None]
+        self._hint.text = hint
         self._hint.opacity = 1 if visible and not values else 0
         self._hint.center = self.center
         if not values or top <= bottom:
-            self._trace.points, self._dot.size, self._value.text = [], (0, 0), ''
+            self._value.text = self._legend.text = ''
             for line, label in zip(self._grid, self._axis):
                 line.points, label.text = [], ''
             return
@@ -2528,18 +2556,38 @@ class SkewGraph(FloatLayout):
         y = lambda v: bottom + (v - low) / (high - low) * (top - bottom)
         for line, label, level in zip(self._grid, self._axis, (low + pad, (low + high) / 2, high - pad)):
             line.points = [left, y(level), right, y(level)]
-            label.text = f'{level:.2f}'
+            label.text = self._number(level)
             label.pos = (right + dp(4), y(level) - label.height / 2)
         now = time.monotonic()
         x = lambda t: right - (now - t) / self.WINDOW_S * (right - left)
-        points = []
-        for t, v in self._samples:
-            points += [x(t), y(v)]
-        self._trace.points = points
-        self._dot.size = (dp(7), dp(7))
-        self._dot.pos = (points[-2] - dp(3.5), points[-1] - dp(3.5))
-        self._value.text = f'{values[-1]:.2f}'
-        self._value.pos = (self.right - dp(12) - self._value.width, self.top - dp(8) - self._value.height)
+        legend = []
+        for colour, (name, points) in zip(self.LINES, series.items()):
+            self._traces.add(Color(*colour))
+            segment, last = [], None
+            for t, v in points + [(None, None)]:   # a None value (or the end) closes a segment
+                if v is None:
+                    if len(segment) >= 4:
+                        self._traces.add(Line(points=segment, width=dp(1.4)))
+                    segment = []
+                    continue
+                segment += [x(t), y(v)]
+                last = (x(t), y(v), v)
+            if last is not None:
+                self._traces.add(Ellipse(pos=(last[0] - dp(3.5), last[1] - dp(3.5)), size=(dp(7), dp(7))))
+            mark = '[color={}]\u25cf[/color]'.format(''.join(f'{round(c * 255):02x}' for c in colour[:3]))
+            reading = self._number(last[2]) if last is not None else '-'
+            legend.append(f'{mark} {escape_markup(name)} {reading}')
+        # One line: its name is the title and its value large. Several: a legend with each value.
+        if len(series) == 1:
+            self._legend.text = ''
+            self._value.text = legend[0].rsplit(' ', 1)[1]
+            self._value.pos = (self.right - dp(12) - self._value.width, self.top - dp(8) - self._value.height)
+            if title != self.SKEW:
+                self._title.text = f'{title}  {next(iter(series))}'
+        else:
+            self._value.text = ''
+            self._legend.text = '   '.join(legend)
+            self._legend.pos = (self.right - dp(12) - self._legend.width, self.top - dp(10) - self._legend.height)
 
 
 class StagePad(StageAxisController):
@@ -2569,6 +2617,14 @@ class GoToControls(BoxLayout):
             app.log('stage', 'go to: enter numbers for X, Y and Z', 'warn')
             return
 
+        self._moveTo(target)
+
+    def move_xy(self, x: float, y: float) -> None:
+        """Go to a stage position in mm, leaving Z where it is."""
+        self._moveTo([x, y])
+
+    def _moveTo(self, target: list) -> None:
+        app = App.get_running_app()
         stage = app.stage
         started = self._moveWorker.start(
             stage,
@@ -2580,7 +2636,7 @@ class GoToControls(BoxLayout):
             ),
         )
         if started:
-            app.log('stage', 'go to ({:.2f}, {:.2f}, {:.2f}) mm'.format(*target))
+            app.log('stage', 'go to ({}) mm'.format(', '.join(f'{value:.2f}' for value in target)))
         elif self._moveWorker.is_active():
             print('Go To movement is already active')
             app.log('stage', 'a go-to move is already running', 'warn')
@@ -3750,12 +3806,11 @@ class RecordButton(ImageAcquisitionButton):
 
         # Recording
         coordinateFile.write(f'# Recording\n')
-        #   duration
-        duration = self.app.config.getfloat('Experiment', 'duration')
-        coordinateFile.write(f'duration {duration}\n')
-        #   frames
-        nframes = self.app.config.getint('Experiment', 'nframes')
-        coordinateFile.write(f'nframes {nframes}\n')
+        #   planned length; what was really recorded is written at the end of the file
+        coordinateFile.write(run_records.coords_plan(self.app.config.getboolean('Experiment', 'iscontinuous'),
+                                                     self.app.config.getfloat('Experiment', 'duration'),
+                                                     self.app.config.getint('Experiment', 'nframes')))
+        self._recordingStarted = time.monotonic()
         #   image format: 'frames' (one file per frame) or 'stack' (multi-page TIFF + _frames.txt)
         coordinateFile.write(f'saveformat {self._saveFormat()}\n')
 
@@ -3831,7 +3886,7 @@ class RecordButton(ImageAcquisitionButton):
         coordinateFile.write(f'area {area}\n')
 
         # Write recording header
-        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95 daqVol\n")
+        coordinateFile.write(f"# Frame Time X Y Z minBrightness maxBrightness meanBrightness medianBrightness skewness percentile_5 percentile_95 daqVol daqVol0 daqVol1\n")
 
         return coordinateFile
 
@@ -3975,6 +4030,8 @@ class RecordButton(ImageAcquisitionButton):
                 if self.coordinateFile is not None \
                         and not self.coordinateFile.closed:
                     coordinateFile = self.coordinateFile
+                    coordinateFile.write(run_records.coords_result(
+                        recordedFrames, time.monotonic() - self._recordingStarted))
                     closed, closeError, closeThread = \
                         image_saver.close_file_with_timeout(
                             coordinateFile, COORDINATE_CLOSE_TIMEOUT
@@ -4088,6 +4145,7 @@ class RecordButton(ImageAcquisitionButton):
 
         frameIndex = self.frameCounter
         coords = tuple(self.app.coords[:3])
+        dac0, dac1 = self.app.daqControl.channelVoltages
         with self.parent.liveAnalysisData.lock:
             analysis = self.parent.liveAnalysisData
             coordinateRow = (
@@ -4097,7 +4155,7 @@ class RecordButton(ImageAcquisitionButton):
                 f'{analysis.meanBrightness} {analysis.medianBrightness} '
                 f'{analysis.skewness} {analysis.percentile_5} '
                 f'{analysis.percentile_95} '
-                f'{self.app.daqControl.currentVoltage}\n'
+                f'{self.app.daqControl.currentVoltage} {dac0} {dac1}\n'
             )
 
         self._startImageSaver(saveImages[0][0])
@@ -4345,6 +4403,92 @@ class PreviewImage(Image):
         self.mouse_pos_in_image_space: np.array = np.zeros((2,))
         self.mouse_pos_in_tex_coord: np.array = np.zeros((2,))
 
+        # A distance measured on the image: {'points': [spots], 'shape': image shape}. It stays
+        # until cleared, and goes when the image changes size.
+        self.measure: dict | None = None
+        self.measuring = False
+        self._measureDrawing = InstructionGroup()
+        self.canvas.after.add(self._measureDrawing)
+        self.bind(pos=self._drawMeasure, size=self._drawMeasure, norm_image_size=self._drawMeasure)
+
+    def spotUnderMouse(self) -> np.array | None:
+        """The image pixel under the pointer, or None if it is not on the image."""
+        app = App.get_running_app()
+        if app.image is None:
+            return None
+        if 0 <= self.mouse_pos_in_image_space[0] <= self.norm_image_size[0] \
+                and 0 <= self.mouse_pos_in_image_space[1] <= self.norm_image_size[1]:
+            return np.array(self.mouse_pos_in_tex_coord)
+        return None
+
+    def startTrackingAt(self, spot) -> None:
+        runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
+        print('Start tracking process')
+        # Draw a red circle
+        self.captureCircle(self._spotToLocal(spot))
+
+        # Start tracking procedure: moves the stage to the spot first
+        Clock.schedule_once(lambda dt: runtimeControls.startTracking(spot), 0)
+
+        # remove the circle
+        Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
+
+    def _spotToLocal(self, spot) -> tuple:
+        """Where an image spot is on this widget."""
+        image = App.get_running_app().image
+        padX = (self.size[0] - self.norm_image_size[0]) / 2
+        padY = (self.size[1] - self.norm_image_size[1]) / 2
+        return (self.x + padX + spot[0] / image.shape[1] * self.norm_image_size[0],
+                self.y + padY + spot[1] / image.shape[0] * self.norm_image_size[1])
+
+    # --- measuring ---------------------------------------------------------------------------
+    def startMeasuring(self) -> None:
+        self.measure = {'points': [], 'shape': App.get_running_app().image.shape[:2]}
+        self.measuring = True
+        self._drawMeasure()
+
+    def clearMeasure(self) -> None:
+        self.measure = None
+        self.measuring = False
+        self._drawMeasure()
+
+    def _addMeasurePoint(self, spot) -> None:
+        self.measure['points'].append(spot)
+        if len(self.measure['points']) == 2:
+            self.measuring = False
+            app = App.get_running_app()
+            app.log('live', f'measured {image_scale.measure_text(app, *self.measure["points"])}')
+        self._drawMeasure()
+
+    def _drawMeasure(self, *args) -> None:
+        group = self._measureDrawing
+        group.clear()
+        image = App.get_running_app().image
+        if self.measure is None or image is None:
+            return
+        if tuple(image.shape[:2]) != tuple(self.measure['shape']):
+            self.clearMeasure()         # e.g. binning: the spots mean something else now
+            return
+        points = list(self.measure['points'])
+        if self.measuring and points:
+            spot = self.spotUnderMouse()
+            if spot is not None:
+                points.append(spot)     # the line follows the pointer to the second point
+        local = [self._spotToLocal(point) for point in points]
+        group.add(Color(0.98, 0.80, 0.30, 1))
+        for x, y in local:
+            group.add(Ellipse(pos=(x - dp(3), y - dp(3)), size=(dp(6), dp(6))))
+        if len(local) == 2:
+            group.add(Line(points=[*local[0], *local[1]], width=dp(1)))
+            label = CoreLabel(text=image_scale.measure_text(App.get_running_app(), *points), font_size=dp(13))
+            label.refresh()
+            width, height = label.texture.size
+            middleX, middleY = (local[0][0] + local[1][0]) / 2, (local[0][1] + local[1][1]) / 2 + dp(8)
+            group.add(Color(0, 0, 0, 0.65))
+            group.add(Rectangle(pos=(middleX - dp(4), middleY - dp(2)), size=(width + dp(8), height + dp(4))))
+            group.add(Color(1, 1, 1, 1))
+            group.add(Rectangle(texture=label.texture, pos=(middleX, middleY), size=(width, height)))
+
     def mouse_pos(self, window, pos):
         """Calculate relative mouse position to the preview image and update the
         inspect pixel value text at the bottom right corner of the GUI.
@@ -4392,6 +4536,8 @@ class PreviewImage(Image):
             pixelVal = image[(image.shape[0] - 1) - self.mouse_pos_in_tex_coord[1], self.mouse_pos_in_tex_coord[0]]
             # Update info text
             self.app.root.ids.middlecolumn.ids.pixelvalue.text = f'x: {self.mouse_pos_in_tex_coord[0]}, y: {self.mouse_pos_in_tex_coord[1]}, intensity: {pixelVal}'
+            if self.measuring:
+                self._drawMeasure()
 
         return
 
@@ -4413,29 +4559,24 @@ class PreviewImage(Image):
 
 
     def on_touch_down(self, touch):
-        runtimeControls = App.get_running_app().root.ids.middlecolumn.runtimecontrols
-        # If a click happens in this widget
-        # and tracking is active and not yet scheduled:
-        if self.collide_point(*touch.pos) \
-            and runtimeControls.trackingcheckbox.state == 'down' \
-            and not runtimeControls.isTracking:
-
-            # Check if within the image bbox
-            if 0 <= self.mouse_pos_in_image_space[0] <= self.norm_image_size[0] \
-                and 0 <= self.mouse_pos_in_image_space[1] <= self.norm_image_size[1]:
-
-                print('Start tracking process')
-                # Draw a red circle
-                self.captureCircle(touch.pos)
-
-                # Move stage to the starting position
-
-                # Start tracking procedure
-                Clock.schedule_once(lambda dt: runtimeControls.startTracking(self.mouse_pos_in_tex_coord), 0)
-
-                # remove the circle
-                # Clock.schedule_once((lambda dt: self.circle = (0, 0, 0)), 0.5)
-                Clock.schedule_once(lambda dt: self.clearcircle(), 0.5)
+        app = App.get_running_app()
+        runtimeControls = app.root.ids.middlecolumn.runtimecontrols
+        if not self.collide_point(*touch.pos) or touch.is_mouse_scrolling:
+            return False
+        button = getattr(touch, 'button', 'left')
+        if button == 'right':
+            view_actions.open_image_menu(app, self, Window.mouse_pos)
+            return True
+        if button != 'left':
+            return False
+        spot = self.spotUnderMouse()
+        if self.measuring:
+            if spot is not None:
+                self._addMeasurePoint(spot)
+            return True
+        # tracking is armed and not yet running: this click picks the animal
+        if spot is not None and runtimeControls.trackingcheckbox.state == 'down' and not runtimeControls.isTracking:
+            self.startTrackingAt(spot)
 
 
 class LiveAnalysisLabel(Label):
@@ -5908,14 +6049,7 @@ class RuntimeControls(BoxLayout):
             # The Basler's camera have a feature-persistence feature, where the camera offset and width/height
             #   are checked against each other all the time so that the sum does not exceed the sensor's limit.
             #   Relaxing the offsets first allows setting any valid widhth/height.
-            camera.OffsetX.Value = 0
-            camera.OffsetY.Value = 0
-            camera.Width.Value = int(cameraConfig['Width'])
-            camera.Height.Value = int(cameraConfig['Height'])
-            camera.CenterX.Value = bool(int(cameraConfig['CenterX']))
-            camera.CenterY.Value = bool(int(cameraConfig['CenterY']))
-            camera.OffsetX.Value = int(cameraConfig['OffsetX'])
-            camera.OffsetY.Value = int(cameraConfig['OffsetY'])
+            camera.restoreImageGeometry(cameraConfig)
 
             # grab lock
             if wasGrabbing:

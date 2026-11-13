@@ -63,3 +63,18 @@ def test_run_record_freeze_settings_and_table(tmp_path):
     assert rows[0]['strain'] == 'AWA::Chrimson' and rows[0]['food'] == ''   # columns are the union
     assert rows[1]['food'] == 'off' and rows[0]['plugin_file'] == 'buzzer.py'
     assert rows[0]['result.frames_saved'] == '900'
+
+
+def test_a_continuous_recording_claims_no_planned_length():
+    text = rr.coords_plan(True, 840.0, 4200)
+    assert 'continuous True' in text and '840' not in text and '4200' not in text
+
+
+def test_a_fixed_recording_states_its_plan():
+    assert rr.coords_plan(False, 840.0, 4200).split('\n')[:3] == \
+        ['continuous False', 'duration 840.0', 'nframes 4200']
+
+
+def test_the_real_length_closes_the_file_as_comments():
+    lines = rr.coords_result(6123, 1224.56).splitlines()
+    assert lines == ['# frames_recorded 6123', '# duration_recorded_s 1224.560']

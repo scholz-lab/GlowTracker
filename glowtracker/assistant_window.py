@@ -700,13 +700,20 @@ class AssistantWidget(BoxLayout):
         self.approvedDefaultPaths: dict[str, str] = {}     # kind -> default path shown on an approved card
         self._animated: set = set()
         self._phase = 0
-        self._stick = True
+        self._spacer = Widget(size_hint_y=None, height=0)   # see _fitSpacer
+        self._anchor = None
+        self._topOffset = 0.0       # the view's distance from the top of the chat log
+        self._holding = False
+        self._userScrolling = False
+        self._holdSoon = Clock.create_trigger(lambda dt: self._holdView(), -1)
+        self._userScrollEnds = Clock.create_trigger(lambda dt: setattr(self, '_userScrolling', False), 0.2)
         self.attachments: list[dict] = []
         self._picking = False
         Window.bind(on_drop_file=lambda window, path, *args: self.addFiles([path.decode('utf-8')]))
         self.ids.message.send_callback = self.sendOrStop
         self.ids.chatscroll.bind(scroll_y=self._onScroll)
         self.ids.chatlog.bind(height=self._onContentHeight)
+        self.ids.chatscroll.bind(height=self._onContentHeight)
         self._showEmptyState()
         self._updateHeader()
 
@@ -769,7 +776,9 @@ class AssistantWidget(BoxLayout):
         if self._empty is not None:
             log.remove_widget(self._empty)
             self._empty = None
-        log.add_widget(widget)
+        if self._spacer.parent is None:
+            log.add_widget(self._spacer)
+        log.add_widget(widget, index=1)     # above the spacer, which stays last
 
     def _addInfo(self, text: str, color: str = '999999') -> None:
         self._append(Factory.ChatText(text=f'[color={color}]{escape_markup(text)}[/color]'))
@@ -801,13 +810,71 @@ class AssistantWidget(BoxLayout):
         self.ids.message.text = text
         self.sendOrStop()
 
+    # The newest message goes to the top of the view and its answer fills in below it. A spacer
+    # under the answer takes up the rest of the view and shrinks as the answer grows, so the height
+    # of the log stays the same and nothing moves. A longer answer runs on below the view.
+    def _scrollRange(self) -> float:
+        return max(self.ids.chatlog.height - self.ids.chatscroll.height, 0.0)
+
+    def userScrolled(self) -> None:
+        """Wheel or drag: only this moves the view. The ScrollView also rewrites scroll_y by itself
+        when the log's height changes, e.g. a new text is very tall until it gets its width."""
+        self._userScrolling = True
+        self._userScrollEnds()
+
     def _onScroll(self, scroll, value) -> None:
-        # Follow new text only while the user is at the bottom.
-        self._stick = value <= 0.02 or self.ids.chatlog.height <= scroll.height
+        if self._userScrolling:
+            self._topOffset = (1 - value) * self._scrollRange()
+        elif not self._holding:
+            self._holdSoon()
 
     def _onContentHeight(self, *args) -> None:
-        if self._stick:
-            self.ids.chatscroll.scroll_y = 0
+        self._fitSpacer()
+        self._holdView()
+
+    def _holdView(self) -> None:
+        """scroll_y is a fraction of the log's height: keep the distance from the top instead."""
+        if self._userScrolling:
+            return
+        scrollRange = self._scrollRange()
+        offset = min(self._topOffset, scrollRange)
+        self._holding = True
+        self.ids.chatscroll.scroll_y = 1 - offset / scrollRange if scrollRange > 0 else 1
+        self._holding = False
+
+    def _rows(self) -> list:
+        return [w for w in reversed(self.ids.chatlog.children) if w is not self._spacer]
+
+    def _fitSpacer(self) -> None:
+        log, rows = self.ids.chatlog, self._rows()
+        if self._anchor not in rows:
+            self._spacer.height = 0
+            return
+        below = rows[rows.index(self._anchor):]
+        used = sum(w.height for w in below) + log.spacing * len(below) + log.padding[3]
+        self._spacer.height = max(self.ids.chatscroll.height - used - log.padding[1], 0)
+
+    def _showAtTop(self, widget) -> None:
+        """Bring this row to the top of the view, once, without animation."""
+        self._anchor = widget
+
+        def go(dt):
+            log, rows = self.ids.chatlog, self._rows()
+            if widget in rows:
+                above = rows[:rows.index(widget)]
+                self._topOffset = sum(w.height for w in above) + log.spacing * len(above)
+                self._fitSpacer()
+                self._holdView()
+
+        Clock.schedule_once(go, 0.05)
+
+    def _showEnd(self) -> None:
+        """Bring the end of the log into view: an approval card must not wait out of sight."""
+        def go(dt):
+            self._topOffset = self._scrollRange()
+            self._holdView()
+
+        Clock.schedule_once(go, 0.1)
 
     def _tick(self, dt) -> None:
         self._phase += 1
@@ -847,6 +914,7 @@ class AssistantWidget(BoxLayout):
             card = cls(event.call_id, event.name, event.data, event.text, self)
             self._cards[event.call_id] = card
             turn.addCard(card)
+            self._showEnd()
         elif kind == 'result':
             turn.toolEnd(event.call_id, event.ok, event.text)
             card = self._cards.pop(event.call_id, None)
@@ -883,20 +951,26 @@ class AssistantWidget(BoxLayout):
             return
         self.ids.message.text = ''
         self._clearAttachments()
-        self._stick = True
-        self._showUser(text, attachments)
+        first = self._showUser(text, attachments)
         self._turn = AssistantTurn(self)
         self._animated.add(self._turn._typing)
         self._append(self._turn)
+        self._showAtTop(first)
         self._setBusy(True)
 
-    def _showUser(self, text: str, attachments: list[dict]) -> None:
+    def _showUser(self, text: str, attachments: list[dict]):
+        """Add the user's message to the log and return its first row."""
+        first = None
         if attachments:
             names = ', '.join(a['name'] for a in attachments)
-            self._append(Factory.ChatText(text=f'[color=999999]{escape_markup(names)}[/color]', halign='right',
-                                          font_size='12sp'))
+            first = Factory.ChatText(text=f'[color=999999]{escape_markup(names)}[/color]', halign='right',
+                                     font_size='12sp')
+            self._append(first)
         if text:
-            self._append(UserRow(text))
+            row = UserRow(text)
+            self._append(row)
+            first = first or row
+        return first
 
     def _clearLog(self) -> None:
         self._turn = None
@@ -906,6 +980,8 @@ class AssistantWidget(BoxLayout):
         self._animated.clear()
         self.ids.chatlog.clear_widgets()
         self._empty = None
+        self._anchor = None
+        self._topOffset = 0.0
 
     def newChat(self) -> None:
         if self._chat is not None:
@@ -934,7 +1010,6 @@ class AssistantWidget(BoxLayout):
         self._clearLog()
         chat.resume(path, records)
         self._usage = dict(chat.usage)
-        self._stick = True
         self._replay(records)
         self._updateHeader(chat.config)
 
@@ -942,13 +1017,14 @@ class AssistantWidget(BoxLayout):
         """Rebuild the chat log from a transcript. Approval cards are not shown again: what was
         decided is in the tool's chip."""
         turn = None
+        last = None
         for record in records:
             kind = record.get('type')
             if kind == 'user':
                 if turn is not None:
                     turn.finish(False)
                     turn = None
-                self._showUser(record.get('content') or '', record.get('attachments') or [])
+                last = self._showUser(record.get('content') or '', record.get('attachments') or [])
             elif kind in ('assistant', 'tool_call', 'tool_result', 'error', 'stopped'):
                 if turn is None:
                     turn = AssistantTurn(self)
@@ -968,6 +1044,8 @@ class AssistantWidget(BoxLayout):
         if turn is not None:
             turn.finish(False)
         self._animated.clear()
+        if last is not None:
+            self._showAtTop(last)       # where the conversation left off
 
     def _openList(self, title: str, content) -> None:
         """A popup holding a list; content is called with the function that closes it."""

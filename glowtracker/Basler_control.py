@@ -166,6 +166,18 @@ class Camera(pylon.InstantCamera):
         return [name for name in node.Symbolics if name.startswith('Mono')]
 
 
+    def restoreImageGeometry(self, geometry: dict) -> None:
+        """Set the image size and position from imageGeometry() or a .pfs file. Not while grabbing."""
+        self.OffsetX.Value = 0
+        self.OffsetY.Value = 0
+        self.Width.Value = int(geometry['Width'])
+        self.Height.Value = int(geometry['Height'])
+        for name in self._centering():
+            self._node(name).Value = bool(int(geometry.get(name, 0)))
+        self.OffsetX.Value = int(geometry['OffsetX'])
+        self.OffsetY.Value = int(geometry['OffsetY'])
+
+
     def binning(self) -> int:
         """Sensor pixels per image pixel, in each direction."""
         node = self._node('BinningHorizontal')

@@ -184,7 +184,8 @@ worm's state and a `scope` handle to set the DAQ outputs. Rules:
 - Only the standard library (math, random, collections, json, time) and numpy may be imported.
 - Voltages are 0 to 4.95 V. If the hardware is active at 0 V (e.g. a buzzer that is quiet at
   4.5 V), set idle_voltage as documented.
-- Never move the stage while tracking. Log the events that matter with scope.log(...).
+- Never move the stage while tracking. Log the events that matter with scope.log(...). To let the
+  user watch a value live (e.g. a threshold signal), use scope.plot(name=value) once per frame.
 - Keep it short, readable and commented for a biologist.
 """
 

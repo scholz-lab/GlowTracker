@@ -78,7 +78,7 @@ and trail limit set in the DAQ > Reversal tab (defaults are loaded from the conf
 |---|---|
 | `set_voltage(v, channel=None)` | drive the DAC outputs, clamped to 0 .. 4.95 V; returns the applied value. `channel=None` drives DAC0 and DAC1 together; `channel=0` or `1` drives one output alone. Unchanged values are not re-sent |
 | `light_off(channel=None)` | same as `set_voltage(0, channel)` |
-| `voltage` | property, the larger of the two outputs (what the recording logs as `daqVol`) |
+| `voltage` | property, the larger of the two outputs (what the recording logs as `daqVol`; each output is logged too, as `daqVol0` and `daqVol1`) |
 | `voltages` | property, `(DAC0, DAC1)` currently applied |
 | `daq_connected` | property |
 | `get_frame(copy=True)` | latest camera frame as a numpy array (`uint8`, 2-D; main side in dual-colour mode) |
@@ -89,6 +89,7 @@ and trail limit set in the DAQ > Reversal tab (defaults are loaded from the conf
 | `is_recording` | property, current Record button state |
 | `wait_for_recording(recording=True, timeout=None)` | block until recording is on (or off with `recording=False`). Returns `False` on timeout or Stop. Use it in `setup` to hold the light logic until you press Record |
 | `log(**fields)` | append a JSON line to `plugin_log_<time>.jsonl` in the recording folder. numpy values are converted |
+| `plot(**values)` | show numbers live in the Graph tab (next to Activity), e.g. `scope.plot(speed=state.speed, light=scope.voltage)` once per frame: one line per name over the last 10 s, up to 4 names on one shared axis (plot values of a similar scale together). `True`/`False` plot as 1/0 and NaN leaves a gap. The values also go to the plugin log as `{"plot": {...}}` lines. While no plugin plots, the Graph tab shows the image skewness |
 | `print(*args)` | show a message in the Plugin tab status line and the console |
 | `is_stopping` | `True` once Stop was pressed; long loops should check it |
 | `fps` | property, same measured frame rate as `state.fps` |

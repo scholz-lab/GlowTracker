@@ -216,6 +216,20 @@ def finish_run(run_dir: str, result: dict, experiment: str | None = None,
     return record
 
 
+def coords_plan(continuous: bool, duration: float, nframes: int) -> str:
+    """The header lines of a coords file about its length. A continuous recording ends when the
+    user stops it, so it has no planned length: the settings then only hold old values."""
+    if continuous:
+        return 'continuous True\n'
+    return f'continuous False\nduration {duration}\nnframes {nframes}\n'
+
+
+def coords_result(frames: int, seconds: float) -> str:
+    """The closing lines of a coords file: what was really recorded. Comments, so that reading the
+    rows as a table is not affected."""
+    return f'# frames_recorded {frames}\n# duration_recorded_s {seconds:.3f}\n'
+
+
 def table_row(record: dict) -> dict:
     """One flat row of a run.json for runs.csv."""
     row = {'recording': record.get('recording'), 'started': record.get('started'),

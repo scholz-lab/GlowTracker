@@ -12,6 +12,8 @@ from kivy.graphics import (Color, Ellipse, Line, Rectangle, StencilPop, StencilP
                            StencilUnUse, StencilUse)
 from kivy.metrics import dp
 from kivy.properties import BoundedNumericProperty, ListProperty, StringProperty
+
+import view_actions
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
@@ -37,6 +39,7 @@ class StageMinimap(Widget):
     position_mm = ListProperty([])
     status_text = StringProperty('Stage disconnected')
     zoom_level = BoundedNumericProperty(0, min=0, max=4)
+    markers = ListProperty([])      # stage_markers
 
     # Trail: positions sampled at the 5 Hz update, kept when the stage moved at least
     # TRAIL_MIN_STEP_MM; about an hour of continuous tracking fits in TRAIL_MAX_POINTS.
@@ -52,12 +55,15 @@ class StageMinimap(Widget):
         self._last_position_mm = None
         self._trail = deque(maxlen=self.TRAIL_MAX_POINTS)
         self._view_center = None
+        self.pinned = False         # the view stays on an area instead of following the stage
+        self._showingArea = False
         super().__init__(**kwargs)
         self._redraw_trigger = Clock.create_trigger(self.redraw)
         self.bind(pos=self._redraw_trigger, size=self._redraw_trigger,
                   travel_mm=self._redraw_trigger,
                   position_mm=self._redraw_trigger,
-                  zoom_level=self._redraw_trigger)
+                  zoom_level=self._redraw_trigger,
+                  markers=self._redraw_trigger)
         self._redraw_trigger()
 
     def on_position_mm(self, instance, position):
@@ -69,7 +75,10 @@ class StageMinimap(Widget):
             self._follow(position)
 
     def on_zoom_level(self, instance, level):
+        if self._showingArea:
+            return
         # Re-centre on the stage whenever the zoom changes.
+        self.pinned = False
         self._view_center = None
         if self._last_position_mm is not None:
             self._follow(self._last_position_mm)
@@ -83,7 +92,7 @@ class StageMinimap(Widget):
         if self._view_center is None:
             self._view_center = [position[0], position[1]]
             return
-        if self.zoom_level == 0:
+        if self.zoom_level == 0 or self.pinned:
             return
         for axis in (0, 1):
             half = self.travel_mm[axis] / (2 * 2 ** self.zoom_level)
@@ -103,7 +112,7 @@ class StageMinimap(Widget):
             elif touch.button == 'scrolldown':
                 self.zoom_level = max(0, self.zoom_level - 1)
         elif getattr(touch, 'button', None) == 'right':
-            self.clear_trail()
+            view_actions.open_minimap_menu(App.get_running_app(), self, touch.pos)
         elif touch.is_double_tap:
             self.zoom_level = 0
         return True
@@ -115,6 +124,7 @@ class StageMinimap(Widget):
         if parent is not None:
             self._update_event = Clock.schedule_interval(self.update_position, 0.2)
             self.update_position()
+            Clock.schedule_once(lambda dt: view_actions.show_markers(App.get_running_app()))
 
     def update_position(self, dt=0):
         app = App.get_running_app()
@@ -170,6 +180,34 @@ class StageMinimap(Widget):
         scale, ox, oy = self._fit()
         xmin, ymin, xmax, ymax = self.view_bounds_mm()
         return ox + (y - ymin) * scale, oy + (xmax - x) * scale
+
+    def px_to_mm(self, px, py):
+        """The stage position shown at a widget position: the inverse of mm_to_px."""
+        scale, ox, oy = self._fit()
+        xmin, ymin, xmax, ymax = self.view_bounds_mm()
+        return xmax - (py - oy) / scale, ymin + (px - ox) / scale
+
+    def scale_px_per_mm(self):
+        return self._fit()[0]
+
+    def reaches(self, x, y):
+        return 0 <= x <= self.travel_mm[0] and 0 <= y <= self.travel_mm[1]
+
+    def show_area(self, x, y):
+        """Zoom in on this spot and stay there, wherever the stage goes."""
+        self._showingArea = True
+        self.zoom_level = min(4, self.zoom_level + 1)
+        self._showingArea = False
+        self.pinned = True
+        self._view_center = [x, y]
+        self._redraw_trigger()
+
+    def follow_stage(self):
+        self.pinned = False
+        self._view_center = None
+        if self._last_position_mm is not None:
+            self._follow(self._last_position_mm)
+        self._redraw_trigger()
 
     @staticmethod
     def _nice_step(target):
@@ -235,6 +273,7 @@ class StageMinimap(Widget):
                 Line(points=[px, bar_y - dp(3), px, bar_y + dp(3)], width=1)
             self._label(f'{step:g} mm', ox + width / 2 + dp(22), bar_y)
             self._draw_trail(scale, ox, oy, width, height, xmin, xmax, ymin)
+            self._draw_markers(ox, oy, width, height)
 
             if self.position_mm:
                 px, py = self.mm_to_px(*self.position_mm)
@@ -244,6 +283,15 @@ class StageMinimap(Widget):
                         size=(radius * 2, radius * 2))
                 Color(0.96, 0.90, 0.93, 1)
                 Line(circle=(px, py, radius), width=1)
+
+    def _draw_markers(self, ox, oy, width, height):
+        size = dp(5)
+        for marker in self.markers:
+            px, py = self.mm_to_px(marker['x'], marker['y'])
+            if ox <= px <= ox + width and oy <= py <= oy + height:
+                Color(0.98, 0.80, 0.30, 1)
+                Line(points=[px, py + size, px + size, py, px, py - size, px - size, py], close=True, width=1.2)
+                self._label(marker['name'], px, py + dp(12))
 
     def _trail_pixels(self, scale, ox, oy, xmax, ymin, points):
         """Stage mm -> widget px (same rotation as mm_to_px), dropping points that land on

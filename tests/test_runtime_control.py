@@ -32,6 +32,7 @@ def test_tracking_cleanup_restores_roi_without_restarting_stopped_camera(grabbin
     values = {'Width': 1024, 'Height': 768, 'OffsetX': 0, 'OffsetY': 0, 'CenterX': 0, 'CenterY': 0}
     for name in (*values, 'TLParamsLocked'):
         setattr(camera, name, SimpleNamespace(Value=None))
+    camera.restoreImageGeometry = lambda geometry: [setattr(getattr(camera, k), 'Value', v) for k, v in geometry.items()]
     app = SimpleNamespace(camera=camera, stage=None, config=SimpleNamespace(getboolean=lambda *args: False),
         root=SimpleNamespace(ids=SimpleNamespace(leftcolumn=SimpleNamespace(cameraConfig=values),
             middlecolumn=SimpleNamespace(ids=SimpleNamespace(imageoverlay=SimpleNamespace(updateOverlay=lambda: None))))))

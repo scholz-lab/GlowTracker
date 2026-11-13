@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 import sys
 import threading
@@ -108,6 +109,50 @@ def trail_velocity(trail: np.ndarray) -> tuple[float, float]:
         return (0.0, 0.0)
     step = trail[-1] - trail[-2]
     return (float(step[0]), float(step[1]))
+
+
+class PlotBuffer:
+    """The numbers a plugin plots with scope.plot, kept for the Graph tab: the last WINDOW_S
+    seconds of up to MAX_SERIES names, in the order they first appeared. Thread-safe."""
+    MAX_SERIES = 4
+    WINDOW_S = 10.0
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._series: dict[str, deque] = {}
+        self._refused: set[str] = set()
+
+    def add(self, values: dict, now: float | None = None) -> list[str]:
+        """Add one point per name (None leaves a gap). Returns the names newly refused because
+        the graph is full."""
+        now = time.monotonic() if now is None else now
+        refused = []
+        with self._lock:
+            for name, value in values.items():
+                points = self._series.get(name)
+                if points is None:
+                    if len(self._series) >= self.MAX_SERIES:
+                        if name not in self._refused:
+                            self._refused.add(name)
+                            refused.append(name)
+                        continue
+                    points = self._series[name] = deque()
+                points.append((now, value))
+                while now - points[0][0] > self.WINDOW_S:
+                    points.popleft()
+        return refused
+
+    def snapshot(self, now: float | None = None) -> dict[str, list]:
+        """{name: [(monotonic time, value or None), ...]} over the last WINDOW_S seconds."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            return {name: [p for p in points if now - p[0] <= self.WINDOW_S]
+                    for name, points in self._series.items()}
+
+    def clear(self) -> None:
+        with self._lock:
+            self._series.clear()
+            self._refused.clear()
 
 
 class Scope:
@@ -229,6 +274,22 @@ class Scope:
         """Append one JSON line to the plugin log in the recording directory."""
         self._host._log(fields)
 
+    def plot(self, **values) -> None:
+        """Show numbers live in the Graph tab and write them to the plugin log, e.g.
+        ``scope.plot(head_angle=a, light=scope.voltage)`` once per frame. One line per name, the
+        last 10 s, up to 4 names on one shared axis. True/False plot as 1/0, NaN as a gap."""
+        numbers = {}
+        for name, value in values.items():
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise TypeError(f'scope.plot: {name} must be a number, got {value!r}') from None
+            numbers[name] = number if math.isfinite(number) else None
+        for name in self._host.plots.add(numbers):
+            self._host._warn(f'plot: {name} is not shown, the graph has at most {PlotBuffer.MAX_SERIES} lines')
+        if numbers:
+            self._host._log({'plot': numbers})
+
     def print(self, *args) -> None:
         """Show a message in the Plugin tab status line and the activity log (also printed to the console)."""
         self._host.message = ' '.join(str(a) for a in args)
@@ -283,6 +344,7 @@ class PluginHost:
         self._budget_warned = False
         self.fps: float = 0.0
         self._frame_times: deque[float] = deque(maxlen=30)
+        self.plots = PlotBuffer()
 
         self._thread: threading.Thread | None = None
         self._frame_event = threading.Event()
@@ -354,6 +416,7 @@ class PluginHost:
         self.last_update_ms = 0.0
         self.last_error = ''
         self._budget_warned = False
+        self.plots.clear()
         self.status = 'running'
         self._emit(f'started {os.path.basename(self.path or "")}', 'info')
         self._thread = threading.Thread(target=self._run, name='ScriptPlugin', daemon=True)
