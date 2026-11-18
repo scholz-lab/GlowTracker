@@ -13,7 +13,7 @@ class CameraGrabParameters:
     grabStrategy: pylon.GrabStrategy_OneByOne | pylon.GrabStrategy_LatestImageOnly
     isContinuous: bool = True
     numberOfImagesToGrab: int = 1
-    
+
 
 class Camera(pylon.InstantCamera):
 
@@ -42,12 +42,12 @@ class Camera(pylon.InstantCamera):
 
                 def OnImageGrabbed(self, camera, grabResult):
                     return True
-            
+
             camera.RegisterImageEventHandler(ImageEventPrinter(), pylon.RegistrationMode_Append, pylon.Cleanup_Delete)
-            
+
             # Open the connection
             camera.Open()
-            
+
             # Print the model name of the camera.
             print("Using device", camera.GetDeviceInfo().GetModelName())
 
@@ -57,7 +57,7 @@ class Camera(pylon.InstantCamera):
             # Cannot connect to the camera
             print(exception)
             return None
-    
+
 
     def __init__(self, *args):
         # WARNING: Outsider should not use this as a way to create and connect to camera.
@@ -74,15 +74,15 @@ class Camera(pylon.InstantCamera):
         #   on image acquisition mode, but is on a pause.
         self.__isOnHold__ = True
 
-        
+
     # Getters, Setters
     def isOnHold(self) -> bool:
         return self.__isOnHold__
-    
+
 
     def setIsOnHold(self, value):
         self.__isOnHold__ = value
-    
+
 
     # Class functions
     def updateProperties(self, propfile):
@@ -102,41 +102,42 @@ class Camera(pylon.InstantCamera):
             isSuccess (bool): boolean indicate if the retrieving is successful
             img (np.array): the retrieved image
             timestamp (int): time stamp when the result is captured by camera internal clock
-            retrieveTimestamp (int): time stamp when the result is received via time.perf_counter() 
+            retrieveTimestamp (int): time stamp when the result is received via time.perf_counter()
         """
         isSuccess = False
         img = None
         timestamp = None
         retrieveTimestamp = None
-        
+
         if self.IsGrabbing():
             try:
                 # Retrieve an image
                 #   The function pylon.InstantCamera is not well-ported to Python API.
                 #   If the grab is succeeded it will return pylon.GrabResult object.
                 #   Otherwise, it will return False.
-                grabResult: pylon.GrabResult | bool = self.RetrieveResult(1000, pylon.TimeoutHandling_Return)
+                grabResult: pylon.GrabResult | bool = self.RetrieveResult(
+                    1000, pylon.TimeoutHandling_Return
+                )
 
-                if isinstance(grabResult, bool) and grabResult == False:
-                    pass
-
-                else:
-                    # Need to double check
-                    if grabResult.GrabSucceeded():
-
-                        isSuccess = True
-                        img = grabResult.Array
-                        retrieveTimestamp = time.perf_counter()
-                        conversion_factor = 1e6  # for conversion in ms
-                        timestamp = round(grabResult.TimeStamp/conversion_factor, 1)
+                if not isinstance(grabResult, bool):
+                    try:
+                        if grabResult.GrabSucceeded():
+                            img = np.array(grabResult.Array, copy=True)
+                            retrieveTimestamp = time.perf_counter()
+                            conversion_factor = 1e6  # for conversion in ms
+                            timestamp = round(
+                                grabResult.TimeStamp / conversion_factor, 1
+                            )
+                            isSuccess = True
+                    finally:
                         grabResult.Release()
 
             except genicam.RuntimeException as e:
-                # An exception is thrown here when trying to access a grab result while the camera 
+                # An exception is thrown here when trying to access a grab result while the camera
                 #   aquisition is being shut down. This can happen when the acquisition is happening
                 #   in a thread and failed to synchronize with the main thread in time.
                 pass
-                
+
             except Exception as e:
                 # Report other error behaviors for better handling
                 print(f'Camera::retrieveGrabbingResult -- {e}')
@@ -167,7 +168,7 @@ class Camera(pylon.InstantCamera):
             height (int): the actual camera ROI width that has been set
             width (int): the actual camera ROI width that has been set
         """
-        
+
         if ROI_w <= self.Width.Max and ROI_h <= self.Height.Max:
 
             # Set camera on hold flag
@@ -184,8 +185,8 @@ class Camera(pylon.InstantCamera):
             self.Height = max(ROI_h, self.Height.Min)
 
             if isCenter:
-                
-                # Compute additional offset from the previous offset 
+
+                # Compute additional offset from the previous offset
                 additionalOffsetX = (prevCameraWidth - self.Width())//2
                 additionalOffsetY = (prevCameraHeight - self.Height())//2
 
@@ -203,7 +204,7 @@ class Camera(pylon.InstantCamera):
                 # Set the camera offset
                 self.OffsetX.Value = offsetX
                 self.OffsetY.Value = offsetY
-                
+
             # grab lock
             self.TLParamsLocked.Value = True
             # cam start
@@ -248,11 +249,11 @@ class Camera(pylon.InstantCamera):
         Returns:
             fps (float): the resulting framerate
         """
-        
+
         self.AcquisitionFrameRateEnable.Value = True
         self.AcquisitionFrameRate.Value = float(fps)
         return self.ResultingFrameRate()
-    
+
 
     def getAllFeatures(self) -> dict[str, any]:
         """Get all current camera's features.
@@ -268,13 +269,13 @@ class Camera(pylon.InstantCamera):
         for IValue in IValues:
 
             try:
-                
+
                 # Check if it's one of the type we're interested in
                 if type(IValue) in [genicam.IBoolean, genicam.IInteger, genicam.IBoolean, genicam.IString]:
 
                     # Check if the node that holds the value is a feature node
                     node: genicam.INode = IValue.GetNode()
-                    
+
                     if node.IsFeature():
 
                         try:
@@ -302,7 +303,7 @@ def saveImage(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> No
         path (str): image path
         fname (str): image file name
         isFlipY (bool, optional): _description_. Defaults to False.
-    """    
+    """
     img = im
 
     if isFlipY:
@@ -310,7 +311,7 @@ def saveImage(im: np.ndarray, path: str, fname: str, isFlipY: bool= False) -> No
 
     try:
         imsave(os.path.join(path, fname), img, check_contrast=False)
-        
+
     except FileNotFoundError as e:
         print(e)
 
@@ -322,30 +323,31 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
         filepath (str): the .pfs file path
 
     Returns:
+
         Dict[str, str] | None: A string dictionary contains
         the configuration key and value. The value is always parsed
         as a string, so if it is number or other type, it would need
         to be converted manully before use. Return None if the reading or
         parsing is unsuccessfull.
     """
-    
+
     parsedDict = {}
-    
+
     try:
         with open(filepath, 'r') as file:
-            
+
             for line in file:
 
                 # Strip unnescessary spaces
                 line = line.strip()
-                
+
                 # Skip comment
                 if line.startswith('#'):
                     continue
 
                 # Split words (separate by blanks)
                 parts = line.split()
-                
+
                 key = parts[0]
                 value = parts[-1]
                 parsedDict[key] = value
@@ -354,9 +356,8 @@ def readPFSFile(filepath: str) -> Dict[str, str] | None:
 
     except FileNotFoundError:
         print(f"Error: File '{filepath}' is not found.")
-        
+
     except Exception as e:
         print(e)
-    
-    return None
 
+    return None

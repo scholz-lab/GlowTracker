@@ -1,18 +1,17 @@
 from __future__ import annotations
+import ast
 import LabJackPython
 import u3
-import re
 from enum import Enum
 from collections import OrderedDict
 from copy import deepcopy
 from typing import List
-from Microscope_macros import Vertex2D, Exterior
+from Microscope_macros import Vertex2D, Exterior, computeAngleBetweenTwo2DVecs
 import numpy as np
 import math
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from dataclasses import dataclass
-from Microscope_macros import computeAngleBetweenTwo2DVecs
 
 class DAQMode(Enum):
     Off = 'Off'
@@ -49,9 +48,9 @@ class DAQControl():
 
             # Instantiate DAQConatrol object
             daqControl.daq = daq
-            
+
             print(f"Using {daqControl.daq.deviceName}, serial: {daqControl.daq.serialNumber}")
-            
+
             # Set to factory default
             daqControl.daq.setDefaults()
             # Calibrate
@@ -59,7 +58,7 @@ class DAQControl():
 
         except Exception as e:
             print(e)
-        
+
         finally:
             return daqControl
 
@@ -74,102 +73,185 @@ class DAQControl():
         self.daqStageProgram: DAQStageProgram = DAQStageProgram()
         self.reversalDetector: ReversalDetector = ReversalDetector()
         self.currentVoltage: float = 0
-    
+
 
     def isConnected(self) -> bool:
         return self.daq is not None
 
 
-    def close(self):
-        if self.isConnected():
-            # Check if Windows then call LabJackPython.Close(), else call self.daq.close()
-            self.daq.close()
-            self.daq = None
+    def safe_off(self) -> bool:
+        if not self.isConnected():
+            self.currentVoltage = 0
+            return True
 
-    
+        try:
+            dac0Val = self.daq.voltageToDACBits(
+                volts=0.0, dacNumber=0, is16Bits=False
+            )
+            dac1Val = self.daq.voltageToDACBits(
+                volts=0.0, dacNumber=1, is16Bits=False
+            )
+            self.daq.getFeedback(
+                u3.DAC0_8(dac0Val),
+                u3.DAC1_8(dac1Val),
+            )
+            return True
+        except Exception as e:
+            print(f'Setting DAQ outputs to zero failed: {e}')
+            safe = True
+            for dacNumber, commandType in ((0, u3.DAC0_8), (1, u3.DAC1_8)):
+                try:
+                    value = self.daq.voltageToDACBits(
+                        volts=0.0, dacNumber=dacNumber, is16Bits=False
+                    )
+                    self.daq.getFeedback(commandType(value))
+                except Exception as channel_error:
+                    safe = False
+                    print(
+                        f'Setting DAQ{dacNumber} to zero failed: '
+                        f'{channel_error}'
+                    )
+            return safe
+        finally:
+            self.sequnceDictRunning.clear()
+            self.currentVoltage = 0
+
+
+    def close(self) -> bool:
+        if not self.isConnected():
+            return True
+
+        daq = self.daq
+        safe = False
+        try:
+            safe = self.safe_off()
+        finally:
+            try:
+                daq.close()
+            except Exception as e:
+                print(f'Closing DAQ connection failed: {e}')
+            finally:
+                self.daq = None
+
+        return safe
+
+
     def start(self, startRecordPosition: np.ndarray):
         """Reset internal command dict to original to prepare for running.
         """
         self.sequnceDictRunning = deepcopy(self.sequncerDict)
         self.daqStageProgram.startRecordPosition = startRecordPosition
-    
-    
+
+
     def reset(self):
         """Set DAQ values to factory default. Should be call after finished executing a command list.
         """
         if not self.isConnected():
             return
 
-        # Set to factory default
-        self.daq.setDefaults(SetToFactoryDefaults= True)
-        
-        # Manually set DAC0 to 0 (off)
-        dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
-        dac0Command = u3.DAC0_8(dac0Val)
-        self.daq.getFeedback(dac0Command)
-
-        # Clean running command queue
-        self.sequnceDictRunning.clear()
-        
-        self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
-        self.currentVoltage = 0
-
-        
-    def parseTextScript(self, text: str) -> None:
-
         try:
-            # Remove empty lines and surrounding whitespace
+            self.daq.setDefaults(SetToFactoryDefaults=True)
+        finally:
+            self.safe_off()
+
+        self.daqStageProgram.startRecordPosition = np.zeros([2], np.float32)
+
+
+    def setDAC1(self, volts: float) -> None:
+        if not self.isConnected():
+            return
+        volts = max(min(volts, 4.95), 0)
+        dac1Val = self.daq.voltageToDACBits(volts= volts, dacNumber= 1, is16Bits= False)
+        self.daq.getFeedback(u3.DAC1_8(dac1Val))
+
+
+    def parseTextScript(self, text: str) -> None:
+        try:
             lines = [line.strip() for line in text.splitlines() if line.strip()]
-
-            # Remove trailing commas from each line
-            lines = [re.sub(r',$', '', line) for line in lines]
-
-            # Wrap into a dict literal
-            preprocessdText = "{\n" + ",\n".join(lines) + "\n}"
-            
-            # Parse the text to be a dict object. Highlight keywords "on", "off"
-            processedDict = eval(preprocessdText, {
-                "on": "on", 
-                "off": "off", 
-                "mode": "mode",
-                "frame": "frame",
-                "time": "time"
-            })
-
-            # Check if empty
-            if len(processedDict) == 0:
+            lines = [line[:-1].rstrip() if line.endswith(',') else line for line in lines]
+            if not lines:
                 self.sequncerDict.clear()
                 return
+            expression = ast.parse("{\n" + ",\n".join(lines) + "\n}", mode='eval')
+            processedDict = self._parseScriptNode(expression.body)
+            if not isinstance(processedDict, dict):
+                raise ValueError('script must contain key-value entries')
+            if 'mode' not in processedDict:
+                raise ValueError("missing 'mode' entry")
+            modeValue = processedDict.pop('mode')
+            if not isinstance(modeValue, (list, tuple)) or len(modeValue) != 1:
+                raise ValueError("'mode' must be [frame] or [time]")
+            mode = modeValue[0]
+            if mode not in ('frame', 'time'):
+                raise ValueError("'mode' must be [frame] or [time]")
 
-            # Get running mode
-            mode = processedDict.pop('mode')[0]
-            
-            # Sort and convert to OrderedDict
-            self.sequncerDict = OrderedDict( {key:val for key, val in sorted(processedDict.items(), key= lambda x: x[0])} )
+            commands = {}
+            for trigger, command in processedDict.items():
+                if isinstance(trigger, bool) or not isinstance(trigger, (int, float)):
+                    raise ValueError('command keys must be numeric')
+                if not math.isfinite(trigger) or trigger < 0:
+                    raise ValueError('command keys must be finite and non-negative')
+                if mode == 'frame' and (not isinstance(trigger, int) or isinstance(trigger, bool)):
+                    raise ValueError('frame command keys must be integers')
+                commands[trigger] = self._validateScriptCommand(command)
 
-            if mode == 'frame':
-                self.sequencerMode = SequencerMode.Frame
-
-            elif mode == 'time':
-                self.sequencerMode = SequencerMode.Time
-                
-            else:
-                raise ValueError(f"Failed to parse DAQ script text: Invalid 'mode' argument. Options are ['frame', 'time']")
-
+            self.sequncerDict = OrderedDict(sorted(commands.items()))
+            self.sequencerMode = SequencerMode.Frame if mode == 'frame' else SequencerMode.Time
         except Exception as e:
             raise ValueError(f"Failed to parse DAQ script text: {e}")
-    
 
-    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] = [], posHist: np.ndarray = None) -> None:
+
+    @staticmethod
+    def _parseScriptNode(node):
+        if isinstance(node, ast.Dict):
+            result = {}
+            for keyNode, valueNode in zip(node.keys, node.values):
+                key = DAQControl._parseScriptNode(keyNode)
+                if key in result:
+                    raise ValueError(f'duplicate key {key!r}')
+                result[key] = DAQControl._parseScriptNode(valueNode)
+            return result
+        if isinstance(node, (ast.List, ast.Tuple)):
+            return [DAQControl._parseScriptNode(value) for value in node.elts]
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in {'mode', 'frame', 'time', 'on', 'off'}:
+            return node.id
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = DAQControl._parseScriptNode(node.operand)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError('signs may only be applied to numbers')
+            return value if isinstance(node.op, ast.UAdd) else -value
+        raise ValueError(f'unsupported syntax: {type(node).__name__}')
+
+
+    @staticmethod
+    def _validateScriptCommand(command):
+        if not isinstance(command, (list, tuple)) or not command:
+            raise ValueError("commands must be [off] or [on, voltage]")
+        if command[0] == 'off' and len(command) == 1:
+            return ['off']
+        if command[0] == 'on' and len(command) == 2:
+            voltage = command[1]
+            if isinstance(voltage, bool) or not isinstance(voltage, (int, float)):
+                raise ValueError('voltage must be numeric')
+            if not math.isfinite(voltage) or not 0 <= voltage <= 4.95:
+                raise ValueError('voltage must be between 0 and 4.95')
+            return ['on', float(voltage)]
+        raise ValueError("commands must be [off] or [on, voltage]")
+
+
+    def update(self, frameNum: int = 0, frameTime: float = 0, stagePosition: List[float] | None = None, posHist: np.ndarray | None = None) -> None:
         if self.daqMode == DAQMode.Off:
             return
-        
+
         elif self.daqMode == DAQMode.Sequencer:
             self.updateSequencer(frameNum= frameNum, frameTime= frameTime)
-        
+
         elif self.daqMode == DAQMode.StageProgram:
-            self.updateStageProgram(stagePosition)
-        
+            if stagePosition is not None:
+                self.updateStageProgram(stagePosition)
+
         elif self.daqMode == DAQMode.Reversal:
             self.updateReversalDetection(posHist)
 
@@ -182,16 +264,16 @@ class DAQControl():
             return
 
         if self.sequencerMode == SequencerMode.Frame:
-        
+
             # Get the exact frame command
             frameCommand = self.sequnceDictRunning.pop(frameNum, default= None)
 
             if frameCommand is not None:
                 print(f"Frame {frameNum}:")
                 self._executeCommand(frameCommand)
-        
+
         elif self.sequencerMode == SequencerMode.Time:
-            
+
             # Get the first (lowest frame time) command in queue
             commandFrameTime = next(iter(self.sequnceDictRunning))
 
@@ -209,14 +291,14 @@ class DAQControl():
                     # If the command queue is now empty then stop
                     if len(self.sequnceDictRunning) == 0:
                         break
-                    
+
                     # Get the next one
                     commandFrameTime = next(iter(self.sequnceDictRunning))
 
                     # If the next commandFrameTime is already higher then break
                     if commandFrameTime > frameTime:
                         break
-                
+
                 if len(commands) > 0:
                     # Execute the last command (closest to the frame time)
                     commandFrameTime, frameCommand = commands[-1]
@@ -227,38 +309,43 @@ class DAQControl():
     def updateStageProgram(self, stagePosition: List[float]) -> None:
         #   We want to evalute this
         vol = self.daqStageProgram.getValue(stagePosition[0], stagePosition[1])
-        
+
         if math.isclose(vol, 0):
             self._executeCommand(frameCommand= ['off'])
 
         else:
             self._executeCommand(frameCommand= ['on', vol])
-            
 
-    def updateReversalDetection(self, posHist: np.ndarray) -> None:
-        # Convert posHist to numpy and discard the z-axis position
-        #   and update unit from mm to meter.
-        trail = np.array(posHist)[:, (0, 1)] * 1e3
+
+    def updateReversalDetection(self, posHist: np.ndarray | None) -> None:
+        trail = np.asarray(posHist if posHist is not None else [], dtype=float)
+        if trail.ndim != 2 or trail.shape[1] < 2:
+            trail = np.empty((0, 2), dtype=float)
+        else:
+            trail = trail[:, :2]
         isReversing = self.reversalDetector.detectReversal(trail= trail)
 
         vol = self.reversalDetector.reversalVoltage if isReversing else self.reversalDetector.forwardVoltage
 
+        if math.isclose(vol, self.currentVoltage):
+            return
+
         if math.isclose(vol, 0):
             self._executeCommand(frameCommand= ['off'])
 
         else:
             self._executeCommand(frameCommand= ['on', vol])
-    
+
 
     def _executeCommand(self, frameCommand: list) -> None:
-        
+
         command: list = frameCommand[0]
 
         if command == 'on':
             if len(frameCommand) != 2:
                 print("\"on\" command requires a voltage argument.")
                 return
-            
+
             vol = frameCommand[1]
 
             # TODO: This should be in the setting to support High-voltage DAQ
@@ -267,20 +354,18 @@ class DAQControl():
 
             print(f"Light on {vol} vol")
 
-            # Send command to DAQ at DAC0
             dac0Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 0, is16Bits= False)
-            dac0Command = u3.DAC0_8(dac0Val)
-            self.daq.getFeedback(dac0Command)
+            dac1Val = self.daq.voltageToDACBits(volts= vol, dacNumber= 1, is16Bits= False)
+            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
             self.currentVoltage = vol
-        
+
         elif command == 'off':
-            
+
             print(f"Light off")
 
-            # Send command to DAQ at DAC0
             dac0Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 0, is16Bits= False)
-            dac0Command = u3.DAC0_8(dac0Val)
-            self.daq.getFeedback(dac0Command)
+            dac1Val = self.daq.voltageToDACBits(volts= 0, dacNumber= 1, is16Bits= False)
+            self.daq.getFeedback(u3.DAC0_8(dac0Val), u3.DAC1_8(dac1Val))
             self.currentVoltage = 0
 
 
@@ -304,16 +389,16 @@ class DAQStageProgram():
         self.gaussianParams = GaussianParams()
         self.isGaussianRelative = False
         self.startRecordPosition = np.zeros([2], np.float32)
-    
-    
+
+
     def update(
-            self, 
-            mode: StageProgramMode | None = None, 
-            quadVertex: List[Vertex2D] | None = None, 
-            exterior: Exterior | None = None, 
-            exteriorConstant: float | None = None, 
+            self,
+            mode: StageProgramMode | None = None,
+            quadVertex: List[Vertex2D] | None = None,
+            exterior: Exterior | None = None,
+            exteriorConstant: float | None = None,
             isFourPointRelative: bool | None = None,
-            gaussianParams: GaussianParams | None = None, 
+            gaussianParams: GaussianParams | None = None,
             isGaussianRelative: bool | None = None
         ) -> None:
         """Parse variables and process them.
@@ -327,7 +412,7 @@ class DAQStageProgram():
 
         if mode:
             self.mode = mode
-        
+
         if quadVertex:
             self.quadVertex = quadVertex
 
@@ -340,23 +425,23 @@ class DAQStageProgram():
 
             #   Sort
             self.quadVertex.sort(key= lambda vertex: math.atan2(vertex.point[1] - center[1], vertex.point[0] - center[0]))
-        
+
         if exterior:
             self.exterior = exterior
-        
-        if exteriorConstant:
+
+        if exteriorConstant is not None:
             self.exteriorConstant = exteriorConstant
-        
+
         if isFourPointRelative is not None:
             self.isFourPointRelative = isFourPointRelative
-        
+
         if gaussianParams:
             self.gaussianParams = gaussianParams
-        
-        if isGaussianRelative is not None: 
+
+        if isGaussianRelative is not None:
             self.isGaussianRelative = isGaussianRelative
-    
-    
+
+
     def getValue(self, x: float, y: float) -> float:
         """Get an interpolated signal value at a given stage position.
 
@@ -376,18 +461,18 @@ class DAQStageProgram():
             if self.isFourPointRelative:
                 currentPosition = currentPosition - self.startRecordPosition
                 self.quadVertex[0].point
-            
+
             val = Vertex2D.bilerp(
-                self.quadVertex[0], 
-                self.quadVertex[1], 
-                self.quadVertex[2], 
-                self.quadVertex[3], 
-                currentPosition, 
-                self.exterior, 
+                self.quadVertex[0],
+                self.quadVertex[1],
+                self.quadVertex[2],
+                self.quadVertex[3],
+                currentPosition,
+                self.exterior,
                 self.exteriorConstant
             )
 
-        
+
         elif self.mode == StageProgramMode.Gaussian:
 
             if not (math.isclose(self.gaussianParams.x_sigma, 0.0) or math.isclose(self.gaussianParams.y_sigma, 0.0)):
@@ -409,7 +494,7 @@ class DAQStageProgram():
                         -((distance[1])**2 / (2 * (self.gaussianParams.y_sigma**2)))
                     )
                 )
-                
+
         # TODO: This should be in the setting to support High-voltage DAQ
         # Clamp between 0, 5 vol
         val = min(max(0, val), 5)
@@ -427,12 +512,12 @@ class DAQStageProgram():
 
         isRelativeToStart = (self.mode == StageProgramMode.FourPoint and self.isFourPointRelative) \
                             or (self.mode == StageProgramMode.Gaussian and self.isGaussianRelative)
-        
+
         # Allocate value map
         valMapShape = [stageRange[0] + 1, stageRange[1] + 1, 1]
         if isRelativeToStart:
             valMapShape = [stageRange[0]*2 + 1, stageRange[1]*2 + 1, 1]
-        
+
         valMap = np.zeros(valMapShape)
 
         # Compute value map
@@ -441,7 +526,7 @@ class DAQStageProgram():
             y = j
             if isRelativeToStart:
                 y = y - stageRange[0]
-                
+
             for i in range(valMap.shape[1]):
 
                 x = i
@@ -449,11 +534,11 @@ class DAQStageProgram():
                     x = x - stageRange[1]
 
                 valMap[j, i] = self.getValue(x, y)
-        
+
         # Create the plot
         plt.ioff()
         fig = plt.figure(figsize=(6, 6))
-        
+
         # Plot map
         extent = None
         if isRelativeToStart:
@@ -461,21 +546,21 @@ class DAQStageProgram():
 
         im = plt.imshow(valMap, cmap= 'magma', extent= extent)
         plt.colorbar(im)
-        
+
         # Plot landmarks
         def drawPointWithAnnotation(point: List[float], color: str, name: str) -> None:
             plt.scatter(point[0], point[1], c= color)
             plt.annotate(name, (point[0], point[1]), textcoords= 'offset points', xytext= (10,10), ha= 'center', fontsize= 12, color= 'green')
-        
+
         if self.mode == StageProgramMode.FourPoint:
             drawPointWithAnnotation(self.quadVertex[0].point, 'r', self.quadVertex[0].name)
             drawPointWithAnnotation(self.quadVertex[1].point, 'r', self.quadVertex[1].name)
             drawPointWithAnnotation(self.quadVertex[2].point, 'r', self.quadVertex[2].name)
             drawPointWithAnnotation(self.quadVertex[3].point, 'r', self.quadVertex[3].name)
-        
+
         elif self.mode == StageProgramMode.Gaussian:
             drawPointWithAnnotation([self.gaussianParams.x_mean, self.gaussianParams.y_mean], 'r', 'Mean')
-        
+
         if isRelativeToStart:
             drawPointWithAnnotation([0, 0], 'r', 'Start Pos')
 
@@ -487,7 +572,7 @@ class DAQStageProgram():
             topRight = np.zeros([2], np.float32)
 
             if self.mode == StageProgramMode.FourPoint:
-                
+
                 for vertex in self.quadVertex:
                     btmLeft = np.where(btmLeft > vertex.point, vertex.point, btmLeft)
                     topRight = np.where(topRight < vertex.point, vertex.point, topRight)
@@ -505,15 +590,15 @@ class DAQStageProgram():
                 # Also check bound with origin
                 btmLeft = np.where(btmLeft > np.zeros([2]), np.zeros([2]), btmLeft)
                 topRight = np.where(topRight < np.zeros([2]), np.zeros([2]), topRight)
-                
+
 
             # Add padding
             btmLeft = btmLeft - 10
             topRight = topRight + 10
-            
+
             plt.xlim(btmLeft[0], topRight[0])
             plt.ylim(btmLeft[1], topRight[1])
-            
+
         else:
             plt.xlim(0, stageRange[0])
             plt.ylim(0, stageRange[1])
@@ -546,7 +631,7 @@ class DAQStageProgram():
 
 
 class ReversalDetector():
-    
+
     def __init__(self):
         self.isReversing: bool = False
         self.animalLength_mm: float = 0
@@ -556,20 +641,26 @@ class ReversalDetector():
         self.reversalVoltage: float = 0
         self.forwardVoltage: float = 0
 
-    
+
     def detectReversal(self, trail: np.ndarray) -> bool:
-        
-        # Get last M (trial limit) vertices and 
+        trail = np.asarray(trail, dtype=float)
+        limit = int(self.trailLimit)
+        if trail.ndim != 2 or trail.shape[1] < 2 \
+                or len(trail) < 2 or limit < 2:
+            self.isReversing = False
+            return False
+
+        # Get last M (trial limit) vertices and
         #   apply transformation to each row vertex
-        croppedTrail = trail[-self.trailLimit::, :]
+        croppedTrail = trail[-limit:, :2]
 
         # Greedy sums up until equal or exceed animal's length
         #   Get a reversed view: from bottom (most recent/head) to top (first point in the history)
         revTrail = croppedTrail[::-1]
         sumLength = 0
-        
+
         tailIndex = 0
-        
+
         for i in range(1, len(revTrail)):
             length = np.linalg.norm(revTrail[i-1] - revTrail[i])
             sumLength = sumLength + length
@@ -577,7 +668,7 @@ class ReversalDetector():
 
             if sumLength >= self.animalLength_mm:
                 break
-        
+
         # Copy points from head to tail
         # We now have bodyVert: Bx2 (B:= body length), rows of point from head to tail
         bodyVert = revTrail[0:tailIndex+1:1]
@@ -585,10 +676,11 @@ class ReversalDetector():
         # Atleast two vertices
         if len(bodyVert) > 1:
 
-            # 
+            #
             # Estimate velocity
-            # 
+            #
             numHistVert = round(len(bodyVert) * self.velocityHistoryPercentage / 100)
+            numHistVert = max(2, min(len(bodyVert), numHistVert))
             # Slice from head to numHistVert
             histVert = bodyVert[0:numHistVert]
 
@@ -596,20 +688,21 @@ class ReversalDetector():
             velocities = histVert[0:-1] - histVert[1:]
 
             # Uniform weighted average
-            velocity = np.sum(velocities, axis= 0) / len(velocities)
+            velocity = np.mean(velocities, axis=0)
 
             # Check if the velocity is angling more than the reversal threshold with the the tailToHead body.
             #   If yes, reversal -> red color.
             #   If not, non-reversal -> green color.
 
             vecTailToHead = bodyVert[0] - bodyVert[-1]
+            if np.linalg.norm(vecTailToHead) == 0 or np.linalg.norm(velocity) == 0:
+                self.isReversing = False
+                return False
             angle_radian = computeAngleBetweenTwo2DVecs(vecTailToHead, velocity)
             angle_degree = angle_radian * 180 / math.pi
 
-            if angle_degree > self.reversalThresholdRadian or angle_degree < -self.reversalThresholdRadian:
-                self.isReversing = True
+            self.isReversing = abs(angle_degree) > abs(self.reversalThresholdRadian)
+        else:
+            self.isReversing = False
 
-            else:
-                self.isReversing = False
-        
         return self.isReversing

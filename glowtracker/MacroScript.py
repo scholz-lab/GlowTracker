@@ -8,7 +8,7 @@ from typing import List
 
 import time
 
-from threading import Thread
+from threading import Thread, current_thread
 
 class MacroScriptExecutor:
     """Parser and executor for a custom glowtracker macro scripts.
@@ -210,7 +210,7 @@ class MacroScriptExecutor:
             
             except ValueError as e:
                 print(f'Macro Script error: {e}')
-                
+
             finally:
                 if finishedCallback is not None:
                     finishedCallback()
@@ -227,10 +227,25 @@ class MacroScriptExecutor:
         self._executorThread.start()
     
 
-    def stop(self) -> None:
+    def stop(self, timeout: float | None = None) -> bool:
         """Stop running the macro
         """
         self._terminationFlag[0] = True
+        if timeout is not None:
+            return self.wait(timeout)
+        return True
+
+
+    def wait(self, timeout: float | None = None) -> bool:
+        thread = self._executorThread
+        if thread is None or thread is current_thread() or not thread.is_alive():
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
+
+
+    def is_stopping(self) -> bool:
+        return self._terminationFlag[0]
 
 
     def _executeCommandList(self, commandList: List | ParseResults, terminationFlag: list[bool], scopeVariableDict: dict[int, float] | None = None) -> None:
@@ -277,7 +292,12 @@ class MacroScriptExecutor:
             elif commandName == 'wait':
 
                 waitTime = self._resolveExpression(scopeVariableDict, command[1])
-                time.sleep(waitTime)
+                deadline = time.monotonic() + max(0.0, waitTime)
+                while not terminationFlag[0]:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(0.05, remaining))
             
             elif commandName == 'loop':
 
@@ -422,4 +442,3 @@ class MacroScriptExecutor:
                 
         else:
             raise ValueError(f"Expression {expression} is invalid.")
-
